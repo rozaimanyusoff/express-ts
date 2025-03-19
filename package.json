@@ -4,9 +4,15 @@
   "description": "",
   "main": "server.ts",
   "scripts": {
-    "dev": "node --loader ts-node/esm --experimental-specifier-resolution=node --watch src/server.ts",
-    "start": "ts-node src/server.ts",
-    "build": "tsc"
+    "dev": "tsx --watch src/server.ts",
+    "start": "node src/server.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +38,7 @@
     "@types/nodemailer": "^6.4.17",
     "ts-node": "^10.9.2",
     "tslint": "^5.20.1",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }
 }
