@@ -1,11 +1,14 @@
 // filepath: /src/app.ts
-import express from 'express';
+import express, { Express, urlencoded, json } from 'express';
 import authRoutes from './routes/authRoutes';
 import errorHandler from './middlewares/errorHandler';
+import corsMiddleware from './middlewares/cors';
 
-const app = express();
+const app: Express = express();
 
-app.use(express.json());
+app.use(urlencoded({ extended: true }));
+app.use(json());
+app.use(corsMiddleware);
 app.use('/api/auth', authRoutes);
 app.use(errorHandler);
 
