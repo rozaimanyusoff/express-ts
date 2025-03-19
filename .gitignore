@@ -1,0 +1,5 @@
+# filepath: /Users/rozaiman/express-ts/.gitignore
+node_modules/
+dist/
+.env
+*.log
