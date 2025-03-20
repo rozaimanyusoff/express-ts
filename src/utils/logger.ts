@@ -1,18 +1,35 @@
-// filepath: /src/utils/logger.ts
 import winston from 'winston';
+
+const { combine, timestamp, printf, colorize } = winston.format;
+
+// Custom format for both console and file outputs
+const customFormat = printf(({ level, message, timestamp }) => {
+  return `[${timestamp}] ${level}: ${message}`;
+});
 
 const logger = winston.createLogger({
   level: 'error',
-  format: winston.format.json(),
+  format: combine(
+    timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
+  ),
   transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    // Console transport with colorized output (development only)
+    new winston.transports.Console({
+      format: combine(
+        colorize(),
+        timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        customFormat
+      ),
+    }),
+    // File transport with plain text formatting (no JSON)
+    new winston.transports.File({
+      filename: 'error.log',
+      format: combine(
+        timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        customFormat // <-- plain text for the file log
+      )
+    }),
   ],
 });
-
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.simple(),
-  }));
-}
 
 export default logger;

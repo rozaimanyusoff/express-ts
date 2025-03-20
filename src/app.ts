@@ -9,7 +9,9 @@ const app: Express = express();
 app.use(urlencoded({ extended: true }));
 app.use(json());
 app.use(corsMiddleware);
+
 app.use('/api/auth', authRoutes);
+
 app.use(errorHandler);
 
 export default app;

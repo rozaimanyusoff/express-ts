@@ -1,10 +1,16 @@
-// filepath: /src/middlewares/errorHandler.ts
 import { Request, Response, NextFunction } from 'express';
-import logger from '../utils/logger';
 
 const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
-  logger.error(err);
-  res.status(500).json({ message: 'Internal server error' });
+  console.error('Global error handler:', err);
+
+  const statusCode = err.status || 500;
+
+  res.status(statusCode).json({
+    status: false,
+    message: err.message || 'Internal Server Error',
+    // Optional for debugging (remove in production!)
+    // error: err,
+  });
 };
 
 export default errorHandler;
