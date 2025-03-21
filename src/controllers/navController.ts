@@ -121,7 +121,7 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
     }
 };
 
-export const updateNavigationHandler = async (req: Request<{ id: string }, {}, UpdateNavigationBody>, res: Response): Promise<Response> => {
+export const updateNavigationHandler = async (req: Request, res: Response): Promise<Response> => {
     try {
         const id = Number(req.params.id);
         const updatedData = req.body;
@@ -173,6 +173,7 @@ export const getNavigationByGroup = async (req: Request<{ role: string }>, res: 
     }
 };
 
+// /api/nav/access
 export const getNavigationPermissionsHandler = async (req: Request, res: Response): Promise<Response> => {
     try {
         const permissions = await getNavigationPermissions();
@@ -195,7 +196,7 @@ export const getNavigationPermissionsHandler = async (req: Request, res: Respons
     }
 };
 
-export const getNavigationByIdsHandler = async (req: Request<{ id: number }>, res: Response): Promise<Response> => {
+export const getNavigationByIds = async (req: Request, res: Response): Promise<Response> => {
     try {
         const id = Number(req.params.id);
         const navigation = await getNavigationById(id);
@@ -270,7 +271,7 @@ export const removeNavigationPermissionsHandler = async (req: Request<{}, {}, { 
     }
 };
 
-export const toggleStatusHandler = async (req: Request<{ id: string }, {}, { status: boolean }>, res: Response): Promise<Response> => {
+export const toggleStatusHandler = async (req: Request, res: Response): Promise<Response> => {
     try {
         const id = Number(req.params.id);
         const { status } = req.body;

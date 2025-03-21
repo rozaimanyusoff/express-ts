@@ -1,6 +1,6 @@
 {
-  "extends": "@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
+    "types": ["node"],
     "target": "ESNext",
     "module": "ESNext",
     "outDir": "./dist",
@@ -11,6 +11,6 @@
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "bundler",
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/types/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
