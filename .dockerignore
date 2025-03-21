@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.gitignore
+README.md
+src/**/*.test.ts
+src/**/*.spec.ts
+src/**/*.mock.ts
+.env
