@@ -1,7 +1,7 @@
 import cors from 'cors';
 
 export default cors({
-  origin: '*',
+  origin: ['http://localhost:5137', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
