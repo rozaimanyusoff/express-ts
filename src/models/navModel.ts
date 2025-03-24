@@ -4,21 +4,18 @@ import { RowDataPacket } from 'mysql2';
 // Type definitions
 export interface Navigation extends RowDataPacket {
   id: number;
-    navId: string;
-    title: string;
-    type: string;
-    position: number;
-    status: number;
-    icon?: string;
-    path?: string;
-    component?: string;
-    layout?: string;
-    is_protected?: boolean;
-    parent_nav_id?: string | null;
-    section_id?: string | null;
-    permitted_groups?: number[];
-  role?: number;
-  [key: string]: any;
+  navId: string;                    // varchar(50), required
+  title: string;                    // varchar(255), required
+  type: string;                     // varchar(50), required
+  position: number;                 // int, required
+  status: number;                   // tinyint, required
+  icon?: string | null;             // varchar(100), optional
+  path?: string | null;             // varchar(255), optional
+  component?: string | null;        // varchar(255), optional
+  layout?: string | null;           // varchar(50), optional
+  is_protected: number;             // tinyint(1), required (or boolean with mapping)
+  parent_nav_id?: string | null;    // varchar(50), optional
+  section_id?: string | null;       // varchar(50), optional
 }
 
 export interface NavigationInput {
@@ -44,7 +41,7 @@ export interface GroupNavPermission {
 // Fetch all navigations
 export const getNavigation = async (): Promise<Navigation[]> => {
   try {
-    const [result] = await pool.query<Navigation[]>(`SELECT * FROM navigation`);
+    const [result] = await pool.query<Navigation[]>(`SELECT * FROM auth.navigation`);
     return result;
   } catch (error) {
     console.error('Error fetching navigation data:', error);
@@ -57,8 +54,8 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
   try {
     const [result] = await pool.query<Navigation[]>(
       `SELECT n.*
-       FROM group_nav gn
-       LEFT JOIN navigation n ON gn.nav_id = n.id
+       FROM auth.group_nav gn
+       LEFT JOIN auth.navigation n ON gn.nav_id = n.id
        WHERE n.status != 0 AND gn.group_id = ?
        ORDER BY n.position, n.id`,
       [id]
@@ -75,7 +72,7 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
   console.log(`Updating last navigation for userId: ${userId} with path: ${path}`);
   try {
     const [result]: any = await pool.query(
-      `UPDATE users SET last_nav = ? WHERE id = ?`,
+      `UPDATE auth.users SET last_nav = ? WHERE id = ?`,
       [path, userId]
     );
     console.log(`Update result: ${JSON.stringify(result)}`);
@@ -94,7 +91,7 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
 export const createNavigation = async (newNavigation: NavigationInput): Promise<number> => {
   try {
     const [result]: any = await pool.query(
-      'INSERT INTO navigation SET ?',
+      'INSERT INTO auth.navigation SET ?',
       [newNavigation]
     );
     return result.insertId;
@@ -108,14 +105,14 @@ export const createNavigation = async (newNavigation: NavigationInput): Promise<
 export const updateNavigation = async (id: number, updatedData: NavigationInput): Promise<Navigation> => {
   console.log(`Updating navigation item with navId: ${id}`);
   try {
-    const [rows]: any = await pool.query('SELECT * FROM navigation WHERE id = ?', [id]);
+    const [rows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
     if (rows.length === 0) {
       throw new Error('Navigation item not found');
     }
 
     await pool.query('UPDATE navigation SET ? WHERE id = ?', [updatedData, id]);
 
-    const [updatedRows]: any = await pool.query('SELECT * FROM navigation WHERE id = ?', [id]);
+    const [updatedRows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
     return updatedRows[0];
   } catch (error) {
     console.error('Error updating navigation:', error);
@@ -127,7 +124,7 @@ export const updateNavigation = async (id: number, updatedData: NavigationInput)
 export const getNavigationByGroups = async (role: number): Promise<Navigation[]> => {
   try {
     const [result]: any = await pool.query(
-      'SELECT * FROM navigation WHERE role = ?',
+      'SELECT * FROM auth.navigation WHERE role = ?',
       [role]
     );
     return result;
@@ -141,7 +138,7 @@ export const getNavigationByGroups = async (role: number): Promise<Navigation[]>
 export const getNavigationPermissions = async (): Promise<GroupNavPermission[]> => {
   try {
     const [result]: any = await pool.query(
-      'SELECT * FROM group_nav ORDER BY nav_id, group_id'
+      'SELECT * FROM auth.group_nav ORDER BY nav_id, group_id'
     );
     return result;
   } catch (error) {
@@ -155,7 +152,7 @@ export const updateNavigationPermission = async (permissions: GroupNavPermission
   try {
     const values = permissions.map(perm => [perm.nav_id, perm.group_id]);
     const [result]: any = await pool.query(
-      `INSERT IGNORE INTO group_nav (nav_id, group_id) VALUES ?`,
+      `INSERT IGNORE INTO auth.group_nav (nav_id, group_id) VALUES ?`,
       [values]
     );
     return result.affectedRows;
@@ -170,7 +167,7 @@ export const removeNavigationPermissions = async (permissions: GroupNavPermissio
   try {
     const values = permissions.map(perm => [perm.nav_id, perm.group_id]);
     const [result]: any = await pool.query(
-      `DELETE FROM group_nav WHERE (nav_id, group_id) IN (?)`,
+      `DELETE FROM auth.group_nav WHERE (nav_id, group_id) IN (?)`,
       [values]
     );
     return result.affectedRows;
@@ -184,7 +181,7 @@ export const removeNavigationPermissions = async (permissions: GroupNavPermissio
 export const toggleStatus = async (id: number, status: number): Promise<number> => {
   try {
     const [result]: any = await pool.query(
-      `UPDATE navigation SET status = ? WHERE id = ?`,
+      `UPDATE auth.navigation SET status = ? WHERE id = ?`,
       [status, id]
     );
     return result.affectedRows;

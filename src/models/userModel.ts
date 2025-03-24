@@ -19,6 +19,17 @@ export interface Users {
   accessgroups: string;
 }
 
+// Get all users
+export const getAllUsers = async (): Promise<Users[]> => {
+  try {
+    const [rows]: any[] = await pool.query('SELECT * FROM users');
+    return rows;
+  } catch (error) {
+    logger.error(`Database error in getAllUsers: ${error}`);
+    throw error;
+  }
+};
+
 // Validate user by email or contact prior to registration
 export const findUserByEmailOrContact = async (email: string, contact: string): Promise<any[]> => {
   try {
