@@ -1,5 +1,3 @@
-import nodemailer from 'nodemailer';
-import crypto from 'crypto';
 import { Request, Response } from 'express';
 import {
   getAllUsers,
@@ -7,7 +5,6 @@ import {
   assignUserToGroups
 } from '../models/userModel';
 import dotenv from 'dotenv';
-import jwt from 'jsonwebtoken';
 
 dotenv.config({ path: '.env.local' });
 
@@ -27,33 +24,12 @@ interface AdminUser {
   activated_at: Date;
 }
 
-interface UpdateUserRequest extends Request {
-  params: { id: string };
-  body: {
-    accessgroups?: string | number[];
-    [key: string]: any;
-  };
-}
-
 interface AssignGroupsRequest extends Request {
   body: {
     userId: number;
     groups: number[];
   };
 }
-
-// ===== Nodemailer Transporter =====
-
-const transporter = nodemailer.createTransport({
-  host: process.env.VITE_EMAIL_HOST,
-  port: Number(process.env.VITE_EMAIL_PORT),
-  auth: {
-    user: process.env.VITE_EMAIL_USER,
-    pass: process.env.VITE_EMAIL_PASSWORD
-  }
-});
-
-// ===== Controller Functions =====
 
 // Get all users
 export const getAllUser = async (_req: Request, res: Response): Promise<Response> => {
@@ -67,7 +43,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
 };
 
 // Update user and assign groups
-export const updateUser1 = async (req: UpdateUserRequest, res: Response): Promise<Response> => {
+export const updateUser1 = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
   const updatedUser = req.body;
 
@@ -80,10 +56,10 @@ export const updateUser1 = async (req: UpdateUserRequest, res: Response): Promis
       if (Array.isArray(updatedUser.accessgroups)) {
         groups = updatedUser.accessgroups as number[];
       } else if (typeof updatedUser.accessgroups === 'string') {
-        groups = updatedUser.accessgroups
+        groups = (updatedUser.accessgroups as string)
           .split(',')
-          .map((g) => parseInt(g.trim(), 10))
-          .filter((g) => !isNaN(g));
+          .map((g: string) => parseInt(g.trim(), 10))
+          .filter((g: number) => !isNaN(g));
       }
     }
 
