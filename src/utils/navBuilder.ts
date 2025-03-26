@@ -25,18 +25,19 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
     if (!Array.isArray(flatNavItems)) {
         throw new Error('Invalid flatNavItems format');
     }
-  
-    const navMap: Map<number, NavItem> = new Map();
-  
+
+    const navMap: Map<string, NavItem> = new Map();
+
+    // Map flat items to NavItem objects
     flatNavItems.forEach(item => {
-        navMap.set(item.id, {
+        navMap.set(item.navId, {
             id: item.id,
             navId: item.navId,
             title: item.title,
             type: item.type,
             position: item.position,
             status: item.status,
-            parentNavId: item.parent_nav_id,
+            parentNavId: item.parent_nav_id, // Keep raw parent_nav_id for now
             sectionId: item.section_id,
             path: item.path || null,
             component: item.component || null,
@@ -46,17 +47,20 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
             children: null,
         });
     });
-  
+
     const rootItems: NavItem[] = [];
-  
+
+    // Build the tree structure
     flatNavItems.forEach(item => {
-        const navItem = navMap.get(item.id);
+        const navItem = navMap.get(item.navId);
         if (!navItem) return;
-  
+
         if (item.parent_nav_id === null) {
+            // Root-level items
             rootItems.push(navItem);
         } else {
-            const parentItem = Array.from(navMap.values()).find(parent => parent.navId === item.parent_nav_id);
+            // Find the parent item by matching parent_nav_id with navId
+            const parentItem = navMap.get(item.parent_nav_id);
             if (parentItem) {
                 if (!parentItem.children) {
                     parentItem.children = [];
@@ -65,16 +69,17 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
             }
         }
     });
-  
+
+    // Sort items by position recursively
     const sortByPosition = (items: NavItem[]): void => {
-        items.sort((a, b) => a.position - b.position);
+        items.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
         items.forEach(item => {
             if (item.children) {
                 sortByPosition(item.children);
             }
         });
     };
-  
+
     sortByPosition(rootItems);
     return rootItems;
 };

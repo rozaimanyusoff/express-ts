@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
-import { 
-    routeTracker, 
-    getNavigation, 
-    createNavigation, 
-    updateNavigation, 
-    getNavigationPermissions, 
-    getNavigationById, 
-    updateNavigationPermission, 
-    removeNavigationPermissions, 
-    toggleStatus 
+import {
+    routeTracker,
+    getNavigation,
+    createNavigation,
+    updateNavigation,
+    getNavigationPermissions,
+    getNavigationById,
+    updateNavigationPermission,
+    removeNavigationPermissions,
+    toggleStatus
 } from '../models/navModel';
 import buildNavigationTree from '../utils/navBuilder';
 
@@ -97,7 +97,7 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
     }
 };
 
-export const getNavigationsUnstructured = async ( req: Request, res: Response): Promise<Response> => {
+export const getNavigationsUnstructured = async (req: Request, res: Response): Promise<Response> => {
     try {
         const navFlat = await getNavigation();
         return res.status(200).json({
@@ -143,9 +143,14 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
         }
 
         const updatedData = req.body;
+
+        // Normalize the data
         const normalizedData = normalizeNavigationData(updatedData);
+
+        // Update the navigation item in the database
         const updatedItem = await updateNavigation(id, normalizedData);
 
+        // Update permissions if provided
         if (updatedData.permittedGroups?.length) {
             const permissions = updatedData.permittedGroups.map((groupId: number) => ({
                 nav_id: id,
@@ -218,8 +223,8 @@ export const updateNavigationPermissionsHandler = async (req: Request<{}, {}, { 
     try {
         const { permissions } = req.body;
 
-        if (!permissions.length || !permissions.every(p => p.nav_id && p.group_id)) {
-            return res.status(400).json({ status: 'Error', message: 'Invalid permissions data' });
+        if ( !permissions.length || !permissions.every((p) => typeof p.nav_id === 'number' && typeof p.group_id === 'number') ) {
+            return res.status(400).json({ message: 'Navigation ID is required' });
         }
 
         await updateNavigationPermission(permissions);

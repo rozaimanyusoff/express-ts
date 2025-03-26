@@ -11,8 +11,8 @@ router.get("/", asyncHandler(getNavigations));
 router.post("/", asyncHandler(createNavigationHandler));
 router.put("/:id/status", asyncHandler(toggleStatusHandler));
 router.put("/:id", asyncHandler(updateNavigationHandler));
-router.put("/permissions", asyncHandler(updateNavigationPermissionsHandler));
-router.delete("/permissions", asyncHandler(removeNavigationPermissionsHandler));
+router.put("/permissions/assign", asyncHandler(updateNavigationPermissionsHandler)); //assign menu to groups
+router.delete("/permissions/remove", asyncHandler(removeNavigationPermissionsHandler)); //remove menu from groups
 
 
 export default router;

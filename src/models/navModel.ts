@@ -69,18 +69,18 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
 
 // Update user's last navigation path
 export const routeTracker = async (path: string, userId: number): Promise<void> => {
-  console.log(`Updating last navigation for userId: ${userId} with path: ${path}`);
+  //console.log(`Updating last navigation for userId: ${userId} with path: ${path}`);
   try {
     const [result]: any = await pool.query(
       `UPDATE auth.users SET last_nav = ? WHERE id = ?`,
       [path, userId]
     );
-    console.log(`Update result: ${JSON.stringify(result)}`);
+    //console.log(`Update result: ${JSON.stringify(result)}`);
     if (result.affectedRows === 0) {
-      console.error(`No user found with id: ${userId}`);
+      //console.error(`No user found with id: ${userId}`);
       throw new Error(`No user found with id: ${userId}`);
     }
-    console.log(`Route tracked successfully for user id: ${userId}`);
+    //console.log(`Route tracked successfully for user id: ${userId}`);
   } catch (error) {
     console.error('Error tracking route:', error);
     throw error;
@@ -103,15 +103,51 @@ export const createNavigation = async (newNavigation: NavigationInput): Promise<
 
 // Update an existing navigation entry
 export const updateNavigation = async (id: number, updatedData: NavigationInput): Promise<Navigation> => {
-  console.log(`Updating navigation item with navId: ${id}`);
   try {
+    // Check if the navigation item exists
     const [rows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
     if (rows.length === 0) {
       throw new Error('Navigation item not found');
     }
 
-    await pool.query('UPDATE navigation SET ? WHERE id = ?', [updatedData, id]);
+    // Explicitly list the fields to update
+    const query = `
+        UPDATE auth.navigation
+        SET
+            navId = ?,
+            title = ?,
+            type = ?,
+            position = ?,
+            status = ?,
+            icon = ?,
+            path = ?,
+            component = ?,
+            layout = ?,
+            is_protected = ?,
+            parent_nav_id = ?,
+            section_id = ?
+        WHERE id = ?
+    `;
 
+    const values = [
+        updatedData.navId,
+        updatedData.title,
+        updatedData.type,
+        updatedData.position,
+        updatedData.status,
+        updatedData.icon,
+        updatedData.path,
+        updatedData.component,
+        updatedData.layout,
+        updatedData.is_protected ? 1 : 0, // Convert boolean to tinyint
+        updatedData.parent_nav_id,
+        updatedData.section_id,
+        id,
+    ];
+
+    await pool.query(query, values);
+
+    // Fetch the updated navigation item
     const [updatedRows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
     return updatedRows[0];
   } catch (error) {
@@ -150,11 +186,14 @@ export const getNavigationPermissions = async (): Promise<GroupNavPermission[]> 
 // Update navigation permissions
 export const updateNavigationPermission = async (permissions: GroupNavPermission[]): Promise<number> => {
   try {
-    const values = permissions.map(perm => [perm.nav_id, perm.group_id]);
-    const [result]: any = await pool.query(
-      `INSERT IGNORE INTO auth.group_nav (nav_id, group_id) VALUES ?`,
-      [values]
-    );
+    if (!permissions.length) return 0;
+
+    const placeholders = permissions.map(() => `(?, ?)`).join(', ');
+    const values = permissions.flatMap(p => [p.nav_id, p.group_id]);
+
+    const query = `INSERT IGNORE INTO auth.group_nav (nav_id, group_id) VALUES ${placeholders}`;
+    const [result]: any = await pool.query(query, values);
+
     return result.affectedRows;
   } catch (error) {
     console.error('Error updating navigation permissions:', error);
@@ -165,11 +204,14 @@ export const updateNavigationPermission = async (permissions: GroupNavPermission
 // Remove navigation permissions
 export const removeNavigationPermissions = async (permissions: GroupNavPermission[]): Promise<number> => {
   try {
-    const values = permissions.map(perm => [perm.nav_id, perm.group_id]);
-    const [result]: any = await pool.query(
-      `DELETE FROM auth.group_nav WHERE (nav_id, group_id) IN (?)`,
-      [values]
-    );
+    if (!permissions.length) return 0;
+
+    const conditions = permissions.map(() => `(?, ?)`).join(", ");
+    const values = permissions.flatMap(p => [p.nav_id, p.group_id]);
+
+    const query = `DELETE FROM auth.group_nav WHERE (nav_id, group_id) IN (${conditions})`;
+    const [result]: any = await pool.query(query, values);
+
     return result.affectedRows;
   } catch (error) {
     console.error('Error removing navigation permissions:', error);
