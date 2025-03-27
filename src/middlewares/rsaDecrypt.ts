@@ -28,7 +28,7 @@ export const rsaDecryptMiddleware = (req: Request, res: Response, next: NextFunc
     );
 
     req.body.password = decrypted.toString('utf-8');
-    console.log('[RSA] Decryption successful:', req.body.password); // only for dev
+    //console.log('[RSA] Decryption successful:', req.body.password); // only for dev
     next();
   } catch (err: any) {
     console.error('[RSA Decryption Error]', err.message || err);

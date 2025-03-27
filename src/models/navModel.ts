@@ -156,20 +156,6 @@ export const updateNavigation = async (id: number, updatedData: NavigationInput)
   }
 };
 
-// Get navigation items by role/group
-export const getNavigationByGroups = async (role: number): Promise<Navigation[]> => {
-  try {
-    const [result]: any = await pool.query(
-      'SELECT * FROM auth.navigation WHERE role = ?',
-      [role]
-    );
-    return result;
-  } catch (error) {
-    console.error('Error fetching group navigation data:', error);
-    throw error;
-  }
-};
-
 // Get navigation permissions
 export const getNavigationPermissions = async (): Promise<GroupNavPermission[]> => {
   try {
@@ -229,6 +215,48 @@ export const toggleStatus = async (id: number, status: number): Promise<number> 
     return result.affectedRows;
   } catch (error) {
     console.error('Error toggling navigation status:', error);
+    throw error;
+  }
+};
+
+// Fetch navigation by group IDs
+export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigation[]> => {
+  try {
+    // Create placeholders for the group IDs
+    const placeholders = groupIds.map(() => '?').join(', ');
+
+    const query = `
+      SELECT DISTINCT n.*
+      FROM auth.group_nav gn
+      LEFT JOIN auth.navigation n ON gn.nav_id = n.id
+      WHERE n.status != 0 AND gn.group_id IN (${placeholders})
+      ORDER BY n.position, n.id
+    `;
+
+    const [result] = await pool.query<Navigation[]>(query, groupIds);
+    return result;
+  } catch (error) {
+    console.error('Error fetching navigation data by group IDs:', error);
+    throw error;
+  }
+};
+
+// Fetch navigation by user ID
+export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
+  try {
+    const query = `
+      SELECT DISTINCT n.*
+      FROM user_groups ug
+      INNER JOIN group_nav gn ON ug.group_id = gn.group_id
+      INNER JOIN auth.navigation n ON gn.nav_id = n.id
+      WHERE ug.user_id = ? AND n.status != 0
+      ORDER BY n.position, n.id
+    `;
+
+    const [result] = await pool.query<Navigation[]>(query, [userId]);
+    return result;
+  } catch (error) {
+    console.error('Error fetching navigation data by user ID:', error);
     throw error;
   }
 };

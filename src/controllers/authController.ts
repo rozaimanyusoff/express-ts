@@ -157,12 +157,12 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         email: result.user.email,
         username: result.user.username,
         contact: result.user.contact,
-        name: result.user.name,
+        name: result.user.fname,
         status: result.user.status,
-        lastNav: result.user.lastNav,
-        lastLogin: result.user.lastLogin,
+        lastNav: result.user.last_nav,
+        lastLogin: result.user.last_Login,
         role: result.user.role,
-        accessgroups: result.user.accessgroups,
+        usergroups: result.user.usergroups,
       }
     });
   } catch (error) {
@@ -294,7 +294,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
           subject: 'Password Changed Successfully',
           html: `
               <h1>Password Changed</h1>
-              <p>Hello ${user.name},</p>
+              <p>Hello ${user.fname},</p>
               <p>Your password has been successfully changed.</p>
               <p>If you did not make this change, please contact our support team immediately.</p>
               <p>You can login with your new password at:</p>

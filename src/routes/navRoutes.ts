@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { getNavigationPermissionsHandler, trackRoute, toggleStatusHandler, getNavigationByIds, getNavigations, getNavigationsUnstructured, createNavigationHandler, updateNavigationHandler, updateNavigationPermissionsHandler, removeNavigationPermissionsHandler } from "../controllers/navController";
+import { getNavigationPermissionsHandler, trackRoute, toggleStatusHandler, getNavigations, getNavigationsUnstructured, createNavigationHandler, updateNavigationHandler, updateNavigationPermissionsHandler, removeNavigationPermissionsHandler, getNavigationByUserIdHandler } from "../controllers/navController";
 import asyncHandler from "../utils/asyncHandler";
 
 const router = Router();
 
-router.get("/access/user", asyncHandler(getNavigationByIds)); // Get navigation by user's access groups. Has body data of accessgroups
+router.get("/access/:id", asyncHandler(getNavigationByUserIdHandler)); // Get navigation by user's access groups. Has body data of accessgroups
 router.get("/access", asyncHandler(getNavigationPermissionsHandler));
 router.put("/track-route", asyncHandler(trackRoute));
 router.get("/navflat", asyncHandler(getNavigationsUnstructured));

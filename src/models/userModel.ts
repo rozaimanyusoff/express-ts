@@ -7,23 +7,57 @@ const { hash, compare } = bcrypt;
 // Define the interface
 export interface Users {
   id: number;
-  email: string;
   username: string;
+  email: string;
+  password: string;
+  created_at: Date;
+  activation_code: string | null;
+  fname: string;
   contact: string;
-  name: string;
-  status: number;
   user_type: number;
-  lastNav: string;
-  lastLogin: string;
+  last_login: Date | null;
+  last_nav: string | null;
+  last_ip: string | null;
+  last_host: string | null;
+  last_os: string | null;
+  status: number;
   role: number;
-  accessgroups: string;
+  usergroups: string | null; // Updated field to store comma-separated group IDs
+  reset_token: string | null;
+  activated_at: Date | null;
 }
 
 // Get all users
 export const getAllUsers = async (): Promise<Users[]> => {
   try {
-    const [rows]: any[] = await pool.query('SELECT * FROM users');
-    return rows;
+    const [rows]: any[] = await pool.query(
+      `SELECT u.*, GROUP_CONCAT(ug.group_id) AS usergroups
+      FROM users u
+      LEFT JOIN user_groups ug ON u.id = ug.user_id
+      GROUP BY u.id`
+    );
+
+    return rows.map((user: Users) => ({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      password: '', // Password is omitted for security
+      created_at: new Date(user.created_at),
+      activation_code: user.activation_code,
+      fname: user.fname,
+      contact: user.contact,
+      user_type: user.user_type,
+      last_login: user.last_login ? new Date(user.last_login) : null,
+      last_nav: user.last_nav,
+      last_ip: user.last_ip,
+      last_host: user.last_host,
+      last_os: user.last_os,
+      status: user.status,
+      role: user.role,
+      usergroups: user.usergroups || null, // Map usergroups as a string
+      reset_token: user.reset_token,
+      activated_at: user.activated_at ? new Date(user.activated_at) : null,
+    }));
   } catch (error) {
     logger.error(`Database error in getAllUsers: ${error}`);
     throw error;
@@ -103,10 +137,13 @@ export const activateUser = async (email: string, contact: string, activationCod
 };
 
 // Verify login credentials
-export const verifyLoginCredentials = async (emailOrUsername: string, password: string): Promise<{ success: boolean; user?: Users; message?: string; error?: unknown }> => {
+export const verifyLoginCredentials = async (
+  emailOrUsername: string,
+  password: string
+): Promise<{ success: boolean; user?: Users; message?: string; error?: unknown }> => {
   try {
     const [rows]: any[] = await pool.query(
-      `SELECT u.*, GROUP_CONCAT(ug.group_id) AS accessgroups
+      `SELECT u.*, GROUP_CONCAT(ug.group_id) AS usergroups
       FROM users u
       LEFT JOIN user_groups ug ON u.id = ug.user_id
       WHERE (email = ? OR username = ?)
@@ -134,16 +171,24 @@ export const verifyLoginCredentials = async (emailOrUsername: string, password: 
 
     const formattedUser: Users = {
       id: user.id,
-      email: user.email,
       username: user.username,
+      email: user.email,
+      password: '', // Password is removed for security
+      created_at: new Date(user.created_at),
+      activation_code: user.activation_code,
+      fname: user.fname,
       contact: user.contact,
-      name: user.fname,
-      status: user.status,
       user_type: user.user_type,
-      lastNav: user.last_nav,
-      lastLogin: new Date(user.last_login).toLocaleDateString('en-us'),
+      last_login: user.last_login ? new Date(user.last_login) : null,
+      last_nav: user.last_nav,
+      last_ip: user.last_ip,
+      last_host: user.last_host,
+      last_os: user.last_os,
+      status: user.status,
       role: user.role,
-      accessgroups: user.accessgroups,
+      usergroups: user.usergroups || null, // Map usergroups as a string
+      reset_token: user.reset_token,
+      activated_at: user.activated_at ? new Date(user.activated_at) : null,
     };
 
     return {
@@ -223,10 +268,12 @@ export const reactivateUser = async (userId: number): Promise<void> => {
 // Update user by admin
 export const updateUser = async (userId: number, { user_type, role, status }: Users): Promise<void> => {
   try {
-    await pool.query(
-      'UPDATE users SET user_type = ?, role = ?, status = ? WHERE id = ?',
-      [user_type, role, status, userId]
-    );
+    const query = `
+      UPDATE users
+      SET user_type = ?, role = ?, status = ?
+      WHERE id = ?
+    `;
+    await pool.query(query, [user_type, role, status, userId]);
   } catch (error) {
     logger.error(`Database error in updateUser: ${error}`);
     throw error;
@@ -235,18 +282,24 @@ export const updateUser = async (userId: number, { user_type, role, status }: Us
 
 // Assign user to groups
 export const assignUserToGroups = async (userId: number, groups: number[]): Promise<void> => {
-  if (groups.length > 0) {
-    const values = groups.flatMap(groupId => [userId, groupId]);
+  if (groups.length === 0) {
+    return;
+  }
+
+  try {
+    // Remove existing group associations for the user
+    await pool.query('DELETE FROM user_groups WHERE user_id = ?', [userId]);
+
+    // Insert new group associations
+    const values = groups.flatMap((groupId) => [userId, groupId]);
     const query = `
-      INSERT IGNORE INTO user_groups (user_id, group_id, timestamp)
-      VALUES ${groups.map(() => '(?, ?, NOW())').join(', ')}
+      INSERT INTO user_groups (user_id, group_id)
+      VALUES ${groups.map(() => '(?, ?)').join(', ')}
     `;
-    try {
-      await pool.query(query, values);
-    } catch (error) {
-      logger.error(`Database error in assignUserToGroups: ${error}`);
-      throw error;
-    }
+    await pool.query(query, values);
+  } catch (error) {
+    logger.error(`Database error in assignUserToGroups: ${error}`);
+    throw error;
   }
 };
 
