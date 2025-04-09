@@ -68,7 +68,7 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
             throw new Error('Invalid navigation data format');
         }
 
-        console.log('Raw navigation rows:', rows);
+        //console.log('Raw navigation rows:', rows);
 
         const flatNavItems = rows.map((nav) => ({
             id: nav.id,
@@ -86,11 +86,11 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
             section_id: nav.section_id ?? null,
         }));
 
-        console.log('Flat navigation items:', flatNavItems);
+        //console.log('Flat navigation items:', flatNavItems);
 
         const navTree = buildNavigationTree(flatNavItems);
 
-        console.log('Generated navigation tree:', navTree);
+        //console.log('Generated navigation tree:', navTree);
 
         return res.status(200).json({
             success: true,
