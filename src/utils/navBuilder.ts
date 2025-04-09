@@ -5,22 +5,22 @@ interface FlatNavItem {
     type: string;
     position: number;
     status: number;
-    parent_nav_id: string | null;
-    section_id: string | null;
+    icon?: string | null;
     path?: string | null;
     component?: string | null;
     layout?: string | null;
-    icon?: string | null;
     is_protected: boolean;
+    parent_nav_id: string | null;
+    section_id: string | null;
 }
-  
+
 interface NavItem extends Omit<FlatNavItem, 'parent_nav_id' | 'section_id' | 'is_protected'> {
     parentNavId: string | null;
     sectionId: string | null;
     isProtected: boolean;
     children: NavItem[] | null;
 }
-  
+
 const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
     if (!Array.isArray(flatNavItems)) {
         throw new Error('Invalid flatNavItems format');
@@ -37,13 +37,13 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
             type: item.type,
             position: item.position,
             status: item.status,
-            parentNavId: item.parent_nav_id, // Keep raw parent_nav_id for now
-            sectionId: item.section_id,
+            icon: item.icon || null,
             path: item.path || null,
             component: item.component || null,
             layout: item.layout || null,
-            icon: item.icon || null,
             isProtected: item.is_protected,
+            parentNavId: item.parent_nav_id, // Keep raw parent_nav_id for now
+            sectionId: item.section_id,
             children: null,
         });
     });
@@ -55,11 +55,10 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
         const navItem = navMap.get(item.navId);
         if (!navItem) return;
 
-        if (item.parent_nav_id === null) {
-            // Root-level items
+        if (item.parent_nav_id === null || !navMap.has(item.parent_nav_id)) {
+            // Treat items with no valid parent as root-level items
             rootItems.push(navItem);
         } else {
-            // Find the parent item by matching parent_nav_id with navId
             const parentItem = navMap.get(item.parent_nav_id);
             if (parentItem) {
                 if (!parentItem.children) {
@@ -83,5 +82,5 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
     sortByPosition(rootItems);
     return rootItems;
 };
-  
+
 export default buildNavigationTree;
