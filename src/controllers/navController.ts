@@ -126,11 +126,12 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
         const newNavigation = req.body;
 
         const normalizedData = normalizeNavigationData(newNavigation);
-        const newId = await createNavigation(normalizedData);
+        const newIdResult = await createNavigation(normalizedData);
+        const newId = newIdResult.insertId; // Extract the insertId from ResultSetHeader
 
         if (newNavigation.permittedGroups?.length) {
             const permissions = newNavigation.permittedGroups.map((groupId: number) => ({
-                nav_id: newId,
+                nav_id: newId, // Use the extracted insertId
                 group_id: groupId,
             }));
             await updateNavigationPermission(permissions);
