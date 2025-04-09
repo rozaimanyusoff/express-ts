@@ -2,6 +2,7 @@
 import pool from '../utils/db';
 import bcrypt from 'bcrypt';
 import logger from '../utils/logger';
+import { ResultSetHeader } from "mysql2";
 const { hash, compare } = bcrypt;
 
 // Define the interface
@@ -80,17 +81,12 @@ export const findUserByEmailOrContact = async (email: string, contact: string): 
 };
 
 // Register user if no existing user found
-export const registerUser = async (username: string, email: string, contact: string, activationCode: string): Promise<any> => {
-  try {
-    const [result]: any = await pool.query(
-      'INSERT INTO users (username, email, contact, activation_code) VALUES (?, ?, ?, ?)',
-      [username, email, contact, activationCode]
-    );
-    return result;
-  } catch (error) {
-    logger.error(`Database error in registerUser: ${error}`);
-    throw error;
-  }
+export const registerUser = async (username: string, email: string, contact: string, activationCode: string): Promise<ResultSetHeader> => {
+  const [result] = await pool.query<ResultSetHeader>(
+    'INSERT INTO users (username, email, contact, activation_code) VALUES (?, ?, ?, ?)',
+    [username, email, contact, activationCode]
+  );
+  return result;
 };
 
 // Validate user activation details
@@ -111,29 +107,13 @@ export const validateActivation = async (email: string, contact: string, activat
 };
 
 // Activate user account
-export const activateUser = async (email: string, contact: string, activationCode: string, userType: number, username: string, password: string): Promise<{ activated: boolean; message: string; error?: unknown }> => {
-  try {
-    if (!password) {
-      return {
-        activated: false,
-        message: 'Password is required',
-      };
-    }
-
-    const hashedPassword = await hash(password, 10);
-    const [result]: any = await pool.query(
-      'UPDATE users SET password = ?, user_type = ?, username = ? WHERE email = ? AND contact = ? AND activation_code = ?',
-      [hashedPassword, userType, username, email, contact, activationCode]
-    );
-
-    return {
-      activated: result.affectedRows > 0,
-      message: result.affectedRows > 0 ? 'Account activated' : 'Invalid activation details',
-    };
-  } catch (error) {
-    logger.error(`Database error in activateUser: ${error}`);
-    throw error;
-  }
+export const activateUser = async (email: string, contact: string, activationCode: string, userType: number, username: string, password: string): Promise<ResultSetHeader> => {
+  const hashedPassword = await hash(password, 10);
+  const [result] = await pool.query<ResultSetHeader>(
+    'UPDATE users SET password = ?, user_type = ?, username = ? WHERE email = ? AND contact = ? AND activation_code = ?',
+    [hashedPassword, userType, username, email, contact, activationCode]
+  );
+  return result;
 };
 
 // Verify login credentials

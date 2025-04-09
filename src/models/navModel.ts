@@ -1,5 +1,5 @@
 import pool from '../utils/db';
-import { RowDataPacket } from 'mysql2';
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Type definitions
 export interface Navigation extends RowDataPacket {
@@ -88,72 +88,52 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
 };
 
 // Create a new navigation entry
-export const createNavigation = async (newNavigation: NavigationInput): Promise<number> => {
-  try {
-    const [result]: any = await pool.query(
-      'INSERT INTO auth.navigation SET ?',
-      [newNavigation]
-    );
-    return result.insertId;
-  } catch (error) {
-    console.error('Error creating navigation:', error);
-    throw error;
-  }
+export const createNavigation = async (newNavigation: NavigationInput): Promise<ResultSetHeader> => {
+  const [result] = await pool.query<ResultSetHeader>(
+    'INSERT INTO auth.navigation SET ?',
+    [newNavigation]
+  );
+  return result;
 };
 
 // Update an existing navigation entry
-export const updateNavigation = async (id: number, updatedData: NavigationInput): Promise<Navigation> => {
-  try {
-    // Check if the navigation item exists
-    const [rows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
-    if (rows.length === 0) {
-      throw new Error('Navigation item not found');
-    }
+export const updateNavigation = async (id: number, updatedData: NavigationInput): Promise<ResultSetHeader> => {
+  const query = `
+      UPDATE auth.navigation
+      SET
+          navId = ?,
+          title = ?,
+          type = ?,
+          position = ?,
+          status = ?,
+          icon = ?,
+          path = ?,
+          component = ?,
+          layout = ?,
+          is_protected = ?,
+          parent_nav_id = ?,
+          section_id = ?
+      WHERE id = ?
+  `;
 
-    // Explicitly list the fields to update
-    const query = `
-        UPDATE auth.navigation
-        SET
-            navId = ?,
-            title = ?,
-            type = ?,
-            position = ?,
-            status = ?,
-            icon = ?,
-            path = ?,
-            component = ?,
-            layout = ?,
-            is_protected = ?,
-            parent_nav_id = ?,
-            section_id = ?
-        WHERE id = ?
-    `;
+  const values = [
+      updatedData.navId,
+      updatedData.title,
+      updatedData.type,
+      updatedData.position,
+      updatedData.status,
+      updatedData.icon,
+      updatedData.path,
+      updatedData.component,
+      updatedData.layout,
+      updatedData.is_protected ? 1 : 0, // Convert boolean to tinyint
+      updatedData.parent_nav_id,
+      updatedData.section_id,
+      id,
+  ];
 
-    const values = [
-        updatedData.navId,
-        updatedData.title,
-        updatedData.type,
-        updatedData.position,
-        updatedData.status,
-        updatedData.icon,
-        updatedData.path,
-        updatedData.component,
-        updatedData.layout,
-        updatedData.is_protected ? 1 : 0, // Convert boolean to tinyint
-        updatedData.parent_nav_id,
-        updatedData.section_id,
-        id,
-    ];
-
-    await pool.query(query, values);
-
-    // Fetch the updated navigation item
-    const [updatedRows]: any = await pool.query('SELECT * FROM auth.navigation WHERE id = ?', [id]);
-    return updatedRows[0];
-  } catch (error) {
-    console.error('Error updating navigation:', error);
-    throw error;
-  }
+  const [result] = await pool.query<ResultSetHeader>(query, values);
+  return result;
 };
 
 // Get navigation permissions

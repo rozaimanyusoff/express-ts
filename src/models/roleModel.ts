@@ -1,5 +1,5 @@
 import pool from "../utils/db";
-
+import { ResultSetHeader } from "mysql2";
 
 export interface Role {
     id: number;
@@ -11,7 +11,6 @@ export interface Role {
     status: number;
     created_at: Date;
 }
-
 
 // Get all roles
 export const getAllRoles = async (): Promise<Role[]> => {
@@ -36,30 +35,20 @@ export const getRoleById = async (id: number): Promise<Role> => {
 };
 
 // Create new role
-export const createRole = async (role: Role): Promise<any> => {
-    try {
-        const [result]: any = await pool.query(
-            'INSERT INTO roles (name, desc, can_view, can_edit, can_delete, status) VALUES (?, ?, ?, ?, ?, ?)',
-            [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status]
-        );
-        return result;
-    } catch (error) {
-        console.error('Error creating role:', error);
-        throw error;
-    }
-}
+export const createRole = async (role: Omit<Role, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        'INSERT INTO roles (name, desc, can_view, can_edit, can_delete, status) VALUES (?, ?, ?, ?, ?, ?)',
+        [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status]
+    );
+    return result;
+};
 
 // Update role
-export const updateRole = async (id: number, role: Role): Promise<any> => {
-    try {
-        const [result]: any = await pool.query(
-            'UPDATE roles SET name = ?, desc = ?, can_view = ?, can_edit = ?, can_delete = ?, status = ? WHERE id = ?',
-            [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status, id]
-        );
-        return result;
-    } catch (error) {
-        console.error('Error updating role:', error);
-        throw error;
-    }
+export const updateRole = async (id: number, role: Omit<Role, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        'UPDATE roles SET name = ?, desc = ?, can_view = ?, can_edit = ?, can_delete = ?, status = ? WHERE id = ?',
+        [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status, id]
+    );
+    return result;
 };
 

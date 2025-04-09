@@ -1,4 +1,5 @@
 import pool from "../utils/db";
+import { ResultSetHeader } from "mysql2";
 
 export interface Group {
     id: number;
@@ -31,29 +32,19 @@ export const getGroupById = async (id: number): Promise<Group> => {
 }
 
 // Create new group
-export const createGroup = async (group: Group): Promise<any> => {  
-    try {
-        const [result]: any = await pool.query(
-            'INSERT INTO auth.groups (name, desc, status) VALUES (?, ?, ?)',
-            [group.name, group.desc, group.status]
-        );
-        return result;
-    } catch (error) {
-        console.error('Error creating group:', error);
-        throw error;
-    }
-}
+export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        'INSERT INTO auth.groups (name, desc, status) VALUES (?, ?, ?)',
+        [group.name, group.desc, group.status]
+    );
+    return result;
+};
 
 // Update group
-export const updateGroup = async (id: number, group: Group): Promise<any> => {
-    try {
-        const [result]: any = await pool.query(
-            'UPDATE groups SET name = ?, desc = ?, status = ? WHERE id = ?',
-            [group.name, group.desc, group.status, id]
-        );
-        return result;
-    } catch (error) {
-        console.error('Error updating group:', error);
-        throw error;
-    }
-}
+export const updateGroup = async (id: number, group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        'UPDATE auth.groups SET name = ?, desc = ?, status = ? WHERE id = ?',
+        [group.name, group.desc, group.status, id]
+    );
+    return result;
+};
