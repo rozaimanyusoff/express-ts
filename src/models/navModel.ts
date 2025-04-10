@@ -56,7 +56,7 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
       `SELECT n.*
        FROM auth.group_nav gn
        LEFT JOIN auth.navigation n ON gn.nav_id = n.id
-       WHERE n.status != 0 AND gn.group_id = ?
+       WHERE gn.group_id = ?
        ORDER BY n.position, n.id`,
       [id]
     );

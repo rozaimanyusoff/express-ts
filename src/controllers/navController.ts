@@ -232,7 +232,7 @@ export const updateNavigationPermissionsHandler = async (req: Request<{}, {}, { 
     try {
         const { permissions } = req.body;
 
-        if ( !permissions.length || !permissions.every((p) => typeof p.nav_id === 'number' && typeof p.group_id === 'number') ) {
+        if (!permissions.length || !permissions.every((p) => typeof p.nav_id === 'number' && typeof p.group_id === 'number')) {
             return res.status(400).json({ message: 'Navigation ID is required' });
         }
 
@@ -274,40 +274,40 @@ export const toggleStatusHandler = async (req: Request, res: Response): Promise<
 };
 
 export const getNavigationByUserIdHandler = async (req: Request, res: Response): Promise<Response> => {
-  try {
-    const userId = Number(req.params.id);
+    try {
+        const userId = Number(req.params.id);
 
-    if (isNaN(userId)) {
-      return res.status(400).json({ message: 'Invalid user ID' });
+        if (isNaN(userId)) {
+            return res.status(400).json({ message: 'Invalid user ID' });
+        }
+
+        // Fetch navigation items by user ID
+        const navigation = await getNavigationByUserId(userId);
+
+        const flatNavItems = navigation.map((nav) => ({
+            id: nav.id,
+            navId: nav.navId,
+            title: nav.title,
+            type: nav.type,
+            position: nav.position,
+            status: nav.status,
+            icon: nav.icon ?? '',
+            path: nav.path ?? '',
+            component: nav.component ?? '',
+            layout: nav.layout ?? '',
+            is_protected: Boolean(nav.is_protected),
+            parent_nav_id: nav.parent_nav_id ?? null,
+            section_id: nav.section_id ?? null,
+        }));
+
+        const navTree = buildNavigationTree(flatNavItems);
+
+        return res.status(200).json({
+            success: true,
+            navTree,
+        });
+    } catch (error) {
+        console.error('Error fetching navigation by user ID:', error);
+        return res.status(500).json({ message: 'Error fetching navigation by user ID' });
     }
-
-    // Fetch navigation items by user ID
-    const navigation = await getNavigationByUserId(userId);
-
-    const flatNavItems = navigation.map((nav) => ({
-      id: nav.id,
-      navId: nav.navId,
-      title: nav.title,
-      type: nav.type,
-      position: nav.position,
-      status: nav.status,
-      icon: nav.icon ?? '',
-      path: nav.path ?? '',
-      component: nav.component ?? '',
-      layout: nav.layout ?? '',
-      is_protected: Boolean(nav.is_protected),
-      parent_nav_id: nav.parent_nav_id ?? null,
-      section_id: nav.section_id ?? null,
-    }));
-
-    const navTree = buildNavigationTree(flatNavItems);
-
-    return res.status(200).json({
-      success: true,
-      navTree,
-    });
-  } catch (error) {
-    console.error('Error fetching navigation by user ID:', error);
-    return res.status(500).json({ message: 'Error fetching navigation by user ID' });
-  }
 };
