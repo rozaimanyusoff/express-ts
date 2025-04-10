@@ -337,3 +337,38 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
       });
   }
 };
+
+// Refresh token controller
+export const refreshToken = async (req: Request, res: Response): Promise<Response> => {
+  const token = req.header('Authorization')?.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+
+  try {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (typeof decoded !== 'object' || !('userId' in decoded)) {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const newToken = jwt.sign(
+      { userId: decoded.userId, email: decoded.email, contact: decoded.contact },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h', algorithm: 'HS256' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      token: newToken,
+    });
+  } catch (error) {
+    logger.error('Refresh token error:', error);
+    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+  }
+};
