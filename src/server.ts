@@ -1,5 +1,5 @@
 // filepath: /src/server.ts
-import app from './app';
+import app from './app.js';
 import dotenv from 'dotenv';
 import logger from './utils/logger';
 
