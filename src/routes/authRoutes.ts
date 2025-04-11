@@ -9,7 +9,8 @@ const router = Router();
 router.post('/register', asyncHandler(register));
 router.post('/validate-activation', asyncHandler(validateActivationDetails));
 router.post('/activate', asyncHandler(activateAccount));
-router.post('/login', rsaDecryptMiddleware, asyncHandler(login));
+router.post('/login-rsa', rsaDecryptMiddleware, asyncHandler(login)); //login with RSA decryption
+router.post('/login', asyncHandler(login)); //login without RSA decryption
 router.post('/reset-password', asyncHandler(resetPassword));
 router.post('/verifytoken', asyncHandler(verifyResetToken));
 router.post('/update-password', asyncHandler(updatePassword));
