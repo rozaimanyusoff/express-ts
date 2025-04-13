@@ -1,4 +1,3 @@
-// filepath: /src/app.ts
 import express, { Express, urlencoded, json } from 'express';
 import authRoutes from './routes/authRoutes';
 import navRoutes from './routes/navRoutes';
@@ -11,6 +10,7 @@ import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
 import rateLimit from './middlewares/rateLimiter';
 import securityHeaders from './middlewares/securityHeaders';
+import logger from './utils/logger.js';
 
 const app: Express = express();
 

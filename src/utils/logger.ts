@@ -1,20 +1,20 @@
-import winston from 'winston';
+import { createLogger, format, transports } from 'winston';
 
-const { combine, timestamp, printf, colorize } = winston.format;
+const { combine, timestamp, printf, colorize } = format;
 
 // Custom format for both console and file outputs
 const customFormat = printf(({ level, message, timestamp }) => {
   return `[${timestamp}] ${level}: ${message}`;
 });
 
-const logger = winston.createLogger({
+const logger = createLogger({
   level: 'error',
   format: combine(
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
   ),
   transports: [
     // Console transport with colorized output (development only)
-    new winston.transports.Console({
+    new transports.Console({
       format: combine(
         colorize(),
         timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -22,7 +22,7 @@ const logger = winston.createLogger({
       ),
     }),
     // File transport with plain text formatting (no JSON)
-    new winston.transports.File({
+    new transports.File({
       filename: 'error.log',
       format: combine(
         timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
