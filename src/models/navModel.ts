@@ -222,10 +222,10 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
 };
 
 // Fetch navigation by user ID
-export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
+/* export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
   try {
     const query = `
-      SELECT DISTINCT n.*
+      SELECT DISTINCT *
       FROM user_groups ug
       INNER JOIN group_nav gn ON ug.group_id = gn.group_id
       INNER JOIN auth.navigation n ON gn.nav_id = n.id
@@ -234,6 +234,22 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
     `;
 
     const [result] = await pool.query<Navigation[]>(query, [userId]);
+    return result;
+  } catch (error) {
+    console.error('Error fetching navigation data by user ID:', error);
+    throw error;
+  }
+}; */
+export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
+  try {
+    const query = `
+      SELECT DISTINCT gn.nav_id
+      FROM user_groups ug
+      INNER JOIN group_nav gn ON ug.group_id = gn.group_id
+      WHERE ug.user_id = ?
+    `;
+
+    const [result] = await pool.query<any[]>(query, [userId]);
     return result;
   } catch (error) {
     console.error('Error fetching navigation data by user ID:', error);

@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import * as assetController from '../controllers/assetController';
+import { getAllEmployees, getEmployee, addEmployee, editEmployee, removeEmployee } from '../controllers/assetController';
 
 const router = Router();
 
 // Define routes for assets
 
-
+// Employee routes
+router.get('/employees', getAllEmployees);
+router.get('/employees/:id', getEmployee);
+router.post('/employees', addEmployee);
+router.put('/employees/:id', editEmployee);
+router.delete('/employees/:id', removeEmployee);
 
 // Asset type routes
 router.get('/type', assetController.getTypes);
@@ -86,7 +92,5 @@ router.post('/', assetController.createAsset);
 router.put('/:id', assetController.updateAsset);
 router.delete('/:id', assetController.deleteAsset);
 router.get('/:id/records', assetController.getAssetRecords);
-
-
 
 export default router;

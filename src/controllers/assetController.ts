@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as assetModel from "../models/assetModel";
 import asyncHandler from "../utils/asyncHandler";
+import { getEmployees, getEmployeeById, createEmployee, updateEmployee, deleteEmployee } from '../models/assetModel';
 
 // Get all assets
 export const getAssets = asyncHandler(async (req: Request, res: Response) => {
@@ -407,3 +408,62 @@ export const deleteDistrict = asyncHandler(async (req: Request, res: Response) =
     await assetModel.deleteDistrict(Number(id));
     res.status(204).send();
 });
+
+// Get all employees
+export const getAllEmployees = async (req: Request, res: Response) => {
+    try {
+        const employees = await getEmployees();
+        res.json(employees);
+    } catch (error) {
+        if (error instanceof Error) {
+            res.status(500).json({ error: error.message });
+        } else {
+            res.status(500).json({ error: "An unknown error occurred" });
+        }
+    }
+};
+
+// Get employee by ID
+export const getEmployee = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const employee = await getEmployeeById(Number(id));
+        res.json(employee);
+    } catch (error) {
+        res.status(500).json({ error: "An unknown error occurred" });
+    }
+};
+
+// Create a new employee
+export const addEmployee = async (req: Request, res: Response) => {
+    try {
+        const newEmployee = req.body;
+        const result = await createEmployee(newEmployee);
+        res.status(201).json({ id: result.insertId });
+    } catch (error) {
+        res.status(500).json({ error: "An unknown error occurred" });
+    }
+};
+
+// Update an employee
+export const editEmployee = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const updatedEmployee = req.body;
+        await updateEmployee(Number(id), updatedEmployee);
+        res.status(200).json({ message: 'Employee updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: "An unknown error occurred" });
+    }
+};
+
+// Delete an employee
+export const removeEmployee = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        await deleteEmployee(Number(id));
+        res.status(200).json({ message: 'Employee deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ error: "An unknown error occurred" });
+    }
+};

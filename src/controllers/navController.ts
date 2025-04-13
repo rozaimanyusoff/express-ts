@@ -304,7 +304,7 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
 
         return res.status(200).json({
             success: true,
-            navTree,
+            navigation,
         });
     } catch (error) {
         console.error('Error fetching navigation by user ID:', error);

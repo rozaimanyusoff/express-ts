@@ -126,6 +126,38 @@ interface District {
     createdAt: Date;
 }
 
+// Define the interface for Employee
+interface Employee {
+    emp_id: number;
+    ramco_id: string;
+    pl_name: string;
+    pl_ic: string;
+    pl_gender: string;
+    pl_dob: Date;
+    pl_loc: string;
+    wk_join: Date;
+    wk_grade: string;
+    wk_dept: string;
+    dept_id: number;
+    wk_costctr: string;
+    cc_id: number;
+    wk_sect: string;
+    wk_loc: string;
+    loc_id: number;
+    wk_spv: string;
+    wk_spv_id: string;
+    spv_email: string;
+    wk_stat: string;
+    wk_retire: Date;
+    wk_type: string;
+    ctc_email: string;
+    ctc_m: string;
+    lic_exp: Date;
+    lic_class: string;
+    emp_dt: Date;
+    wk_pos_malay: string;
+}
+
 //router.get('/', assetController.getAssets);
 export const getAssets = async (): Promise<Asset[]> => {
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -742,6 +774,46 @@ export const updateDistrict = async (id: number, district: Omit<District, 'id'>)
 export const deleteDistrict = async (id: number): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
         `DELETE FROM assets.districts WHERE id = ?`,
+        [id]
+    );
+    return result;
+};
+
+// CRUD operations for Employee
+export const getEmployees = async (): Promise<Employee[]> => {
+    const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT * FROM assets.employee_adms`
+    );
+    return rows as Employee[];
+};
+
+export const getEmployeeById = async (id: number): Promise<Employee[]> => {
+    const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT * FROM assets.employee_adms WHERE emp_id = ?`,
+        [id]
+    );
+    return rows as Employee[];
+};
+
+export const createEmployee = async (employee: Omit<Employee, 'emp_id'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        `INSERT INTO assets.employee_adms (ramco_id, pl_name, pl_ic, pl_gender, pl_dob, pl_loc, wk_join, wk_grade, wk_dept, dept_id, wk_costctr, cc_id, wk_sect, wk_loc, loc_id, wk_spv, wk_spv_id, spv_email, wk_stat, wk_retire, wk_type, ctc_email, ctc_m, lic_exp, lic_class, emp_dt, wk_pos_malay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        , [employee.ramco_id, employee.pl_name, employee.pl_ic, employee.pl_gender, employee.pl_dob, employee.pl_loc, employee.wk_join, employee.wk_grade, employee.wk_dept, employee.dept_id, employee.wk_costctr, employee.cc_id, employee.wk_sect, employee.wk_loc, employee.loc_id, employee.wk_spv, employee.wk_spv_id, employee.spv_email, employee.wk_stat, employee.wk_retire, employee.wk_type, employee.ctc_email, employee.ctc_m, employee.lic_exp, employee.lic_class, employee.emp_dt, employee.wk_pos_malay]
+    );
+    return result;
+};
+
+export const updateEmployee = async (id: number, employee: Omit<Employee, 'emp_id'>): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        `UPDATE assets.employee_adms SET ramco_id = ?, pl_name = ?, pl_ic = ?, pl_gender = ?, pl_dob = ?, pl_loc = ?, wk_join = ?, wk_grade = ?, wk_dept = ?, dept_id = ?, wk_costctr = ?, cc_id = ?, wk_sect = ?, wk_loc = ?, loc_id = ?, wk_spv = ?, wk_spv_id = ?, spv_email = ?, wk_stat = ?, wk_retire = ?, wk_type = ?, ctc_email = ?, ctc_m = ?, lic_exp = ?, lic_class = ?, emp_dt = ?, wk_pos_malay = ? WHERE emp_id = ?`,
+        [employee.ramco_id, employee.pl_name, employee.pl_ic, employee.pl_gender, employee.pl_dob, employee.pl_loc, employee.wk_join, employee.wk_grade, employee.wk_dept, employee.dept_id, employee.wk_costctr, employee.cc_id, employee.wk_sect, employee.wk_loc, employee.loc_id, employee.wk_spv, employee.wk_spv_id, employee.spv_email, employee.wk_stat, employee.wk_retire, employee.wk_type, employee.ctc_email, employee.ctc_m, employee.lic_exp, employee.lic_class, employee.emp_dt, employee.wk_pos_malay, id]
+    );
+    return result;
+};
+
+export const deleteEmployee = async (id: number): Promise<ResultSetHeader> => {
+    const [result] = await pool.query<ResultSetHeader>(
+        `DELETE FROM assets.employee_adms WHERE emp_id = ?`,
         [id]
     );
     return result;
