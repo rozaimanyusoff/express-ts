@@ -10,6 +10,8 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist", // Specify an output directory for all emitted files
     "rootDir": "./src",
+    "resolveJsonModule": true, // Allow importing JSON files
+    "allowJs": true // Allow JavaScript files in the project
   },
   "ts-node": {
     "esm": true,
