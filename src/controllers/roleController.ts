@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getAllRoles, getRoleById, createRole, updateRole } from '../models/roleModel';
+import { getAllRoles, getRoleById, createRole, updateRole } from '../models/roleModel.js';
 
 // Get all roles
 export const getAllRole = async (_req: Request, res: Response): Promise<Response> => {

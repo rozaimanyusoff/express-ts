@@ -14,8 +14,22 @@ function addJsExtensions(dir) {
       addJsExtensions(fullPath);
     } else if (file.endsWith('.js')) {
       let content = fs.readFileSync(fullPath, 'utf8');
-      content = content.replace(/(require\(['"])(\.\/.*?)(['"]\))/g, '$1$2.js$3');
-      content = content.replace(/(from ['"])(\.\/.*?)(['"])/g, '$1$2.js$3');
+
+      // Replace require statements
+      content = content.replace(/(require\(['"])(\.\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      });
+
+      // Replace ES module import statements
+      content = content.replace(/(from ['"])(\.\/.*?)(['"])/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      });
+
+      // Replace dynamic imports
+      content = content.replace(/(import\(['"])(\.\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      });
+
       fs.writeFileSync(fullPath, content, 'utf8');
     }
   });

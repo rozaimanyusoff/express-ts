@@ -13,6 +13,9 @@ RUN npm ci --include=dev
 COPY tsconfig.json ./
 COPY src ./src
 
+# Copy the scripts directory for postbuild tasks
+COPY scripts ./scripts
+
 # Build the TypeScript application
 RUN npm run build
 

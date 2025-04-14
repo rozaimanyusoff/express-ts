@@ -9,3 +9,6 @@ src/**/*.test.ts
 src/**/*.spec.ts
 src/**/*.mock.ts
 .env
+
+# Exclude all .pem files
+certs/*.pem

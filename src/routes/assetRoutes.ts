@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as assetController from '../controllers/assetController';
-import { getAllEmployees, getEmployee, addEmployee, editEmployee, removeEmployee } from '../controllers/assetController';
+import * as assetController from '../controllers/assetController.js';
+import { getAllEmployees, getEmployee, addEmployee, editEmployee, removeEmployee } from '../controllers/assetController.js';
 
 const router = Router();
 

@@ -10,7 +10,7 @@ import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
 import rateLimit from './middlewares/rateLimiter';
 import securityHeaders from './middlewares/securityHeaders';
-import logger from './utils/logger.js';
+import logger from './utils/logger';
 
 const app: Express = express();
 
