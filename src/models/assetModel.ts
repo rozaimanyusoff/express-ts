@@ -167,13 +167,22 @@ export const getAssets = async (): Promise<Asset[]> => {
 };
 
 //router.get('/:id', assetController.getAssetsById);
-export const getAssetsById = async (id: number): Promise<Asset[]> => {
+export const getAssetsById = async (typeId: number): Promise<Asset[]> => {
     const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT * FROM assets.asset_data WHERE id = ?`,
-        [id]
+        [typeId]
     );
     return rows as Asset[];
 };
+
+//router.get('/:id/type', assetController.getAssetsByType);
+export const getAssetsByType = async (id: number): Promise<Asset[]> => {
+    const [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT * FROM assets.asset_data WHERE type_id = ?`,
+        [id]
+    );
+    return rows as Asset[];
+}
 
 //router.get('/:serial/sn', assetController.getAssetsBySerial);
 export const getAssetsBySerial = async (serial: string): Promise<Asset[]> => {

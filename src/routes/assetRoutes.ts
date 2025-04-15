@@ -85,12 +85,14 @@ router.put('/district/:id', assetController.updateDistrict);
 router.delete('/district/:id', assetController.deleteDistrict);
 
 // Asset routes
-router.get('/', assetController.getAssets);
-router.get('/:id', assetController.getAssetsById);
+router.get('/:id/types', assetController.getAssetsByType);
+router.get('/:id/records', assetController.getAssetRecords);
 router.get('/:serial/sn', assetController.getAssetsBySerial);
+router.get('/:id', assetController.getAssetsById);
+router.get('/', assetController.getAssets);
 router.post('/', assetController.createAsset);
 router.put('/:id', assetController.updateAsset);
 router.delete('/:id', assetController.deleteAsset);
-router.get('/:id/records', assetController.getAssetRecords);
+
 
 export default router;

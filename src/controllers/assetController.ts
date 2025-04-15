@@ -16,6 +16,13 @@ export const getAssetsById = asyncHandler(async (req: Request, res: Response) =>
     res.json(asset);
 });
 
+// Get assets by type: /assets/:id/type
+export const getAssetsByType = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const assets = await assetModel.getAssetsByType(Number(id));
+    res.json(assets);
+});
+
 // Get assets by serial
 export const getAssetsBySerial = asyncHandler(async (req: Request, res: Response) => {
     const { serial } = req.params;
