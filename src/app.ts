@@ -17,6 +17,7 @@ const app: Express = express();
 app.use(urlencoded({ extended: true }));
 app.use(json());
 app.use(corsMiddleware);
+app.options('*', corsMiddleware);
 //app.use(rateLimit);
 app.use(securityHeaders);
 
