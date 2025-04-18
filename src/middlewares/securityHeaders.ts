@@ -9,7 +9,10 @@ const securityHeaders = (req: Request, res: Response, next: NextFunction) => {
                 scriptSrc: ["'self'", "'unsafe-inline'"],
                 styleSrc: ["'self'", "'unsafe-inline'"],
                 imgSrc: ["'self'", "data:"],
-                connectSrc: ["'self'"],
+                connectSrc: [
+                    "'self'",
+                    'https://serv.ranhilltechnologies.com.my' // ✅ allow XHR/fetch to API
+                ],
                 fontSrc: ["'self'", "https:"],
                 objectSrc: ["'none'"],
                 upgradeInsecureRequests: [],
