@@ -157,9 +157,13 @@ export const updateNavigationPermission = async (permissions: GroupNavPermission
     const placeholders = permissions.map(() => `(?, ?)`).join(', ');
     const values = permissions.flatMap(p => [p.nav_id, p.group_id]);
 
-    const query = `INSERT IGNORE INTO auth.group_nav (nav_id, group_id) VALUES ${placeholders}`;
-    const [result]: any = await pool.query(query, values);
+    const query = `
+      INSERT INTO auth.group_nav (nav_id, group_id)
+      VALUES ${placeholders}
+      ON DUPLICATE KEY UPDATE nav_id = VALUES(nav_id), group_id = VALUES(group_id)
+    `;
 
+    const [result]: any = await pool.query(query, values);
     return result.affectedRows;
   } catch (error) {
     console.error('Error updating navigation permissions:', error);
@@ -222,7 +226,7 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
 };
 
 // Fetch navigation by user ID
-/* export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
+export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
   try {
     const query = `
       SELECT DISTINCT *
@@ -239,8 +243,8 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
     console.error('Error fetching navigation data by user ID:', error);
     throw error;
   }
-}; */
-export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
+};
+/* export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
   try {
     const query = `
       SELECT DISTINCT gn.nav_id
@@ -253,6 +257,23 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
     return result;
   } catch (error) {
     console.error('Error fetching navigation data by user ID:', error);
+    throw error;
+  }
+}; */
+
+export const removeNavigationPermissionsNotIn = async (navId: number, permittedGroups: number[]): Promise<number> => {
+  try {
+    const placeholders = permittedGroups.map(() => '?').join(', ');
+    const query = `
+      DELETE FROM auth.group_nav
+      WHERE nav_id = ? AND group_id NOT IN (${placeholders})
+    `;
+    const values = [navId, ...permittedGroups];
+
+    const [result]: any = await pool.query(query, values);
+    return result.affectedRows;
+  } catch (error) {
+    console.error('Error removing navigation permissions not in permittedGroups:', error);
     throw error;
   }
 };

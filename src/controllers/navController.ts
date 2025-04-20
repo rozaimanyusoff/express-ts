@@ -10,7 +10,8 @@ import {
     removeNavigationPermissions,
     toggleStatus,
     getNavigationByGroups,
-    getNavigationByUserId
+    getNavigationByUserId,
+    removeNavigationPermissionsNotIn
 } from '../models/navModel';
 import buildNavigationTree from '../utils/navBuilder';
 
@@ -165,6 +166,11 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
                 nav_id: id,
                 group_id: groupId,
             }));
+
+            // Remove existing permissions not in the new permittedGroups
+            await removeNavigationPermissionsNotIn(id, updatedData.permittedGroups);
+
+            // Add or update the provided permissions
             await updateNavigationPermission(permissions);
         }
 
@@ -304,7 +310,7 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
 
         return res.status(200).json({
             success: true,
-            navigation,
+            navTree,
         });
     } catch (error) {
         console.error('Error fetching navigation by user ID:', error);
