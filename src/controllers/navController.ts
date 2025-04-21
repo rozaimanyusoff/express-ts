@@ -145,6 +145,7 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
     }
 };
 
+// Update navigation
 export const updateNavigationHandler = async (req: Request, res: Response): Promise<Response> => {
     try {
         const id = Number(req.params.id);
