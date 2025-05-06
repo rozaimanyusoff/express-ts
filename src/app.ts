@@ -22,7 +22,7 @@ app.options('*', corsMiddleware);
 //app.use(rateLimit);
 app.use(securityHeaders);
 
-app.use('/api/auth', rateLimit, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/users', tokenValidator, userRoutes);
 app.use('/api/roles', tokenValidator, roleRoutes);
 app.use('/api/groups', tokenValidator, groupRoutes);
