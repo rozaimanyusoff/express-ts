@@ -1,4 +1,3 @@
-// filepath: /Users/rozaiman/express-ts/src/utils/mailer.ts
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
@@ -14,12 +13,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export const sendMail = async (to: string, subject: string, text: string) => {
+export const sendMail = async (to: string, subject: string, html: string) => {
   const info = await transporter.sendMail({
     from: `"Your App" <${process.env.EMAIL_USER}>`,
     to,
     subject,
-    text,
+    html, // Use the html property to send HTML content
   });
 
   console.log('Message sent: %s', info.messageId);
