@@ -81,10 +81,10 @@ export const findUserByEmailOrContact = async (email: string, contact: string): 
 };
 
 // Register user if no existing user found
-export const registerUser = async (username: string, email: string, contact: string, activationCode: string): Promise<ResultSetHeader> => {
+export const registerUser = async (username: string, email: string, contact: string, userType: number, activationCode: string): Promise<ResultSetHeader> => {
   const [result] = await pool.query<ResultSetHeader>(
-    'INSERT INTO users (username, email, contact, activation_code) VALUES (?, ?, ?, ?)',
-    [username, email, contact, activationCode]
+    'INSERT INTO users (username, email, contact, user_type, activation_code) VALUES (?, ?, ?, ?, ?)',
+    [username, email, contact, userType, activationCode]
   );
   return result;
 };
@@ -107,11 +107,11 @@ export const validateActivation = async (email: string, contact: string, activat
 };
 
 // Activate user account
-export const activateUser = async (email: string, contact: string, activationCode: string, userType: number, username: string, password: string): Promise<ResultSetHeader> => {
+export const activateUser = async (email: string, contact: string, activationCode: string, username: string, password: string): Promise<ResultSetHeader> => {
   const hashedPassword = await hash(password, 10);
   const [result] = await pool.query<ResultSetHeader>(
-    'UPDATE users SET password = ?, user_type = ?, username = ? WHERE email = ? AND contact = ? AND activation_code = ?',
-    [hashedPassword, userType, username, email, contact, activationCode]
+    'UPDATE users SET password = ?, username = ? WHERE email = ? AND contact = ? AND activation_code = ?',
+    [hashedPassword, username, email, contact, activationCode]
   );
   return result;
 };

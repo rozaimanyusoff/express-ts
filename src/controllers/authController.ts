@@ -22,9 +22,9 @@ try {
 
 // Register a new user
 export const register = async (req: Request, res: Response): Promise<Response> => {
-  const { name, email, contact } = req.body;
+  const { name, email, contact, userType } = req.body;
 
-  if (!name || !email || !contact) {
+  if (!name || !email || !contact || !userType) {
     return res.status(400).json({ status: false, message: 'Missing required fields' });
   }
 
@@ -38,7 +38,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
       return res.status(400).json({ status: false, message: 'The requested credentials already exist' });
     }
 
-    await registerUser(name, email, contact, activationCode);
+    await registerUser(name, email, contact, userType, activationCode);
 
     const mailOptions = {
       from: process.env.EMAIL_FROM,
@@ -85,10 +85,10 @@ export const validateActivationDetails = async (req: Request, res: Response): Pr
 
 // Activate user account
 export const activateAccount = async (req: Request, res: Response): Promise<Response> => {
-  const { email, contact, activationCode, userType, username, password } = req.body;
+  const { email, contact, activationCode, username, password } = req.body;
 
   try {
-    const activation: any = await activateUser(email, contact, activationCode, userType, username, password);
+    const activation: any = await activateUser(email, contact, activationCode, username, password);
     if (activation.activated) {
 
       const mailOptions = {
