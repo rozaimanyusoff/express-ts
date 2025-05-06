@@ -6,8 +6,19 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendMail } from '../utils/mailer';
 import os from 'os';
+import { URL } from 'url';
 
 dotenv.config();
+
+// Sanitize FRONTEND_URL using regex to remove redundant slashes
+let sanitizedFrontendUrl;
+try {
+  sanitizedFrontendUrl = (process.env.FRONTEND_URL ?? '').replace(/([^:]\/\/)+/g, '$1');
+  new URL(sanitizedFrontendUrl); // Validate the URL
+} catch (error) {
+  logger.error('Invalid FRONTEND_URL in environment variables:', error);
+  throw new Error('Invalid FRONTEND_URL in environment variables');
+}
 
 // Register a new user
 export const register = async (req: Request, res: Response): Promise<Response> => {
@@ -18,7 +29,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
   }
 
   const activationCode = crypto.randomBytes(32).toString('hex');
-  const activationLink = `${process.env.BASE_URL}/activate?code=${activationCode}`;
+  const activationLink = `${sanitizedFrontendUrl}/activate?code=${activationCode}`;
 
   try {
     const existingAccounts = await findUserByEmailOrContact(email, contact);
@@ -89,7 +100,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
               <p>Hello ${username},</p>
               <p>Your account has been activated successfully.</p>
               <p>You can now login to your account.</p>
-              <a href="${process.env.FRONTEND_URL}/login">Login</a>
+              <a href="${sanitizedFrontendUrl}/login">Login</a>
               <p>Account details:</p>
               <ul>
                 <li>Username: ${username}</li>
@@ -202,7 +213,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
               <h1>Reset Password</h1>
               <p>Hello ${user.name},</p>
               <p>Please reset your password by clicking the link below:</p>
-              <a href="${process.env.FRONTEND_URL}/resetpass/${resetToken}">Reset Password</a>
+              <a href="${sanitizedFrontendUrl}/resetpass/${resetToken}">Reset Password</a>
               <p>This link will expire in 1 hour.</p>
               <p>Thank you!</p>
           `
@@ -298,7 +309,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
               <p>Your password has been successfully changed.</p>
               <p>If you did not make this change, please contact our support team immediately.</p>
               <p>You can login with your new password at:</p>
-              <a href="${process.env.VITE_FRONTEND_URL}/login">Login Here</a>
+              <a href="${sanitizedFrontendUrl}/login">Login Here</a>
               <p>Thank you!</p>
           `
       };
