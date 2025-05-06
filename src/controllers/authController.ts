@@ -29,7 +29,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
   }
 
   const activationCode = crypto.randomBytes(32).toString('hex');
-  const activationLink = `${sanitizedFrontendUrl}/activate?code=${activationCode}`;
+  const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
 
   try {
     const existingAccounts = await findUserByEmailOrContact(email, contact);
@@ -100,7 +100,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
               <p>Hello ${username},</p>
               <p>Your account has been activated successfully.</p>
               <p>You can now login to your account.</p>
-              <a href="${sanitizedFrontendUrl}/login">Login</a>
+              <a href="${sanitizedFrontendUrl}/auth/login">Login</a>
               <p>Account details:</p>
               <ul>
                 <li>Username: ${username}</li>
@@ -213,7 +213,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
               <h1>Reset Password</h1>
               <p>Hello ${user.name},</p>
               <p>Please reset your password by clicking the link below:</p>
-              <a href="${sanitizedFrontendUrl}/resetpass/${resetToken}">Reset Password</a>
+              <a href="${sanitizedFrontendUrl}/auth/reset-password/${resetToken}">Reset Password</a>
               <p>This link will expire in 1 hour.</p>
               <p>Thank you!</p>
           `
