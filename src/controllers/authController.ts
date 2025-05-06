@@ -89,7 +89,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
   try {
     const activation: any = await activateUser(email, contact, activationCode, username, password);
-    if (activation.activated) {
+    if (activation.affectedRows > 0) { // Check if any rows were updated
 
       const mailOptions = {
         from: process.env.EMAIL_FROM,
@@ -113,9 +113,9 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
-      return res.status(200).json({ message: activation.message });
+      return res.status(200).json({ message: 'Account activated successfully.' });
     } else {
-      return res.status(401).json({ message: activation.message });
+      return res.status(401).json({ message: 'Activation failed. Please check your details.' });
     }
   } catch (error) {
     logger.error('Activation error:', error);
