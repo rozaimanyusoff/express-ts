@@ -81,10 +81,10 @@ export const findUserByEmailOrContact = async (email: string, contact: string): 
 };
 
 // Register user if no existing user found
-export const registerUser = async (username: string, email: string, contact: string, userType: number, activationCode: string): Promise<ResultSetHeader> => {
+export const registerUser = async (name: string, email: string, contact: string, userType: number, activationCode: string): Promise<ResultSetHeader> => {
   const [result] = await pool.query<ResultSetHeader>(
-    'INSERT INTO users (username, email, contact, user_type, activation_code) VALUES (?, ?, ?, ?, ?)',
-    [username, email, contact, userType, activationCode]
+    'INSERT INTO users (fname, email, contact, user_type, activation_code) VALUES (?, ?, ?, ?, ?)',
+    [name, email, contact, userType, activationCode]
   );
   return result;
 };

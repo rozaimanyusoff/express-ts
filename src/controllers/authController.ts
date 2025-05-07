@@ -309,7 +309,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
               <p>Your password has been successfully changed.</p>
               <p>If you did not make this change, please contact our support team immediately.</p>
               <p>You can login with your new password at:</p>
-              <a href="${sanitizedFrontendUrl}/login">Login Here</a>
+              <a href="${sanitizedFrontendUrl}/auth/login">Login Here</a>
               <p>Thank you!</p>
           `
       };
