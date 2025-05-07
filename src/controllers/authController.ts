@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails } from '../models/userModel';
+import { getNavigationByUserId } from '../models/navModel';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { sendMail } from '../utils/mailer';
 import os from 'os';
 import { URL } from 'url';
+import buildNavigationTree from '../utils/navBuilder';
 
 dotenv.config();
 
@@ -159,22 +161,37 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const token = jwt.sign({ userId: result.user.id, email: result.user.email, contact: result.user.contact }, process.env.JWT_SECRET, { expiresIn: '1h', algorithm: 'HS256' });
 
+    const navigation = await getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
+
+    const flatNavItems = navigation.map((nav) => ({
+      navId: nav.navId,
+      title: nav.title,
+      type: nav.type,
+      path: nav.path ?? '',
+      parent_nav_id: nav.parent_nav_id ?? null,
+      section_id: nav.section_id ?? null,
+  }));
+
+    const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        username: result.user.username,
-        contact: result.user.contact,
-        name: result.user.fname,
-        status: result.user.status,
-        lastNav: result.user.last_nav,
-        lastLogin: result.user.last_Login,
-        role: result.user.role,
-        usergroups: result.user.usergroups,
-      }
+      data: {
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          username: result.user.username,
+          contact: result.user.contact,
+          name: result.user.fname,
+          status: result.user.status,
+          lastNav: result.user.last_nav,
+          role: result.user.role,
+          usergroups: result.user.usergroups,
+        },
+        navTree: structuredNavTree, // Include the navigation tree in the response
+      },
     });
   } catch (error) {
     logger.error('Login error:', error);

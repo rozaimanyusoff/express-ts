@@ -6,7 +6,7 @@ export interface Navigation extends RowDataPacket {
   id: number;
   navId: string;                    // varchar(50), required
   title: string;                    // varchar(255), required
-  type: string;                     // varchar(50), required
+  level: string;                     // varchar(50), required
   position: number;                 // int, required
   status: number;                   // tinyint, required
   icon?: string | null;             // varchar(100), optional
@@ -21,7 +21,7 @@ export interface Navigation extends RowDataPacket {
 export interface NavigationInput {
   navId: string;
   title: string;
-  type: string;
+  level: string;
   position: number;
   status: number;
   icon?: string | null;
@@ -119,7 +119,7 @@ export const updateNavigation = async (id: number, updatedData: NavigationInput)
   const values = [
       updatedData.navId,
       updatedData.title,
-      updatedData.type,
+      updatedData.level,
       updatedData.position,
       updatedData.status,
       updatedData.icon,
