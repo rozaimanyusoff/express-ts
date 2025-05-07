@@ -110,7 +110,7 @@ export const validateActivation = async (email: string, contact: string, activat
 export const activateUser = async (email: string, contact: string, activationCode: string, username: string, password: string): Promise<ResultSetHeader> => {
   const hashedPassword = await hash(password, 10);
   const [result] = await pool.query<ResultSetHeader>(
-    'UPDATE users SET password = ?, username = ?, activation_code = null WHERE email = ? AND contact = ? AND activation_code = ?',
+    'UPDATE users SET password = ?, username = ?, activation_code = null, activated_at = NOW() WHERE email = ? AND contact = ? AND activation_code = ?',
     [hashedPassword, username, email, contact, activationCode]
   );
   return result;
