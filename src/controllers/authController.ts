@@ -213,7 +213,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
               <h1>Reset Password</h1>
               <p>Hello ${user.name},</p>
               <p>Please reset your password by clicking the link below:</p>
-              <a href="${sanitizedFrontendUrl}/auth/reset-password/${resetToken}">Reset Password</a>
+              <a href="${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}">Reset Password</a>
               <p>This link will expire in 1 hour.</p>
               <p>Thank you!</p>
           `
