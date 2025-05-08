@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails } from '../models/userModel';
 import { getNavigationByUserId } from '../models/navModel';
+import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -40,7 +41,9 @@ export const register = async (req: Request, res: Response): Promise<Response> =
       return res.status(400).json({ status: false, message: 'The requested credentials already exist' });
     }
 
-    await registerUser(name, email, contact, userType, activationCode);
+    const newUserId = (await registerUser(name, email, contact, userType, activationCode)).insertId;
+
+    await assignGroupByUserId(newUserId); // Assign default group to the new user
 
     const mailOptions = {
       from: process.env.EMAIL_FROM,
@@ -93,6 +96,10 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
     const activation: any = await activateUser(email, contact, activationCode, username, password);
     if (activation.affectedRows > 0) { // Check if any rows were updated
 
+      const userId = activation.userId; // Assuming the userId is returned in the activation response
+      await assignGroupByUserId(userId); // Assign default group to user after activation
+      const userGroups = await getGroupsByUserId(userId); // Fetch user groups for the activated user
+
       const mailOptions = {
         from: process.env.EMAIL_FROM,
         to: email,
@@ -108,6 +115,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                 <li>Username: ${username}</li>
                 <li>Email: ${email}</li>
                 <li>Contact: ${contact}</li>
+                <li>Groups: ${userGroups.join(', ')}</li>
               </ul>
               <p>Thank you!</p>
         `,
@@ -174,6 +182,8 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
+    const userGroups = await getGroupsByUserId(result.user.id); // Fetch user groups for the logged-in user
+
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -185,10 +195,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
           username: result.user.username,
           contact: result.user.contact,
           name: result.user.fname,
+          userType: result.user.user_type,
           status: result.user.status,
           lastNav: result.user.last_nav,
           role: result.user.role,
-          usergroups: result.user.usergroups,
+          usergroups: userGroups,
         },
         navTree: structuredNavTree, // Include the navigation tree in the response
       },
