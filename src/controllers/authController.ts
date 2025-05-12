@@ -171,14 +171,22 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const navigation = await getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 
-    const flatNavItems = navigation.map((nav) => ({
+    // Remove duplicate nav items by navId at the flat level
+    const uniqueFlatNavItems = Array.from(
+      new Map(
+        navigation.map((nav) => [nav.navId, nav])
+      ).values()
+    );
+
+    const flatNavItems = uniqueFlatNavItems.map((nav) => ({
+      id: nav.id,
       navId: nav.navId,
       title: nav.title,
       type: nav.type,
       path: nav.path ?? '',
       parent_nav_id: nav.parent_nav_id ?? null,
       section_id: nav.section_id ?? null,
-  }));
+    }));
 
     const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 

@@ -1,4 +1,5 @@
 interface FlatNavItem {
+    id: number;
     navId: string;
     title: string;
     type: string;
@@ -23,6 +24,7 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
     // Map flat items to NavItem objects
     flatNavItems.forEach(item => {
         navMap.set(item.navId, {
+            id: item.id,
             navId: item.navId,
             title: item.title,
             type: item.type,

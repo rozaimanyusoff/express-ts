@@ -26,7 +26,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', tokenValidator, userRoutes);
 app.use('/api/roles', tokenValidator, roleRoutes);
 app.use('/api/groups', tokenValidator, groupRoutes);
-app.use('/api/nav', navRoutes);
+app.use('/api/nav', tokenValidator, navRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
 

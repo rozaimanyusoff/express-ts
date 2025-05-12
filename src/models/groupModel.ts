@@ -41,7 +41,7 @@ export const getGroupById = async (id: number): Promise<Group> => {
 // Create new group
 export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'INSERT INTO auth.groups (name, desc, status) VALUES (?, ?, ?)',
+        'INSERT INTO auth.groups (name, `desc`, status) VALUES (?, ?, ?)',
         [group.name, group.desc, group.status]
     );
     return result;
@@ -50,7 +50,7 @@ export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Prom
 // Update group
 export const updateGroup = async (id: number, group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'UPDATE auth.groups SET name = ?, desc = ?, status = ? WHERE id = ?',
+        'UPDATE auth.groups SET name = ?, `desc` = ?, status = ? WHERE id = ?',
         [group.name, group.desc, group.status, id]
     );
     return result;
@@ -68,7 +68,7 @@ export const getGroupsByUserId = async (userId: number): Promise<number[]> => {
         logger.error(`Database error in getGroupsByUserId: ${error}`);
         throw error;
     }
-};
+}
 
 // Assign default group to user by user ID
 export const assignGroupByUserId = async (userId: number, groupId: number = 5): Promise<void> => {
@@ -80,5 +80,27 @@ export const assignGroupByUserId = async (userId: number, groupId: number = 5): 
     } catch (error) {
         logger.error(`Database error in assignGroupByUserId: ${error}`);
         throw error;
+    }
+};
+
+// Assign users to a group (remove old, add new)
+export const assignUserToGroups = async (groupId: number, userIds: number[]): Promise<void> => {
+    // Remove all users from this group
+    await pool.query('DELETE FROM user_groups WHERE group_id = ?', [groupId]);
+    // Add new users
+    if (userIds.length > 0) {
+        const values = userIds.map(userId => [userId, groupId]);
+        await pool.query('INSERT INTO user_groups (user_id, group_id) VALUES ?', [values]);
+    }
+};
+
+// Update navigation permissions for a group (remove old, add new)
+export const setNavigationPermissionsForGroup = async (groupId: number, navIds: number[]): Promise<void> => {
+    // Remove all nav permissions for this group
+    await pool.query('DELETE FROM auth.group_nav WHERE group_id = ?', [groupId]);
+    // Add new nav permissions
+    if (navIds.length > 0) {
+        const values = navIds.map(navId => [navId, groupId]);
+        await pool.query('INSERT INTO auth.group_nav (nav_id, group_id) VALUES ?', [values]);
     }
 };

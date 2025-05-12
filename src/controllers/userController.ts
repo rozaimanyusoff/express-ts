@@ -3,9 +3,14 @@ import {
   getAllUsers,
   updateUser,
   assignUserToGroups,
-  verifyLoginCredentials
+  verifyLoginCredentials,
+  updateUserResetTokenAndStatus
 } from '../models/userModel';
 import dotenv from 'dotenv';
+import { sendMail } from '../utils/mailer';
+import crypto from 'crypto';
+import logger from '../utils/logger';
+import pool from '../utils/db';
 
 dotenv.config({ path: '.env.local' });
 
@@ -147,5 +152,66 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
   } catch (error: any) {
     console.error('Error logging in user:', error);
     return res.status(500).json({ message: 'Error logging in user', error: error.message });
+  }
+};
+
+// Admin: Reset password for multiple users
+export const adminResetPasswords = async (req: Request, res: Response): Promise<Response> => {
+  const { user_ids } = req.body;
+  if (!Array.isArray(user_ids) || user_ids.length === 0) {
+    return res.status(400).json({ message: 'user_ids must be a non-empty array' });
+  }
+
+  // Get frontend URL from env and sanitize (reuse logic from authController)
+  let sanitizedFrontendUrl;
+  try {
+    sanitizedFrontendUrl = (process.env.FRONTEND_URL ?? '').replace(/([^:]\/\/)+/g, '$1');
+    new URL(sanitizedFrontendUrl);
+  } catch (error) {
+    logger.error('Invalid FRONTEND_URL in environment variables:', error);
+    return res.status(500).json({ message: 'Invalid FRONTEND_URL in environment variables' });
+  }
+
+  // Fetch user info for all user_ids
+  try {
+    const [users]: any[] = await pool.query('SELECT * FROM users WHERE id IN (?)', [user_ids]);
+    if (!users || users.length === 0) {
+      return res.status(404).json({ message: 'No users found for the provided IDs' });
+    }
+
+    const results = [];
+    for (const user of users) {
+      try {
+        const email = user.email;
+        const contact = user.contact;
+        const name = user.fname || user.name || user.username || 'User';
+        const payload = {
+          e: email.split('@')[0],
+          c: contact ? contact.slice(-4) : '',
+          x: Date.now() + (60 * 60 * 1000)
+        };
+        const tokenString = Buffer.from(JSON.stringify(payload)).toString('base64');
+        const randomBytes = crypto.randomBytes(4).toString('hex');
+        const resetToken = `${tokenString}-${randomBytes}`;
+        await updateUserResetTokenAndStatus(user.id, resetToken, 3);
+        const html = `
+          <h1>Reset Password</h1>
+          <p>Hello ${name},</p>
+          <p>Please reset your password by clicking the link below:</p>
+          <a href="${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}">Reset Password</a>
+          <p>This link will expire in 1 hour.</p>
+          <p>Thank you!</p>
+        `;
+        await sendMail(email, 'Reset Password', html);
+        results.push({ user_id: user.id, email, status: 'sent' });
+      } catch (err) {
+        logger.error('Error sending reset email for user', user.id, err);
+        results.push({ user_id: user.id, email: user.email, status: 'error', error: (err instanceof Error ? err.message : JSON.stringify(err)) });
+      }
+    }
+    return res.status(200).json({ message: 'Reset password emails processed', results });
+  } catch (error) {
+    logger.error('Admin reset password error:', error);
+    return res.status(500).json({ message: 'Error processing admin reset password request' });
   }
 };

@@ -213,7 +213,7 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
       SELECT DISTINCT n.*
       FROM auth.group_nav gn
       LEFT JOIN auth.navigation n ON gn.nav_id = n.id
-      WHERE n.status != 0 AND gn.group_id IN (${placeholders})
+      WHERE gn.group_id IN (${placeholders})
       ORDER BY n.position, n.id
     `;
 
@@ -233,7 +233,7 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
       FROM user_groups ug
       INNER JOIN group_nav gn ON ug.group_id = gn.group_id
       INNER JOIN auth.navigation n ON gn.nav_id = n.id
-      WHERE ug.user_id = ? AND n.status != 0
+      WHERE ug.user_id = ?
       ORDER BY n.position, n.id
     `;
 
@@ -275,5 +275,16 @@ export const removeNavigationPermissionsNotIn = async (navId: number, permittedG
   } catch (error) {
     console.error('Error removing navigation permissions not in permittedGroups:', error);
     throw error;
+  }
+};
+
+// Update navigation permissions for a group (remove old, add new)
+export const setNavigationPermissionsForGroup = async (groupId: number, navIds: number[]): Promise<void> => {
+  // Remove all nav permissions for this group
+  await pool.query('DELETE FROM auth.group_nav WHERE group_id = ?', [groupId]);
+  // Add new nav permissions
+  if (navIds.length > 0) {
+    const values = navIds.map(navId => [navId, groupId]);
+    await pool.query('INSERT INTO auth.group_nav (nav_id, group_id) VALUES ?', [values]);
   }
 };

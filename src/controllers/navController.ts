@@ -35,6 +35,7 @@ interface CreateNavigationBody {
 interface UpdateNavigationBody extends CreateNavigationBody { }
 
 const normalizeNavigationData = (nav: CreateNavigationBody | UpdateNavigationBody) => ({
+    id: nav.id ?? null,
     navId: nav.navId,
     title: nav.title,
     type: nav.type,
