@@ -131,6 +131,57 @@ export const assignUserToGroups1 = async (
   }
 };
 
+// Change groups for multiple users
+export const changeUsersGroups = async (req: Request, res: Response): Promise<Response> => {
+  const { userIds, groupIds } = req.body;
+  if (!Array.isArray(userIds) || userIds.length === 0 || !Array.isArray(groupIds) || groupIds.length === 0) {
+    return res.status(400).json({ message: 'userIds and groupIds must be non-empty arrays' });
+  }
+  try {
+    for (const userId of userIds) {
+      await assignUserToGroups(userId, groupIds);
+    }
+    return res.status(200).json({ message: 'Groups updated for selected users' });
+  } catch (error: any) {
+    console.error('Error changing users groups:', error);
+    return res.status(500).json({ message: 'Error changing users groups', error: error.message });
+  }
+};
+
+// Change role for multiple users
+export const changeUsersRole = async (req: Request, res: Response): Promise<Response> => {
+  const { userIds, roleId } = req.body;
+  if (!Array.isArray(userIds) || userIds.length === 0 || typeof roleId !== 'number') {
+    return res.status(400).json({ message: 'userIds must be a non-empty array and roleId must be a number' });
+  }
+  try {
+    for (const userId of userIds) {
+      await updateUser(userId, { role: roleId } as any);
+    }
+    return res.status(200).json({ message: 'Role updated for selected users' });
+  } catch (error: any) {
+    console.error('Error changing users role:', error);
+    return res.status(500).json({ message: 'Error changing users role', error: error.message });
+  }
+};
+
+// Suspend or activate multiple users
+export const suspendOrActivateUsers = async (req: Request, res: Response): Promise<Response> => {
+  const { user_ids, status } = req.body;
+  if (!Array.isArray(user_ids) || user_ids.length === 0 || typeof status !== 'number') {
+    return res.status(400).json({ message: 'user_ids must be a non-empty array and status must be a number' });
+  }
+  try {
+    for (const userId of user_ids) {
+      await updateUser(userId, { status } as any);
+    }
+    return res.status(200).json({ message: 'Status updated for selected users' });
+  } catch (error: any) {
+    console.error('Error updating users status:', error);
+    return res.status(500).json({ message: 'Error updating users status', error: error.message });
+  }
+};
+
 // Login user
 export const loginUser = async (req: Request, res: Response): Promise<Response> => {
   const { emailOrUsername, password } = req.body;
