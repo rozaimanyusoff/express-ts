@@ -3,34 +3,27 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Type definitions
 export interface Navigation extends RowDataPacket {
-  id: number;
-  navId: string;                    // varchar(50), required
-  title: string;                    // varchar(255), required
-  type: string;                     // varchar(50), required
-  position: number;                 // int, required
-  status: number;                   // tinyint, required
-  icon?: string | null;             // varchar(100), optional
-  path?: string | null;             // varchar(255), optional
-  component?: string | null;        // varchar(255), optional
-  layout?: string | null;           // varchar(50), optional
-  is_protected: number;             // tinyint(1), required (or boolean with mapping)
-  parent_nav_id?: string | null;    // varchar(50), optional
-  section_id?: string | null;       // varchar(50), optional
+  id: number; // int, required (primary key)
+  title: string; // varchar(255), required
+  type: string; // varchar(50), required
+  position: number; // int, required
+  status: number; // tinyint, required
+  path: string | null; // varchar(255), nullable
+  parent_nav_id: number | null; // int, nullable
+  section_id: number | null; // int, nullable
+  children?: Navigation[] | null; // recursive children
 }
 
 export interface NavigationInput {
-  navId: string;
+  // id is not required for insert (auto-increment), so make it optional
+  id?: number;
   title: string;
   type: string;
   position: number;
   status: number;
-  icon?: string | null;
-  path?: string | null;
-  component?: string | null;
-  layout?: string | null;
-  is_protected: boolean;
-  parent_nav_id?: string | null;
-  section_id?: string | null;
+  path: string | null;
+  parent_nav_id: number | null;
+  section_id: number | null;
 }
 
 export interface GroupNavPermission {
@@ -62,25 +55,21 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
     );
     return result;
   } catch (error) {
-    console.error('Error fetching navigation data by ID:', error);
+    console.error('Error fetching navigation data by id:', error);
     throw error;
   }
 };
 
 // Update user's last navigation path
 export const routeTracker = async (path: string, userId: number): Promise<void> => {
-  //console.log(`Updating last navigation for userId: ${userId} with path: ${path}`);
   try {
     const [result]: any = await pool.query(
       `UPDATE auth.users SET last_nav = ? WHERE id = ?`,
       [path, userId]
     );
-    //console.log(`Update result: ${JSON.stringify(result)}`);
     if (result.affectedRows === 0) {
-      //console.error(`No user found with id: ${userId}`);
       throw new Error(`No user found with id: ${userId}`);
     }
-    //console.log(`Route tracked successfully for user id: ${userId}`);
   } catch (error) {
     console.error('Error tracking route:', error);
     throw error;
@@ -89,9 +78,11 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
 
 // Create a new navigation entry
 export const createNavigation = async (newNavigation: NavigationInput): Promise<ResultSetHeader> => {
+  // Remove id if present, as it should be auto-incremented
+  const { id, ...insertData } = newNavigation;
   const [result] = await pool.query<ResultSetHeader>(
     'INSERT INTO auth.navigation SET ?',
-    [newNavigation]
+    [insertData]
   );
   return result;
 };
@@ -101,32 +92,22 @@ export const updateNavigation = async (id: number, updatedData: NavigationInput)
   const query = `
       UPDATE auth.navigation
       SET
-          navId = ?,
           title = ?,
           type = ?,
           position = ?,
           status = ?,
-          icon = ?,
           path = ?,
-          component = ?,
-          layout = ?,
-          is_protected = ?,
           parent_nav_id = ?,
           section_id = ?
       WHERE id = ?
   `;
 
   const values = [
-      updatedData.navId,
       updatedData.title,
       updatedData.type,
       updatedData.position,
       updatedData.status,
-      updatedData.icon,
       updatedData.path,
-      updatedData.component,
-      updatedData.layout,
-      updatedData.is_protected ? 1 : 0, // Convert boolean to tinyint
       updatedData.parent_nav_id,
       updatedData.section_id,
       id,
@@ -206,7 +187,6 @@ export const toggleStatus = async (id: number, status: number): Promise<number> 
 // Fetch navigation by group IDs
 export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigation[]> => {
   try {
-    // Create placeholders for the group IDs
     const placeholders = groupIds.map(() => '?').join(', ');
 
     const query = `
@@ -229,7 +209,7 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
 export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
   try {
     const query = `
-      SELECT DISTINCT *
+      SELECT DISTINCT n.*
       FROM user_groups ug
       INNER JOIN group_nav gn ON ug.group_id = gn.group_id
       INNER JOIN auth.navigation n ON gn.nav_id = n.id
@@ -244,31 +224,15 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
     throw error;
   }
 };
-/* export const getNavigationByUserId = async (userId: number): Promise<Navigation[]> => {
-  try {
-    const query = `
-      SELECT DISTINCT gn.nav_id
-      FROM user_groups ug
-      INNER JOIN group_nav gn ON ug.group_id = gn.group_id
-      WHERE ug.user_id = ?
-    `;
 
-    const [result] = await pool.query<any[]>(query, [userId]);
-    return result;
-  } catch (error) {
-    console.error('Error fetching navigation data by user ID:', error);
-    throw error;
-  }
-}; */
-
-export const removeNavigationPermissionsNotIn = async (navId: number, permittedGroups: number[]): Promise<number> => {
+export const removeNavigationPermissionsNotIn = async (id: number, permittedGroups: number[]): Promise<number> => {
   try {
     const placeholders = permittedGroups.map(() => '?').join(', ');
     const query = `
       DELETE FROM auth.group_nav
       WHERE nav_id = ? AND group_id NOT IN (${placeholders})
     `;
-    const values = [navId, ...permittedGroups];
+    const values = [id, ...permittedGroups];
 
     const [result]: any = await pool.query(query, values);
     return result.affectedRows;
@@ -280,9 +244,7 @@ export const removeNavigationPermissionsNotIn = async (navId: number, permittedG
 
 // Update navigation permissions for a group (remove old, add new)
 export const setNavigationPermissionsForGroup = async (groupId: number, navIds: number[]): Promise<void> => {
-  // Remove all nav permissions for this group
   await pool.query('DELETE FROM auth.group_nav WHERE group_id = ?', [groupId]);
-  // Add new nav permissions
   if (navIds.length > 0) {
     const values = navIds.map(navId => [navId, groupId]);
     await pool.query('INSERT INTO auth.group_nav (nav_id, group_id) VALUES ?', [values]);

@@ -16,38 +16,29 @@ import {
 import buildNavigationTree from '../utils/navBuilder';
 
 interface CreateNavigationBody {
-    id?: number;
-    navId: string;
+    id: number;
     title: string;
     type: string;
     position: number;
     status: number;
-    icon?: string;
-    path?: string;
-    component?: string;
-    layout?: string;
-    isProtected?: boolean;
-    parentNavId?: string | null;
-    sectionId?: string | null;
+    path?: string | null;
+    parent_nav_id?: number | null;
+    section_id?: number | null;
     permittedGroups?: number[];
 }
 
 interface UpdateNavigationBody extends CreateNavigationBody { }
 
 const normalizeNavigationData = (nav: CreateNavigationBody | UpdateNavigationBody) => ({
-    id: nav.id ?? null,
-    navId: nav.navId,
+    // id is optional for create
+    ...(nav.id !== undefined ? { id: nav.id } : {}),
     title: nav.title,
     type: nav.type,
-    position: nav.position,
+    position: typeof nav.position === 'number' && !isNaN(nav.position) ? nav.position : 0,
     status: nav.status,
-    icon: nav.icon ?? null,
     path: nav.path ?? null,
-    component: nav.component ?? null,
-    layout: nav.layout ?? null,
-    is_protected: Boolean(nav.isProtected),
-    parent_nav_id: nav.parentNavId ?? null,
-    section_id: nav.sectionId ?? null,
+    parent_nav_id: nav.parent_nav_id ?? null,
+    section_id: nav.section_id ?? null,
 });
 
 export const trackRoute = async (req: Request, res: Response): Promise<Response> => {
@@ -70,29 +61,18 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
             throw new Error('Invalid navigation data format');
         }
 
-        //console.log('Raw navigation rows:', rows);
-
         const flatNavItems = rows.map((nav) => ({
             id: nav.id,
-            navId: nav.navId,
             title: nav.title,
             type: nav.type,
             position: nav.position,
             status: nav.status,
-            icon: nav.icon ?? '',
-            path: nav.path ?? '',
-            component: nav.component ?? '',
-            layout: nav.layout ?? '',
-            is_protected: Boolean(nav.is_protected),
-            parent_nav_id: nav.parent_nav_id ?? null,
-            section_id: nav.section_id ?? null,
+            path: nav.path,
+            parent_nav_id: nav.parent_nav_id,
+            section_id: nav.section_id,
         }));
 
-        //console.log('Flat navigation items:', flatNavItems);
-
         const navTree = buildNavigationTree(flatNavItems);
-
-        //console.log('Generated navigation tree:', navTree);
 
         return res.status(200).json({
             success: true,
@@ -112,7 +92,16 @@ export const getNavigationsUnstructured = async (req: Request, res: Response): P
         const navFlat = await getNavigation();
         return res.status(200).json({
             success: true,
-            navFlat
+            navFlat: navFlat.map((nav) => ({
+                id: nav.id,
+                title: nav.title,
+                type: nav.type,
+                position: nav.position,
+                status: nav.status,
+                path: nav.path,
+                parent_nav_id: nav.parent_nav_id,
+                section_id: nav.section_id,
+            }))
         });
     } catch (error) {
         console.error('Error fetching unstructured navigation:', error);
@@ -126,7 +115,6 @@ export const getNavigationsUnstructured = async (req: Request, res: Response): P
 export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigationBody>, res: Response): Promise<Response> => {
     try {
         const newNavigation = req.body;
-
         const normalizedData = normalizeNavigationData(newNavigation);
         const newIdResult = await createNavigation(normalizedData);
         const newId = newIdResult.insertId; // Extract the insertId from ResultSetHeader
@@ -162,8 +150,8 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
         // Update the navigation item in the database
         const updatedItem = await updateNavigation(id, normalizedData);
 
-        // Update permissions if provided
-        if (updatedData.permittedGroups?.length) {
+        // Only update permissions if permittedGroups is a non-empty array
+        if (Array.isArray(updatedData.permittedGroups) && updatedData.permittedGroups.length > 0) {
             const permissions = updatedData.permittedGroups.map((groupId: number) => ({
                 nav_id: id,
                 group_id: groupId,
@@ -175,6 +163,7 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
             // Add or update the provided permissions
             await updateNavigationPermission(permissions);
         }
+        // If permittedGroups is missing or empty, skip permission update/removal
 
         return res.status(200).json({ message: 'Navigation updated successfully', data: updatedItem });
     } catch (error) {
@@ -205,23 +194,18 @@ export const getNavigationPermissionsHandler = async (req: Request, res: Respons
 
 export const getNavigationByIds = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const id = Number(req.params.id);
-        const navigation = await getNavigationById(id);
+        const navId = Number(req.params.id);
+        const navigation = await getNavigationById(navId);
 
         const flatNavItems = navigation.map((nav) => ({
             id: nav.id,
-            navId: nav.navId,
             title: nav.title,
             type: nav.type,
             position: nav.position,
             status: nav.status,
-            icon: nav.icon ?? '',
-            path: nav.path ?? '',
-            component: nav.component ?? '',
-            layout: nav.layout ?? '',
-            is_protected: Boolean(nav.is_protected),
-            parent_nav_id: nav.parent_nav_id ?? null,
-            section_id: nav.section_id ?? null
+            path: nav.path,
+            parent_nav_id: nav.parent_nav_id,
+            section_id: nav.section_id
         }));
 
         const navTree = buildNavigationTree(flatNavItems);
@@ -294,18 +278,13 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
 
         const flatNavItems = navigation.map((nav) => ({
             id: nav.id,
-            navId: nav.navId,
             title: nav.title,
             type: nav.type,
             position: nav.position,
             status: nav.status,
-            icon: nav.icon ?? '',
-            path: nav.path ?? '',
-            component: nav.component ?? '',
-            layout: nav.layout ?? '',
-            is_protected: Boolean(nav.is_protected),
-            parent_nav_id: nav.parent_nav_id ?? null,
-            section_id: nav.section_id ?? null,
+            path: nav.path,
+            parent_nav_id: nav.parent_nav_id,
+            section_id: nav.section_id,
         }));
 
         const navTree = buildNavigationTree(flatNavItems);

@@ -171,26 +171,39 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const navigation = await getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 
-    // Remove duplicate nav items by navId at the flat level
+    // Remove duplicate nav items by id at the flat level
     const uniqueFlatNavItems = Array.from(
       new Map(
-        navigation.map((nav) => [nav.navId, nav])
+        navigation.map((nav) => [nav.id, nav])
       ).values()
     );
 
     const flatNavItems = uniqueFlatNavItems.map((nav) => ({
       id: nav.id,
-      navId: nav.navId,
       title: nav.title,
       type: nav.type,
-      path: nav.path ?? '',
-      parent_nav_id: nav.parent_nav_id ?? null,
-      section_id: nav.section_id ?? null,
+      position: nav.position,
+      status: nav.status,
+      path: nav.path,
+      parent_nav_id: nav.parent_nav_id,
+      section_id: nav.section_id,
     }));
 
     const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
-    const userGroups = await getGroupsByUserId(result.user.id); // Fetch user groups for the logged-in user
+    // Fetch role details
+    const userRole = await require('../models/roleModel').getRoleById(result.user.role);
+    const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
+
+    // Fetch user groups as objects
+    const groupModel = require('../models/groupModel');
+    const groupIds = await groupModel.getGroupsByUserId(result.user.id);
+    const usergroups = await Promise.all(
+      groupIds.map(async (groupId: number) => {
+        const group = await groupModel.getGroupById(groupId);
+        return group ? { id: group.id, name: group.name } : null;
+      })
+    );
 
     return res.status(200).json({
       success: true,
@@ -206,10 +219,10 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
           userType: result.user.user_type,
           status: result.user.status,
           lastNav: result.user.last_nav,
-          role: result.user.role,
-          usergroups: userGroups,
+          role: roleObj,
+          usergroups: usergroups.filter(Boolean),
         },
-        navTree: structuredNavTree, // Include the navigation tree in the response
+        navTree: structuredNavTree,
       },
     });
   } catch (error) {
