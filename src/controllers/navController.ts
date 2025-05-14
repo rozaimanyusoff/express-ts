@@ -53,6 +53,19 @@ export const trackRoute = async (req: Request, res: Response): Promise<Response>
     }
 };
 
+// Remove getNavigationsUnstructured and getNavigationByIds as getNavigations covers both structured and unstructured needs
+// Remove redundant mapping logic by creating a helper
+const toFlatNavItem = (nav: any) => ({
+    navId: nav.id,
+    title: nav.title,
+    type: nav.type,
+    position: nav.position,
+    status: nav.status,
+    path: nav.path,
+    parent_nav_id: nav.parent_nav_id,
+    section_id: nav.section_id,
+});
+
 export const getNavigations = async (req: Request, res: Response): Promise<Response> => {
     try {
         const rows = await getNavigation();
@@ -61,53 +74,20 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
             throw new Error('Invalid navigation data format');
         }
 
-        const flatNavItems = rows.map((nav) => ({
-            id: nav.id,
-            title: nav.title,
-            type: nav.type,
-            position: nav.position,
-            status: nav.status,
-            path: nav.path,
-            parent_nav_id: nav.parent_nav_id,
-            section_id: nav.section_id,
-        }));
-
+        const flatNavItems = rows.map(toFlatNavItem);
         const navTree = buildNavigationTree(flatNavItems);
 
         return res.status(200).json({
-            success: true,
-            navTree,
+            status: 'success',
+            message: 'Navigation structure fetched successfully',
+            navTree
         });
     } catch (error) {
         console.error('Error processing navigation:', error);
         return res.status(500).json({
-            success: false,
+            status: 'error',
+            code: 500,
             message: 'Error processing navigation data',
-        });
-    }
-};
-
-export const getNavigationsUnstructured = async (req: Request, res: Response): Promise<Response> => {
-    try {
-        const navFlat = await getNavigation();
-        return res.status(200).json({
-            success: true,
-            navFlat: navFlat.map((nav) => ({
-                id: nav.id,
-                title: nav.title,
-                type: nav.type,
-                position: nav.position,
-                status: nav.status,
-                path: nav.path,
-                parent_nav_id: nav.parent_nav_id,
-                section_id: nav.section_id,
-            }))
-        });
-    } catch (error) {
-        console.error('Error fetching unstructured navigation:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error fetching navigation data'
         });
     }
 };
@@ -127,10 +107,18 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
             await updateNavigationPermission(permissions);
         }
 
-        return res.status(201).json({ message: 'Navigation created successfully', id: newId });
+        return res.status(201).json({
+            status: 'success',
+            message: 'Navigation created successfully',
+            id: newId
+        });
     } catch (error) {
         console.error('Error creating navigation:', error);
-        return res.status(500).json({ message: 'Error creating navigation' });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: 'Error creating navigation'
+        });
     }
 };
 
@@ -139,10 +127,49 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
     try {
         const id = Number(req.params.id);
         if (!id) {
-            return res.status(400).json({ message: 'Navigation ID is required' });
+            return res.status(400).json({
+                status: 'error',
+                code: 400,
+                message: 'Navigation ID is required'
+            });
         }
 
-        const updatedData = req.body;
+        // Map frontend camelCase keys to backend snake_case keys
+        const {
+            navId,
+            title,
+            type,
+            position,
+            status,
+            path,
+            parentNavId,
+            sectionId,
+            groups,
+            permittedGroups,
+            ...rest
+        } = req.body;
+
+        // Convert group IDs to numbers if present
+        let groupIds: number[] = [];
+        if (Array.isArray(groups)) {
+            groupIds = groups.map((g: any) => Number(g)).filter((g: any) => !isNaN(g));
+        } else if (Array.isArray(permittedGroups)) {
+            groupIds = permittedGroups.map((g: any) => Number(g)).filter((g: any) => !isNaN(g));
+        }
+
+        // Compose the normalized update object
+        const updatedData = {
+            id: navId ?? id,
+            title,
+            type,
+            position: typeof position === 'number' ? position : 0,
+            status,
+            path: path ?? null,
+            parent_nav_id: parentNavId ?? rest.parent_nav_id ?? null,
+            section_id: sectionId ?? rest.section_id ?? null,
+            permittedGroups: groupIds,
+            ...rest
+        };
 
         // Normalize the data
         const normalizedData = normalizeNavigationData(updatedData);
@@ -165,10 +192,18 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
         }
         // If permittedGroups is missing or empty, skip permission update/removal
 
-        return res.status(200).json({ message: 'Navigation updated successfully', data: updatedItem });
+        return res.status(200).json({
+            status: 'success',
+            message: 'Navigation updated successfully',
+            data: updatedItem
+        });
     } catch (error) {
         console.error('Error updating navigation:', error);
-        return res.status(500).json({ message: 'Error updating navigation' });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: 'Error updating navigation'
+        });
     }
 };
 
@@ -185,38 +220,18 @@ export const getNavigationPermissionsHandler = async (req: Request, res: Respons
             return acc;
         }, {});
 
-        return res.status(200).json({ status: 'success', data: Object.values(groupedPermissions) });
-    } catch (error) {
-        console.error('Error fetching navigation permissions:', error);
-        return res.status(500).json({ message: 'Error fetching navigation permissions' });
-    }
-};
-
-export const getNavigationByIds = async (req: Request, res: Response): Promise<Response> => {
-    try {
-        const navId = Number(req.params.id);
-        const navigation = await getNavigationById(navId);
-
-        const flatNavItems = navigation.map((nav) => ({
-            id: nav.id,
-            title: nav.title,
-            type: nav.type,
-            position: nav.position,
-            status: nav.status,
-            path: nav.path,
-            parent_nav_id: nav.parent_nav_id,
-            section_id: nav.section_id
-        }));
-
-        const navTree = buildNavigationTree(flatNavItems);
-
         return res.status(200).json({
-            success: true,
-            navTree
+            status: 'success',
+            message: 'Navigation permissions fetched successfully',
+            data: Object.values(groupedPermissions)
         });
     } catch (error) {
-        console.error('Error fetching navigation by ID:', error);
-        return res.status(500).json({ message: 'Error fetching navigation by ID' });
+        console.error('Error fetching navigation permissions:', error);
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: 'Error fetching navigation permissions'
+        });
     }
 };
 
@@ -225,14 +240,25 @@ export const updateNavigationPermissionsHandler = async (req: Request<{}, {}, { 
         const { permissions } = req.body;
 
         if (!permissions.length || !permissions.every((p) => typeof p.nav_id === 'number' && typeof p.group_id === 'number')) {
-            return res.status(400).json({ message: 'Navigation ID is required' });
+            return res.status(400).json({
+                status: 'error',
+                code: 400,
+                message: 'Navigation ID is required'
+            });
         }
 
         await updateNavigationPermission(permissions);
-        return res.json({ status: 'Success', message: 'Permissions updated successfully' });
+        return res.status(200).json({
+            status: 'success',
+            message: 'Permissions updated successfully'
+        });
     } catch (error) {
         console.error('Error updating navigation permissions:', error);
-        return res.status(500).json({ status: 'Error', message: (error as Error).message });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: (error as Error).message
+        });
     }
 };
 
@@ -241,14 +267,25 @@ export const removeNavigationPermissionsHandler = async (req: Request<{}, {}, { 
         const { permissions } = req.body;
 
         if (!permissions.length || !permissions.every(p => p.nav_id && p.group_id)) {
-            return res.status(400).json({ status: 'Error', message: 'Invalid permissions data' });
+            return res.status(400).json({
+                status: 'error',
+                code: 400,
+                message: 'Invalid permissions data'
+            });
         }
 
         await removeNavigationPermissions(permissions);
-        return res.json({ status: 'Success', message: 'Permissions removed successfully' });
+        return res.status(200).json({
+            status: 'success',
+            message: 'Permissions removed successfully'
+        });
     } catch (error) {
         console.error('Error removing navigation permissions:', error);
-        return res.status(500).json({ status: 'Error', message: (error as Error).message });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: (error as Error).message
+        });
     }
 };
 
@@ -258,10 +295,17 @@ export const toggleStatusHandler = async (req: Request, res: Response): Promise<
         const { status } = req.body;
 
         await toggleStatus(id, status ? 1 : 0);
-        return res.json({ status: 'Success', message: `Navigation item ${status ? 'enabled' : 'disabled'} successfully` });
+        return res.status(200).json({
+            status: 'success',
+            message: `Navigation item ${status ? 'enabled' : 'disabled'} successfully`
+        });
     } catch (error) {
         console.error('Error toggling status:', error);
-        return res.status(500).json({ status: 'Error', message: (error as Error).message });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: (error as Error).message
+        });
     }
 };
 
@@ -270,31 +314,31 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
         const userId = Number(req.params.id);
 
         if (isNaN(userId)) {
-            return res.status(400).json({ message: 'Invalid user ID' });
+            return res.status(400).json({
+                status: 'error',
+                code: 400,
+                message: 'Invalid user ID'
+            });
         }
 
         // Fetch navigation items by user ID
         const navigation = await getNavigationByUserId(userId);
 
-        const flatNavItems = navigation.map((nav) => ({
-            id: nav.id,
-            title: nav.title,
-            type: nav.type,
-            position: nav.position,
-            status: nav.status,
-            path: nav.path,
-            parent_nav_id: nav.parent_nav_id,
-            section_id: nav.section_id,
-        }));
+        const flatNavItems = navigation.map(toFlatNavItem);
 
         const navTree = buildNavigationTree(flatNavItems);
 
         return res.status(200).json({
-            success: true,
-            navTree,
+            status: 'success',
+            message: 'Navigation structure fetched successfully',
+            navTree
         });
     } catch (error) {
         console.error('Error fetching navigation by user ID:', error);
-        return res.status(500).json({ message: 'Error fetching navigation by user ID' });
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: 'Error fetching navigation by user ID'
+        });
     }
 };

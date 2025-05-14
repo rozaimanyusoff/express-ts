@@ -28,7 +28,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
   const { name, email, contact, userType } = req.body;
 
   if (!name || !email || !contact || !userType) {
-    return res.status(400).json({ status: false, message: 'Missing required fields' });
+    return res.status(400).json({ status: 'error', code: 400, message: 'Missing required fields' });
   }
 
   const activationCode = crypto.randomBytes(32).toString('hex');
@@ -38,7 +38,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     const existingAccounts = await findUserByEmailOrContact(email, contact);
 
     if (existingAccounts.length > 0) {
-      return res.status(400).json({ status: false, message: 'The requested credentials already exist' });
+      return res.status(400).json({ status: 'error', code: 400, message: 'The requested credentials already exist' });
     }
 
     const newUserId = (await registerUser(name, email, contact, userType, activationCode)).insertId;
@@ -62,12 +62,12 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
     return res.status(201).json({
-      status: true,
+      status: 'success',
       message: 'Registration successful. Please check your email to activate your account.',
     });
   } catch (error: unknown) {
     logger.error('Registration error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 };
 
@@ -78,13 +78,13 @@ export const validateActivationDetails = async (req: Request, res: Response): Pr
   try {
     const validation: any = await validateActivation(email, contact, activationCode);
     if (validation.valid) {
-      return res.status(200).json({ valid: true, message: 'Validation successful' });
+      return res.status(200).json({ status: 'success', message: 'Validation successful' });
     } else {
-      return res.status(401).json({ valid: false, message: 'Invalid activation details' });
+      return res.status(401).json({ status: 'error', code: 401, message: 'Invalid activation details' });
     }
   } catch (error) {
     logger.error('Validation error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 }
 
@@ -123,13 +123,13 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
-      return res.status(200).json({ message: 'Account activated successfully.' });
+      return res.status(200).json({ status: 'success', message: 'Account activated successfully.' });
     } else {
-      return res.status(401).json({ message: 'Activation failed. Please check your details.' });
+      return res.status(401).json({ status: 'error', code: 401, message: 'Activation failed. Please check your details.' });
     }
   } catch (error) {
     logger.error('Activation error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 }
 
@@ -140,15 +140,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     const result: any = await verifyLoginCredentials(emailOrUsername, password);
 
     if (!result.success) {
-      return res.status(401).json({ message: result.message });
+      return res.status(401).json({ status: 'error', code: 401, message: result.message });
     }
 
     if (result.user.status === 0) {
-      return res.status(403).json({ message: 'Account not activated. Please check your email for the activation link.' });
+      return res.status(403).json({ status: 'error', code: 403, message: 'Account not activated. Please check your email for the activation link.' });
     }
 
     if (result.user.status === 3) {
-      return res.status(403).json({ message: 'Password reset required. Please check your email for the reset link.' });
+      return res.status(403).json({ status: 'error', code: 403, message: 'Password reset required. Please check your email for the reset link.' });
     }
 
     await updateLastLogin(result.user.id);
@@ -171,15 +171,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const navigation = await getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 
-    // Remove duplicate nav items by id at the flat level
+    // Remove duplicate nav items by navId at the flat level
     const uniqueFlatNavItems = Array.from(
       new Map(
-        navigation.map((nav) => [nav.id, nav])
+        navigation.map((nav) => [nav.navId ?? nav.id, { ...nav, navId: nav.navId ?? nav.id }])
       ).values()
     );
 
     const flatNavItems = uniqueFlatNavItems.map((nav) => ({
-      id: nav.id,
+      navId: nav.navId,
       title: nav.title,
       type: nav.type,
       position: nav.position,
@@ -206,7 +206,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     );
 
     return res.status(200).json({
-      success: true,
+      status: 'success',
       message: 'Login successful',
       token,
       data: {
@@ -220,14 +220,14 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
           status: result.user.status,
           lastNav: result.user.last_nav,
           role: roleObj,
-          usergroups: usergroups.filter(Boolean),
         },
+        usergroups: usergroups.filter(Boolean),
         navTree: structuredNavTree,
       },
     });
   } catch (error) {
     logger.error('Login error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 };
 
@@ -239,7 +239,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
     const users = await findUserByEmailOrContact(email, contact);
     const user = users[0];
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ status: 'error', code: 404, message: 'User not found' });
     }
 
     const payload = {
@@ -270,10 +270,10 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 
     await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
-    return res.status(200).json({ message: 'Reset password email sent successfully' });
+    return res.status(200).json({ status: 'success', message: 'Reset password email sent successfully' });
   } catch (error) {
     logger.error('Reset password error:', error);
-    return res.status(500).json({ message: 'Error processing reset password request' });
+    return res.status(500).json({ status: 'error', code: 500, message: 'Error processing reset password request' });
   }
 };
 
@@ -285,6 +285,8 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
       const user = await findUserByResetToken(token);
       if (!user) {
           return res.status(400).json({
+              status: 'error',
+              code: 400,
               valid: false,
               message: 'Invalid reset link'
           });
@@ -297,12 +299,15 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
           await reactivateUser(user.id);
 
           return res.status(400).json({
+              status: 'error',
+              code: 400,
               valid: false,
               message: 'Reset link has expired. Your account has been reactivated. Please login with your previous credentials or request a new reset link.'
           });
       }
 
       return res.json({
+          status: 'success',
           valid: true,
           email: user.email,
           contact: user.contact
@@ -310,6 +315,8 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
   } catch (error) {
       logger.error('Token verification error:', error);
       return res.status(400).json({
+          status: 'error',
+          code: 400,
           valid: false,
           message: 'Invalid reset link'
       });
@@ -324,12 +331,16 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
       const user = await findUserByResetToken(token);
       if (!user) {
           return res.status(400).json({
+              status: 'error',
+              code: 400,
               message: 'Invalid or expired reset token'
           });
       }
 
       if (user.email !== email || user.contact !== contact) {
           return res.status(400).json({
+              status: 'error',
+              code: 400,
               message: 'Invalid credentials'
           });
       }
@@ -340,6 +351,8 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
       if (Date.now() > payload.x) {
           await reactivateUser(user.id);
           return res.status(400).json({
+              status: 'error',
+              code: 400,
               message: 'Reset token has expired'
           });
       }
@@ -366,11 +379,14 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
       return res.json({
+          status: 'success',
           message: 'Password updated successfully'
       });
   } catch (error) {
       logger.error('Update password error:', error);
       return res.status(500).json({
+          status: 'error',
+          code: 500,
           message: 'Error updating password'
       });
   }
@@ -386,13 +402,14 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
       });
 
       return res.status(200).json({
-          success: true,
+          status: 'success',
           message: 'Logged out successfully'
       });
   } catch (error) {
       logger.error('Logout error:', error);
       return res.status(500).json({
-          success: false,
+          status: 'error',
+          code: 500,
           message: 'Error logging out'
       });
   }
@@ -403,7 +420,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
   const token = req.header('Authorization')?.split(' ')[1];
   
   if (!token) {
-    return res.status(401).json({ message: 'No token provided' });
+    return res.status(401).json({ status: 'error', code: 401, message: 'No token provided' });
   }
 
   try {
@@ -414,7 +431,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     if (typeof decoded !== 'object' || !('userId' in decoded)) {
-      return res.status(401).json({ message: 'Invalid token' });
+      return res.status(401).json({ status: 'error', code: 401, message: 'Invalid token' });
     }
 
     const newToken = jwt.sign(
@@ -424,11 +441,11 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
     );
 
     return res.status(200).json({
-      success: true,
+      status: 'success',
       token: newToken,
     });
   } catch (error) {
     logger.error('Refresh token error:', error);
-    return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    return res.status(401).json({ status: 'error', code: 401, message: 'Invalid or expired refresh token' });
   }
 };

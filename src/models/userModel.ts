@@ -22,8 +22,8 @@ export interface Users {
   last_host: string | null;
   last_os: string | null;
   status: number;
-  role: number;
-  usergroups: string | null; // Updated field to store comma-separated group IDs
+  role: number; // role id, now references roles table with new schema
+  usergroups: string | null; // comma-separated group IDs
   reset_token: string | null;
   activated_at: Date | null;
 }

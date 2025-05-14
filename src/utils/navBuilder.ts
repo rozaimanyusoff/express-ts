@@ -1,5 +1,13 @@
+// This function builds a navigation tree from a flat array of navigation items.
+// It expects parent_nav_id and section_id to be number|null (not string).
+// If your data source always provides structured navigation, you may not need this builder.
+// For best results, ensure your DB always returns the structure you want to serve.
+
+// If you want to keep this utility for future use, you can leave it as is.
+// Otherwise, you can remove this file and directly use structured navigation from your DB/model.
+
 interface FlatNavItem {
-    id: number;
+    navId: number;
     title: string;
     type: string;
     position: number;
@@ -10,7 +18,7 @@ interface FlatNavItem {
 }
 
 interface NavItem {
-    id: number;
+    navId: number;
     title: string;
     type: string;
     position: number;
@@ -26,10 +34,10 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
         throw new Error('Invalid flatNavItems format');
     }
 
-    // Build a title-to-id map for string parent_nav_id/section_id
-    const titleToId = new Map<string, number>();
+    // Build a title-to-navId map for string parent_nav_id/section_id
+    const titleToNavId = new Map<string, number>();
     flatNavItems.forEach(item => {
-        titleToId.set(item.title, item.id);
+        titleToNavId.set(item.title, item.navId);
     });
 
     // Normalize parent_nav_id and section_id to numbers or null
@@ -37,10 +45,10 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
         let parent_nav_id = item.parent_nav_id;
         let section_id = item.section_id;
         if (typeof parent_nav_id === 'string') {
-            parent_nav_id = titleToId.get(parent_nav_id) ?? null;
+            parent_nav_id = titleToNavId.get(parent_nav_id) ?? null;
         }
         if (typeof section_id === 'string') {
-            section_id = titleToId.get(section_id) ?? null;
+            section_id = titleToNavId.get(section_id) ?? null;
         }
         return {
             ...item,
@@ -51,8 +59,8 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
 
     const navMap: Map<number, NavItem> = new Map();
     normalizedItems.forEach(item => {
-        navMap.set(item.id, {
-            id: item.id,
+        navMap.set(item.navId, {
+            navId: item.navId,
             title: item.title,
             type: item.type,
             position: item.position,
@@ -66,7 +74,7 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
 
     const rootItems: NavItem[] = [];
     normalizedItems.forEach(item => {
-        const navItem = navMap.get(item.id);
+        const navItem = navMap.get(item.navId);
         if (!navItem) return;
         if (item.parent_nav_id === null || !navMap.has(item.parent_nav_id)) {
             rootItems.push(navItem);

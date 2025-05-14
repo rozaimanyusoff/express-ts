@@ -94,7 +94,7 @@ export const getAllGroupsStructured = async (_req: Request, res: Response): Prom
             const navTreeRaw = await getNavigationByGroups([group.id]);
             // Limit navTree fields to id, title, path
             const navTree = navTreeRaw.map((nav: any) => ({
-                id: nav.id,
+                navId: nav.id,
                 title: nav.title,
                 path: nav.path
             }));

@@ -4,12 +4,14 @@ import { ResultSetHeader } from "mysql2";
 export interface Role {
     id: number;
     name: string;
-    desc: string;
-    can_view: number;
-    can_edit: number;
-    can_delete: number;
+    desc?: string;
+    views: number;
+    creates: number;
+    updates: number;
+    deletes: number;
     status: number;
-    created_at: Date;
+    create_at: Date;
+    update_at: Date;
 }
 
 // Get all roles
@@ -35,19 +37,19 @@ export const getRoleById = async (id: number): Promise<Role> => {
 };
 
 // Create new role
-export const createRole = async (role: Omit<Role, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+export const createRole = async (role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'INSERT INTO roles (name, desc, can_view, can_edit, can_delete, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status]
+        'INSERT INTO roles (name, desc, views, creates, updates, deletes, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status]
     );
     return result;
 };
 
 // Update role
-export const updateRole = async (id: number, role: Omit<Role, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+export const updateRole = async (id: number, role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'UPDATE roles SET name = ?, desc = ?, can_view = ?, can_edit = ?, can_delete = ?, status = ? WHERE id = ?',
-        [role.name, role.desc, role.can_view, role.can_edit, role.can_delete, role.status, id]
+        'UPDATE roles SET name = ?, desc = ?, views = ?, creates = ?, updates = ?, deletes = ?, status = ?, update_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status, id]
     );
     return result;
 };

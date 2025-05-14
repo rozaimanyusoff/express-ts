@@ -11,6 +11,9 @@ export interface Navigation extends RowDataPacket {
   path: string | null; // varchar(255), nullable
   parent_nav_id: number | null; // int, nullable
   section_id: number | null; // int, nullable
+  /**
+   * Only present in navigation tree output, not in DB rows.
+   */
   children?: Navigation[] | null; // recursive children
 }
 
