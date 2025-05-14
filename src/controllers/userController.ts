@@ -11,6 +11,8 @@ import { sendMail } from '../utils/mailer';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import pool from '../utils/db';
+import { getRoleById } from '../models/roleModel';
+import { getGroupById } from '../models/groupModel';
 
 dotenv.config({ path: '.env.local' });
 
@@ -60,17 +62,59 @@ interface Users {
 }
 
 // Get all users
+async function getUserTimeSpent(userId: number): Promise<number> {
+  // Sum all (logout - login) pairs for the user
+  const [rows]: any[] = await pool.query(`
+    SELECT action, created_at
+    FROM logs_auth
+    WHERE user_id = ? AND (action = 'login' OR action = 'logout')
+    ORDER BY created_at ASC
+  `, [userId]);
+  let total = 0;
+  let lastLogin: Date | null = null;
+  for (const row of rows) {
+    if (row.action === 'login') {
+      lastLogin = new Date(row.created_at);
+    } else if (row.action === 'logout' && lastLogin) {
+      const logoutTime = new Date(row.created_at);
+      total += (logoutTime.getTime() - lastLogin.getTime()) / 1000; // seconds
+      lastLogin = null;
+    }
+  }
+  return Math.round(total);
+}
+
 export const getAllUser = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const users = await getAllUsers();
-
-    // Map users to include usergroups as a string
-    const formattedUsers = users.map((user) => ({
-      ...user,
-      usergroups: user.usergroups || '', // Ensure usergroups is always a string
+    // Map users to include role object and usergroups as array of objects
+    const formattedUsers = await Promise.all(users.map(async (user) => {
+      // Get role object
+      let roleObj = null;
+      if (user.role) {
+        const role = await getRoleById(user.role);
+        if (role) roleObj = { id: role.id, name: role.name };
+      }
+      // Get usergroups as array of objects
+      let usergroupsArr: any[] = [];
+      if (user.usergroups) {
+        const groupIds = String(user.usergroups).split(',').map(Number).filter(Boolean);
+        usergroupsArr = await Promise.all(groupIds.map(async (gid) => {
+          const group = await getGroupById(gid);
+          return group ? { id: group.id, name: group.name } : null;
+        }));
+        usergroupsArr = usergroupsArr.filter(Boolean);
+      }
+      // Calculate time_spent from logs_auth
+      const time_spent = await getUserTimeSpent(user.id);
+      return {
+        ...user,
+        role: roleObj,
+        usergroups: usergroupsArr,
+        time_spent
+      };
     }));
-
-    return res.status(200).json({ success: true, users: formattedUsers });
+    return res.status(200).json({ status: 'success', message: 'User data retrieved successfully', data: formattedUsers });
   } catch (error: any) {
     console.error('Error getting all users:', error);
     return res.status(500).json({ message: 'Error getting all users' });

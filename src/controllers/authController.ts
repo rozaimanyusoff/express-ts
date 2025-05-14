@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import dotenv from 'dotenv';
-import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails } from '../models/userModel';
+import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, logAuthActivity } from '../models/userModel';
 import { getNavigationByUserId } from '../models/navModel';
 import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
 import logger from '../utils/logger';
@@ -152,6 +152,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     }
 
     await updateLastLogin(result.user.id);
+    await logAuthActivity(result.user.id, 'login', 'success', {}, req);
 
     const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
     const userHost = req.hostname || null;
@@ -400,6 +401,8 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'strict'
       });
+
+      await logAuthActivity((req as any).user?.id || 0, 'logout', 'success', {}, req);
 
       return res.status(200).json({
           status: 'success',

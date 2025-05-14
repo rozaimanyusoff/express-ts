@@ -39,7 +39,7 @@ export const getRoleById = async (id: number): Promise<Role> => {
 // Create new role
 export const createRole = async (role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'INSERT INTO roles (name, desc, views, creates, updates, deletes, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO roles (name, `desc`, views, creates, updates, deletes, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status]
     );
     return result;
@@ -48,7 +48,7 @@ export const createRole = async (role: Omit<Role, 'id' | 'create_at' | 'update_a
 // Update role
 export const updateRole = async (id: number, role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'UPDATE roles SET name = ?, desc = ?, views = ?, creates = ?, updates = ?, deletes = ?, status = ?, update_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE roles SET name = ?, `desc` = ?, views = ?, creates = ?, updates = ?, deletes = ?, status = ? WHERE id = ?',
         [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status, id]
     );
     return result;
