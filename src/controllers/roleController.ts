@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getAllRoles, getRoleById, createRole, updateRole } from '../models/roleModel.js';
+const { updateUsersRole } = require('../models/userModel');
 
 // Get all roles
 export const getAllRole = async (_req: Request, res: Response): Promise<Response> => {
@@ -61,11 +62,23 @@ export const getRole = async (req: Request, res: Response): Promise<Response> =>
 
 // Create new role
 export const createNewRole = async (req: Request, res: Response): Promise<Response> => {
-    const role = req.body;
-
+    const { name, description, permissions, userIds } = req.body;
     try {
-        const result = await createRole(role);
-        return res.status(201).json({ result });
+        const roleData = {
+            name,
+            desc: description,
+            views: permissions?.view ? 1 : 0,
+            creates: permissions?.create ? 1 : 0,
+            updates: permissions?.update ? 1 : 0,
+            deletes: permissions?.delete ? 1 : 0,
+            status: 1
+        };
+        const result = await createRole(roleData);
+        const newRoleId = result.insertId;
+        if (Array.isArray(userIds) && userIds.length > 0) {
+            await updateUsersRole(userIds, newRoleId);
+        }
+        return res.status(201).json({ success: true, message: 'Role created successfully', id: newRoleId });
     } catch (error) {
         console.error('Error creating role:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -75,11 +88,22 @@ export const createNewRole = async (req: Request, res: Response): Promise<Respon
 // Update role
 export const updateRoleById = async (req: Request, res: Response): Promise<Response> => {
     const { id } = req.params;
-    const role = req.body;
-
+    const { name, description, permissions, userIds } = req.body;
     try {
-        const result = await updateRole(Number(id), role);
-        return res.status(200).json({ result });
+        const roleData = {
+            name,
+            desc: description,
+            views: permissions?.view ? 1 : 0,
+            creates: permissions?.create ? 1 : 0,
+            updates: permissions?.update ? 1 : 0,
+            deletes: permissions?.delete ? 1 : 0,
+            status: 1
+        };
+        await updateRole(Number(id), roleData);
+        if (Array.isArray(userIds)) {
+            await updateUsersRole(userIds, Number(id));
+        }
+        return res.status(200).json({ success: true, message: 'Role updated successfully', id: Number(id) });
     } catch (error) {
         console.error('Error updating role:', error);
         return res.status(500).json({ error: 'Internal server error' });

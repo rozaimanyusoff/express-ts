@@ -310,3 +310,18 @@ export const updateUserLoginDetails = async (
     throw error;
   }
 };
+
+// Bulk update users' role
+export const updateUsersRole = async (userIds: number[], roleId: number): Promise<void> => {
+  if (!userIds.length) return;
+  try {
+    // Set role for all userIds
+    await pool.query(
+      `UPDATE users SET role = ? WHERE id IN (${userIds.map(() => '?').join(',')})`,
+      [roleId, ...userIds]
+    );
+  } catch (error) {
+    logger.error(`Database error in updateUsersRole: ${error}`);
+    throw error;
+  }
+};
