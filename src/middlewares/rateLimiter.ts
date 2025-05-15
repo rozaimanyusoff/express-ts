@@ -5,7 +5,11 @@ import { Request, Response, NextFunction } from 'express';
 const blockedMap = new Map<string, { blockedUntil: number }>();
 const BLOCK_DURATION = 60 * 60 * 1000; // 1 hour
 const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const WINDOW_MS = 15 * 60 * 1000; // 15 minutes window duration. allow 5 attempts every window (15 minutes)
+// Middleware to limit the number of requests from a single IP+userAgent
+// to prevent brute-force attacks
+// and to block IP+userAgent for a certain period of time if the limit is exceeded
+// This middleware uses express-rate-limit and a custom in-memory store
 
 const rateLimiter = rateLimit({
     windowMs: WINDOW_MS,
