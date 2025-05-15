@@ -10,6 +10,10 @@ import { sendMail } from '../utils/mailer';
 import os from 'os';
 import { URL } from 'url';
 import buildNavigationTree from '../utils/navBuilder';
+import { accountActivationTemplate } from '../utils/emailTemplates/accountActivation';
+import { accountActivatedTemplate } from '../utils/emailTemplates/accountActivated';
+import { resetPasswordTemplate } from '../utils/emailTemplates/resetPassword';
+import { passwordChangedTemplate } from '../utils/emailTemplates/passwordChanged';
 
 dotenv.config();
 
@@ -49,14 +53,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
       from: process.env.EMAIL_FROM,
       to: email,
       subject: 'Account Activation',
-      html: `
-        <h1>Account Activation</h1>
-        <p>Hello ${name},</p>
-        <p>Please activate your account by clicking the link below:</p>
-        <a href="${activationLink}">Activate Account</a>
-        <p>This link will expire in 24 hours.</p>
-        <p>Thank you!</p>
-      `,
+      html: accountActivationTemplate(name, activationLink),
     };
 
     await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
@@ -104,21 +101,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         from: process.env.EMAIL_FROM,
         to: email,
         subject: 'Account Activation',
-        html: `
-              <h1>Account Activated</h1>
-              <p>Hello ${username},</p>
-              <p>Your account has been activated successfully.</p>
-              <p>You can now login to your account.</p>
-              <a href="${sanitizedFrontendUrl}/auth/login">Login</a>
-              <p>Account details:</p>
-              <ul>
-                <li>Username: ${username}</li>
-                <li>Email: ${email}</li>
-                <li>Contact: ${contact}</li>
-                <li>Groups: ${userGroups.join(', ')}</li>
-              </ul>
-              <p>Thank you!</p>
-        `,
+        html: accountActivatedTemplate(username, email, contact, userGroups.join(', '), `${sanitizedFrontendUrl}/auth/login`),
       };
 
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
@@ -259,14 +242,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
       from: process.env.VITE_EMAIL_FROM,
       to: email,
       subject: 'Reset Password',
-      html: `
-              <h1>Reset Password</h1>
-              <p>Hello ${user.name},</p>
-              <p>Please reset your password by clicking the link below:</p>
-              <a href="${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}">Reset Password</a>
-              <p>This link will expire in 1 hour.</p>
-              <p>Thank you!</p>
-          `
+      html: resetPasswordTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
     };
 
     await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
@@ -366,15 +342,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
           from: process.env.VITE_EMAIL_FROM,
           to: email,
           subject: 'Password Changed Successfully',
-          html: `
-              <h1>Password Changed</h1>
-              <p>Hello ${user.fname},</p>
-              <p>Your password has been successfully changed.</p>
-              <p>If you did not make this change, please contact our support team immediately.</p>
-              <p>You can login with your new password at:</p>
-              <a href="${sanitizedFrontendUrl}/auth/login">Login Here</a>
-              <p>Thank you!</p>
-          `
+          html: passwordChangedTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/login`),
       };
 
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
