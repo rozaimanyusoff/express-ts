@@ -163,6 +163,13 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
       return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email. Activation aborted.' });
     }
 
+    // Notify admin about the new user activation
+    await createNotification({
+      userId: userId, // Admin user ID or 0 if it's a global notification
+      type: 'activation',
+      message: `User ${username} (${email}) has activated their account.`
+    });
+
     // 4. Only now, activate the user in DB
     const activation: any = await activateUser(email, contact, activationCode, username, password);
     if (activation.affectedRows > 0) {
@@ -287,6 +294,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
     const users = await findUserByEmailOrContact(email, contact);
     const user = users[0];
     if (!user) {
+      await logAuthActivity(0, 'reset_password', 'fail', { reason: 'user_not_found', email, contact }, req);
       return res.status(404).json({ status: 'error', code: 404, message: 'User not found' });
     }
 
@@ -303,7 +311,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
     await updateUserResetTokenAndStatus(user.id, resetToken, 3);
 
     const mailOptions = {
-      from: process.env.VITE_EMAIL_FROM,
+      from: process.env.EMAIL_FROM,
       to: email,
       subject: 'Reset Password',
       html: resetPasswordTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
@@ -311,9 +319,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 
     await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
+    await logAuthActivity(user.id, 'reset_password', 'success', {}, req);
     return res.status(200).json({ status: 'success', message: 'Reset password email sent successfully' });
   } catch (error) {
     logger.error('Reset password error:', error);
+    await logAuthActivity(0, 'reset_password', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
     return res.status(500).json({ status: 'error', code: 500, message: 'Error processing reset password request' });
   }
 };
@@ -371,6 +381,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
   try {
       const user = await findUserByResetToken(token);
       if (!user) {
+          await logAuthActivity(0, 'reset_password', 'fail', { reason: 'invalid_token', email, contact }, req);
           return res.status(400).json({
               status: 'error',
               code: 400,
@@ -379,6 +390,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
       }
 
       if (user.email !== email || user.contact !== contact) {
+          await logAuthActivity(user.id, 'reset_password', 'fail', { reason: 'invalid_credentials', email, contact }, req);
           return res.status(400).json({
               status: 'error',
               code: 400,
@@ -391,6 +403,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
       if (Date.now() > payload.x) {
           await reactivateUser(user.id);
+          await logAuthActivity(user.id, 'reset_password', 'fail', { reason: 'expired_token', email, contact }, req);
           return res.status(400).json({
               status: 'error',
               code: 400,
@@ -399,11 +412,10 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
       }
 
       await updateUserPassword(email, contact, newPassword);
-
       await reactivateUser(user.id);
 
       const mailOptions = {
-          from: process.env.VITE_EMAIL_FROM,
+          from: process.env.EMAIL_FROM,
           to: email,
           subject: 'Password Changed Successfully',
           html: passwordChangedTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/login`),
@@ -411,12 +423,14 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
+      await logAuthActivity(user.id, 'reset_password', 'success', {}, req);
       return res.json({
           status: 'success',
           message: 'Password updated successfully'
       });
   } catch (error) {
       logger.error('Update password error:', error);
+      await logAuthActivity(0, 'reset_password', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
       return res.status(500).json({
           status: 'error',
           code: 500,
@@ -455,6 +469,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
   const token = req.header('Authorization')?.split(' ')[1];
   
   if (!token) {
+    await logAuthActivity(0, 'other', 'fail', { reason: 'no_token' }, req);
     return res.status(401).json({ status: 'error', code: 401, message: 'No token provided' });
   }
 
@@ -466,6 +481,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     if (typeof decoded !== 'object' || !('userId' in decoded)) {
+      await logAuthActivity(0, 'other', 'fail', { reason: 'invalid_token' }, req);
       return res.status(401).json({ status: 'error', code: 401, message: 'Invalid token' });
     }
 
@@ -475,12 +491,14 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
       { expiresIn: '1h', algorithm: 'HS256' }
     );
 
+    await logAuthActivity(decoded.userId, 'other', 'success', {}, req);
     return res.status(200).json({
       status: 'success',
       token: newToken,
     });
   } catch (error) {
     logger.error('Refresh token error:', error);
+    await logAuthActivity(0, 'other', 'fail', { reason: 'exception', error: String(error) }, req);
     return res.status(401).json({ status: 'error', code: 401, message: 'Invalid or expired refresh token' });
   }
 };

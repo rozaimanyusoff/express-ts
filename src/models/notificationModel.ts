@@ -1,5 +1,6 @@
 import pool from '../utils/db';
 import logger from '../utils/logger';
+import { io } from '../server';
 
 export interface Notification {
   userId: number;
@@ -13,6 +14,9 @@ export const createNotification = async ({ userId, type, message }: Notification
       'INSERT INTO notifications (user_id, type, message) VALUES (?, ?, ?)',
       [userId, type, message]
     );
+
+    // Emit the notification event via WebSocket
+    io.emit('notification', { userId, type, message });
   } catch (error) {
     logger.error('Error creating notification:', error);
     throw error;
