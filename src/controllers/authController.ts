@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, logAuthActivity } from '../models/userModel';
 import { getNavigationByUserId } from '../models/navModel';
 import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
+import { createNotification } from '../models/notificationModel';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -42,13 +43,11 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     const existingAccounts = await findUserByEmailOrContact(email, contact);
 
     if (existingAccounts.length > 0) {
+      await logAuthActivity(0, 'register', 'fail', { reason: 'duplicate' }, req);
       return res.status(400).json({ status: 'error', code: 400, message: 'The requested credentials already exist' });
     }
 
-    const newUserId = (await registerUser(name, email, contact, userType, activationCode)).insertId;
-
-    await assignGroupByUserId(newUserId); // Assign default group to the new user
-
+    // Send activation email first
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to: email,
@@ -56,7 +55,26 @@ export const register = async (req: Request, res: Response): Promise<Response> =
       html: accountActivationTemplate(name, activationLink),
     };
 
-    await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
+    try {
+      await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
+    } catch (mailError) {
+      logger.error('Activation email send error:', mailError);
+      await logAuthActivity(0, 'register', 'fail', { reason: 'email_failed' }, req);
+      return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email. Registration aborted.' });
+    }
+
+    // Only register user if email sent successfully
+    const newUserId = (await registerUser(name, email, contact, userType, activationCode)).insertId;
+    await assignGroupByUserId(newUserId); // Assign default group to the new user
+    await logAuthActivity(newUserId, 'register', 'success', {}, req);
+
+    // Notify admin of new registration (in-app notification)
+
+    await createNotification({
+      userId: newUserId,
+      type: 'registration',
+      message: `New user registered: ${name} (${email})`,
+    });
 
     return res.status(201).json({
       status: 'success',
@@ -64,6 +82,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     });
   } catch (error: unknown) {
     logger.error('Registration error:', error);
+    await logAuthActivity(0, 'register', 'fail', { reason: 'exception', error: String(error) }, req);
     return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 };
@@ -90,28 +109,73 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
   const { email, contact, activationCode, username, password } = req.body;
 
   try {
-    const activation: any = await activateUser(email, contact, activationCode, username, password);
-    if (activation.affectedRows > 0) { // Check if any rows were updated
+    // 1. Validate activation details (simulate what activateUser would do, but do not activate yet)
+    const validation: any = await validateActivation(email, contact, activationCode);
+    if (!validation.valid || !validation.user) {
+      // Check if user exists and is already activated
+      const existingUsers = await findUserByEmailOrContact(email, contact);
+      if (existingUsers.length > 0 && existingUsers[0].activated_at) {
+        logger.info('Activation attempt for already activated account', { email, contact });
+        await logAuthActivity(existingUsers[0].id, 'activate', 'fail', { reason: 'already_activated', email, contact }, req);
+        return res.status(409).json({ status: 'error', code: 409, message: 'Account already activated. Please log in.' });
+      }
+      logger.error('Activation failed: invalid activation details', { email, contact, activationCode });
+      await logAuthActivity(0, 'activate', 'fail', { reason: 'invalid_activation_details', email, contact }, req);
+      return res.status(401).json({ status: 'error', code: 401, message: 'Activation failed. Please check your details.' });
+    }
+    const userId = validation.user.id;
+    if (!userId || !Number.isInteger(userId) || userId <= 0) {
+      logger.error('Activation failed: invalid or missing userId', { validation });
+      await logAuthActivity(0, 'activate', 'fail', { reason: 'invalid_userid', email, contact, validation }, req);
+      return res.status(401).json({ status: 'error', code: 401, message: 'Activation failed. Please check your details.' });
+    }
 
-      const userId = activation.userId; // Assuming the userId is returned in the activation response
-      await assignGroupByUserId(userId); // Assign default group to user after activation
-      const userGroups = await getGroupsByUserId(userId); // Fetch user groups for the activated user
+    // 2. Assign group
+    await assignGroupByUserId(userId, 5);
+    // Fetch group names instead of just IDs
+    const groupModel = require('../models/groupModel');
+    const groupIds = await getGroupsByUserId(userId);
+    const groupNames = await Promise.all(
+      groupIds.map(async (groupId: number) => {
+        const group = await groupModel.getGroupById(groupId);
+        return group ? group.name : null;
+      })
+    );
 
-      const mailOptions = {
-        from: process.env.EMAIL_FROM,
-        to: email,
-        subject: 'Account Activation',
-        html: accountActivatedTemplate(username, email, contact, userGroups.join(', '), `${sanitizedFrontendUrl}/auth/login`),
-      };
-
+    // 3. Send activation email
+    const mailOptions = {
+      from: process.env.EMAIL_FROM,
+      to: email,
+      subject: 'Account Activation',
+      html: accountActivatedTemplate(
+        username,
+        email,
+        contact,
+        groupNames.filter(Boolean).join(', '),
+        `${sanitizedFrontendUrl}/auth/login`
+      ),
+    };
+    try {
       await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
+    } catch (mailError) {
+      logger.error('Activation email send error:', mailError);
+      await logAuthActivity(userId, 'activate', 'fail', { reason: 'email_failed', email, contact }, req);
+      return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email. Activation aborted.' });
+    }
 
+    // 4. Only now, activate the user in DB
+    const activation: any = await activateUser(email, contact, activationCode, username, password);
+    if (activation.affectedRows > 0) {
+      await logAuthActivity(userId, 'activate', 'success', {}, req);
       return res.status(200).json({ status: 'success', message: 'Account activated successfully.' });
     } else {
+      logger.error('Activation failed at DB update', { activation });
+      await logAuthActivity(userId, 'activate', 'fail', { reason: 'activation_failed_db', email, contact, activation }, req);
       return res.status(401).json({ status: 'error', code: 401, message: 'Activation failed. Please check your details.' });
     }
   } catch (error) {
     logger.error('Activation error:', error);
+    await logAuthActivity(0, 'activate', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
     return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
   }
 }
