@@ -1,5 +1,5 @@
 import { rateLimit } from 'express-rate-limit';
-import { logAuthActivity } from '../models/userModel.js';
+import { logAuthActivity } from '../models/logModel';
 import { Request, Response, NextFunction } from 'express';
 
 const blockedMap = new Map<string, { blockedUntil: number }>();

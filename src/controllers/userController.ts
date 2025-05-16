@@ -74,12 +74,19 @@ async function getUserTimeSpent(userId: number): Promise<number> {
   let lastLogin: Date | null = null;
   for (const row of rows) {
     if (row.action === 'login') {
-      lastLogin = new Date(row.created_at);
+      // Only set lastLogin if not already set (ignore consecutive logins)
+      if (!lastLogin) {
+        lastLogin = new Date(row.created_at);
+      }
     } else if (row.action === 'logout' && lastLogin) {
       const logoutTime = new Date(row.created_at);
       total += (logoutTime.getTime() - lastLogin.getTime()) / 1000; // seconds
       lastLogin = null;
     }
+  }
+  // If still logged in, add time from last login to now
+  if (lastLogin) {
+    total += (Date.now() - lastLogin.getTime()) / 1000;
   }
   return Math.round(total);
 }
