@@ -1,6 +1,7 @@
 import pool from '../utils/db';
 import logger from '../utils/logger';
 import { io } from '../server';
+import { getAdminUserIds } from './userModel';
 
 export interface Notification {
   userId: number;
@@ -20,5 +21,12 @@ export const createNotification = async ({ userId, type, message }: Notification
   } catch (error) {
     logger.error('Error creating notification:', error);
     throw error;
+  }
+};
+
+export const createAdminNotification = async ({ type, message }: { type: string; message: string }) => {
+  const adminIds = await getAdminUserIds();
+  for (const adminId of adminIds) {
+    await createNotification({ userId: adminId, type, message });
   }
 };

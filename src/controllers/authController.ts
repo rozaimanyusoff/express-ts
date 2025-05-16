@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, logAuthActivity } from '../models/userModel';
 import { getNavigationByUserId } from '../models/navModel';
 import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
-import { createNotification } from '../models/notificationModel';
+import { createNotification, createAdminNotification } from '../models/notificationModel';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -163,9 +163,8 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
       return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email. Activation aborted.' });
     }
 
-    // Notify admin about the new user activation
-    await createNotification({
-      userId: userId, // Admin user ID or 0 if it's a global notification
+    // Notify all admins about the new user activation
+    await createAdminNotification({
       type: 'activation',
       message: `User ${username} (${email}) has activated their account.`
     });

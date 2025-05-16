@@ -350,3 +350,9 @@ export const logAuthActivity = async (userId: number, action: AuthAction, status
     logger.error('Error logging auth activity:', error);
   }
 };
+
+// Get admin user IDs
+export const getAdminUserIds = async (): Promise<number[]> => {
+  const [rows]: any[] = await pool.query('SELECT id FROM users WHERE role = 1');
+  return rows.map((row: any) => row.id);
+};
