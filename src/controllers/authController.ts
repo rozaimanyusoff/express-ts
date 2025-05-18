@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import dotenv from 'dotenv';
-import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken } from '../models/userModel';
+import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken, getUserProfile } from '../models/userModel';
 import { logAuthActivity, AuthAction } from '../models/logModel';
 import { getNavigationByUserId } from '../models/navModel';
 import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
@@ -216,12 +216,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             return res.status(403).json({ status: 'error', code: 403, message: 'Password reset required. Please check your email for the reset link.' });
         }
 
-        // Single-session enforcement
-        const existingSession = await getUserSessionToken(result.user.id);
-        if (existingSession) {
-            // Optionally: notify the first user (e.g., via notification or email)
-            await logAuthActivity(result.user.id, 'login', 'fail', { reason: 'already_logged_in' }, req);
-            return res.status(403).json({ status: 'error', code: 403, message: 'This account is already logged in elsewhere. Only one session is allowed.' });
+        // Single-session enforcement (configurable, allow same browser/IP re-login)
+        const singleSessionEnforcement = process.env.SINGLE_SESSION_ENFORCEMENT === 'true';
+        if (singleSessionEnforcement) {
+            const existingSession = await getUserSessionToken(result.user.id);
+            if (existingSession) {
+                // Block login if session exists (optionally, could check user-agent/IP here if desired)
+                await logAuthActivity(result.user.id, 'login', 'fail', { reason: 'already_logged_in' }, req);
+                return res.status(403).json({ status: 'error', code: 403, message: 'This account is already logged in elsewhere. Only one session is allowed.' });
+            }
         }
 
         // Set new session token
@@ -232,13 +235,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         await logAuthActivity(result.user.id, 'login', 'success', {}, req);
 
         const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
-        const userHost = req.hostname || null;
-        const userOs = req.headers['user-agent'] || os.platform();
-
+        const userAgent = req.headers['user-agent'] || null;
         await updateUserLoginDetails(result.user.id, {
             ip: userIp,
-            host: userHost,
-            os: userOs
+            host: req.hostname || null,
+            os: userAgent || os.platform()
         });
 
         if (!process.env.JWT_SECRET) {
@@ -283,6 +284,8 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             })
         );
 
+        // Fetch user profile
+        const userProfile = await getUserProfile(result.user.id);
         return res.status(200).json({
             status: 'success',
             message: 'Login successful',
@@ -298,6 +301,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
                     status: result.user.status,
                     lastNav: result.user.last_nav,
                     role: roleObj,
+                    profile: userProfile || {},
                 },
                 usergroups: usergroups.filter(Boolean),
                 navTree: structuredNavTree,

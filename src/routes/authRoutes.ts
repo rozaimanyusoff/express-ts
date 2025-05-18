@@ -15,7 +15,7 @@ router.post('/login', rateLimiter[0], rateLimiter[1], asyncHandler(login)); //lo
 router.post('/reset-password', rateLimiter[0], rateLimiter[1], asyncHandler(resetPassword));
 router.post('/verifytoken', rateLimiter[0], rateLimiter[1], asyncHandler(verifyResetToken));
 router.post('/update-password', rateLimiter[0], rateLimiter[1], asyncHandler(updatePassword));
-router.post('/logout', asyncHandler(logout));
+router.post('/logout', tokenValidator, asyncHandler(logout));
 router.post('/refresh-token', tokenValidator, asyncHandler(refreshToken));
 
 export default router;

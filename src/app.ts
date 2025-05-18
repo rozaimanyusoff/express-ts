@@ -12,6 +12,7 @@ import tokenValidator from './middlewares/tokenValidator';
 import rateLimit from './middlewares/rateLimiter';
 import securityHeaders from './middlewares/securityHeaders';
 import logger from './utils/logger';
+import path from 'path';
 
 const app: Express = express();
 
@@ -21,6 +22,9 @@ app.use(corsMiddleware);
 app.options('*', corsMiddleware);
 //app.use(rateLimit);
 app.use(securityHeaders);
+
+// Serve uploads directory for profile images
+app.use('/uploads', express.static(path.resolve(__dirname, '../../uploads')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', tokenValidator, userRoutes);

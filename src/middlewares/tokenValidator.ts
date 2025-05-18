@@ -18,7 +18,15 @@ const tokenValidator = (req: Request, res: Response, next: NextFunction): void =
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Assuming you've extended `req.user` in express types
+    // Ensure req.user.id is set, even if payload uses userId
+    if (typeof decoded === 'object' && decoded !== null) {
+      req.user = decoded;
+      if (!('id' in req.user) && 'userId' in decoded) {
+        (req.user as any).id = (decoded as any).userId;
+      }
+    } else {
+      req.user = {};
+    }
     next(); // ✅ Proceed to next middleware
   } catch (error) {
     res.status(400).json({ message: 'Invalid token.' });

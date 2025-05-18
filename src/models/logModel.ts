@@ -30,3 +30,17 @@ export const logAuthActivity = async (
     logger.error('Error logging auth activity:', error);
   }
 };
+
+// Get authentication logs for a user (for admin view)
+export const getUserAuthLogs = async (userId: number): Promise<any[]> => {
+    try {
+        const [rows]: any[] = await pool.query(
+            'SELECT id, user_id, action, status, ip, user_agent, details, created_at FROM logs_auth WHERE user_id = ? ORDER BY created_at DESC',
+            [userId]
+        );
+        return rows;
+    } catch (error) {
+        logger.error('Database error in getUserAuthLogs:', error);
+        throw error;
+    }
+};

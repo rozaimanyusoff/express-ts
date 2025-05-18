@@ -4,7 +4,8 @@ import {
   updateUser,
   assignUserToGroups,
   verifyLoginCredentials,
-  updateUserResetTokenAndStatus
+  updateUserResetTokenAndStatus,
+  upsertUserProfile, getUserTasks, createUserTask, updateUserTask
 } from '../models/userModel';
 import dotenv from 'dotenv';
 import { sendMail } from '../utils/mailer';
@@ -317,3 +318,105 @@ export const adminResetPasswords = async (req: Request, res: Response): Promise<
     return res.status(500).json({ message: 'Error processing admin reset password request' });
   }
 };
+
+// Update user profile
+export const updateUserProfile = async (req: Request, res: Response): Promise<Response> => {
+  const userId = (req as any).user?.id;
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  // Accept all possible fields from frontend
+  const { name, email, phone, dob, location, job } = req.body;
+  // If file is uploaded, use req.file.buffer
+  let profileImage = undefined;
+  if ((req as any).file && (req as any).file.buffer) {
+    profileImage = (req as any).file.buffer;
+  }
+  try {
+    // Update users table for fname, email, contact
+    if (name || email || phone) {
+      const updateFields: any = {};
+      if (name) updateFields.fname = name;
+      if (email) updateFields.email = email;
+      if (phone) updateFields.contact = phone;
+      const setClause = Object.keys(updateFields).map(field => `${field} = ?`).join(', ');
+      const values = Object.values(updateFields);
+      if (setClause) {
+        await pool.query(`UPDATE users SET ${setClause} WHERE id = ?`, [...values, userId]);
+      }
+    }
+    // Update user_profile table for profile fields
+    await upsertUserProfile(userId, { dob, location, job, profileImage });
+    return res.status(200).json({ message: 'Profile updated successfully' });
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Error updating profile', error: error.message });
+  }
+};
+
+export const getTasks = async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const tasks = await getUserTasks(userId) as any[];
+    // Format for frontend
+    const now = new Date();
+    const formatted = tasks.map((task: any) => ({
+        id: task.id,
+        title: task.title,
+        completed: !!task.completed,
+        progress: Number(task.progress),
+        done: `${task.progress}%`,
+        time: timeAgo(task.updated_at || task.created_at, now)
+    }));
+    res.json({ tasks: formatted });
+};
+
+// POST /api/users/tasks
+export const postTask = async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const { title, progress } = req.body;
+    if (!title) return res.status(400).json({ message: 'Title required' });
+    await createUserTask(userId, title, progress || 0);
+    res.status(201).json({ message: 'Task created' });
+};
+
+// PUT /api/users/tasks/:id
+export const putTask = async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const taskId = Number(req.params.id);
+    const { title, completed, progress } = req.body;
+    const result = await updateUserTask(userId, taskId, { title, completed, progress });
+    if (result && (result as any).affectedRows > 0) {
+        res.json({ message: 'Task updated' });
+    } else {
+        res.status(404).json({ message: 'Task not found or not updated' });
+    }
+};
+
+// Get authentication logs for a user (admin only)
+export const getUserAuthLogs = async (req: Request, res: Response): Promise<Response> => {
+    const userId = Number(req.params.userId);
+    // Robust admin check
+    const isAdmin = req.user && typeof req.user === 'object' && 'role' in req.user && req.user.role === 1;
+    if (!isAdmin) {
+        return res.status(403).json({ status: 'error', message: 'Forbidden: Admins only' });
+    }
+    if (!userId) {
+        return res.status(400).json({ status: 'error', message: 'Missing or invalid userId' });
+    }
+    try {
+        const { getUserAuthLogs } = require('../models/logModel');
+        const logs = await getUserAuthLogs(userId);
+        return res.status(200).json({ status: 'success', logs });
+    } catch (error) {
+        logger.error('Error fetching user auth logs:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch user logs' });
+    }
+};
+
+// Helper for "time ago"
+function timeAgo(date: Date, now: Date) {
+    const diff = Math.floor((now.getTime() - new Date(date).getTime()) / 1000);
+    if (diff < 60) return `${diff} secs ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} hrs ago`;
+    return `${Math.floor(diff / 86400)} days ago`;
+}
