@@ -24,6 +24,8 @@ interface CreateNavigationBody {
     path?: string | null;
     parent_nav_id?: number | null;
     section_id?: number | null;
+    parentNavId?: number | null; // Added camelCase for frontend compatibility
+    sectionId?: number | null;   // Added camelCase for frontend compatibility
     permittedGroups?: number[];
 }
 
@@ -94,13 +96,19 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
 
 export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigationBody>, res: Response): Promise<Response> => {
     try {
-        const newNavigation = req.body;
+        // Destructure and map camelCase to snake_case for parentNavId and sectionId
+        const { parentNavId, sectionId, ...rest } = req.body;
+        const newNavigation = {
+            ...rest,
+            parent_nav_id: parentNavId ?? null,
+            section_id: sectionId ?? null,
+        };
         const normalizedData = normalizeNavigationData(newNavigation);
         const newIdResult = await createNavigation(normalizedData);
         const newId = newIdResult.insertId; // Extract the insertId from ResultSetHeader
 
-        if (newNavigation.permittedGroups?.length) {
-            const permissions = newNavigation.permittedGroups.map((groupId: number) => ({
+        if (req.body.permittedGroups?.length) {
+            const permissions = req.body.permittedGroups.map((groupId: number) => ({
                 nav_id: newId, // Use the extracted insertId
                 group_id: groupId,
             }));
