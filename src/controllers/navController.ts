@@ -107,8 +107,14 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
         const newIdResult = await createNavigation(normalizedData);
         const newId = newIdResult.insertId; // Extract the insertId from ResultSetHeader
 
-        if (req.body.permittedGroups?.length) {
-            const permissions = req.body.permittedGroups.map((groupId: number) => ({
+        // Accept both permittedGroups and groups from frontend
+        const groupIds = Array.isArray(req.body.permittedGroups)
+            ? req.body.permittedGroups
+            : Array.isArray((req.body as any).groups)
+                ? (req.body as any).groups.map((g: any) => Number(g)).filter((g: any) => !isNaN(g))
+                : [];
+        if (groupIds.length > 0) {
+            const permissions = groupIds.map((groupId: number) => ({
                 nav_id: newId, // Use the extracted insertId
                 group_id: groupId,
             }));
@@ -185,17 +191,15 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
         // Update the navigation item in the database
         const updatedItem = await updateNavigation(id, normalizedData);
 
-        // Only update permissions if permittedGroups is a non-empty array
-        if (Array.isArray(updatedData.permittedGroups) && updatedData.permittedGroups.length > 0) {
-            const permissions = updatedData.permittedGroups.map((groupId: number) => ({
+        // Always call removeNavigationPermissionsNotIn to ensure all permissions are removed if groupIds is empty
+        await removeNavigationPermissionsNotIn(id, groupIds);
+
+        // Only add/update permissions if groupIds is non-empty
+        if (groupIds.length > 0) {
+            const permissions = groupIds.map((groupId: number) => ({
                 nav_id: id,
                 group_id: groupId,
             }));
-
-            // Remove existing permissions not in the new permittedGroups
-            await removeNavigationPermissionsNotIn(id, updatedData.permittedGroups);
-
-            // Add or update the provided permissions
             await updateNavigationPermission(permissions);
         }
         // If permittedGroups is missing or empty, skip permission update/removal

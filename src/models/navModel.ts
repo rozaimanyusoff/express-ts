@@ -230,6 +230,14 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
 
 export const removeNavigationPermissionsNotIn = async (id: number, permittedGroups: number[]): Promise<number> => {
   try {
+    if (!permittedGroups.length) {
+      // Remove all permissions for this nav_id
+      const [result]: any = await pool.query(
+        'DELETE FROM auth.group_nav WHERE nav_id = ?',
+        [id]
+      );
+      return result.affectedRows;
+    }
     const placeholders = permittedGroups.map(() => '?').join(', ');
     const query = `
       DELETE FROM auth.group_nav
