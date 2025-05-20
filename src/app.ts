@@ -6,6 +6,7 @@ import roleRoutes from './routes/roleRoutes';
 import groupRoutes from './routes/groupRoutes';
 import assetRoutes from './routes/assetRoutes';
 import telcoRoutes from './routes/telcoRoutes';
+import stockRoutes from './routes/stockRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -33,6 +34,7 @@ app.use('/api/groups', tokenValidator, groupRoutes);
 app.use('/api/nav', tokenValidator, navRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
+app.use('/api/stock', tokenValidator, stockRoutes);
 
 app.use(errorHandler);
 
