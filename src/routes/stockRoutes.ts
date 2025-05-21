@@ -39,4 +39,39 @@ router.post('/assets', asyncHandler(stockController.createAsset));
 router.put('/assets/:id', asyncHandler(stockController.updateAsset));
 router.delete('/assets/:id', asyncHandler(stockController.deleteAsset));
 
+// DEPARTMENTS
+router.get('/departments', asyncHandler(stockController.getDepartments));
+router.get('/departments/:id', asyncHandler(stockController.getDepartmentById));
+router.post('/departments', asyncHandler(stockController.createDepartment));
+router.put('/departments/:id', asyncHandler(stockController.updateDepartment));
+router.delete('/departments/:id', asyncHandler(stockController.deleteDepartment));
+
+// POSITIONS
+router.get('/positions', asyncHandler(stockController.getPositions));
+router.get('/positions/:id', asyncHandler(stockController.getPositionById));
+router.post('/positions', asyncHandler(stockController.createPosition));
+router.put('/positions/:id', asyncHandler(stockController.updatePosition));
+router.delete('/positions/:id', asyncHandler(stockController.deletePosition));
+
+// SECTIONS
+router.get('/sections', asyncHandler(stockController.getSections));
+router.get('/sections/:id', asyncHandler(stockController.getSectionById));
+router.post('/sections', asyncHandler(stockController.createSection));
+router.put('/sections/:id', asyncHandler(stockController.updateSection));
+router.delete('/sections/:id', asyncHandler(stockController.deleteSection));
+
+// COSTCENTERS
+router.get('/costcenters', asyncHandler(stockController.getCostcenters));
+router.get('/costcenters/:id', asyncHandler(stockController.getCostcenterById));
+router.post('/costcenters', asyncHandler(stockController.createCostcenter));
+router.put('/costcenters/:id', asyncHandler(stockController.updateCostcenter));
+router.delete('/costcenters/:id', asyncHandler(stockController.deleteCostcenter));
+
+// EMPLOYEES
+router.get('/employees', asyncHandler(stockController.getEmployees));
+router.get('/employees/:id', asyncHandler(stockController.getEmployeeById));
+router.post('/employees', asyncHandler(stockController.createEmployee));
+router.put('/employees/:id', asyncHandler(stockController.updateEmployee));
+router.delete('/employees/:id', asyncHandler(stockController.deleteEmployee));
+
 export default router;

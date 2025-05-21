@@ -221,6 +221,17 @@ export const deleteLocation = async (id: number) => {
   return result;
 };
 
+// DISTRICTS CRUD (renamed from locations)
+export const getDistricts = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.districts');
+  return rows;
+};
+
+export const getDistrictById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.districts WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
 // USERS CRUD
 export const createUser = async (data: any) => {
   const { name, email, phone, department_id, position_id, location_id, image } = data;
@@ -388,5 +399,61 @@ export const updateAssetUser = async (id: number, data: any) => {
 
 export const deleteAssetUser = async (id: number) => {
   const [result] = await pool.query('DELETE FROM si.asset_users WHERE id = ?', [id]);
+  return result;
+};
+
+// SECTIONS CRUD
+export const createSection = async (data: any) => {
+  const { name, department_id } = data;
+  const [result] = await pool.query('INSERT INTO si.sections (name, department_id) VALUES (?, ?)', [name, department_id]);
+  return result;
+};
+
+export const getSections = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.sections');
+  return rows;
+};
+
+export const getSectionById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.sections WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateSection = async (id: number, data: any) => {
+  const { name, department_id } = data;
+  const [result] = await pool.query('UPDATE si.sections SET name = ?, department_id = ? WHERE id = ?', [name, department_id, id]);
+  return result;
+};
+
+export const deleteSection = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.sections WHERE id = ?', [id]);
+  return result;
+};
+
+// COSTCENTERS CRUD
+export const createCostcenter = async (data: any) => {
+  const { name } = data;
+  const [result] = await pool.query('INSERT INTO si.costcenters (name) VALUES (?)', [name]);
+  return result;
+};
+
+export const getCostcenters = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.costcenters');
+  return rows;
+};
+
+export const getCostcenterById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.costcenters WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateCostcenter = async (id: number, data: any) => {
+  const { name } = data;
+  const [result] = await pool.query('UPDATE si.costcenters SET name = ? WHERE id = ?', [name, id]);
+  return result;
+};
+
+export const deleteCostcenter = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.costcenters WHERE id = ?', [id]);
   return result;
 };
