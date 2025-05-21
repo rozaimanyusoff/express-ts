@@ -12,7 +12,7 @@ DB_USER="$2"
 DB_PASS="$3"
 SQL_DIR="$(dirname "$0")/../src/db"
 
-for sql in users.sql roles.sql groups.sql navigation.sql user_groups.sql group_nav.sql logs_auth.sql notifications.sql pending_users.sql user_profile.sql user_tasks.sql; do
+for sql in users.sql roles.sql groups.sql navigation.sql user_groups.sql group_nav.sql logs_auth.sql sections.sql costcenters.sql modules.sql notifications.sql pending_users.sql user_profile.sql user_tasks.sql; do
   echo "Importing $sql..."
   mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$SQL_DIR/$sql"
   if [ $? -ne 0 ]; then

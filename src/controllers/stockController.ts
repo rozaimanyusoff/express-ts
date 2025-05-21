@@ -438,11 +438,16 @@ export const getEmployees = async (req: Request, res: Response) => {
   const departments = await stockModel.getDepartments();
   const positions = await stockModel.getPositions();
   const districts = await stockModel.getDistricts(); // renamed from locations
+  const sections = await stockModel.getSections();
 
   // Build lookup maps
   const departmentMap = new Map<number, { id: number; name: string }>();
   for (const d of departments as any[]) {
     departmentMap.set(d.id, { id: d.id, name: d.name });
+  }
+  const sectionMap = new Map<number, { id: number; name: string }>();
+  for (const s of sections as any[]) {
+    sectionMap.set(s.id, { id: s.id, name: s.name });
   }
   const positionMap = new Map<number, { id: number; name: string }>();
   for (const p of positions as any[]) {
@@ -450,7 +455,7 @@ export const getEmployees = async (req: Request, res: Response) => {
   }
   const districtMap = new Map<number, { id: number; name: string }>();
   for (const l of districts as any[]) {
-    districtMap.set(l.id, { id: l.id, name: l.name });
+    districtMap.set(l.id, { id: l.id, name: l.code });
   }
 
   const data = (employees as any[]).map(emp => ({
@@ -459,6 +464,7 @@ export const getEmployees = async (req: Request, res: Response) => {
     email: emp.email,
     phone: emp.phone,
     department: departmentMap.get(emp.department_id) || null,
+    section: emp.section_id ? sectionMap.get(emp.section_id) || null : null,
     position: positionMap.get(emp.position_id) || null,
     district: districtMap.get(emp.location_id) || null,
     image: emp.image
@@ -477,6 +483,7 @@ export const getEmployeeById = async (req: Request, res: Response) => {
     return res.status(404).json({ status: 'error', message: 'Employee not found' });
   }
   const department = emp.department_id ? await stockModel.getDepartmentById(emp.department_id) : null;
+  const section = emp.section_id ? await stockModel.getSectionById(emp.section_id) : null;
   const position = emp.position_id ? await stockModel.getPositionById(emp.position_id) : null;
   const district = emp.location_id ? await stockModel.getDistrictById(emp.location_id) : null;
 
@@ -489,15 +496,26 @@ export const getEmployeeById = async (req: Request, res: Response) => {
       email: emp.email,
       phone: emp.phone,
       department: department ? { id: department.id, name: department.name } : null,
+      section: section ? { id: section.id, name: section.name } : null,
       position: position ? { id: position.id, name: position.name } : null,
-      district: district ? { id: district.id, name: district.name } : null,
+      district: district ? { id: district.id, name: district.code } : null,
       image: emp.image
     }
   });
 };
 
 export const createEmployee = async (req: Request, res: Response) => {
-  const result = await stockModel.createUser(req.body);
+  const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
+  const result = await stockModel.createEmp({
+    name,
+    email,
+    phone,
+    image,
+    department_id: departmentId,
+    position_id: positionId,
+    location_id: districtId,
+    section_id: sectionId
+  });
   res.json({
     status: 'success',
     message: 'Employee created successfully',
@@ -505,7 +523,17 @@ export const createEmployee = async (req: Request, res: Response) => {
   });
 };
 export const updateEmployee = async (req: Request, res: Response) => {
-  const result = await stockModel.updateUser(Number(req.params.id), req.body);
+  const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
+  const result = await stockModel.updateEmp(Number(req.params.id), {
+    name,
+    email,
+    phone,
+    image,
+    department_id: departmentId,
+    position_id: positionId,
+    location_id: districtId,
+    section_id: sectionId
+  });
   res.json({
     status: 'success',
     message: 'Employee updated successfully',
@@ -517,6 +545,178 @@ export const deleteEmployee = async (req: Request, res: Response) => {
   res.json({
     status: 'success',
     message: 'Employee deleted successfully',
+    result
+  });
+};
+
+// DISTRICTS
+export const getDistricts = async (req: Request, res: Response) => {
+  const districts = await stockModel.getDistricts();
+  const zoneDistricts = await stockModel.getAllZoneDistricts();
+  const zones = await stockModel.getZones();
+  // Build zone map with code
+  const zoneMap = new Map<number, { id: number; name: string; code: string }>();
+  for (const z of zones as any[]) {
+    zoneMap.set(z.id, { id: z.id, name: z.name, code: z.code });
+  }
+  const districtToZone = new Map<number, number>();
+  for (const zd of zoneDistricts as any[]) {
+    districtToZone.set(zd.district_id, zd.zone_id);
+  }
+  const data = (districts as any[]).map((d) => ({
+    id: d.id,
+    name: d.name,
+    code: d.code,
+    zone: zoneMap.get(districtToZone.get(d.id)!) || null
+  }));
+  res.json({ status: 'success', message: 'Districts data retrieved successfully', data });
+};
+
+export const getDistrictById = async (req: Request, res: Response) => {
+  const row = await stockModel.getDistrictById(Number(req.params.id));
+  res.json({ status: 'success', message: 'District data retrieved successfully', data: row });
+};
+export const createDistrict = async (req: Request, res: Response) => {
+  const { name, code, zone_id } = req.body;
+  // Create the district
+  const result = await stockModel.createDistrict({ name, code });
+  // Get the new district's id
+  const districtId = (result as any).insertId;
+  // If zone_id is provided, create the join
+  if (zone_id) {
+    await stockModel.addDistrictToZone(zone_id, districtId);
+  }
+  res.json({ status: 'success', message: 'District created successfully', result });
+};
+export const updateDistrict = async (req: Request, res: Response) => {
+  const { name, code, zone_id } = req.body;
+  const districtId = Number(req.params.id);
+  // Update the district
+  const result = await stockModel.updateDistrict(districtId, { name, code });
+  // Remove all previous zone links for this district
+  await stockModel.removeAllZonesFromDistrict(districtId);
+  // Add new zone link if provided
+  if (zone_id) {
+    await stockModel.addDistrictToZone(zone_id, districtId);
+  }
+  res.json({ status: 'success', message: 'District updated successfully', result });
+};
+export const deleteDistrict = async (req: Request, res: Response) => {
+  const districtId = Number(req.params.id);
+  // Remove all zone links for this district
+  await stockModel.removeAllZonesFromDistrict(districtId);
+  // Delete the district
+  const result = await stockModel.deleteDistrict(districtId);
+  res.json({ status: 'success', message: 'District deleted successfully', result });
+};
+
+// ZONES
+export const getZones = async (req: Request, res: Response) => {
+  const zones = await stockModel.getZones();
+  const zoneDistricts = await stockModel.getAllZoneDistricts();
+  const districts = await stockModel.getDistricts();
+  const employees = await stockModel.getUsers();
+  // Build district map with code
+  const districtMap = new Map<number, { id: number; name: string; code: string }>();
+  for (const d of districts as any[]) {
+    districtMap.set(d.id, { id: d.id, name: d.name, code: d.code });
+  }
+  const employeeMap = new Map<number, { id: number; name: string }>();
+  for (const e of employees as any[]) {
+    employeeMap.set(e.id, { id: e.id, name: e.name });
+  }
+  const zoneToDistricts = new Map<number, { id: number; name: string; code: string }[]>();
+  for (const zd of zoneDistricts as any[]) {
+    if (!zoneToDistricts.has(zd.zone_id)) zoneToDistricts.set(zd.zone_id, []);
+    const district = districtMap.get(zd.district_id);
+    if (district) zoneToDistricts.get(zd.zone_id)!.push(district);
+  }
+  const data = (zones as any[]).map((z) => ({
+    id: z.id,
+    name: z.name,
+    code: z.code,
+    employees: z.employee_id ? employeeMap.get(z.employee_id) || null : null,
+    districts: zoneToDistricts.get(z.id) || []
+  }));
+  res.json({ status: 'success', message: 'Zones data retrieved successfully', data });
+};
+export const getZoneById = async (req: Request, res: Response) => {
+  const row = await stockModel.getZoneById(Number(req.params.id));
+  res.json({ status: 'success', message: 'Zone data retrieved successfully', data: row });
+};
+export const createZone = async (req: Request, res: Response) => {
+  const { name, code, employee_id, districts } = req.body;
+  // Create the zone
+  const result = await stockModel.createZone({ name, code, employee_id });
+  const zoneId = (result as any).insertId;
+  // Add districts to zone if provided
+  if (Array.isArray(districts)) {
+    for (const districtId of districts) {
+      await stockModel.addDistrictToZone(zoneId, districtId);
+    }
+  }
+  res.json({ status: 'success', message: 'Zone created successfully', result });
+};
+export const updateZone = async (req: Request, res: Response) => {
+  const { name, code, employee_id, districts } = req.body;
+  const zoneId = Number(req.params.id);
+  // Update the zone
+  const result = await stockModel.updateZone(zoneId, { name, code, employee_id });
+  // Remove all previous district links for this zone
+  await stockModel.removeAllDistrictsFromZone(zoneId);
+  // Add new district links if provided
+  if (Array.isArray(districts)) {
+    for (const districtId of districts) {
+      await stockModel.addDistrictToZone(zoneId, districtId);
+    }
+  }
+  res.json({ status: 'success', message: 'Zone updated successfully', result });
+};
+export const deleteZone = async (req: Request, res: Response) => {
+  const result = await stockModel.deleteZone(Number(req.params.id));
+  res.json({ status: 'success', message: 'Zone deleted successfully', result });
+};
+
+// MODULES
+export const getModules = async (req: Request, res: Response) => {
+  const rows = await stockModel.getModules();
+  res.json({
+    status: 'success',
+    message: 'Modules data retrieved successfully',
+    data: rows
+  });
+};
+export const getModuleById = async (req: Request, res: Response) => {
+  const row = await stockModel.getModuleById(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Module data retrieved successfully',
+    data: row
+  });
+};
+export const createModule = async (req: Request, res: Response) => {
+  const { name, code } = req.body;
+  const result = await stockModel.createModule({ name, code });
+  res.json({
+    status: 'success',
+    message: 'Module created successfully',
+    result
+  });
+};
+export const updateModule = async (req: Request, res: Response) => {
+  const { name, code } = req.body;
+  const result = await stockModel.updateModule(Number(req.params.id), { name, code });
+  res.json({
+    status: 'success',
+    message: 'Module updated successfully',
+    result
+  });
+};
+export const deleteModule = async (req: Request, res: Response) => {
+  const result = await stockModel.deleteModule(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Module deleted successfully',
     result
   });
 };

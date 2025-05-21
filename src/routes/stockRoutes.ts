@@ -74,4 +74,25 @@ router.post('/employees', asyncHandler(stockController.createEmployee));
 router.put('/employees/:id', asyncHandler(stockController.updateEmployee));
 router.delete('/employees/:id', asyncHandler(stockController.deleteEmployee));
 
+// DISTRICTS
+router.get('/districts', asyncHandler(stockController.getDistricts));
+router.get('/districts/:id', asyncHandler(stockController.getDistrictById));
+router.post('/districts', asyncHandler(stockController.createDistrict));
+router.put('/districts/:id', asyncHandler(stockController.updateDistrict));
+router.delete('/districts/:id', asyncHandler(stockController.deleteDistrict));
+
+// ZONES
+router.get('/zones', asyncHandler(stockController.getZones));
+router.get('/zones/:id', asyncHandler(stockController.getZoneById));
+router.post('/zones', asyncHandler(stockController.createZone));
+router.put('/zones/:id', asyncHandler(stockController.updateZone));
+router.delete('/zones/:id', asyncHandler(stockController.deleteZone));
+
+// MODULES
+router.get('/modules', asyncHandler(stockController.getModules));
+router.get('/modules/:id', asyncHandler(stockController.getModuleById));
+router.post('/modules', asyncHandler(stockController.createModule));
+router.put('/modules/:id', asyncHandler(stockController.updateModule));
+router.delete('/modules/:id', asyncHandler(stockController.deleteModule));
+
 export default router;

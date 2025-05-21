@@ -221,7 +221,16 @@ export const deleteLocation = async (id: number) => {
   return result;
 };
 
-// DISTRICTS CRUD (renamed from locations)
+// DISTRICTS CRUD
+export const createDistrict = async (data: any) => {
+  const { name, code } = data;
+  const [result] = await pool.query(
+    'INSERT INTO si.districts (name, code) VALUES (?, ?)',
+    [name, code]
+  );
+  return result;
+};
+
 export const getDistricts = async () => {
   const [rows] = await pool.query('SELECT * FROM si.districts');
   return rows;
@@ -232,37 +241,118 @@ export const getDistrictById = async (id: number) => {
   return (rows as RowDataPacket[])[0];
 };
 
-// USERS CRUD
-export const createUser = async (data: any) => {
-  const { name, email, phone, department_id, position_id, location_id, image } = data;
+export const updateDistrict = async (id: number, data: any) => {
+  const { name, code } = data;
   const [result] = await pool.query(
-    'INSERT INTO si.users (name, email, phone, department_id, position_id, location_id, image) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [name, email, phone, department_id, position_id, location_id, image]
+    'UPDATE si.districts SET name = ?, code = ? WHERE id = ?',
+    [name, code, id]
+  );
+  return result;
+};
+
+export const deleteDistrict = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.districts WHERE id = ?', [id]);
+  return result;
+};
+
+// ZONES CRUD
+export const createZone = async (data: any) => {
+  const { name, code, employee_id } = data;
+  const [result] = await pool.query(
+    'INSERT INTO si.zones (name, code, employee_id) VALUES (?, ?, ?)',
+    [name, code, employee_id]
+  );
+  return result;
+};
+
+export const getZones = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.zones');
+  return rows;
+};
+
+export const getZoneById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.zones WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateZone = async (id: number, data: any) => {
+  const { name, code, employee_id } = data;
+  const [result] = await pool.query(
+    'UPDATE si.zones SET name = ?, code = ?, employee_id = ? WHERE id = ?',
+    [name, code, employee_id, id]
+  );
+  return result;
+};
+
+export const deleteZone = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.zones WHERE id = ?', [id]);
+  return result;
+};
+
+// ZONE_DISTRICTS (JOIN TABLE) CRUD
+export const addDistrictToZone = async (zone_id: number, district_id: number) => {
+  const [result] = await pool.query(
+    'INSERT INTO si.zone_districts (zone_id, district_id) VALUES (?, ?)',
+    [zone_id, district_id]
+  );
+  return result;
+};
+
+export const removeDistrictFromZone = async (zone_id: number, district_id: number) => {
+  const [result] = await pool.query(
+    'DELETE FROM si.zone_districts WHERE zone_id = ? AND district_id = ?',
+    [zone_id, district_id]
+  );
+  return result;
+};
+
+export const getDistrictsByZone = async (zone_id: number) => {
+  const [rows] = await pool.query(
+    'SELECT d.* FROM si.districts d INNER JOIN si.zone_districts zd ON d.id = zd.district_id WHERE zd.zone_id = ?',
+    [zone_id]
+  );
+  return rows;
+};
+
+export const getZonesByDistrict = async (district_id: number) => {
+  const [rows] = await pool.query(
+    'SELECT z.* FROM si.zones z INNER JOIN si.zone_districts zd ON z.id = zd.zone_id WHERE zd.district_id = ?',
+    [district_id]
+  );
+  return rows;
+};
+
+// USERS CRUD
+export const createEmp = async (data: any) => {
+  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
+  const [result] = await pool.query(
+    'INSERT INTO si.employees (name, email, phone, department_id, position_id, location_id, image, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [name, email, phone, department_id, position_id, location_id, image, section_id]
   );
   return result;
 };
 
 export const getUsers = async () => {
-  const [rows] = await pool.query('SELECT * FROM si.users');
+  const [rows] = await pool.query('SELECT * FROM si.employees');
   return rows;
 };
 
 export const getUserById = async (id: number) => {
-  const [rows] = await pool.query('SELECT * FROM si.users WHERE id = ?', [id]);
+  const [rows] = await pool.query('SELECT * FROM si.employees WHERE id = ?', [id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const updateUser = async (id: number, data: any) => {
-  const { name, email, phone, department_id, position_id, location_id, image } = data;
+export const updateEmp = async (id: number, data: any) => {
+  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
   const [result] = await pool.query(
-    'UPDATE si.users SET name = ?, email = ?, phone = ?, department_id = ?, position_id = ?, location_id = ?, image = ? WHERE id = ?',
-    [name, email, phone, department_id, position_id, location_id, image, id]
+    'UPDATE si.employees SET name = ?, email = ?, phone = ?, department_id = ?, position_id = ?, location_id = ?, image = ?, section_id = ? WHERE id = ?',
+    [name, email, phone, department_id, position_id, location_id, image, section_id, id]
   );
   return result;
 };
 
 export const deleteUser = async (id: number) => {
-  const [result] = await pool.query('DELETE FROM si.users WHERE id = ?', [id]);
+  const [result] = await pool.query('DELETE FROM si.employees WHERE id = ?', [id]);
   return result;
 };
 
@@ -432,8 +522,8 @@ export const deleteSection = async (id: number) => {
 
 // COSTCENTERS CRUD
 export const createCostcenter = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query('INSERT INTO si.costcenters (name) VALUES (?)', [name]);
+  const { name = null, description = null } = data;
+  const [result] = await pool.query('INSERT INTO si.costcenters (name, description) VALUES (?, ?)', [name, description]);
   return result;
 };
 
@@ -448,12 +538,55 @@ export const getCostcenterById = async (id: number) => {
 };
 
 export const updateCostcenter = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query('UPDATE si.costcenters SET name = ? WHERE id = ?', [name, id]);
+  const { name = null, description = null } = data;
+  const [result] = await pool.query('UPDATE si.costcenters SET name = ?, description = ? WHERE id = ?', [name, description, id]);
   return result;
 };
 
 export const deleteCostcenter = async (id: number) => {
   const [result] = await pool.query('DELETE FROM si.costcenters WHERE id = ?', [id]);
+  return result;
+};
+
+// MODULES CRUD
+export const createModule = async (data: any) => {
+  const { name = null, code = null } = data;
+  const [result] = await pool.query('INSERT INTO si.modules (name, code) VALUES (?, ?)', [name, code]);
+  return result;
+};
+
+export const getModules = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.modules');
+  return rows;
+};
+
+export const getModuleById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.modules WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateModule = async (id: number, data: any) => {
+  const { name = null, code = null } = data;
+  const [result] = await pool.query('UPDATE si.modules SET name = ?, code = ? WHERE id = ?', [name, code, id]);
+  return result;
+};
+
+export const deleteModule = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.modules WHERE id = ?', [id]);
+  return result;
+};
+
+export const getAllZoneDistricts = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.zone_districts');
+  return rows;
+};
+
+export const removeAllZonesFromDistrict = async (district_id: number) => {
+  const [result] = await pool.query('DELETE FROM si.zone_districts WHERE district_id = ?', [district_id]);
+  return result;
+};
+
+export const removeAllDistrictsFromZone = async (zone_id: number) => {
+  const [result] = await pool.query('DELETE FROM si.zone_districts WHERE zone_id = ?', [zone_id]);
   return result;
 };
