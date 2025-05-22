@@ -56,10 +56,10 @@ export const getCategoryById = async (id: number) => {
 };
 
 export const updateCategory = async (id: number, data: any) => {
-  const { name, description, image, type_id } = data;
+  const { name, description, image, typeId } = data;
   const [result] = await pool.query(
     'UPDATE si.categories SET name = ?, description = ?, image = ?, type_id = ? WHERE id = ?',
-    [name, description, image, type_id, id]
+    [name, description, image, typeId, id]
   );
   return result;
 };
