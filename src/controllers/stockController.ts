@@ -4,7 +4,11 @@ import * as stockModel from '../models/stockModel';
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
   const rows = await stockModel.getTypes();
-  res.json(rows);
+  res.json({
+    status: 'success',
+    message: 'Asset type retrieved successfully',
+    data: rows
+  });
 };
 export const getTypeById = async (req: Request, res: Response) => {
   const row = await stockModel.getTypeById(Number(req.params.id));
@@ -211,7 +215,11 @@ export const deleteModel = async (req: Request, res: Response) => {
 // ASSETS
 export const getAssets = async (req: Request, res: Response) => {
   const rows = await stockModel.getAssets();
-  res.json(rows);
+  res.json({
+    status: 'success',
+    message: 'Assets data retrieved successfully',
+    data: rows
+  });
 };
 export const getAssetById = async (req: Request, res: Response) => {
   const row = await stockModel.getAssetById(Number(req.params.id));
@@ -717,6 +725,140 @@ export const deleteModule = async (req: Request, res: Response) => {
   res.json({
     status: 'success',
     message: 'Module deleted successfully',
+    result
+  });
+};
+
+// SITES
+export const getSites = async (req: Request, res: Response) => {
+  // Fetch all sites
+  let sites: any[] = [];
+  const sitesRaw = await stockModel.getSites();
+  if (Array.isArray(sitesRaw)) {
+    sites = sitesRaw;
+  } else if (sitesRaw && typeof sitesRaw === 'object' && 'length' in sitesRaw) {
+    sites = Array.from(sitesRaw as any);
+  }
+  // Fetch all related data for mapping
+  const assets = Array.isArray(await stockModel.getAssets()) ? await stockModel.getAssets() as any[] : [];
+  const types = Array.isArray(await stockModel.getTypes()) ? await stockModel.getTypes() as any[] : [];
+  const categories = Array.isArray(await stockModel.getCategories()) ? await stockModel.getCategories() as any[] : [];
+  const brands = Array.isArray(await stockModel.getBrands()) ? await stockModel.getBrands() as any[] : [];
+  const models = Array.isArray(await stockModel.getModels()) ? await stockModel.getModels() as any[] : [];
+  const modules = Array.isArray(await stockModel.getModules()) ? await stockModel.getModules() as any[] : [];
+  const districts = Array.isArray(await stockModel.getDistricts()) ? await stockModel.getDistricts() as any[] : [];
+
+  // Build lookup maps
+  const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+  const categoryMap = new Map(categories.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+  const brandMap = new Map(brands.map((b: any) => [b.id, { id: b.id, name: b.name }]));
+  const modelMap = new Map(models.map((m: any) => [m.id, { id: m.id, name: m.name }]));
+  const moduleMap = new Map(modules.map((m: any) => [m.id, { id: m.id, name: m.code }]));
+  const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+  const assetMap = new Map(assets.map((a: any) => [a.id, a]));
+
+  // Format each site
+  const data = sites.map((site: any) => {
+    // Asset nesting
+    let asset = null;
+    if (site.asset_id && assetMap.has(site.asset_id)) {
+      const a: any = assetMap.get(site.asset_id);
+      asset = {
+        id: a.id,
+        serial_no: a.serial_number,
+        type: typeMap.get(a.type_id) || null,
+        category: categoryMap.get(a.category_id) || null,
+        brand: brandMap.get(a.brand_id) || null,
+        model: modelMap.get(a.model_id) || null
+      };
+    }
+    // Module nesting
+    const module = site.module_id ? moduleMap.get(site.module_id) || null : null;
+    // District nesting
+    const district = site.district_id ? districtMap.get(site.district_id) || null : null;
+    // Geocode
+    let geocode = null;
+    if (site.lat !== undefined && site.lon !== undefined) {
+      geocode = { lat: site.lat, lon: site.lon };
+    }
+    return {
+      id: site.id,
+      asset,
+      module,
+      district_id: district,
+      site_category: site.site_category,
+      site_code: site.site_code,
+      site_name: site.site_name,
+      dmafull: site.dmafull,
+      geocode,
+      address: site.address,
+      address2: site.address2,
+      boundary_coordinate: site.boundary_coordinate,
+      site_status: site.site_status,
+      site_picture: site.site_picture,
+      site_schematic: site.site_schematic,
+      site_certificate: site.site_certificate,
+      notes: site.notes,
+      agency: site.agency,
+      wss_group: site.wss_group,
+      monitoring_group: site.monitoring_group,
+      area: site.area,
+      assign_to: site.assign_to,
+      dirname: site.dirname,
+      db_id: site.db_id,
+      attended_onsite_date: site.attended_onsite_date,
+      team_id: site.team_id,
+      team_id2: site.team_id2,
+      last_upload: site.last_upload,
+      main_site_code: site.main_site_code,
+      mnf_baseline: site.mnf_baseline,
+      nnf_baseline: site.nnf_baseline,
+      dmz_baseline: site.dmz_baseline,
+      cp_baseline: site.cp_baseline,
+      date_created: site.date_created,
+      min_mnf: site.min_mnf,
+      max_mnf: site.max_mnf,
+      dmz_type: site.dmz_type,
+      operational_certificate: site.operational_certificate,
+      eit_certificate: site.eit_certificate,
+      remarks: site.remarks
+    };
+  });
+  res.json({
+    status: 'success',
+    message: 'Sites data retrieved successfully',
+    data
+  });
+};
+export const getSiteById = async (req: Request, res: Response) => {
+  const row = await stockModel.getSiteById(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Site data retrieved successfully',
+    data: row
+  });
+};
+export const createSite = async (req: Request, res: Response) => {
+  const result = await stockModel.createSite(req.body);
+  res.json({
+    status: 'success',
+    message: 'Site created successfully',
+    result
+  });
+};
+export const updateSite = async (req: Request, res: Response) => {
+  const result = await stockModel.updateSite(Number(req.params.id), req.body);
+  res.json({
+    status: 'success',
+    message: 'Site updated successfully',
+    result
+  });
+};
+export const deleteSite = async (req: Request, res: Response) => {
+  const result = await stockModel.deleteSite(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Site deleted successfully',
     result
   });
 };

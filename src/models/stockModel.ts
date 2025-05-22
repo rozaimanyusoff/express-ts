@@ -289,6 +289,53 @@ export const deleteZone = async (id: number) => {
   return result;
 };
 
+// SITES CRUD
+export const createSite = async (data: any) => {
+  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const [result] = await pool.query(
+    'INSERT INTO si.sites (name, code, address, phone, email, description) VALUES (?, ?, ?, ?, ?, ?)',
+    [name, code, address, phone, email, description]
+  );
+  return result;
+};
+
+export const getSites = async () => {
+  const [rows] = await pool.query('SELECT * FROM si.sites');
+  return rows;
+};
+
+export const getSiteById = async (id: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.sites WHERE id = ?', [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateSite = async (id: number, data: any) => {
+  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const [result] = await pool.query(
+    'UPDATE si.sites SET name = ?, code = ?, address = ?, phone = ?, email = ?, description = ? WHERE id = ?',
+    [name, code, address, phone, email, description, id]
+  );
+  return result;
+};
+
+export const deleteSite = async (id: number) => {
+  const [result] = await pool.query('DELETE FROM si.sites WHERE id = ?', [id]);
+  return result;
+};
+
+export const getSitesBatch = async (offset: number, limit: number) => {
+  const [rows] = await pool.query('SELECT * FROM si.sites LIMIT ? OFFSET ?', [limit, offset]);
+  return rows;
+};
+
+export const getSitesCount = async () => {
+  const [rows] = await pool.query('SELECT COUNT(*) as count FROM si.sites');
+  if (Array.isArray(rows) && rows.length > 0 && 'count' in rows[0]) {
+    return (rows[0] as any).count;
+  }
+  return 0;
+};
+
 // ZONE_DISTRICTS (JOIN TABLE) CRUD
 export const addDistrictToZone = async (zone_id: number, district_id: number) => {
   const [result] = await pool.query(
@@ -589,4 +636,106 @@ export const removeAllZonesFromDistrict = async (district_id: number) => {
 export const removeAllDistrictsFromZone = async (zone_id: number) => {
   const [result] = await pool.query('DELETE FROM si.zone_districts WHERE zone_id = ?', [zone_id]);
   return result;
+};
+
+export default {
+  createType,
+  getTypes,
+  getTypeById,
+  updateType,
+  deleteType,
+  createCategory,
+  getCategories,
+  getCategoryById,
+  updateCategory,
+  deleteCategory,
+  createBrand,
+  getBrands,
+  getBrandById,
+  updateBrand,
+  deleteBrand,
+  createModel,
+  getModels,
+  getModelById,
+  updateModel,
+  deleteModel,
+  createDepartment,
+  getDepartments,
+  getDepartmentById,
+  updateDepartment,
+  deleteDepartment,
+  createPosition,
+  getPositions,
+  getPositionById,
+  updatePosition,
+  deletePosition,
+  createLocation,
+  getLocations,
+  getLocationById,
+  updateLocation,
+  deleteLocation,
+  createDistrict,
+  getDistricts,
+  getDistrictById,
+  updateDistrict,
+  deleteDistrict,
+  createZone,
+  getZones,
+  getZoneById,
+  updateZone,
+  deleteZone,
+  createSite,
+  getSites,
+  getSiteById,
+  updateSite,
+  deleteSite,
+  getSitesBatch,
+  getSitesCount,
+  addDistrictToZone,
+  removeDistrictFromZone,
+  getDistrictsByZone,
+  getZonesByDistrict,
+  createEmp,
+  getUsers,
+  getUserById,
+  updateEmp,
+  deleteUser,
+  createVendor,
+  getVendors,
+  getVendorById,
+  updateVendor,
+  deleteVendor,
+  createProcurement,
+  getProcurements,
+  getProcurementById,
+  updateProcurement,
+  deleteProcurement,
+  createAsset,
+  getAssets,
+  getAssetById,
+  updateAsset,
+  deleteAsset,
+  createAssetUser,
+  getAssetUsers,
+  getAssetUserById,
+  updateAssetUser,
+  deleteAssetUser,
+  createSection,
+  getSections,
+  getSectionById,
+  updateSection,
+  deleteSection,
+  createCostcenter,
+  getCostcenters,
+  getCostcenterById,
+  updateCostcenter,
+  deleteCostcenter,
+  createModule,
+  getModules,
+  getModuleById,
+  updateModule,
+  deleteModule,
+  getAllZoneDistricts,
+  removeAllZonesFromDistrict,
+  removeAllDistrictsFromZone,
 };

@@ -95,4 +95,11 @@ router.post('/modules', asyncHandler(stockController.createModule));
 router.put('/modules/:id', asyncHandler(stockController.updateModule));
 router.delete('/modules/:id', asyncHandler(stockController.deleteModule));
 
+// SITES
+router.get('/sites', asyncHandler(stockController.getSites));
+router.get('/sites/:id', asyncHandler(stockController.getSiteById));
+router.post('/sites', asyncHandler(stockController.createSite));
+router.put('/sites/:id', asyncHandler(stockController.updateSite));
+router.delete('/sites/:id', asyncHandler(stockController.deleteSite));
+
 export default router;
