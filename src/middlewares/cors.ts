@@ -7,6 +7,7 @@ const allowedOrigins = [
   'http://100.1.1.129',
   'http://localhost:8080',
   'https://serv.ranhilltechnologies.com.my', // Backend origin (if needed)
+  'https://aqs.ranhilltechnologies.com.my', // AQS origin
 ];
 
 const corsOptions = {
