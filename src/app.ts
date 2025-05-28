@@ -6,7 +6,7 @@ import roleRoutes from './routes/roleRoutes';
 import groupRoutes from './routes/groupRoutes';
 import assetRoutes from './routes/assetRoutes';
 import telcoRoutes from './routes/telcoRoutes';
-import stockRoutes from './routes/stockRoutes';
+import importRoutes from './routes/importerRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -17,8 +17,8 @@ import path from 'path';
 
 const app: Express = express();
 
-app.use(urlencoded({ extended: true }));
-app.use(json());
+app.use(urlencoded({ extended: true, limit: '10mb' }));
+app.use(json({ limit: '10mb' }));
 app.use(corsMiddleware);
 app.options('*', corsMiddleware);
 //app.use(rateLimit);
@@ -34,7 +34,7 @@ app.use('/api/groups', tokenValidator, groupRoutes);
 app.use('/api/nav', tokenValidator, navRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
-app.use('/api/stock', tokenValidator, stockRoutes);
+app.use('/api/importer', tokenValidator, importRoutes);
 
 app.use(errorHandler);
 
