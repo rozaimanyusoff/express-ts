@@ -6,14 +6,14 @@ import {
   verifyLoginCredentials,
   updateUserResetTokenAndStatus,
   upsertUserProfile, getUserTasks, createUserTask, updateUserTask
-} from '../models/userModel';
+} from './userModel';
 import dotenv from 'dotenv';
 import { sendMail } from '../utils/mailer';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import pool from '../utils/db';
-import { getRoleById } from '../models/roleModel';
-import { getGroupById } from '../models/groupModel';
+import { getRoleById } from '../p.role/roleModel';
+import { getGroupById } from '../p.group/groupModel';
 
 dotenv.config({ path: '.env.local' });
 

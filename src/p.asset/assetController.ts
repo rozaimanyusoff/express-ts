@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import * as stockModel from '../models/stockModel';
+import * as assetModel from './assetModel';
 
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
-  const rows = await stockModel.getTypes();
+  const rows = await assetModel.getTypes();
   res.json({
     status: 'success',
     message: 'Asset type retrieved successfully',
@@ -11,27 +11,27 @@ export const getTypes = async (req: Request, res: Response) => {
   });
 };
 export const getTypeById = async (req: Request, res: Response) => {
-  const row = await stockModel.getTypeById(Number(req.params.id));
+  const row = await assetModel.getTypeById(Number(req.params.id));
   res.json(row);
 };
 export const createType = async (req: Request, res: Response) => {
-  const result = await stockModel.createType(req.body);
+  const result = await assetModel.createType(req.body);
   res.json(result);
 };
 export const updateType = async (req: Request, res: Response) => {
-  const result = await stockModel.updateType(Number(req.params.id), req.body);
+  const result = await assetModel.updateType(Number(req.params.id), req.body);
   res.json(result);
 };
 export const deleteType = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteType(Number(req.params.id));
+  const result = await assetModel.deleteType(Number(req.params.id));
   res.json(result);
 };
 
 // CATEGORIES
 export const getCategories = async (req: Request, res: Response) => {
-  const rows = await stockModel.getCategories();
+  const rows = await assetModel.getCategories();
   // Fetch all types for mapping
-  const types = await stockModel.getTypes();
+  const types = await assetModel.getTypes();
   // Map type_id to type object
   const typeMap = new Map<number, { id: number; name: string }>();
   for (const t of types as any[]) {
@@ -51,13 +51,13 @@ export const getCategories = async (req: Request, res: Response) => {
   });
 };
 export const getCategoryById = async (req: Request, res: Response) => {
-  const row = await stockModel.getCategoryById(Number(req.params.id));
+  const row = await assetModel.getCategoryById(Number(req.params.id));
   res.json(row);
 };
 export const createCategory = async (req: Request, res: Response) => {
   // Accept frontend payload with typeId, map to type_id for DB
   const { name, description, typeId, image } = req.body;
-  const result = await stockModel.createCategory({
+  const result = await assetModel.createCategory({
     name,
     description,
     image,
@@ -70,20 +70,20 @@ export const createCategory = async (req: Request, res: Response) => {
   });
 };
 export const updateCategory = async (req: Request, res: Response) => {
-  const result = await stockModel.updateCategory(Number(req.params.id), req.body);
+  const result = await assetModel.updateCategory(Number(req.params.id), req.body);
   res.json(result);
 };
 export const deleteCategory = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteCategory(Number(req.params.id));
+  const result = await assetModel.deleteCategory(Number(req.params.id));
   res.json(result);
 };
 
 // BRANDS
 export const getBrands = async (req: Request, res: Response) => {
   // Fetch all brands, types, and categories
-  const brands = await stockModel.getBrands();
-  const types = await stockModel.getTypes();
-  const categories = await stockModel.getCategories();
+  const brands = await assetModel.getBrands();
+  const types = await assetModel.getTypes();
+  const categories = await assetModel.getCategories();
 
   // Build lookup maps for type and category
   const typeMap = new Map<number, { id: number; name: string }>();
@@ -112,12 +112,12 @@ export const getBrands = async (req: Request, res: Response) => {
   });
 };
 export const getBrandById = async (req: Request, res: Response) => {
-  const row = await stockModel.getBrandById(Number(req.params.id));
+  const row = await assetModel.getBrandById(Number(req.params.id));
   res.json(row);
 };
 export const createBrand = async (req: Request, res: Response) => {
   // Accept frontend payload as-is (type_id, category_id)
-  const result = await stockModel.createBrand(req.body);
+  const result = await assetModel.createBrand(req.body);
   res.json({
     status: 'success',
     message: 'Brand created successfully',
@@ -126,7 +126,7 @@ export const createBrand = async (req: Request, res: Response) => {
 };
 export const updateBrand = async (req: Request, res: Response) => {
   // Accept frontend payload as-is (type_id, category_id)
-  const result = await stockModel.updateBrand(Number(req.params.id), req.body);
+  const result = await assetModel.updateBrand(Number(req.params.id), req.body);
   res.json({
     status: 'success',
     message: 'Brand updated successfully',
@@ -134,16 +134,16 @@ export const updateBrand = async (req: Request, res: Response) => {
   });
 };
 export const deleteBrand = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteBrand(Number(req.params.id));
+  const result = await assetModel.deleteBrand(Number(req.params.id));
   res.json(result);
 };
 
 // MODELS
 export const getModels = async (req: Request, res: Response) => {
   // Fetch all models, brands, and categories
-  const models = await stockModel.getModels();
-  const brands = await stockModel.getBrands();
-  const categories = await stockModel.getCategories();
+  const models = await assetModel.getModels();
+  const brands = await assetModel.getBrands();
+  const categories = await assetModel.getCategories();
 
   // Build lookup maps for brand and category
   const brandMap = new Map<number, { id: number; name: string }>();
@@ -172,13 +172,13 @@ export const getModels = async (req: Request, res: Response) => {
   });
 };
 export const getModelById = async (req: Request, res: Response) => {
-  const row = await stockModel.getModelById(Number(req.params.id));
+  const row = await assetModel.getModelById(Number(req.params.id));
   res.json(row);
 };
 export const createModel = async (req: Request, res: Response) => {
   // Accept frontend payload with brandId and categoryId, map to brand_id and category_id
   const { name, description, image, brandId, categoryId } = req.body;
-  const result = await stockModel.createModel({
+  const result = await assetModel.createModel({
     name,
     description,
     image,
@@ -194,7 +194,7 @@ export const createModel = async (req: Request, res: Response) => {
 export const updateModel = async (req: Request, res: Response) => {
   // Accept frontend payload with brandId and categoryId, map to brand_id and category_id
   const { name, description, image, brandId, categoryId } = req.body;
-  const result = await stockModel.updateModel(Number(req.params.id), {
+  const result = await assetModel.updateModel(Number(req.params.id), {
     name,
     description,
     image,
@@ -208,13 +208,13 @@ export const updateModel = async (req: Request, res: Response) => {
   });
 };
 export const deleteModel = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteModel(Number(req.params.id));
+  const result = await assetModel.deleteModel(Number(req.params.id));
   res.json(result);
 };
 
 // ASSETS
 export const getAssets = async (req: Request, res: Response) => {
-  const rows = await stockModel.getAssets();
+  const rows = await assetModel.getAssets();
   res.json({
     status: 'success',
     message: 'Assets data retrieved successfully',
@@ -222,25 +222,25 @@ export const getAssets = async (req: Request, res: Response) => {
   });
 };
 export const getAssetById = async (req: Request, res: Response) => {
-  const row = await stockModel.getAssetById(Number(req.params.id));
+  const row = await assetModel.getAssetById(Number(req.params.id));
   res.json(row);
 };
 export const createAsset = async (req: Request, res: Response) => {
-  const result = await stockModel.createAsset(req.body);
+  const result = await assetModel.createAsset(req.body);
   res.json(result);
 };
 export const updateAsset = async (req: Request, res: Response) => {
-  const result = await stockModel.updateAsset(Number(req.params.id), req.body);
+  const result = await assetModel.updateAsset(Number(req.params.id), req.body);
   res.json(result);
 };
 export const deleteAsset = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteAsset(Number(req.params.id));
+  const result = await assetModel.deleteAsset(Number(req.params.id));
   res.json(result);
 };
 
 // DEPARTMENTS
 export const getDepartments = async (req: Request, res: Response) => {
-  const rows = await stockModel.getDepartments();
+  const rows = await assetModel.getDepartments();
   res.json({
     status: 'success',
     message: 'Departments data retrieved successfully',
@@ -248,7 +248,7 @@ export const getDepartments = async (req: Request, res: Response) => {
   });
 };
 export const getDepartmentById = async (req: Request, res: Response) => {
-  const row = await stockModel.getDepartmentById(Number(req.params.id));
+  const row = await assetModel.getDepartmentById(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Department data retrieved successfully',
@@ -256,7 +256,7 @@ export const getDepartmentById = async (req: Request, res: Response) => {
   });
 };
 export const createDepartment = async (req: Request, res: Response) => {
-  const result = await stockModel.createDepartment(req.body);
+  const result = await assetModel.createDepartment(req.body);
   res.json({
     status: 'success',
     message: 'Department created successfully',
@@ -264,7 +264,7 @@ export const createDepartment = async (req: Request, res: Response) => {
   });
 };
 export const updateDepartment = async (req: Request, res: Response) => {
-  const result = await stockModel.updateDepartment(Number(req.params.id), req.body);
+  const result = await assetModel.updateDepartment(Number(req.params.id), req.body);
   res.json({
     status: 'success',
     message: 'Department updated successfully',
@@ -272,7 +272,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
   });
 };
 export const deleteDepartment = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteDepartment(Number(req.params.id));
+  const result = await assetModel.deleteDepartment(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Department deleted successfully',
@@ -282,7 +282,7 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 
 // POSITIONS
 export const getPositions = async (req: Request, res: Response) => {
-  const rows = await stockModel.getPositions();
+  const rows = await assetModel.getPositions();
   res.json({
     status: 'success',
     message: 'Positions data retrieved successfully',
@@ -290,7 +290,7 @@ export const getPositions = async (req: Request, res: Response) => {
   });
 };
 export const getPositionById = async (req: Request, res: Response) => {
-  const row = await stockModel.getPositionById(Number(req.params.id));
+  const row = await assetModel.getPositionById(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Position data retrieved successfully',
@@ -298,7 +298,7 @@ export const getPositionById = async (req: Request, res: Response) => {
   });
 };
 export const createPosition = async (req: Request, res: Response) => {
-  const result = await stockModel.createPosition(req.body);
+  const result = await assetModel.createPosition(req.body);
   res.json({
     status: 'success',
     message: 'Position created successfully',
@@ -306,7 +306,7 @@ export const createPosition = async (req: Request, res: Response) => {
   });
 };
 export const updatePosition = async (req: Request, res: Response) => {
-  const result = await stockModel.updatePosition(Number(req.params.id), req.body);
+  const result = await assetModel.updatePosition(Number(req.params.id), req.body);
   res.json({
     status: 'success',
     message: 'Position updated successfully',
@@ -314,7 +314,7 @@ export const updatePosition = async (req: Request, res: Response) => {
   });
 };
 export const deletePosition = async (req: Request, res: Response) => {
-  const result = await stockModel.deletePosition(Number(req.params.id));
+  const result = await assetModel.deletePosition(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Position deleted successfully',
@@ -324,8 +324,8 @@ export const deletePosition = async (req: Request, res: Response) => {
 
 // SECTIONS
 export const getSections = async (req: Request, res: Response) => {
-  const sections = await stockModel.getSections();
-  const departments = await stockModel.getDepartments();
+  const sections = await assetModel.getSections();
+  const departments = await assetModel.getDepartments();
   const departmentMap = new Map<number, { id: number; name: string }>();
   for (const d of departments as any[]) {
     departmentMap.set(d.id, { id: d.id, name: d.name });
@@ -343,13 +343,13 @@ export const getSections = async (req: Request, res: Response) => {
 };
 
 export const getSectionById = async (req: Request, res: Response) => {
-  const section = await stockModel.getSectionById(Number(req.params.id));
+  const section = await assetModel.getSectionById(Number(req.params.id));
   if (!section) {
     return res.status(404).json({ status: 'error', message: 'Section not found' });
   }
   let department = null;
   if (section.department_id) {
-    const dep = await stockModel.getDepartmentById(section.department_id);
+    const dep = await assetModel.getDepartmentById(section.department_id);
     if (dep) department = { id: dep.id, name: dep.name };
   }
   res.json({
@@ -366,7 +366,7 @@ export const getSectionById = async (req: Request, res: Response) => {
 export const createSection = async (req: Request, res: Response) => {
   // Accept frontend payload with departmentId, map to department_id
   const { name, departmentId } = req.body;
-  const result = await stockModel.createSection({
+  const result = await assetModel.createSection({
     name,
     department_id: departmentId
   });
@@ -379,7 +379,7 @@ export const createSection = async (req: Request, res: Response) => {
 export const updateSection = async (req: Request, res: Response) => {
   // Accept frontend payload with departmentId, map to department_id
   const { name, departmentId } = req.body;
-  const result = await stockModel.updateSection(Number(req.params.id), {
+  const result = await assetModel.updateSection(Number(req.params.id), {
     name,
     department_id: departmentId
   });
@@ -390,7 +390,7 @@ export const updateSection = async (req: Request, res: Response) => {
   });
 };
 export const deleteSection = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteSection(Number(req.params.id));
+  const result = await assetModel.deleteSection(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Section deleted successfully',
@@ -400,7 +400,7 @@ export const deleteSection = async (req: Request, res: Response) => {
 
 // COSTCENTERS
 export const getCostcenters = async (req: Request, res: Response) => {
-  const rows = await stockModel.getCostcenters();
+  const rows = await assetModel.getCostcenters();
   res.json({
     status: 'success',
     message: 'Costcenters data retrieved successfully',
@@ -408,7 +408,7 @@ export const getCostcenters = async (req: Request, res: Response) => {
   });
 };
 export const getCostcenterById = async (req: Request, res: Response) => {
-  const row = await stockModel.getCostcenterById(Number(req.params.id));
+  const row = await assetModel.getCostcenterById(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Costcenter data retrieved successfully',
@@ -416,7 +416,7 @@ export const getCostcenterById = async (req: Request, res: Response) => {
   });
 };
 export const createCostcenter = async (req: Request, res: Response) => {
-  const result = await stockModel.createCostcenter(req.body);
+  const result = await assetModel.createCostcenter(req.body);
   res.json({
     status: 'success',
     message: 'Costcenter created successfully',
@@ -424,7 +424,7 @@ export const createCostcenter = async (req: Request, res: Response) => {
   });
 };
 export const updateCostcenter = async (req: Request, res: Response) => {
-  const result = await stockModel.updateCostcenter(Number(req.params.id), req.body);
+  const result = await assetModel.updateCostcenter(Number(req.params.id), req.body);
   res.json({
     status: 'success',
     message: 'Costcenter updated successfully',
@@ -432,7 +432,7 @@ export const updateCostcenter = async (req: Request, res: Response) => {
   });
 };
 export const deleteCostcenter = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteCostcenter(Number(req.params.id));
+  const result = await assetModel.deleteCostcenter(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Costcenter deleted successfully',
@@ -442,11 +442,11 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 
 // EMPLOYEES
 export const getEmployees = async (req: Request, res: Response) => {
-  const employees = await stockModel.getUsers();
-  const departments = await stockModel.getDepartments();
-  const positions = await stockModel.getPositions();
-  const districts = await stockModel.getDistricts(); // renamed from locations
-  const sections = await stockModel.getSections();
+  const employees = await assetModel.getUsers();
+  const departments = await assetModel.getDepartments();
+  const positions = await assetModel.getPositions();
+  const districts = await assetModel.getDistricts(); // renamed from locations
+  const sections = await assetModel.getSections();
 
   // Build lookup maps
   const departmentMap = new Map<number, { id: number; name: string }>();
@@ -486,14 +486,14 @@ export const getEmployees = async (req: Request, res: Response) => {
 };
 
 export const getEmployeeById = async (req: Request, res: Response) => {
-  const emp = await stockModel.getUserById(Number(req.params.id));
+  const emp = await assetModel.getUserById(Number(req.params.id));
   if (!emp) {
     return res.status(404).json({ status: 'error', message: 'Employee not found' });
   }
-  const department = emp.department_id ? await stockModel.getDepartmentById(emp.department_id) : null;
-  const section = emp.section_id ? await stockModel.getSectionById(emp.section_id) : null;
-  const position = emp.position_id ? await stockModel.getPositionById(emp.position_id) : null;
-  const district = emp.location_id ? await stockModel.getDistrictById(emp.location_id) : null;
+  const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
+  const section = emp.section_id ? await assetModel.getSectionById(emp.section_id) : null;
+  const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
+  const district = emp.location_id ? await assetModel.getDistrictById(emp.location_id) : null;
 
   res.json({
     status: 'success',
@@ -514,7 +514,7 @@ export const getEmployeeById = async (req: Request, res: Response) => {
 
 export const createEmployee = async (req: Request, res: Response) => {
   const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
-  const result = await stockModel.createEmp({
+  const result = await assetModel.createEmp({
     name,
     email,
     phone,
@@ -532,7 +532,7 @@ export const createEmployee = async (req: Request, res: Response) => {
 };
 export const updateEmployee = async (req: Request, res: Response) => {
   const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
-  const result = await stockModel.updateEmp(Number(req.params.id), {
+  const result = await assetModel.updateEmp(Number(req.params.id), {
     name,
     email,
     phone,
@@ -549,7 +549,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
   });
 };
 export const deleteEmployee = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteUser(Number(req.params.id));
+  const result = await assetModel.deleteUser(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Employee deleted successfully',
@@ -559,9 +559,9 @@ export const deleteEmployee = async (req: Request, res: Response) => {
 
 // DISTRICTS
 export const getDistricts = async (req: Request, res: Response) => {
-  const districts = await stockModel.getDistricts();
-  const zoneDistricts = await stockModel.getAllZoneDistricts();
-  const zones = await stockModel.getZones();
+  const districts = await assetModel.getDistricts();
+  const zoneDistricts = await assetModel.getAllZoneDistricts();
+  const zones = await assetModel.getZones();
   // Build zone map with code
   const zoneMap = new Map<number, { id: number; name: string; code: string }>();
   for (const z of zones as any[]) {
@@ -581,18 +581,18 @@ export const getDistricts = async (req: Request, res: Response) => {
 };
 
 export const getDistrictById = async (req: Request, res: Response) => {
-  const row = await stockModel.getDistrictById(Number(req.params.id));
+  const row = await assetModel.getDistrictById(Number(req.params.id));
   res.json({ status: 'success', message: 'District data retrieved successfully', data: row });
 };
 export const createDistrict = async (req: Request, res: Response) => {
   const { name, code, zone_id } = req.body;
   // Create the district
-  const result = await stockModel.createDistrict({ name, code });
+  const result = await assetModel.createDistrict({ name, code });
   // Get the new district's id
   const districtId = (result as any).insertId;
   // If zone_id is provided, create the join
   if (zone_id) {
-    await stockModel.addDistrictToZone(zone_id, districtId);
+    await assetModel.addDistrictToZone(zone_id, districtId);
   }
   res.json({ status: 'success', message: 'District created successfully', result });
 };
@@ -600,30 +600,30 @@ export const updateDistrict = async (req: Request, res: Response) => {
   const { name, code, zone_id } = req.body;
   const districtId = Number(req.params.id);
   // Update the district
-  const result = await stockModel.updateDistrict(districtId, { name, code });
+  const result = await assetModel.updateDistrict(districtId, { name, code });
   // Remove all previous zone links for this district
-  await stockModel.removeAllZonesFromDistrict(districtId);
+  await assetModel.removeAllZonesFromDistrict(districtId);
   // Add new zone link if provided
   if (zone_id) {
-    await stockModel.addDistrictToZone(zone_id, districtId);
+    await assetModel.addDistrictToZone(zone_id, districtId);
   }
   res.json({ status: 'success', message: 'District updated successfully', result });
 };
 export const deleteDistrict = async (req: Request, res: Response) => {
   const districtId = Number(req.params.id);
   // Remove all zone links for this district
-  await stockModel.removeAllZonesFromDistrict(districtId);
+  await assetModel.removeAllZonesFromDistrict(districtId);
   // Delete the district
-  const result = await stockModel.deleteDistrict(districtId);
+  const result = await assetModel.deleteDistrict(districtId);
   res.json({ status: 'success', message: 'District deleted successfully', result });
 };
 
 // ZONES
 export const getZones = async (req: Request, res: Response) => {
-  const zones = await stockModel.getZones();
-  const zoneDistricts = await stockModel.getAllZoneDistricts();
-  const districts = await stockModel.getDistricts();
-  const employees = await stockModel.getUsers();
+  const zones = await assetModel.getZones();
+  const zoneDistricts = await assetModel.getAllZoneDistricts();
+  const districts = await assetModel.getDistricts();
+  const employees = await assetModel.getUsers();
   // Build district map with code
   const districtMap = new Map<number, { id: number; name: string; code: string }>();
   for (const d of districts as any[]) {
@@ -649,18 +649,18 @@ export const getZones = async (req: Request, res: Response) => {
   res.json({ status: 'success', message: 'Zones data retrieved successfully', data });
 };
 export const getZoneById = async (req: Request, res: Response) => {
-  const row = await stockModel.getZoneById(Number(req.params.id));
+  const row = await assetModel.getZoneById(Number(req.params.id));
   res.json({ status: 'success', message: 'Zone data retrieved successfully', data: row });
 };
 export const createZone = async (req: Request, res: Response) => {
   const { name, code, employee_id, districts } = req.body;
   // Create the zone
-  const result = await stockModel.createZone({ name, code, employee_id });
+  const result = await assetModel.createZone({ name, code, employee_id });
   const zoneId = (result as any).insertId;
   // Add districts to zone if provided
   if (Array.isArray(districts)) {
     for (const districtId of districts) {
-      await stockModel.addDistrictToZone(zoneId, districtId);
+      await assetModel.addDistrictToZone(zoneId, districtId);
     }
   }
   res.json({ status: 'success', message: 'Zone created successfully', result });
@@ -669,25 +669,25 @@ export const updateZone = async (req: Request, res: Response) => {
   const { name, code, employee_id, districts } = req.body;
   const zoneId = Number(req.params.id);
   // Update the zone
-  const result = await stockModel.updateZone(zoneId, { name, code, employee_id });
+  const result = await assetModel.updateZone(zoneId, { name, code, employee_id });
   // Remove all previous district links for this zone
-  await stockModel.removeAllDistrictsFromZone(zoneId);
+  await assetModel.removeAllDistrictsFromZone(zoneId);
   // Add new district links if provided
   if (Array.isArray(districts)) {
     for (const districtId of districts) {
-      await stockModel.addDistrictToZone(zoneId, districtId);
+      await assetModel.addDistrictToZone(zoneId, districtId);
     }
   }
   res.json({ status: 'success', message: 'Zone updated successfully', result });
 };
 export const deleteZone = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteZone(Number(req.params.id));
+  const result = await assetModel.deleteZone(Number(req.params.id));
   res.json({ status: 'success', message: 'Zone deleted successfully', result });
 };
 
 // MODULES
 export const getModules = async (req: Request, res: Response) => {
-  const rows = await stockModel.getModules();
+  const rows = await assetModel.getModules();
   res.json({
     status: 'success',
     message: 'Modules data retrieved successfully',
@@ -695,7 +695,7 @@ export const getModules = async (req: Request, res: Response) => {
   });
 };
 export const getModuleById = async (req: Request, res: Response) => {
-  const row = await stockModel.getModuleById(Number(req.params.id));
+  const row = await assetModel.getModuleById(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Module data retrieved successfully',
@@ -704,7 +704,7 @@ export const getModuleById = async (req: Request, res: Response) => {
 };
 export const createModule = async (req: Request, res: Response) => {
   const { name, code } = req.body;
-  const result = await stockModel.createModule({ name, code });
+  const result = await assetModel.createModule({ name, code });
   res.json({
     status: 'success',
     message: 'Module created successfully',
@@ -713,7 +713,7 @@ export const createModule = async (req: Request, res: Response) => {
 };
 export const updateModule = async (req: Request, res: Response) => {
   const { name, code } = req.body;
-  const result = await stockModel.updateModule(Number(req.params.id), { name, code });
+  const result = await assetModel.updateModule(Number(req.params.id), { name, code });
   res.json({
     status: 'success',
     message: 'Module updated successfully',
@@ -721,7 +721,7 @@ export const updateModule = async (req: Request, res: Response) => {
   });
 };
 export const deleteModule = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteModule(Number(req.params.id));
+  const result = await assetModel.deleteModule(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Module deleted successfully',
@@ -733,20 +733,20 @@ export const deleteModule = async (req: Request, res: Response) => {
 export const getSites = async (req: Request, res: Response) => {
   // Fetch all sites
   let sites: any[] = [];
-  const sitesRaw = await stockModel.getSites();
+  const sitesRaw = await assetModel.getSites();
   if (Array.isArray(sitesRaw)) {
     sites = sitesRaw;
   } else if (sitesRaw && typeof sitesRaw === 'object' && 'length' in sitesRaw) {
     sites = Array.from(sitesRaw as any);
   }
   // Fetch all related data for mapping
-  const assets = Array.isArray(await stockModel.getAssets()) ? await stockModel.getAssets() as any[] : [];
-  const types = Array.isArray(await stockModel.getTypes()) ? await stockModel.getTypes() as any[] : [];
-  const categories = Array.isArray(await stockModel.getCategories()) ? await stockModel.getCategories() as any[] : [];
-  const brands = Array.isArray(await stockModel.getBrands()) ? await stockModel.getBrands() as any[] : [];
-  const models = Array.isArray(await stockModel.getModels()) ? await stockModel.getModels() as any[] : [];
-  const modules = Array.isArray(await stockModel.getModules()) ? await stockModel.getModules() as any[] : [];
-  const districts = Array.isArray(await stockModel.getDistricts()) ? await stockModel.getDistricts() as any[] : [];
+  const assets = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() as any[] : [];
+  const types = Array.isArray(await assetModel.getTypes()) ? await assetModel.getTypes() as any[] : [];
+  const categories = Array.isArray(await assetModel.getCategories()) ? await assetModel.getCategories() as any[] : [];
+  const brands = Array.isArray(await assetModel.getBrands()) ? await assetModel.getBrands() as any[] : [];
+  const models = Array.isArray(await assetModel.getModels()) ? await assetModel.getModels() as any[] : [];
+  const modules = Array.isArray(await assetModel.getModules()) ? await assetModel.getModules() as any[] : [];
+  const districts = Array.isArray(await assetModel.getDistricts()) ? await assetModel.getDistricts() as any[] : [];
 
   // Build lookup maps
   const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
@@ -831,7 +831,7 @@ export const getSites = async (req: Request, res: Response) => {
   });
 };
 export const getSiteById = async (req: Request, res: Response) => {
-  const row = await stockModel.getSiteById(Number(req.params.id));
+  const row = await assetModel.getSiteById(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Site data retrieved successfully',
@@ -839,7 +839,7 @@ export const getSiteById = async (req: Request, res: Response) => {
   });
 };
 export const createSite = async (req: Request, res: Response) => {
-  const result = await stockModel.createSite(req.body);
+  const result = await assetModel.createSite(req.body);
   res.json({
     status: 'success',
     message: 'Site created successfully',
@@ -847,7 +847,7 @@ export const createSite = async (req: Request, res: Response) => {
   });
 };
 export const updateSite = async (req: Request, res: Response) => {
-  const result = await stockModel.updateSite(Number(req.params.id), req.body);
+  const result = await assetModel.updateSite(Number(req.params.id), req.body);
   res.json({
     status: 'success',
     message: 'Site updated successfully',
@@ -855,7 +855,7 @@ export const updateSite = async (req: Request, res: Response) => {
   });
 };
 export const deleteSite = async (req: Request, res: Response) => {
-  const result = await stockModel.deleteSite(Number(req.params.id));
+  const result = await assetModel.deleteSite(Number(req.params.id));
   res.json({
     status: 'success',
     message: 'Site deleted successfully',

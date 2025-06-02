@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { TelcoModel } from '../models/telcoModel';
+import { TelcoModel } from './telcoModel';
 
 // Define the structure of the subscriber data
 type SubscriberData = {

@@ -261,3 +261,12 @@ export const setNavigationPermissionsForGroup = async (groupId: number, navIds: 
     await pool.query('INSERT INTO auth.group_nav (nav_id, group_id) VALUES ?', [values]);
   }
 };
+
+// Delete a navigation entry
+export const deleteNavigation = async (id: number): Promise<ResultSetHeader> => {
+  // Remove all group_nav permissions for this navigation
+  await pool.query('DELETE FROM auth.group_nav WHERE nav_id = ?', [id]);
+  // Delete the navigation itself
+  const [result] = await pool.query<ResultSetHeader>('DELETE FROM auth.navigation WHERE id = ?', [id]);
+  return result;
+};

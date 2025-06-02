@@ -1,7 +1,7 @@
 import pool from '../utils/db';
 import logger from '../utils/logger';
 import { io } from '../server';
-import { getAdminUserIds } from './userModel';
+import { getAdminUserIds } from '../p.user/userModel';
 
 export interface Notification {
   userId: number;

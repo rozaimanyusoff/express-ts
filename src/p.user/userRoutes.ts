@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllUser, updateUser1, assignUserToGroups1, adminResetPasswords, changeUsersGroups, changeUsersRole, suspendOrActivateUsers, updateUserProfile, getTasks, postTask, putTask, getUserAuthLogs } from "../controllers/userController";
+import { getAllUser, updateUser1, assignUserToGroups1, adminResetPasswords, changeUsersGroups, changeUsersRole, suspendOrActivateUsers, updateUserProfile, getTasks, postTask, putTask, getUserAuthLogs } from "./userController";
 import asyncHandler from "../utils/asyncHandler";
 import tokenValidator from '../middlewares/tokenValidator';
 import multer from 'multer';

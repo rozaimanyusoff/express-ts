@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { getAllGroups, getGroupById, createGroup, updateGroup, assignUserToGroups } from '../models/groupModel';
-import { getAllUsers } from '../models/userModel';
-import { getNavigationByGroups, updateNavigationPermission, setNavigationPermissionsForGroup } from '../models/navModel';
+import { getAllGroups, getGroupById, createGroup, updateGroup, assignUserToGroups } from './groupModel';
+import { getAllUsers } from '../p.user/userModel';
+import { getNavigationByGroups, updateNavigationPermission, setNavigationPermissionsForGroup } from '../p.nav/navModel';
 
 // Get all groups
 export const getAllGroups1 = async (_req: Request, res: Response): Promise<Response> => {

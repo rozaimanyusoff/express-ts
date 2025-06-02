@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllRole, getRole, createNewRole, updateRoleById } from "../controllers/roleController";
+import { getAllRole, getRole, createNewRole, updateRoleById } from "../p.role/roleController";
 import asyncHandler from "../utils/asyncHandler";
 
 const router = Router();

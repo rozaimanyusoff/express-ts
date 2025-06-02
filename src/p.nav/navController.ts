@@ -11,8 +11,9 @@ import {
     toggleStatus,
     getNavigationByGroups,
     getNavigationByUserId,
-    removeNavigationPermissionsNotIn
-} from '../models/navModel';
+    removeNavigationPermissionsNotIn,
+    deleteNavigation
+} from './navModel';
 import buildNavigationTree from '../utils/navBuilder';
 
 interface CreateNavigationBody {
@@ -351,6 +352,32 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
             status: 'error',
             code: 500,
             message: 'Error fetching navigation by user ID'
+        });
+    }
+};
+
+export const deleteNavigationHandler = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const id = Number(req.params.id);
+        if (!id) {
+            return res.status(400).json({
+                status: 'error',
+                code: 400,
+                message: 'Navigation ID is required'
+            });
+        }
+        const result = await deleteNavigation(id);
+        return res.status(200).json({
+            status: 'success',
+            message: 'Navigation deleted successfully',
+            affectedRows: result.affectedRows
+        });
+    } catch (error) {
+        console.error('Error deleting navigation:', error);
+        return res.status(500).json({
+            status: 'error',
+            code: 500,
+            message: 'Error deleting navigation'
         });
     }
 };

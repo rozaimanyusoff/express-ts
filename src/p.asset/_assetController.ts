@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import * as assetModel from "../models/assetModel";
+import * as assetModel from "./_assetModel";
 import asyncHandler from "../utils/asyncHandler";
-import { getEmployees, getEmployeeById, createEmployee, updateEmployee, deleteEmployee } from '../models/assetModel';
+import { getEmployees, getEmployeeById, createEmployee, updateEmployee, deleteEmployee } from './_assetModel';
 
 // Get all assets
 export const getAssets = asyncHandler(async (req: Request, res: Response) => {

@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import { getAllRoles, getRoleById, createRole, updateRole } from '../models/roleModel.js';
-const { updateUsersRole } = require('../models/userModel');
+import { getAllRoles, getRoleById, createRole, updateRole } from './roleModel.js';
+const { updateUsersRole } = require('../p.user/userModel');
 
 // Get all roles
 export const getAllRole = async (_req: Request, res: Response): Promise<Response> => {
     try {
         const roles = await getAllRoles();
         // Get all users to map them to roles
-        const { getAllUsers } = await import('../models/userModel.js');
+        const { getAllUsers } = await import('../p.user/userModel.js');
         const users = await getAllUsers();
 
         // Map roles to API structure

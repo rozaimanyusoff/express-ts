@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import dotenv from 'dotenv';
-import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken, getUserProfile } from '../models/userModel';
-import { logAuthActivity, AuthAction } from '../models/logModel';
-import { getNavigationByUserId } from '../models/navModel';
-import { getGroupsByUserId, assignGroupByUserId } from '../models/groupModel';
-import { createNotification, createAdminNotification } from '../models/notificationModel';
-import { createPendingUser, findPendingUserByEmailOrContact, findPendingUserByActivation, deletePendingUser } from '../models/pendingUserModel';
+import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken, getUserProfile } from '../p.user/userModel';
+import { logAuthActivity, AuthAction } from '../p.admin/logModel';
+import { getNavigationByUserId } from '../p.nav/navModel';
+import { getGroupsByUserId, assignGroupByUserId } from '../p.group/groupModel';
+import { createNotification, createAdminNotification } from '../p.admin/notificationModel';
+import { createPendingUser, findPendingUserByEmailOrContact, findPendingUserByActivation, deletePendingUser } from '../p.user/pendingUserModel';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -153,7 +153,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         // 5. Assign group
         await assignGroupByUserId(newUserId, 5);
         // Fetch group names instead of just IDs
-        const groupModel = require('../models/groupModel');
+        const groupModel = require('../p.group/groupModel');
         const groupIds = await getGroupsByUserId(newUserId);
         const groupNames = await Promise.all(
             groupIds.map(async (groupId: number) => {
@@ -271,11 +271,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
         // Fetch role details
-        const userRole = await require('../models/roleModel').getRoleById(result.user.role);
+        const userRole = await require('../p.role/roleModel').getRoleById(result.user.role);
         const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
 
         // Fetch user groups as objects
-        const groupModel = require('../models/groupModel');
+        const groupModel = require('../p.group/groupModel');
         const groupIds = await groupModel.getGroupsByUserId(result.user.id);
         const usergroups = await Promise.all(
             groupIds.map(async (groupId: number) => {

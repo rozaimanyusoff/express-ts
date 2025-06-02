@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import * as importerModel from '../models/importerModel';
+import * as importerModel from './importerModel';
 
 export const importTempTable = async (req: Request, res: Response) => {
   const { tableName, headers, data } = req.body;

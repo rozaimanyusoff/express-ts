@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getNavigationPermissionsHandler, trackRoute, toggleStatusHandler, getNavigations, createNavigationHandler, updateNavigationHandler, updateNavigationPermissionsHandler, removeNavigationPermissionsHandler, getNavigationByUserIdHandler } from "../controllers/navController";
+import { getNavigationPermissionsHandler, trackRoute, toggleStatusHandler, getNavigations, createNavigationHandler, updateNavigationHandler, updateNavigationPermissionsHandler, removeNavigationPermissionsHandler, getNavigationByUserIdHandler, deleteNavigationHandler } from "../p.nav/navController";
 import asyncHandler from "../utils/asyncHandler";
 
 const router = Router();
@@ -13,6 +13,7 @@ router.put("/:id/status", asyncHandler(toggleStatusHandler));
 router.put("/:id", asyncHandler(updateNavigationHandler));
 router.put("/permissions/assign", asyncHandler(updateNavigationPermissionsHandler)); //assign menu to groups
 router.delete("/permissions/remove", asyncHandler(removeNavigationPermissionsHandler)); //remove menu from groups
+router.delete('/:id', asyncHandler(deleteNavigationHandler));
 
 
 export default router;
