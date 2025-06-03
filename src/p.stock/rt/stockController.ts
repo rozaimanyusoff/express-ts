@@ -636,3 +636,156 @@ export const getStockAnalysis = async (_req: Request, res: Response) => {
   const analysis = generateStockAnalysis(analysisData);
   res.json({ status: 'success', message: 'Stock analysis generated', analysis });
 };
+
+// ---- STOCK REQUESTS ----
+export const createStockRequest = async (req: Request, res: Response) => {
+  try {
+    const result = await stockModel.createStockRequest(req.body);
+    res.status(201).json({
+      status: 'success',
+      message: 'Stock request created successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to create stock request', data: null });
+  }
+};
+
+export const getStockRequests = async (_req: Request, res: Response) => {
+  try {
+    const rows = await stockModel.getStockRequests();
+    const requests = Array.isArray(rows) ? rows : [];
+    const ids = requests.map((r: any) => r.id);
+    let items: any[] = [];
+    if (ids.length) {
+      const allItems = await Promise.all(ids.map((id: number) => stockModel.getStockRequestById(id)));
+      items = allItems.map(r => r && r.items ? r.items : []).flat();
+    }
+    const itemsByRequest: Record<number, any[]> = {};
+    for (const item of items) {
+      if (!itemsByRequest[item.stock_out_id]) itemsByRequest[item.stock_out_id] = [];
+      itemsByRequest[item.stock_out_id].push(item);
+    }
+    // Collect all unique requested_by IDs
+    const requestedByIds = Array.from(new Set(requests.map((r: any) => r.requested_by).filter(Boolean)));
+    let teams: any[] = [];
+    if (requestedByIds.length) {
+      const teamRows = await stockModel.getTeams();
+      teams = Array.isArray(teamRows) ? teamRows : [];
+    }
+    const teamMap = new Map(teams.map((t: any) => [t.id, t]));
+    const data = requests.map((r: any) => {
+      // Exclude department, team_name, pic
+      const { department, team_name, pic, ...rest } = r;
+      return {
+        ...rest,
+        requested_by: r.requested_by && teamMap.has(r.requested_by)
+          ? { id: r.requested_by, name: teamMap.get(r.requested_by).name }
+          : null,
+        items: itemsByRequest[r.id] || []
+      };
+    });
+    res.json({
+      status: 'success',
+      message: 'Stock requests retrieved successfully',
+      data
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to retrieve stock requests', data: null });
+  }
+};
+
+export const getStockRequestById = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  }
+  const row = await stockModel.getStockRequestById(id);
+  if (!row) {
+    return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+  }
+  // Ensure items is always an array
+  const data = {
+    ...row,
+    items: Array.isArray(row.items) ? row.items : []
+  };
+  res.json({
+    status: 'success',
+    message: 'Stock request retrieved successfully',
+    data
+  });
+};
+
+export const updateStockRequest = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  try {
+    const result = await stockModel.updateStockRequest(id, req.body);
+    res.json({
+      status: 'success',
+      message: 'Stock request updated successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to update stock request', data: null });
+  }
+};
+
+export const deleteStockRequest = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  try {
+    const result = await stockModel.deleteStockRequest(id);
+    res.json({
+      status: 'success',
+      message: 'Stock request deleted successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to delete stock request', data: null });
+  }
+};
+
+export const addStockRequestItem = async (req: Request, res: Response) => {
+  const { stock_out_id, ...item } = req.body;
+  try {
+    const result = await stockModel.addStockRequestItem(stock_out_id, item);
+    res.status(201).json({
+      status: 'success',
+      message: 'Stock request item added successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to add stock request item', data: null });
+  }
+};
+
+export const updateStockRequestItem = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  try {
+    const result = await stockModel.updateStockRequestItem(id, req.body);
+    res.json({
+      status: 'success',
+      message: 'Stock request item updated successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to update stock request item', data: null });
+  }
+};
+
+export const deleteStockRequestItem = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  try {
+    const result = await stockModel.deleteStockRequestItem(id);
+    res.json({
+      status: 'success',
+      message: 'Stock request item deleted successfully',
+      data: result
+    });
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message || 'Failed to delete stock request item', data: null });
+  }
+};

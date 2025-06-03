@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as stockController from './stockController';
+import * as stockModel from './stockModel';
 import asyncHandler from '../../utils/asyncHandler';
 
 const router = Router();
@@ -60,5 +61,43 @@ router.delete('/tracking/:id', asyncHandler(stockController.deleteStockTracking)
 
 // ---- STOCK ANALYSIS ROUTE ----
 router.get('/analysis', asyncHandler(stockController.getStockAnalysis));
+
+// ---- STOCK REQUEST ROUTES ----
+router.post('/requests', asyncHandler(stockController.createStockRequest));
+router.get('/requests', asyncHandler(stockController.getStockRequests));
+router.get('/requests/:id', asyncHandler(stockController.getStockRequestById));
+router.put('/requests/:id', asyncHandler(stockController.updateStockRequest));
+router.delete('/requests/:id', asyncHandler(stockController.deleteStockRequest));
+
+// Child table: rt_stock_request_items
+router.post('/requests/:request_id/items', asyncHandler((req, res) => {
+  req.body.stock_out_id = Number(req.params.request_id);
+  return stockController.addStockRequestItem(req, res);
+}));
+router.get('/requests/:request_id/items', asyncHandler(async (req, res) => {
+  const request_id = Number(req.params.request_id);
+  if (isNaN(request_id)) return res.status(400).json({ status: 'error', message: 'Invalid request_id', data: null });
+  const request = await stockModel.getStockRequestById(request_id);
+  res.json({
+    status: 'success',
+    message: 'Stock request items retrieved',
+    data: request && Array.isArray(request.items) ? request.items : []
+  });
+}));
+router.get('/requests/items/:id', asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  // Fallback: get item by id from rt_stock_request_items
+  const [rows] = await require('../../utils/db').query('SELECT * FROM stock.rt_stock_request_items WHERE id = ?', [id]);
+  const item = Array.isArray(rows) && rows.length ? rows[0] : null;
+  if (!item) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+  res.json({
+    status: 'success',
+    message: 'Stock request item retrieved',
+    data: item
+  });
+}));
+router.put('/requests/items/:id', asyncHandler(stockController.updateStockRequestItem));
+router.delete('/requests/items/:id', asyncHandler(stockController.deleteStockRequestItem));
 
 export default router;
