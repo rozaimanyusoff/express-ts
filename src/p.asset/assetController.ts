@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import * as assetModel from './assetModel';
+import path from 'path';
 
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
@@ -168,14 +169,43 @@ export const getModelById = async (req: Request, res: Response) => {
   res.json(row);
 };
 export const createModel = async (req: Request, res: Response) => {
-  // Accept frontend payload with brandId and categoryId, map to brand_id and category_id
-  const { name, description, image, brandId, categoryId } = req.body;
+  const {
+    name,
+    type_code,
+    category_code,
+    brand_code,
+    model_code,
+    specification,
+    generation,
+    status
+  } = req.body;
+
+  // Handle image upload
+  let image = req.body.image;
+  if (req.file) {
+    image = req.file.filename;
+  }
+
+  // Lookup IDs for type, category, brand by code
+  const [type, category, brand] = await Promise.all([
+    assetModel.getTypeByCode(type_code),
+    assetModel.getCategoryByCode(category_code),
+    assetModel.getBrandByCode(brand_code)
+  ]);
+  const typeId = type && typeof type === 'object' && 'id' in type ? (type as any).id : null;
+  const categoryId = category && typeof category === 'object' && 'id' in category ? (category as any).id : null;
+  const brandId = brand && typeof brand === 'object' && 'id' in brand ? (brand as any).id : null;
+
   const result = await assetModel.createModel({
     name,
-    description,
     image,
+    type_id: typeId,
+    category_id: categoryId,
     brand_id: brandId,
-    category_id: categoryId
+    model_code,
+    specification,
+    generation,
+    status
   });
   res.json({
     status: 'success',
@@ -183,29 +213,45 @@ export const createModel = async (req: Request, res: Response) => {
     result
   });
 };
+
 export const updateModel = async (req: Request, res: Response) => {
-  // Accept frontend payload with brand/category object or brandId/categoryId
   const {
     name,
-    description,
-    image,
-    brand,
-    category,
-    type,
-    brandId,
-    categoryId,
+    type_code,
+    category_code,
+    brand_code,
+    model_code,
     specification,
-    generation
+    generation,
+    status
   } = req.body;
-  // Prefer explicit brandId/categoryId, else fallback to brand/category object
+
+  // Handle image upload
+  let image = req.body.image;
+  if (req.file) {
+    image = req.file.filename;
+  }
+
+  // Lookup IDs for type, category, brand by code
+  const [type, category, brand] = await Promise.all([
+    assetModel.getTypeByCode(type_code),
+    assetModel.getCategoryByCode(category_code),
+    assetModel.getBrandByCode(brand_code)
+  ]);
+  const typeId = type && typeof type === 'object' && 'id' in type ? (type as any).id : null;
+  const categoryId = category && typeof category === 'object' && 'id' in category ? (category as any).id : null;
+  const brandId = brand && typeof brand === 'object' && 'id' in brand ? (brand as any).id : null;
+
   const updatePayload: any = {
     name,
-    description,
     image,
-    brand_id: brandId || (brand && brand.id) || null,
-    category_id: categoryId || (category && category.id) || null,
+    type_id: typeId,
+    category_id: categoryId,
+    brand_id: brandId,
+    model_code,
     specification,
-    generation
+    generation,
+    status
   };
   const result = await assetModel.updateModel(Number(req.params.id), updatePayload);
   res.json({

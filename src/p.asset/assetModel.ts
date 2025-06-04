@@ -688,6 +688,22 @@ export const removeAllDistrictsFromZone = async (zone_id: number) => {
   return result;
 };
 
+// Resolve codes to IDs for model creation/update
+export const getTypeByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const getCategoryByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const getBrandByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
 export default {
   createType,
   getTypes,
@@ -788,4 +804,7 @@ export default {
   getAllZoneDistricts,
   removeAllZonesFromDistrict,
   removeAllDistrictsFromZone,
+  getTypeByCode,
+  getCategoryByCode,
+  getBrandByCode,
 };

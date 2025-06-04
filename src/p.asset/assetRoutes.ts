@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as assetController from './assetController';
 import asyncHandler from '../utils/asyncHandler';
+import uploadModelImage from '../utils/uploadModelImage';
 
 const router = Router();
 
@@ -28,8 +29,8 @@ router.delete('/brands/:id', asyncHandler(assetController.deleteBrand));
 // MODELS
 router.get('/models', asyncHandler(assetController.getModels));
 router.get('/models/:id', asyncHandler(assetController.getModelById));
-router.post('/models', asyncHandler(assetController.createModel));
-router.put('/models/:id', asyncHandler(assetController.updateModel));
+router.post('/models', uploadModelImage.single('image'), asyncHandler(assetController.createModel));
+router.put('/models/:id', uploadModelImage.single('image'), asyncHandler(assetController.updateModel));
 router.delete('/models/:id', asyncHandler(assetController.deleteModel));
 
 
