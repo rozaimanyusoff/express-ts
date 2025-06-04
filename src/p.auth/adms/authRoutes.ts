@@ -1,10 +1,10 @@
 // filepath: /src/routes/authRoutes.ts
 import { Router } from 'express';
 import { register, validateActivationDetails, activateAccount, login, resetPassword, verifyResetToken, updatePassword, logout, refreshToken } from './authController.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import asyncHandler from '../../utils/asyncHandler.js';
 //import { rsaDecryptMiddleware } from '../middlewares/rsaDecrypt.js';
-import tokenValidator from '../middlewares/tokenValidator.js';
-import rateLimiter from '../middlewares/rateLimiter.js';
+import tokenValidator from '../../middlewares/tokenValidator.js';
+import rateLimiter from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 router.post('/register', rateLimiter[0], rateLimiter[1], asyncHandler(register));

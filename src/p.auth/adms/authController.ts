@@ -1,22 +1,22 @@
 import { Request, Response } from 'express';
 import dotenv from 'dotenv';
-import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken, getUserProfile } from '../p.user/userModel';
-import { logAuthActivity, AuthAction } from '../p.admin/logModel';
-import { getNavigationByUserId } from '../p.nav/navModel';
-import { getGroupsByUserId, assignGroupByUserId } from '../p.group/groupModel';
-import { createNotification, createAdminNotification } from '../p.admin/notificationModel';
-import { createPendingUser, findPendingUserByEmailOrContact, findPendingUserByActivation, deletePendingUser } from '../p.user/pendingUserModel';
-import logger from '../utils/logger';
+import { findUserByEmailOrContact, registerUser, validateActivation, activateUser, verifyLoginCredentials, updateLastLogin, updateUserPassword, findUserByResetToken, updateUserResetTokenAndStatus, reactivateUser, getUserByEmailAndPassword, updateUserLoginDetails, setUserSessionToken, getUserSessionToken, getUserProfile } from '../../p.user/userModel';
+import { logAuthActivity, AuthAction } from '../../p.admin/logModel';
+import { getNavigationByUserId } from '../../p.nav/navModel';
+import { getGroupsByUserId, assignGroupByUserId } from '../../p.group/groupModel';
+import { createNotification, createAdminNotification } from '../../p.admin/notificationModel';
+import { createPendingUser, findPendingUserByEmailOrContact, findPendingUserByActivation, deletePendingUser } from '../../p.user/pendingUserModel';
+import logger from '../../utils/logger';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { sendMail } from '../utils/mailer';
+import { sendMail } from '../../utils/mailer';
 import os from 'os';
 import { URL } from 'url';
-import buildNavigationTree from '../utils/navBuilder';
-import { accountActivationTemplate } from '../utils/emailTemplates/accountActivation';
-import { accountActivatedTemplate } from '../utils/emailTemplates/accountActivated';
-import { resetPasswordTemplate } from '../utils/emailTemplates/resetPassword';
-import { passwordChangedTemplate } from '../utils/emailTemplates/passwordChanged';
+import buildNavigationTree from '../../utils/navBuilder';
+import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
+import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
+import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
+import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
 import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
@@ -271,11 +271,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
         // Fetch role details
-        const userRole = await require('../p.role/roleModel').getRoleById(result.user.role);
+        const userRole = await require('../../p.role/roleModel').getRoleById(result.user.role);
         const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
 
         // Fetch user groups as objects
-        const groupModel = require('../p.group/groupModel');
+        const groupModel = require('../../p.group/groupModel');
         const groupIds = await groupModel.getGroupsByUserId(result.user.id);
         const usergroups = await Promise.all(
             groupIds.map(async (groupId: number) => {

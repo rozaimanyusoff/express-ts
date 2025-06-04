@@ -1,5 +1,5 @@
 import express, { Express, urlencoded, json } from 'express';
-import authRoutes from './p.auth/authRoutes';
+import authRoutes from './p.auth/adms/authRoutes';
 import navRoutes from './p.nav/navRoutes';
 import userRoutes from './p.user/userRoutes';
 import roleRoutes from './p.role/roleRoutes';

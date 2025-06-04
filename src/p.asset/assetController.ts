@@ -37,11 +37,9 @@ export const getCategories = async (req: Request, res: Response) => {
   for (const t of types as any[]) {
     typeMap.set(t.id, { id: t.id, name: t.name });
   }
+  // Map categories to include all fields plus type object
   const data = (rows as any[]).map((cat) => ({
-    id: cat.id,
-    name: cat.name,
-    description: cat.description,
-    image: cat.image,
+    ...cat,
     type: typeMap.get(cat.type_id) || null
   }));
   res.json({
@@ -95,12 +93,9 @@ export const getBrands = async (req: Request, res: Response) => {
     categoryMap.set(c.id, { id: c.id, name: c.name });
   }
 
-  // Map brands to include type and category objects
+  // Map brands to include all fields plus type and category objects
   const data = (brands as any[]).map((brand) => ({
-    id: brand.id,
-    name: brand.name,
-    description: brand.description,
-    image: brand.image,
+    ...brand,
     type: typeMap.get(brand.type_id) || null,
     category: categoryMap.get(brand.category_id) || null
   }));
@@ -155,12 +150,9 @@ export const getModels = async (req: Request, res: Response) => {
     categoryMap.set(c.id, { id: c.id, name: c.name });
   }
 
-  // Map models to include brand and category objects
+  // Map models to include all fields plus brand and category objects
   const data = (models as any[]).map((model) => ({
-    id: model.id,
-    name: model.name,
-    description: model.description,
-    image: model.image,
+    ...model,
     brand: brandMap.get(model.brand_id) || null,
     category: categoryMap.get(model.category_id) || null
   }));
@@ -192,15 +184,30 @@ export const createModel = async (req: Request, res: Response) => {
   });
 };
 export const updateModel = async (req: Request, res: Response) => {
-  // Accept frontend payload with brandId and categoryId, map to brand_id and category_id
-  const { name, description, image, brandId, categoryId } = req.body;
-  const result = await assetModel.updateModel(Number(req.params.id), {
+  // Accept frontend payload with brand/category object or brandId/categoryId
+  const {
     name,
     description,
     image,
-    brand_id: brandId,
-    category_id: categoryId
-  });
+    brand,
+    category,
+    type,
+    brandId,
+    categoryId,
+    specification,
+    generation
+  } = req.body;
+  // Prefer explicit brandId/categoryId, else fallback to brand/category object
+  const updatePayload: any = {
+    name,
+    description,
+    image,
+    brand_id: brandId || (brand && brand.id) || null,
+    category_id: categoryId || (category && category.id) || null,
+    specification,
+    generation
+  };
+  const result = await assetModel.updateModel(Number(req.params.id), updatePayload);
   res.json({
     status: 'success',
     message: 'Model updated successfully',
