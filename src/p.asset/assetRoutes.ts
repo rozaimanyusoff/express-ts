@@ -97,11 +97,29 @@ router.post('/sites', asyncHandler(assetController.createSite));
 router.put('/sites/:id', asyncHandler(assetController.updateSite));
 router.delete('/sites/:id', asyncHandler(assetController.deleteSite));
 
+// SOFTWARES
+router.get('/softwares', asyncHandler(assetController.getSoftwares));
+router.get('/softwares/:id', asyncHandler(assetController.getSoftwareById));
+router.post('/softwares', asyncHandler(assetController.createSoftware));
+router.put('/softwares/:id', asyncHandler(assetController.updateSoftware));
+router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
+
 // ASSETS
 router.get('/', asyncHandler(assetController.getAssets));
 router.get('/:id', asyncHandler(assetController.getAssetById));
 router.post('/', asyncHandler(assetController.createAsset));
 router.put('/:id', asyncHandler(assetController.updateAsset));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
+
+// BRAND-CATEGORY RELATIONSHIP
+router.post('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.assignCategoryToBrand));
+router.delete('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.unassignCategoryFromBrand));
+router.get('/brands/:brand_code/categories', asyncHandler(assetController.getCategoriesForBrand));
+router.get('/categories/:category_code/brands', asyncHandler(assetController.getBrandsForCategory));
+
+// Get all brand-category associations (for frontend mapping)
+router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
+
+
 
 export default router;

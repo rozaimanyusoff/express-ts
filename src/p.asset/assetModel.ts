@@ -1,5 +1,7 @@
 import pool from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
+import fs from 'fs';
+import path from 'path';
 
 // Database and table declarations for easy swapping/testing
 const db = 'assetdata';
@@ -22,13 +24,36 @@ const assetTable = `${db}.asset_data`;
 const assetUserTable = `${db}.asset_users`;
 const sectionTable = `${db}.sections`;
 const zoneDistrictTable = `${db}.zone_districts`;
+const brandCategoryTable = `${db}.pc_brand_category`;
+const softwareTable = `${db}.pc_software`;
+
+// Helper to move type image to uploads/types/ if needed
+async function handleTypeImage(image: string) {
+  if (!image) return '';
+  const uploadsDir = path.join(process.cwd(), 'uploads', 'types');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  // If image is a base64 string, save it as a file
+  if (image.startsWith('data:image/')) {
+    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
+    const base64Data = image.split(',')[1];
+    const filename = `type_${Date.now()}.${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, base64Data, 'base64');
+    return filename;
+  }
+  // If image is a filename, just return it
+  return image;
+}
 
 // TYPES CRUD
 export const createType = async (data: any) => {
-  const { name, description, image } = data;
+  const { code, name, description, image } = data;
+  const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (name, description, image) VALUES (?, ?, ?)`,
-    [name, description, image]
+    `INSERT INTO ${typeTable} (code, name, description, image) VALUES (?, ?, ?, ?)` ,
+    [code, name, description, storedImage]
   );
   return result;
 };
@@ -44,10 +69,11 @@ export const getTypeById = async (id: number) => {
 };
 
 export const updateType = async (id: number, data: any) => {
-  const { name, description, image } = data;
+  const { code, name, description, image } = data;
+  const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `UPDATE ${typeTable} SET name = ?, description = ?, image = ? WHERE id = ?`,
-    [name, description, image, id]
+    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ? WHERE id = ?`,
+    [code, name, description, storedImage, id]
   );
   return result;
 };
@@ -58,11 +84,32 @@ export const deleteType = async (id: number) => {
 };
 
 // CATEGORIES CRUD
+// Helper to move category image to uploads/category/ if needed
+async function handleCategoryImage(image: string) {
+  if (!image) return '';
+  const uploadsDir = path.join(process.cwd(), 'uploads', 'category');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  // If image is a base64 string, save it as a file
+  if (image.startsWith('data:image/')) {
+    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
+    const base64Data = image.split(',')[1];
+    const filename = `category_${Date.now()}.${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, base64Data, 'base64');
+    return filename;
+  }
+  // If image is a filename, just return it
+  return image;
+}
+
 export const createCategory = async (data: any) => {
-  const { name, description, image, type_id } = data;
+  const { name, code, image, type_code } = data;
+  const storedImage = await handleCategoryImage(image);
   const [result] = await pool.query(
-    `INSERT INTO ${categoryTable} (name, description, image, type_id) VALUES (?, ?, ?, ?)`,
-    [name, description, image, type_id]
+    `INSERT INTO ${categoryTable} (name, code, image, type_code) VALUES (?, ?, ?, ?)` ,
+    [name, code, storedImage, type_code]
   );
   return result;
 };
@@ -78,10 +125,11 @@ export const getCategoryById = async (id: number) => {
 };
 
 export const updateCategory = async (id: number, data: any) => {
-  const { name, description, image, typeId } = data;
+  const { name, code, image, type_code } = data;
+  const storedImage = await handleCategoryImage(image);
   const [result] = await pool.query(
-    `UPDATE ${categoryTable} SET name = ?, description = ?, image = ?, type_id = ? WHERE id = ?`,
-    [name, description, image, typeId, id]
+    `UPDATE ${categoryTable} SET name = ?, code = ?, image = ?, type_code = ? WHERE id = ?`,
+    [name, code, storedImage, type_code, id]
   );
   return result;
 };
@@ -92,12 +140,43 @@ export const deleteCategory = async (id: number) => {
 };
 
 // BRANDS CRUD
+// Helper to move logo image to uploads/brands/ if needed
+async function handleBrandLogo(logo: string) {
+  if (!logo) return '';
+  const uploadsDir = path.join(process.cwd(), 'uploads', 'brands');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  // If logo is a base64 string, save it as a file
+  if (logo.startsWith('data:image/')) {
+    const ext = logo.substring(logo.indexOf('/') + 1, logo.indexOf(';'));
+    const base64Data = logo.split(',')[1];
+    const filename = `brand_${Date.now()}.${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, base64Data, 'base64');
+    return filename;
+  }
+  // If logo is a filename, just return it
+  return logo;
+}
+
 export const createBrand = async (data: any) => {
-  const { name, description, image, type_id, category_id } = data;
+  const { name, code, logo, type_code, category_codes } = data;
+  const image = await handleBrandLogo(logo);
+  // Use type_code as type_code in DB
   const [result] = await pool.query(
-    `INSERT INTO ${brandTable} (name, description, image, type_id, category_id) VALUES (?, ?, ?, ?, ?)`,
-    [name, description, image, type_id, category_id]
+    `INSERT INTO ${brandTable} (name, code, image${type_code ? ', type_code' : ''}) VALUES (?, ?, ?${type_code ? ', ?' : ''})`,
+    type_code ? [name, code, image, type_code] : [name, code, image]
   );
+  // Handle brand-category associations if category_codes is array
+  if (Array.isArray(category_codes) && category_codes.length > 0) {
+    for (const category_code of category_codes) {
+      await pool.query(
+        `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
+        [code, category_code]
+      );
+    }
+  }
   return result;
 };
 
@@ -112,11 +191,34 @@ export const getBrandById = async (id: number) => {
 };
 
 export const updateBrand = async (id: number, data: any) => {
-  const { name, description, image, type_id, category_id } = data;
-  const [result] = await pool.query(
-    `UPDATE ${brandTable} SET name = ?, description = ?, image = ?, type_id = ?, category_id = ? WHERE id = ?`,
-    [name, description, image, type_id, category_id, id]
-  );
+  const { name, code, logo, type_code, category_codes } = data;
+  const image = await handleBrandLogo(logo);
+  // Only update type_code if type_code is present
+  let sql = `UPDATE ${brandTable} SET name = ?, code = ?, image = ?`;
+  let params: any[] = [name, code, image];
+  if (type_code) {
+    sql += ', type_code = ?';
+    params.push(type_code);
+  }
+  sql += ' WHERE id = ?';
+  params.push(id);
+  const [result] = await pool.query(sql, params);
+  // Remove all previous brand-category associations for this brand
+  if (code) {
+    await pool.query(
+      `DELETE FROM ${brandCategoryTable} WHERE brand_code = ?`,
+      [code]
+    );
+    // Add new associations
+    if (Array.isArray(category_codes) && category_codes.length > 0) {
+      for (const category_code of category_codes) {
+        await pool.query(
+          `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
+          [code, category_code]
+        );
+      }
+    }
+  }
   return result;
 };
 
@@ -126,11 +228,32 @@ export const deleteBrand = async (id: number) => {
 };
 
 // MODELS CRUD
+// Helper to move model image to uploads/models/ if needed
+async function handleModelImage(image: string) {
+  if (!image) return '';
+  const uploadsDir = path.join(process.cwd(), 'uploads', 'models');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  // If image is a base64 string, save it as a file
+  if (image.startsWith('data:image/')) {
+    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
+    const base64Data = image.split(',')[1];
+    const filename = `model_${Date.now()}.${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filepath, base64Data, 'base64');
+    return filename;
+  }
+  // If image is a filename, just return it
+  return image;
+}
+
 export const createModel = async (data: any) => {
-  const { name, description, image, brand_id, category_id } = data;
+  const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
+  const storedImage = await handleModelImage(image);
   const [result] = await pool.query(
-    `INSERT INTO ${modelTable} (name, description, image, brand_id, category_id) VALUES (?, ?, ?, ?, ?)`,
-    [name, description, image, brand_id, category_id]
+    `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status]
   );
   return result;
 };
@@ -146,35 +269,11 @@ export const getModelById = async (id: number) => {
 };
 
 export const updateModel = async (id: number, data: any) => {
-  // Extract only fields that exist in the table
-  const {
-    name,
-    image,
-    specification,
-    generation,
-    status
-  } = data;
-
-  // Build update fields and values for existing columns only
-  const fields = [
-    'name = ?',
-    'image = ?',
-    'specification = ?',
-    'generation = ?',
-    'status = ?'
-  ];
-  const values = [
-    name,
-    image ?? null,
-    specification ?? null,
-    generation ?? null,
-    status ?? null,
-    id
-  ];
-
+  const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
+  const storedImage = await handleModelImage(image);
   const [result] = await pool.query(
-    `UPDATE ${modelTable} SET ${fields.join(', ')} WHERE id = ?`,
-    values
+    `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_code = ?, model_code = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
+    [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status, id]
   );
   return result;
 };
@@ -414,6 +513,30 @@ export const getZonesByDistrict = async (district_id: number) => {
     [district_id]
   );
   return rows;
+};
+
+// Get all zone-district relationships
+export const getAllZoneDistricts = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${zoneDistrictTable}`);
+  return rows;
+};
+
+// Remove all zones from a given district
+export const removeAllZonesFromDistrict = async (district_id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${zoneDistrictTable} WHERE district_id = ?`,
+    [district_id]
+  );
+  return result;
+};
+
+// Remove all districts from a given zone
+export const removeAllDistrictsFromZone = async (zone_id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${zoneDistrictTable} WHERE zone_id = ?`,
+    [zone_id]
+  );
+  return result;
 };
 
 // USERS CRUD
@@ -673,18 +796,73 @@ export const deleteModule = async (id: number) => {
   return result;
 };
 
-export const getAllZoneDistricts = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${zoneDistrictTable}`);
-  return rows;
-};
-
-export const removeAllZonesFromDistrict = async (district_id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${zoneDistrictTable} WHERE district_id = ?`, [district_id]);
+// BRAND_CATEGORIES JOIN TABLE CRUD
+export const addBrandCategory = async (brand_code: string, category_code: string) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
+    [brand_code, category_code]
+  );
   return result;
 };
 
-export const removeAllDistrictsFromZone = async (zone_id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${zoneDistrictTable} WHERE zone_id = ?`, [zone_id]);
+export const removeBrandCategory = async (brand_code: string, category_code: string) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${brandCategoryTable} WHERE brand_code = ? AND category_code = ?`,
+    [brand_code, category_code]
+  );
+  return result;
+};
+
+export const getCategoriesByBrand = async (brand_code: string) => {
+  const [rows] = await pool.query(
+    `SELECT category_code FROM ${brandCategoryTable} WHERE brand_code = ?`,
+    [brand_code]
+  );
+  return rows;
+};
+
+export const getBrandsByCategory = async (category_code: string) => {
+  const [rows] = await pool.query(
+    `SELECT brand_code FROM ${brandCategoryTable} WHERE category_code = ?`,
+    [category_code]
+  );
+  return rows;
+};
+
+// SOFTWARE CRUD
+export const getSoftwares = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${softwareTable}`);
+  return rows;
+};
+
+export const getSoftwareById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${softwareTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const createSoftware = async (data: { name: string }) => {
+  const { name } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${softwareTable} (name) VALUES (?)`,
+    [name]
+  );
+  return result;
+};
+
+export const updateSoftware = async (id: number, data: { name: string }) => {
+  const { name } = data;
+  const [result] = await pool.query(
+    `UPDATE ${softwareTable} SET name = ? WHERE id = ?`,
+    [name, id]
+  );
+  return result;
+};
+
+export const deleteSoftware = async (id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${softwareTable} WHERE id = ?`,
+    [id]
+  );
   return result;
 };
 
@@ -807,4 +985,13 @@ export default {
   getTypeByCode,
   getCategoryByCode,
   getBrandByCode,
+  addBrandCategory,
+  removeBrandCategory,
+  getCategoriesByBrand,
+  getBrandsByCategory,
+  getSoftwares,
+  getSoftwareById,
+  createSoftware,
+  updateSoftware,
+  deleteSoftware,
 };

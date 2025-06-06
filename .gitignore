@@ -1,6 +1,7 @@
 # filepath: /Users/rozaiman/express-ts/.gitignore
 node_modules/
 dist/
+uploads/
 .env
 *.log
 express-ts.code-workspace

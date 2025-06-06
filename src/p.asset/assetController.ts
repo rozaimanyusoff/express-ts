@@ -16,12 +16,37 @@ export const getTypeById = async (req: Request, res: Response) => {
   res.json(row);
 };
 export const createType = async (req: Request, res: Response) => {
-  const result = await assetModel.createType(req.body);
-  res.json(result);
+  try {
+    const { code, name, description, image } = req.body;
+    const result = await assetModel.createType({ code, name, description, image });
+    // Ensure correct type for insertId
+    const typeId = (result as import('mysql2').ResultSetHeader).insertId;
+    // Fetch the created type to return with full image URL
+    const type = await assetModel.getTypeById(typeId);
+    if (type && type.image) {
+      type.image = `${req.protocol}://${req.get('host')}/uploads/types/${type.image}`;
+    }
+    res.status(201).json({ status: 'success', message: 'Type created', data: type });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ status: 'error', message, data: null });
+  }
 };
 export const updateType = async (req: Request, res: Response) => {
-  const result = await assetModel.updateType(Number(req.params.id), req.body);
-  res.json(result);
+  try {
+    const id = Number(req.params.id);
+    const { code, name, description, image } = req.body;
+    await assetModel.updateType(id, { code, name, description, image });
+    // Fetch the updated type to return with full image URL
+    const type = await assetModel.getTypeById(id);
+    if (type && type.image) {
+      type.image = `${req.protocol}://${req.get('host')}/uploads/types/${type.image}`;
+    }
+    res.json({ status: 'success', message: 'Type updated', data: type });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ status: 'error', message, data: null });
+  }
 };
 export const deleteType = async (req: Request, res: Response) => {
   const result = await assetModel.deleteType(Number(req.params.id));
@@ -31,18 +56,27 @@ export const deleteType = async (req: Request, res: Response) => {
 // CATEGORIES
 export const getCategories = async (req: Request, res: Response) => {
   const rows = await assetModel.getCategories();
-  // Fetch all types for mapping
-  const types = await assetModel.getTypes();
-  // Map type_id to type object
-  const typeMap = new Map<number, { id: number; name: string }>();
-  for (const t of types as any[]) {
-    typeMap.set(t.id, { id: t.id, name: t.name });
+  const brands = await assetModel.getBrands();
+  // Build brand map
+  const brandMap = new Map<string, { id: number; name: string; code: string }>();
+  for (const b of brands as any[]) {
+    brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
   }
-  // Map categories to include all fields plus type object
-  const data = (rows as any[]).map((cat) => ({
-    ...cat,
-    type: typeMap.get(cat.type_id) || null
-  }));
+  // Get brand-category associations
+  const { categoryToBrands } = await getAllBrandCategoryAssociations();
+  // Map categories to include all fields plus brands[]
+  const data = (rows as any[]).map((cat) => {
+    let brandsForCategory: any[] = [];
+    if (cat.code && categoryToBrands[cat.code]) {
+      brandsForCategory = categoryToBrands[cat.code]
+        .map((brandCode: string) => brandMap.get(brandCode))
+        .filter(Boolean);
+    }
+    return {
+      ...cat,
+      brands: brandsForCategory
+    };
+  });
   res.json({
     status: 'success',
     message: 'Categories data retrieved successfully',
@@ -78,28 +112,62 @@ export const deleteCategory = async (req: Request, res: Response) => {
 };
 
 // BRANDS
-export const getBrands = async (req: Request, res: Response) => {
-  // Fetch all brands, types, and categories
+// Helper: get all brand-category associations from join table
+async function getAllBrandCategoryAssociations() {
+  // Get all brands and categories
   const brands = await assetModel.getBrands();
-  const types = await assetModel.getTypes();
+  const categories = await assetModel.getCategories();
+  // Build brand->categories map
+  const brandToCategories: Record<string, string[]> = {};
+  for (const b of brands as any[]) {
+    const cats = await assetModel.getCategoriesByBrand(b.code);
+    const catArr = Array.isArray(cats) ? cats : [];
+    brandToCategories[b.code] = catArr.map((c: any) => c.category_code);
+  }
+  // Build category->brands map
+  const categoryToBrands: Record<string, string[]> = {};
+  for (const c of categories as any[]) {
+    const brs = await assetModel.getBrandsByCategory(c.code);
+    const brArr = Array.isArray(brs) ? brs : [];
+    categoryToBrands[c.code] = brArr.map((b: any) => b.brand_code);
+  }
+  return { brandToCategories, categoryToBrands };
+}
+
+export const getBrands = async (req: Request, res: Response) => {
+  // Fetch all brands and categories
+  const brands = await assetModel.getBrands();
   const categories = await assetModel.getCategories();
 
-  // Build lookup maps for type and category
-  const typeMap = new Map<number, { id: number; name: string }>();
-  for (const t of types as any[]) {
-    typeMap.set(t.id, { id: t.id, name: t.name });
-  }
-  const categoryMap = new Map<number, { id: number; name: string }>();
+  // Build category map by code
+  const categoryMap = new Map<string, { id: number; name: string; code: string }>();
   for (const c of categories as any[]) {
-    categoryMap.set(c.id, { id: c.id, name: c.name });
+    categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
   }
 
-  // Map brands to include all fields plus type and category objects
-  const data = (brands as any[]).map((brand) => ({
-    ...brand,
-    type: typeMap.get(brand.type_id) || null,
-    category: categoryMap.get(brand.category_id) || null
-  }));
+  // Get brand-category associations
+  const { brandToCategories } = await getAllBrandCategoryAssociations();
+
+  // Map brands to include only required fields and categories[]
+  const data = (brands as any[]).map((brand) => {
+    let categoriesForBrand: any[] = [];
+    if (brand.code && brandToCategories[brand.code]) {
+      categoriesForBrand = brandToCategories[brand.code]
+        .map((catCode: string) => categoryMap.get(catCode))
+        .filter(Boolean);
+    }
+    return {
+      id: brand.id,
+      name: brand.name,
+      code: brand.code,
+      image: brand.image
+        ? (brand.image.startsWith('http')
+            ? brand.image
+            : `${req.protocol}://${req.get('host')}/uploads/brands/${brand.image}`)
+        : null,
+      categories: categoriesForBrand
+    };
+  });
 
   res.json({
     status: 'success',
@@ -177,7 +245,8 @@ export const createModel = async (req: Request, res: Response) => {
     model_code,
     specification,
     generation,
-    status
+    status,
+    description
   } = req.body;
 
   // Handle image upload
@@ -186,44 +255,39 @@ export const createModel = async (req: Request, res: Response) => {
     image = req.file.filename;
   }
 
-  // Lookup IDs for type, category, brand by code
-  const [type, category, brand] = await Promise.all([
-    assetModel.getTypeByCode(type_code),
-    assetModel.getCategoryByCode(category_code),
-    assetModel.getBrandByCode(brand_code)
-  ]);
-  const typeId = type && typeof type === 'object' && 'id' in type ? (type as any).id : null;
-  const categoryId = category && typeof category === 'object' && 'id' in category ? (category as any).id : null;
-  const brandId = brand && typeof brand === 'object' && 'id' in brand ? (brand as any).id : null;
-
+  // Pass codes directly to model layer (no ID lookups)
   const result = await assetModel.createModel({
     name,
+    description,
     image,
-    type_id: typeId,
-    category_id: categoryId,
-    brand_id: brandId,
+    brand_code,
+    category_code,
+    type_code,
     model_code,
     specification,
     generation,
     status
   });
-  res.json({
-    status: 'success',
-    message: 'Model created successfully',
-    result
-  });
+  // Fetch the created model to return with full image URL
+  const modelId = (result as import('mysql2').ResultSetHeader).insertId;
+  const model = await assetModel.getModelById(modelId);
+  if (model && model.image) {
+    model.image = `${req.protocol}://${req.get('host')}/uploads/models/${model.image}`;
+  }
+  res.status(201).json({ status: 'success', message: 'Model created successfully', data: model });
 };
 
 export const updateModel = async (req: Request, res: Response) => {
   const {
     name,
-    type_code,
-    category_code,
-    brand_code,
     model_code,
     specification,
     generation,
-    status
+    status,
+    description,
+    type_code,
+    category_code,
+    brand_code
   } = req.body;
 
   // Handle image upload
@@ -232,33 +296,26 @@ export const updateModel = async (req: Request, res: Response) => {
     image = req.file.filename;
   }
 
-  // Lookup IDs for type, category, brand by code
-  const [type, category, brand] = await Promise.all([
-    assetModel.getTypeByCode(type_code),
-    assetModel.getCategoryByCode(category_code),
-    assetModel.getBrandByCode(brand_code)
-  ]);
-  const typeId = type && typeof type === 'object' && 'id' in type ? (type as any).id : null;
-  const categoryId = category && typeof category === 'object' && 'id' in category ? (category as any).id : null;
-  const brandId = brand && typeof brand === 'object' && 'id' in brand ? (brand as any).id : null;
-
+  // Pass codes directly to model layer (no ID lookups)
   const updatePayload: any = {
     name,
-    image,
-    type_id: typeId,
-    category_id: categoryId,
-    brand_id: brandId,
     model_code,
     specification,
     generation,
-    status
+    status,
+    description,
+    type_code,
+    category_code,
+    brand_code,
+    image
   };
-  const result = await assetModel.updateModel(Number(req.params.id), updatePayload);
-  res.json({
-    status: 'success',
-    message: 'Model updated successfully',
-    result
-  });
+  await assetModel.updateModel(Number(req.params.id), updatePayload);
+  // Fetch the updated model to return with full image URL
+  const model = await assetModel.getModelById(Number(req.params.id));
+  if (model && model.image) {
+    model.image = `${req.protocol}://${req.get('host')}/uploads/models/${model.image}`;
+  }
+  res.json({ status: 'success', message: 'Model updated successfully', data: model });
 };
 export const deleteModel = async (req: Request, res: Response) => {
   const result = await assetModel.deleteModel(Number(req.params.id));
@@ -529,6 +586,10 @@ export const getEmployees = async (req: Request, res: Response) => {
     position: positionMap.get(emp.position_id) || null,
     district: districtMap.get(emp.location_id) || null,
     image: emp.image
+      ? (emp.image.startsWith('http')
+          ? emp.image
+          : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.image}`)
+      : null
   }));
 
   res.json({
@@ -912,6 +973,125 @@ export const deleteSite = async (req: Request, res: Response) => {
   res.json({
     status: 'success',
     message: 'Site deleted successfully',
+    result
+  });
+};
+
+// --- BRAND-CATEGORY RELATIONSHIP ENDPOINTS ---
+
+// Assign a category to a brand
+export const assignCategoryToBrand = async (req: Request, res: Response) => {
+  const { brand_code, category_code } = req.params;
+  await assetModel.addBrandCategory(brand_code, category_code);
+  res.json({ status: 'success', message: 'Category assigned to brand' });
+};
+
+// Unassign a category from a brand
+export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
+  const { brand_code, category_code } = req.params;
+  await assetModel.removeBrandCategory(brand_code, category_code);
+  res.json({ status: 'success', message: 'Category unassigned from brand' });
+};
+
+// Get all categories for a brand
+export const getCategoriesForBrand = async (req: Request, res: Response) => {
+  const { brand_code } = req.params;
+  const categories = await assetModel.getCategoriesByBrand(brand_code);
+  res.json({ status: 'success', data: categories });
+};
+
+// Get all brands for a category
+export const getBrandsForCategory = async (req: Request, res: Response) => {
+  const { category_code } = req.params;
+  const brands = await assetModel.getBrandsByCategory(category_code);
+  res.json({ status: 'success', data: brands });
+};
+
+// Get all brand-category associations (for frontend mapping)
+export const getAllBrandCategoryMappings = async (req: Request, res: Response) => {
+  // Get all brands and categories
+  const brands = await assetModel.getBrands();
+  const categories = await assetModel.getCategories();
+  // Build lookup maps
+  const brandMap = new Map<string, { id: number; name: string; code: string }>();
+  for (const b of brands as any[]) {
+    brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
+  }
+  const categoryMap = new Map<string, { id: number; name: string; code: string }>();
+  for (const c of categories as any[]) {
+    categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
+  }
+  // Brute-force all pairs using getCategoriesByBrand for each brand
+  let mappings: any[] = [];
+  for (const b of brands as any[]) {
+    const cats = await assetModel.getCategoriesByBrand(b.code);
+    const catArr = Array.isArray(cats) ? cats : [];
+    for (const c of catArr) {
+      let catCode = '';
+      if (typeof c === 'object' && c !== null) {
+        // Try to extract category_code from known RowDataPacket structure
+        if ('category_code' in c && typeof c.category_code === 'string') {
+          catCode = c.category_code;
+        } else if ('code' in c && typeof c.code === 'string') {
+          catCode = c.code;
+        }
+      } else if (typeof c === 'string') {
+        catCode = c;
+      }
+      if (!catCode) continue;
+      mappings.push({
+        brand: brandMap.get(b.code) || { code: b.code },
+        category: categoryMap.get(catCode) || { code: catCode }
+      });
+    }
+  }
+  res.json({ status: 'success', data: mappings });
+};
+
+// SOFTWARES
+export const getSoftwares = async (req: Request, res: Response) => {
+  const rows = await assetModel.getSoftwares();
+  res.json({
+    status: 'success',
+    message: 'Softwares data retrieved successfully',
+    data: rows
+  });
+};
+
+export const getSoftwareById = async (req: Request, res: Response) => {
+  const row = await assetModel.getSoftwareById(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Software data retrieved successfully',
+    data: row
+  });
+};
+
+export const createSoftware = async (req: Request, res: Response) => {
+  const { name } = req.body;
+  const result = await assetModel.createSoftware({ name });
+  res.status(201).json({
+    status: 'success',
+    message: 'Software created successfully',
+    result
+  });
+};
+
+export const updateSoftware = async (req: Request, res: Response) => {
+  const { name } = req.body;
+  const result = await assetModel.updateSoftware(Number(req.params.id), { name });
+  res.json({
+    status: 'success',
+    message: 'Software updated successfully',
+    result
+  });
+};
+
+export const deleteSoftware = async (req: Request, res: Response) => {
+  const result = await assetModel.deleteSoftware(Number(req.params.id));
+  res.json({
+    status: 'success',
+    message: 'Software deleted successfully',
     result
   });
 };
