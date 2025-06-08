@@ -20,7 +20,7 @@ const moduleTable = `${db}.modules`;
 const employeeTable = `${db}.employees`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
-const assetTable = `${db}.asset_data`;
+const assetTable = `${db}.pc_master`;
 const assetUserTable = `${db}.asset_users`;
 const sectionTable = `${db}.sections`;
 const zoneDistrictTable = `${db}.zone_districts`;
@@ -540,7 +540,7 @@ export const removeAllDistrictsFromZone = async (zone_id: number) => {
 };
 
 // USERS CRUD
-export const createEmp = async (data: any) => {
+export const createEmployee = async (data: any) => {
   const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${employeeTable} (name, email, phone, department_id, position_id, location_id, image, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -549,17 +549,17 @@ export const createEmp = async (data: any) => {
   return result;
 };
 
-export const getUsers = async () => {
+export const getEmployees = async () => {
   const [rows] = await pool.query(`SELECT * FROM ${employeeTable}`);
   return rows;
 };
 
-export const getUserById = async (id: number) => {
+export const getEmployeeById = async (id: number) => {
   const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const updateEmp = async (id: number, data: any) => {
+export const updateEmployee = async (id: number, data: any) => {
   const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
   const [result] = await pool.query(
     `UPDATE ${employeeTable} SET name = ?, email = ?, phone = ?, department_id = ?, position_id = ?, location_id = ?, image = ?, section_id = ? WHERE id = ?`,
@@ -939,10 +939,10 @@ export default {
   removeDistrictFromZone,
   getDistrictsByZone,
   getZonesByDistrict,
-  createEmp,
-  getUsers,
-  getUserById,
-  updateEmp,
+  createEmployee,
+  getEmployees,
+  getEmployeeById,
+  updateEmployee,
   deleteUser,
   createVendor,
   getVendors,

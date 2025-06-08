@@ -552,44 +552,52 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 
 // EMPLOYEES
 export const getEmployees = async (req: Request, res: Response) => {
-  const employees = await assetModel.getUsers();
+  const employees = await assetModel.getEmployees();
   const departments = await assetModel.getDepartments();
   const positions = await assetModel.getPositions();
-  const districts = await assetModel.getDistricts(); // renamed from locations
-  const sections = await assetModel.getSections();
+  const costcenters = await assetModel.getCostcenters();
+  const districts = await assetModel.getDistricts();
 
   // Build lookup maps
   const departmentMap = new Map<number, { id: number; name: string }>();
   for (const d of departments as any[]) {
     departmentMap.set(d.id, { id: d.id, name: d.name });
   }
-  const sectionMap = new Map<number, { id: number; name: string }>();
-  for (const s of sections as any[]) {
-    sectionMap.set(s.id, { id: s.id, name: s.name });
-  }
   const positionMap = new Map<number, { id: number; name: string }>();
   for (const p of positions as any[]) {
     positionMap.set(p.id, { id: p.id, name: p.name });
   }
+  const costcenterMap = new Map<number, { id: number; name: string }>();
+  for (const c of costcenters as any[]) {
+    costcenterMap.set(c.id, { id: c.id, name: c.name });
+  }
   const districtMap = new Map<number, { id: number; name: string }>();
   for (const l of districts as any[]) {
-    districtMap.set(l.id, { id: l.id, name: l.code });
+    districtMap.set(l.id, { id: l.id, name: l.name });
   }
 
   const data = (employees as any[]).map(emp => ({
     id: emp.id,
-    name: emp.name,
+    ramco_id: emp.ramco_id,
+    full_name: emp.full_name,
     email: emp.email,
-    phone: emp.phone,
-    department: departmentMap.get(emp.department_id) || null,
-    section: emp.section_id ? sectionMap.get(emp.section_id) || null : null,
-    position: positionMap.get(emp.position_id) || null,
-    district: districtMap.get(emp.location_id) || null,
-    image: emp.image
-      ? (emp.image.startsWith('http')
-          ? emp.image
-          : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.image}`)
-      : null
+    contact: emp.contact,
+    gender: emp.gender,
+    dob: emp.dob,
+    avatar: emp.avatar
+      ? (emp.avatar.startsWith('http')
+          ? emp.avatar
+          : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+      : null,
+    hire_date: emp.hire_date,
+    resignation_date: emp.resignation_date,
+    employment_type: emp.employment_type,
+    employment_status: emp.employment_status,
+    grade: emp.grade,
+    position: emp.position_id ? positionMap.get(emp.position_id) || null : null,
+    department: emp.department_id ? departmentMap.get(emp.department_id) || null : null,
+    costcenter: emp.costcenter_id ? costcenterMap.get(emp.costcenter_id) || null : null,
+    district: emp.district_id ? districtMap.get(emp.district_id) || null : null
   }));
 
   res.json({
@@ -600,43 +608,80 @@ export const getEmployees = async (req: Request, res: Response) => {
 };
 
 export const getEmployeeById = async (req: Request, res: Response) => {
-  const emp = await assetModel.getUserById(Number(req.params.id));
+  const emp = await assetModel.getEmployeeById(Number(req.params.id));
   if (!emp) {
     return res.status(404).json({ status: 'error', message: 'Employee not found' });
   }
   const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
-  const section = emp.section_id ? await assetModel.getSectionById(emp.section_id) : null;
   const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
-  const district = emp.location_id ? await assetModel.getDistrictById(emp.location_id) : null;
+  const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
+  const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 
   res.json({
     status: 'success',
     message: 'Employee data retrieved successfully',
     data: {
       id: emp.id,
-      name: emp.name,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
       email: emp.email,
-      phone: emp.phone,
-      department: department ? { id: department.id, name: department.name } : null,
-      section: section ? { id: section.id, name: section.name } : null,
-      position: position ? { id: position.id, name: position.name } : null,
-      district: district ? { id: district.id, name: district.code } : null,
-      image: emp.image
+      contact: emp.contact,
+      gender: emp.gender,
+      dob: emp.dob,
+      avatar: emp.avatar
+        ? (emp.avatar.startsWith('http')
+            ? emp.avatar
+            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+        : null,
+      hire_date: emp.hire_date,
+      resignation_date: emp.resignation_date,
+      employment_type: emp.employment_type,
+      employment_status: emp.employment_status,
+      grade: emp.grade,
+      position,
+      department,
+      costcenter,
+      district
     }
   });
 };
 
 export const createEmployee = async (req: Request, res: Response) => {
-  const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
-  const result = await assetModel.createEmp({
-    name,
+  const {
+    ramco_id,
+    full_name,
     email,
-    phone,
-    image,
-    department_id: departmentId,
-    position_id: positionId,
-    location_id: districtId,
-    section_id: sectionId
+    contact,
+    gender,
+    dob,
+    avatar,
+    hire_date,
+    resignation_date,
+    employment_type,
+    employment_status,
+    grade,
+    position_id,
+    department_id,
+    costcenter_id,
+    district_id
+  } = req.body;
+  const result = await assetModel.createEmployee({
+    ramco_id,
+    full_name,
+    email,
+    contact,
+    gender,
+    dob,
+    avatar,
+    hire_date,
+    resignation_date,
+    employment_type,
+    employment_status,
+    grade,
+    position_id,
+    department_id,
+    costcenter_id,
+    district_id
   });
   res.json({
     status: 'success',
@@ -644,17 +689,43 @@ export const createEmployee = async (req: Request, res: Response) => {
     result
   });
 };
+
 export const updateEmployee = async (req: Request, res: Response) => {
-  const { name, email, phone, image, departmentId, positionId, districtId, sectionId } = req.body;
-  const result = await assetModel.updateEmp(Number(req.params.id), {
-    name,
+  const {
+    ramco_id,
+    full_name,
     email,
-    phone,
-    image,
-    department_id: departmentId,
-    position_id: positionId,
-    location_id: districtId,
-    section_id: sectionId
+    contact,
+    gender,
+    dob,
+    avatar,
+    hire_date,
+    resignation_date,
+    employment_type,
+    employment_status,
+    grade,
+    position_id,
+    department_id,
+    costcenter_id,
+    district_id
+  } = req.body;
+  const result = await assetModel.updateEmployee(Number(req.params.id), {
+    ramco_id,
+    full_name,
+    email,
+    contact,
+    gender,
+    dob,
+    avatar,
+    hire_date,
+    resignation_date,
+    employment_type,
+    employment_status,
+    grade,
+    position_id,
+    department_id,
+    costcenter_id,
+    district_id
   });
   res.json({
     status: 'success',
@@ -662,6 +733,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
     result
   });
 };
+
 export const deleteEmployee = async (req: Request, res: Response) => {
   const result = await assetModel.deleteUser(Number(req.params.id));
   res.json({
@@ -737,7 +809,7 @@ export const getZones = async (req: Request, res: Response) => {
   const zones = await assetModel.getZones();
   const zoneDistricts = await assetModel.getAllZoneDistricts();
   const districts = await assetModel.getDistricts();
-  const employees = await assetModel.getUsers();
+  const employees = await assetModel.getEmployees();
   // Build district map with code
   const districtMap = new Map<number, { id: number; name: string; code: string }>();
   for (const d of districts as any[]) {
