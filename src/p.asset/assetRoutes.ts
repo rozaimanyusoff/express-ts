@@ -111,6 +111,7 @@ router.post('/', asyncHandler(assetController.createAsset));
 router.put('/:id', asyncHandler(assetController.updateAsset));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
 
+
 // BRAND-CATEGORY RELATIONSHIP
 router.post('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.assignCategoryToBrand));
 router.delete('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.unassignCategoryFromBrand));

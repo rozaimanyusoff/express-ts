@@ -21,7 +21,7 @@ const employeeTable = `${db}.employees`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
 const assetTable = `${db}.pc_master`;
-const assetUserTable = `${db}.asset_users`;
+const assetUserTable = `${db}.pc_ownership`;
 const sectionTable = `${db}.sections`;
 const zoneDistrictTable = `${db}.zone_districts`;
 const brandCategoryTable = `${db}.pc_brand_category`;
@@ -641,16 +641,7 @@ export const deleteProcurement = async (id: number) => {
   return result;
 };
 
-// ASSETS CRUD
-export const createAsset = async (data: any) => {
-  const { serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${assetTable} (serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
-  );
-  return result;
-};
-
+// ASSETS GETTERS
 export const getAssets = async () => {
   const [rows] = await pool.query(`SELECT * FROM ${assetTable}`);
   return rows;
@@ -662,6 +653,16 @@ export const getAssetById = async (id: number) => {
   }
   const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
+};
+
+// ASSETS CRUD
+export const createAsset = async (data: any) => {
+  const { serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${assetTable} (serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
+  );
+  return result;
 };
 
 export const updateAsset = async (id: number, data: any) => {
@@ -678,36 +679,36 @@ export const deleteAsset = async (id: number) => {
   return result;
 };
 
-// ASSET_USERS CRUD
-export const createAssetUser = async (data: any) => {
-  const { asset_id, handover_date, handover_status, return_date, handover_user_id } = data;
+// ASSET_OWNERSHIP CRUD (using pc_ownership join table)
+export const createAssetOwnership = async (data: any) => {
+  const { pc_id, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${assetUserTable} (asset_id, handover_date, handover_status, return_date, handover_user_id) VALUES (?, ?, ?, ?, ?)`,
-    [asset_id, handover_date, handover_status, return_date, handover_user_id]
+    `INSERT INTO ${assetUserTable} (pc_id, ramco_id, effective_date) VALUES (?, ?, ?)` ,
+    [pc_id, ramco_id, effective_date]
   );
   return result;
 };
 
-export const getAssetUsers = async () => {
+export const getAssetOwnerships = async () => {
   const [rows] = await pool.query(`SELECT * FROM ${assetUserTable}`);
   return rows;
 };
 
-export const getAssetUserById = async (id: number) => {
+export const getAssetOwnershipById = async (id: number) => {
   const [rows] = await pool.query(`SELECT * FROM ${assetUserTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const updateAssetUser = async (id: number, data: any) => {
-  const { asset_id, handover_date, handover_status, return_date, handover_user_id } = data;
+export const updateAssetOwnership = async (id: number, data: any) => {
+  const { pc_id, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `UPDATE ${assetUserTable} SET asset_id = ?, handover_date = ?, handover_status = ?, return_date = ?, handover_user_id = ? WHERE id = ?`,
-    [asset_id, handover_date, handover_status, return_date, handover_user_id, id]
+    `UPDATE ${assetUserTable} SET pc_id = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
+    [pc_id, ramco_id, effective_date, id]
   );
   return result;
 };
 
-export const deleteAssetUser = async (id: number) => {
+export const deleteAssetOwnership = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${assetUserTable} WHERE id = ?`, [id]);
   return result;
 };
@@ -882,6 +883,28 @@ export const getBrandByCode = async (code: string | number) => {
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
+// Fetch specs for an asset (by pc_id)
+export async function getSpecsForAsset(pc_id: number) {
+  const [rows] = await pool.query(
+    `SELECT id, pc_id, cpu, cpu_generation, memory_size, storage_size, os
+     FROM assetdata.pc_specs WHERE pc_id = ?`,
+    [pc_id]
+  );
+  return rows;
+}
+
+// Fetch installed software for an asset (by pc_id)
+export async function getInstalledSoftwareForAsset(pc_id: number) {
+  const [rows] = await pool.query(
+    `SELECT pis.id, pis.software_id, s.name, pis.installed_at
+     FROM assetdata.pc_installed_software pis
+     JOIN assetdata.pc_software s ON pis.software_id = s.id
+     WHERE pis.pc_id = ?`,
+    [pc_id]
+  );
+  return rows;
+}
+
 export default {
   createType,
   getTypes,
@@ -959,11 +982,11 @@ export default {
   getAssetById,
   updateAsset,
   deleteAsset,
-  createAssetUser,
-  getAssetUsers,
-  getAssetUserById,
-  updateAssetUser,
-  deleteAssetUser,
+  createAssetOwnership,
+  getAssetOwnerships,
+  getAssetOwnershipById,
+  updateAssetOwnership,
+  deleteAssetOwnership,
   createSection,
   getSections,
   getSectionById,
@@ -994,4 +1017,6 @@ export default {
   createSoftware,
   updateSoftware,
   deleteSoftware,
+  getSpecsForAsset,
+  getInstalledSoftwareForAsset
 };
