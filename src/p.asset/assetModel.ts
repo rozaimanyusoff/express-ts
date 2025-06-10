@@ -655,6 +655,11 @@ export const getAssetById = async (id: number) => {
   return (rows as RowDataPacket[])[0];
 };
 
+export const getAssetByCode = async (asset_code: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE asset_code = ?`, [asset_code]);
+  return (rows as RowDataPacket[])[0];
+};
+
 // ASSETS CRUD
 export const createAsset = async (data: any) => {
   const { serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
@@ -681,10 +686,10 @@ export const deleteAsset = async (id: number) => {
 
 // ASSET_OWNERSHIP CRUD (using pc_ownership join table)
 export const createAssetOwnership = async (data: any) => {
-  const { pc_id, ramco_id, effective_date } = data;
+  const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${assetUserTable} (pc_id, ramco_id, effective_date) VALUES (?, ?, ?)` ,
-    [pc_id, ramco_id, effective_date]
+    `INSERT INTO ${assetUserTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)` ,
+    [asset_code, ramco_id, effective_date]
   );
   return result;
 };
@@ -700,10 +705,10 @@ export const getAssetOwnershipById = async (id: number) => {
 };
 
 export const updateAssetOwnership = async (id: number, data: any) => {
-  const { pc_id, ramco_id, effective_date } = data;
+  const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `UPDATE ${assetUserTable} SET pc_id = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
-    [pc_id, ramco_id, effective_date, id]
+    `UPDATE ${assetUserTable} SET asset_code = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
+    [asset_code, ramco_id, effective_date, id]
   );
   return result;
 };
@@ -883,24 +888,24 @@ export const getBrandByCode = async (code: string | number) => {
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
-// Fetch specs for an asset (by pc_id)
-export async function getSpecsForAsset(pc_id: number) {
+// Fetch specs for an asset (by asset_code)
+export async function getSpecsForAsset(asset_code: string) {
   const [rows] = await pool.query(
-    `SELECT id, pc_id, cpu, cpu_generation, memory_size, storage_size, os
-     FROM assetdata.pc_specs WHERE pc_id = ?`,
-    [pc_id]
+    `SELECT id, asset_code, cpu, cpu_generation, memory_size, storage_size, os
+     FROM assetdata.pc_specs WHERE asset_code = ?`,
+    [asset_code]
   );
   return rows;
 }
 
-// Fetch installed software for an asset (by pc_id)
-export async function getInstalledSoftwareForAsset(pc_id: number) {
+// Fetch installed software for an asset (by asset_code)
+export async function getInstalledSoftwareForAsset(asset_code: string) {
   const [rows] = await pool.query(
     `SELECT pis.id, pis.software_id, s.name, pis.installed_at
      FROM assetdata.pc_installed_software pis
      JOIN assetdata.pc_software s ON pis.software_id = s.id
-     WHERE pis.pc_id = ?`,
-    [pc_id]
+     WHERE pis.asset_code = ?`,
+    [asset_code]
   );
   return rows;
 }
@@ -980,6 +985,7 @@ export default {
   createAsset,
   getAssets,
   getAssetById,
+  getAssetByCode,
   updateAsset,
   deleteAsset,
   createAssetOwnership,

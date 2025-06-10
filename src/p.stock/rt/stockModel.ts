@@ -3,7 +3,7 @@ import pool from "../../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 
 // --- DB & TABLE DECLARATIONS ---
-const dbName = 'stock';
+const dbName = 'diana';
 const stockPurchaseTable = `${dbName}.rt_stock_purchase`;
 const stockPurchaseItemsTable = `${dbName}.rt_stock_purchase_items`;
 const suppliersTable = `${dbName}.rt_suppliers`;
