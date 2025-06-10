@@ -789,3 +789,39 @@ export const deleteStockRequestItem = async (req: Request, res: Response) => {
     res.status(500).json({ status: 'error', message: err.message || 'Failed to delete stock request item', data: null });
   }
 };
+
+export const getStockTransactionsByItemId = async (req: Request, res: Response) => {
+  const itemId = Number(req.params.id);
+  if (isNaN(itemId)) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+  const rows = await stockModel.getStockTransactionsByItemId(itemId);
+  res.json({
+    status: 'success',
+    message: 'Stock transactions retrieved successfully',
+    data: rows
+  });
+};
+
+// Get in-stock data for a given item_id
+export const getStockInStockByItemId = async (req: Request, res: Response) => {
+  const itemId = Number(req.params.id);
+  if (isNaN(itemId)) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+  // Get all stock tracking records for this item_id
+  const rows = await stockModel.getStockTransactionsByItemId(itemId);
+  // In-stock = status is 'in_stock' (or similar logic, adjust as needed)
+  // If you want all records that are currently in stock, filter by status
+  const inStockRows = Array.isArray(rows)
+    ? rows.filter((row: any) => row.status === 'in_stock' || row.status === 'IN_STOCK' || row.status === 'available')
+    : [];
+  // Return all in-stock records, including serial_no
+  res.json({
+    status: 'success',
+    message: 'In-stock items retrieved successfully',
+    data: inStockRows.map((row: any) => ({
+      id: row.id,
+      item_id: row.item_id,
+      serial_no: row.serial_no,
+      status: row.status,
+      ...row
+    }))
+  });
+};

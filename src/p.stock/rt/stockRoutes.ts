@@ -21,10 +21,16 @@ router.delete('/teams/:id', asyncHandler(stockController.deleteTeam));
 
 // STOCK ITEMS
 router.post('/items', asyncHandler(stockController.createStockItem));
+// Get all stock transactions for a given item_id
+router.get('/items/:id/transactions', asyncHandler(stockController.getStockTransactionsByItemId));
+// Get in-stock data for a given item_id
+router.get('/items/:id/in-stock', asyncHandler(stockController.getStockInStockByItemId));
 router.get('/items/:id', asyncHandler(stockController.getStockItemById));
 router.get('/items', asyncHandler(stockController.getStockItems));
 router.put('/items/:id', asyncHandler(stockController.updateStockItem));
 router.delete('/items/:id', asyncHandler(stockController.deleteStockItem));
+
+
 
 // PURCHASES
 router.post('/purchase', asyncHandler(stockController.createStockPurchase));
