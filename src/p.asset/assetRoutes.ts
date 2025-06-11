@@ -68,6 +68,9 @@ router.get('/employees/:id', asyncHandler(assetController.getEmployeeById));
 router.post('/employees', asyncHandler(assetController.createEmployee));
 router.put('/employees/:id', asyncHandler(assetController.updateEmployee));
 router.delete('/employees/:id', asyncHandler(assetController.deleteEmployee));
+router.get('/employees/ramco/:ramco_id', asyncHandler(assetController.getEmployeeByRamco));
+router.get('/employees/email/:email', asyncHandler(assetController.getEmployeeByEmail));
+router.get('/employees/contact/:contact', asyncHandler(assetController.getEmployeeByContact));
 
 // DISTRICTS
 router.get('/districts', asyncHandler(assetController.getDistricts));

@@ -881,6 +881,124 @@ export const getEmployeeById = async (req: Request, res: Response) => {
   });
 };
 
+export const getEmployeeByRamco = async (req: Request, res: Response) => {
+  const ramcoId = req.params.ramco_id;
+  const emp = await assetModel.getEmployeeByRamco(ramcoId);
+  if (!emp) {
+    return res.status(404).json({ status: 'error', message: 'Employee not found' });
+  }
+  const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
+  const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
+  const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
+  const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
+  res.json({
+    status: 'success',
+    message: 'Employee data retrieved successfully',
+    data: {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      gender: emp.gender,
+      dob: emp.dob,
+      avatar: emp.avatar
+        ? (emp.avatar.startsWith('http')
+            ? emp.avatar
+            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+        : null,
+      hire_date: emp.hire_date,
+      resignation_date: emp.resignation_date,
+      employment_type: emp.employment_type,
+      employment_status: emp.employment_status,
+      grade: emp.grade,
+      position,
+      department,
+      costcenter,
+      district
+    }
+  });
+}
+
+export const getEmployeeByEmail = async (req: Request, res: Response) => {
+  const email = req.params.email;
+  const emp = await assetModel.getEmployeeByEmail(email);
+  if (!emp) {
+    return res.status(404).json({ status: 'error', message: 'Employee not found' });
+  }
+  const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
+  const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
+  const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
+  const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
+  res.json({
+    status: 'success',
+    message: 'Employee data retrieved successfully',
+    data: {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      gender: emp.gender,
+      dob: emp.dob,
+      avatar: emp.avatar
+        ? (emp.avatar.startsWith('http')
+            ? emp.avatar
+            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+        : null,
+      hire_date: emp.hire_date,
+      resignation_date: emp.resignation_date,
+      employment_type: emp.employment_type,
+      employment_status: emp.employment_status,
+      grade: emp.grade,
+      position,
+      department,
+      costcenter,
+      district
+    }
+  });
+}
+
+export const getEmployeeByContact = async (req: Request, res: Response) => {
+  const email = req.params.email;
+  const emp = await assetModel.getEmployeeByEmail(email);
+  if (!emp) {
+    return res.status(404).json({ status: 'error', message: 'Employee not found' });
+  }
+  const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
+  const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
+  const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
+  const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
+  res.json({
+    status: 'success',
+    message: 'Employee data retrieved successfully',
+    data: {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      gender: emp.gender,
+      dob: emp.dob,
+      avatar: emp.avatar
+        ? (emp.avatar.startsWith('http')
+            ? emp.avatar
+            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+        : null,
+      hire_date: emp.hire_date,
+      resignation_date: emp.resignation_date,
+      employment_type: emp.employment_type,
+      employment_status: emp.employment_status,
+      grade: emp.grade,
+      position,
+      department,
+      costcenter,
+      district
+    }
+  });
+}
+
+
 export const createEmployee = async (req: Request, res: Response) => {
   const {
     ramco_id,

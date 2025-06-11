@@ -559,6 +559,21 @@ export const getEmployeeById = async (id: number) => {
   return (rows as RowDataPacket[])[0];
 };
 
+export const getEmployeeByRamco = async (ramco_id: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE ramco_id = ?`, [ramco_id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getEmployeeByEmail = async (email: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE email = ?`, [email]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getEmployeeByContact = async (contact: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE contact = ?`, [contact]);
+  return (rows as RowDataPacket[])[0];
+};
+
 export const updateEmployee = async (id: number, data: any) => {
   const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
   const [result] = await pool.query(
