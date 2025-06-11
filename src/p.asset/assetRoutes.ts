@@ -109,7 +109,9 @@ router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
 
 // ASSETS
 router.get('/', asyncHandler(assetController.getAssets));
-router.get('/:asset_code', asyncHandler(assetController.getAssetById));
+router.get('/:id', asyncHandler(assetController.getAssetById));
+router.get('/code/:asset_code', asyncHandler(assetController.getAssetByCode));
+
 router.post('/', asyncHandler(assetController.createAsset));
 router.put('/:asset_code', asyncHandler(assetController.updateAsset));
 router.delete('/:asset_code', asyncHandler(assetController.deleteAsset));
