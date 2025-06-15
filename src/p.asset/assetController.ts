@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as assetModel from './assetModel';
 import path from 'path';
+import { getAssetsByIds, getStringParam } from "./assetModel";
 
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
@@ -323,6 +324,11 @@ export const deleteModel = async (req: Request, res: Response) => {
 };
 
 // ASSETS
+// Helper type guard for RowDataPacket with asset_id and ramco_id
+function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; effective_date?: string } {
+  return obj && typeof obj === 'object' && 'asset_id' in obj && 'ramco_id' in obj;
+}
+
 export const getAssets = async (req: Request, res: Response) => {
   // Fetch all assets and related data
   const assetsRaw = await assetModel.getAssets();
@@ -337,8 +343,7 @@ export const getAssets = async (req: Request, res: Response) => {
   const districtsRaw = await assetModel.getDistricts();
 
   const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
-  // Only keep objects with pc_id, ramco_id, effective_date
-  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw.filter((o: any) => o && typeof o === 'object' && !Array.isArray(o) && Object.prototype.hasOwnProperty.call(o, 'pc_id') && Object.prototype.hasOwnProperty.call(o, 'ramco_id') && Object.prototype.hasOwnProperty.call(o, 'effective_date')) : [];
+  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
   const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
   const types = Array.isArray(typesRaw) ? typesRaw : [];
   const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
@@ -348,73 +353,109 @@ export const getAssets = async (req: Request, res: Response) => {
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
   const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
 
-  // Build lookup maps (keyed by both code and id)
-  const assetTypeMap = new Map<any, any>(
-    types.flatMap((t: any) => [[t.code, t], [t.id, t]])
-  );
-  const assetCategoryMap = new Map<any, any>(
-    categories.flatMap((c: any) => [[c.code, c], [c.id, c]])
-  );
-  const assetBrandMap = new Map<any, any>(
-    brands.flatMap((b: any) => [[b.code, b], [b.id, b]])
-  );
-  const assetModelMap = new Map<any, any>(
-    models.flatMap((m: any) => [[m.code, m], [m.id, m]]) //removed [m.model_code, m] on 10/10/2023
-  );
-  const assetDepartmentMap = new Map<any, any>(departments.map((d: any) => [d.id, d]));
-  const assetCostcenterMap = new Map<any, any>(costcenters.map((c: any) => [c.id, c]));
-  const assetDistrictMap = new Map<any, any>(districts.map((d: any) => [d.id, d]));
-  const employeeMap = new Map<any, any>(employees.map((e: any) => [e.ramco_id, e]));
+  // Build lookup maps
+  const typeMap = new Map(types.map((t: any) => [t.id, t]));
+  const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
+  const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+  const modelMap = new Map(models.map((m: any) => [m.id, m]));
+  const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+  const departmentMap = new Map(departments.map((d: any) => [d.id, d]));
+  const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const districtMap = new Map(districts.map((d: any) => [d.id, d]));
 
-  // Group ownerships by asset (asset_code)
-  const ownershipsByAsset: Record<string, any[]> = {};
+  // Group ownerships by asset_id
+  const ownershipsByAsset: Record<number, any[]> = {};
   for (const o of ownerships) {
-    const own = o as { asset_code: string, ramco_id: string, effective_date: string };
-    if (!ownershipsByAsset[own.asset_code]) ownershipsByAsset[own.asset_code] = [];
-    const emp = employeeMap.get(own.ramco_id);
+    if (!isOwnershipRow(o)) continue;
+    if (!ownershipsByAsset[o.asset_id]) ownershipsByAsset[o.asset_id] = [];
+    const emp = employeeMap.get(o.ramco_id);
     if (emp) {
-      ownershipsByAsset[own.asset_code].push({
-        id: emp.id,
+      ownershipsByAsset[o.asset_id].push({
         ramco_id: emp.ramco_id,
         name: emp.full_name,
-        district: emp.district_id ? (assetDistrictMap.get(emp.district_id)?.code || null) : null,
-        department: emp.department_id ? (assetDepartmentMap.get(emp.department_id)?.code || null) : null,
-        cost_center: emp.costcenter_id ? (assetCostcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        effective_date: own.effective_date
+        email: emp.email,
+        contact: emp.contact,
+        department: emp.department_id ? (departmentMap.get(emp.department_id)?.code || null) : null,
+        cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
+        district: emp.district_id ? (districtMap.get(emp.district_id)?.code || null) : null,
+        effective_date: (o as any).effective_date || null
       });
     }
   }
 
-  // Attach nested objects and owners to each asset
-  const data = assets.map((asset: any) => {
-    // Try both code and id for each field
-    const typeObj = assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code);
-    const categoryObj = assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code);
-    const brandObj = assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code);
-    const modelObj = assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code);
+  // Build asset data
+  const data = await Promise.all(assets.map(async (asset: any) => {
+    const type = typeMap.get(asset.type_id);
+    let specs: any = null;
+    if (type && type.id === 1) {
+      // Computer
+      const compSpecsArr = await assetModel.getComputerSpecsForAsset(asset.id);
+      if (Array.isArray(compSpecsArr) && compSpecsArr.length > 0) {
+        const compSpecs = compSpecsArr[0];
+        // Fetch installed software for this asset
+        const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
+        specs = {
+          categories: asset.category_id ? {
+            category_id: asset.category_id,
+            name: categoryMap.get(asset.category_id)?.name || null
+          } : null,
+          brands: asset.brand_id ? {
+            brand_id: asset.brand_id,
+            name: brandMap.get(asset.brand_id)?.name || null
+          } : null,
+          models: asset.model_id ? {
+            model_id: asset.model_id,
+            name: modelMap.get(asset.model_id)?.name || null
+          } : null,
+          ...compSpecs,
+          installed_software: installedSoftware || []
+        };
+      }
+    } else if (type && type.id === 2) {
+      // Vehicle
+      const vehSpecsArr = await assetModel.getVehicleSpecsForAsset(asset.id);
+      if (Array.isArray(vehSpecsArr) && vehSpecsArr.length > 0) {
+        const vehSpecs = vehSpecsArr[0];
+        specs = {
+          categories: asset.category_id ? {
+            category_id: asset.category_id,
+            name: categoryMap.get(asset.category_id)?.name || null
+          } : null,
+          brands: asset.brand_id ? {
+            brand_id: asset.brand_id,
+            name: brandMap.get(asset.brand_id)?.name || null
+          } : null,
+          models: asset.model_id ? {
+            model_id: asset.model_id,
+            name: modelMap.get(asset.model_id)?.name || null
+          } : null,
+          ...vehSpecs
+        };
+      }
+    }
     return {
       id: asset.id,
+      classification: asset.classification,
       asset_code: asset.asset_code,
-      item_code: asset.item_code,
       finance_tag: asset.finance_tag,
       serial_number: asset.serial_number,
-      pc_hostname: asset.pc_hostname,
       dop: asset.dop,
       year: asset.year,
       unit_price: asset.unit_price,
       depreciation_length: asset.depreciation_length,
       depreciation_rate: asset.depreciation_rate,
       cost_center: asset.cost_center,
-      types: typeObj ? { type_code: (typeObj as any).code, name: (typeObj as any).name } : null,
-      categories: categoryObj ? { category_code: (categoryObj as any).code, name: (categoryObj as any).name } : null,
-      brands: brandObj ? { brand_code: (brandObj as any).code, name: (brandObj as any).name } : null,
-      models: modelObj ? { model_code: (modelObj as any).code, name: (modelObj as any).name } : null,
-      asses: asset.asses,
-      comment: asset.comment,
-      classification: asset.classification,
-      owner: ownershipsByAsset[asset.asset_code] || []
+      status: asset.status,
+      disposed_date: asset.disposed_date,
+      types: type ? {
+        type_id: type.id,
+        type_code: type.code,
+        name: type.name
+      } : null,
+      specs,
+      owner: ownershipsByAsset[asset.id] || []
     };
-  });
+  }));
 
   res.json({
     status: 'success',
@@ -424,8 +465,8 @@ export const getAssets = async (req: Request, res: Response) => {
 };
 
 export const getAssetById = async (req: Request, res: Response) => {
-  const id = req.params.id;
-  const asset = await assetModel.getAssetById(Number(id));
+  const id = Number(req.params.id);
+  const asset = await assetModel.getAssetById(id);
   if (!asset) return res.status(404).json({ status: 'error', message: 'Asset not found' });
 
   // Fetch all related data for mapping
@@ -450,247 +491,118 @@ export const getAssetById = async (req: Request, res: Response) => {
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
   const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
 
-  // Type guards for mapping
-  function isEmployee(e: any): e is { id: any, ramco_id: any, full_name: any, district_id?: any, department_id?: any, costcenter_id?: any } {
-    return e && typeof e === 'object' && 'ramco_id' in e;
-  }
-  function isMapObj(obj: any): obj is { id: any, name: any } {
-    return obj && typeof obj === 'object' && 'name' in obj;
-  }
+  // Build lookup maps
+  const typeMap = new Map(types.map((t: any) => [t.id, t]));
+  const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
+  const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+  const modelMap = new Map(models.map((m: any) => [m.id, m]));
+  const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+  const departmentMap = new Map(departments.map((d: any) => [d.id, d]));
+  const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const districtMap = new Map(districts.map((d: any) => [d.id, d]));
 
-  const employeeMap = new Map(employees.filter(isEmployee).map((e: any) => [e.ramco_id, e]));
-  const districtMap = new Map(districts.filter(isMapObj).map((d: any) => [d.id, d]));
-  const departmentMap = new Map(departments.filter(isMapObj).map((d: any) => [d.id, d]));
-  const costcenterMap = new Map(costcenters.filter(isMapObj).map((c: any) => [c.id, c]));
-  const ownershipsByAsset: Record<string, any[]> = {};
+  // Group ownerships by asset_id
+  const ownershipsByAsset: Record<number, any[]> = {};
   for (const o of ownerships) {
-    const own = o as { asset_code: string, ramco_id: string, effective_date: string };
-    if (!ownershipsByAsset[own.asset_code]) ownershipsByAsset[own.asset_code] = [];
-    const emp = employeeMap.get(own.ramco_id);
+    if (!isOwnershipRow(o)) continue;
+    if (!ownershipsByAsset[o.asset_id]) ownershipsByAsset[o.asset_id] = [];
+    const emp = employeeMap.get(o.ramco_id);
     if (emp) {
-      ownershipsByAsset[own.asset_code].push({
-        id: emp.id,
+      ownershipsByAsset[o.asset_id].push({
         ramco_id: emp.ramco_id,
         name: emp.full_name,
-        district: emp.district_id ? (districtMap.get(emp.district_id)?.name || null) : null,
-        department: emp.department_id ? (departmentMap.get(emp.department_id)?.name || null) : null,
+        email: emp.email,
+        contact: emp.contact,
+        department: emp.department_id ? (departmentMap.get(emp.department_id)?.code || null) : null,
         cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        effective_date: own.effective_date
+        district: emp.district_id ? (districtMap.get(emp.district_id)?.code || null) : null,
+        effective_date: (o as any).effective_date || null
       });
     }
   }
-  function flatMapArr<T, U>(arr: T[], fn: (v: T) => U[]): U[] { return Array.isArray(arr) ? arr.map(fn).flat() : []; }
-  const assetTypeMap = new Map<any, any>(flatMapArr(types, (t: any) => [[t.code, t], [t.id, t]]));
-  const assetCategoryMap = new Map<any, any>(flatMapArr(categories, (c: any) => [[c.code, c], [c.id, c]]));
-  const assetBrandMap = new Map<any, any>(flatMapArr(brands, (b: any) => [[b.code, b], [b.id, b]]));
-  const assetModelMap = new Map<any, any>(flatMapArr(models, (m: any) => [[m.code, m], [m.id, m]]));
-  // Fetch specs and installed_software for this asset
-  let specs: any[] = [];
-  const specsRaw = await assetModel.getSpecsForAsset(asset.asset_code);
-  if (Array.isArray(specsRaw)) {
-    specs = await Promise.all(specsRaw.map(async (spec: any) => {
-      const installed_software = await assetModel.getInstalledSoftwareForAsset(asset.asset_code);
-      return {
-        id: spec.id,
-        effective_date: spec.effective_date || null,
-        cpu: spec.cpu,
-        cpu_generation: spec.cpu_generation,
-        memory_size: spec.memory_size,
-        storage_size: spec.storage_size,
-        os: spec.os,
-        screen_size: spec.screen_size || null,
-        installed_software: Array.isArray(installed_software) ? installed_software.map((sw: any) => ({
-          id: sw.software_id,
-          name: sw.name,
-          installed_at: sw.installed_at
-        })) : []
+
+  // Build specs
+  const type = typeMap.get(asset.type_id);
+  let specs: any = null;
+  if (type && type.id === 1) {
+    const compSpecsArr = await assetModel.getComputerSpecsForAsset(asset.id);
+    if (Array.isArray(compSpecsArr) && compSpecsArr.length > 0) {
+      const compSpecs = compSpecsArr[0];
+      // Fetch installed software for this asset
+      const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
+      specs = {
+        categories: asset.category_id ? {
+          category_id: asset.category_id,
+          name: categoryMap.get(asset.category_id)?.name || null
+        } : null,
+        brands: asset.brand_id ? {
+          brand_id: asset.brand_id,
+          name: brandMap.get(asset.brand_id)?.name || null
+        } : null,
+        models: asset.model_id ? {
+          model_id: asset.model_id,
+          name: modelMap.get(asset.model_id)?.name || null
+        } : null,
+        ...compSpecs,
+        installed_software: installedSoftware || []
       };
-    }));
+    }
+  } else if (type && type.id === 2) {
+    const vehSpecsArr = await assetModel.getVehicleSpecsForAsset(asset.id);
+    if (Array.isArray(vehSpecsArr) && vehSpecsArr.length > 0) {
+      const vehSpecs = vehSpecsArr[0];
+      specs = {
+        categories: asset.category_id ? {
+          category_id: asset.category_id,
+          name: categoryMap.get(asset.category_id)?.name || null
+        } : null,
+        brands: asset.brand_id ? {
+          brand_id: asset.brand_id,
+          name: brandMap.get(asset.brand_id)?.name || null
+        } : null,
+        models: asset.model_id ? {
+          model_id: asset.model_id,
+          name: modelMap.get(asset.model_id)?.name || null
+        } : null,
+        ...vehSpecs
+      };
+    }
   }
+
   const assetWithNested = {
     id: asset.id,
+    classification: asset.classification,
     asset_code: asset.asset_code,
-    item_code: asset.item_code,
     finance_tag: asset.finance_tag,
     serial_number: asset.serial_number,
-    pc_hostname: asset.pc_hostname,
     dop: asset.dop,
     year: asset.year,
     unit_price: asset.unit_price,
     depreciation_length: asset.depreciation_length,
     depreciation_rate: asset.depreciation_rate,
     cost_center: asset.cost_center,
-    types: assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)
-      ? { type_code: (assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)).code, name: (assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)).name }
-      : null,
-    categories: assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)
-      ? { category_code: (assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)).code, name: (assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)).name }
-      : null,
-    brands: assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)
-      ? { brand_code: (assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)).code, name: (assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)).name }
-      : null,
-    models: assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)
-      ? { model_code: (assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)).code, name: (assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)).name }
-      : null,
-    asses: asset.asses,
-    comment: asset.comment,
-    classification: asset.classification,
+    status: asset.status,
+    disposed_date: asset.disposed_date,
+    types: type ? {
+      type_id: type.id,
+      type_code: type.code,
+      name: type.name
+    } : null,
     specs,
-    owner: (ownershipsByAsset[asset.asset_code] || []).map((o: any) => {
-      const emp = employeeMap.get(o.ramco_id);
-      return {
-        id: o.id,
-        ramco_id: o.ramco_id,
-        name: o.name,
-        district: emp && emp.district_id ? (districtMap.get(emp.district_id)?.name || null) : null,
-        department: emp && emp.department_id ? (departmentMap.get(emp.department_id)?.name || null) : null,
-        cost_center: emp && emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        effective_date: o.effective_date
-      };
-    })
+    owner: ownershipsByAsset[asset.id] || []
   };
+
   res.json({
     status: 'success',
-    message: 'Asset data retrieved successfully',
+    message: 'Asset data by ID retrieved successfully',
     data: assetWithNested
   });
 };
 
-export const getAssetByCode = async (req: Request, res: Response) => {
-  const asset_code = req.params.asset_code;
-  const asset = await assetModel.getAssetByCode(asset_code);
-  if (!asset) return res.status(404).json({ status: 'error', message: 'Asset not found' });
-
-  // Fetch all related data for mapping
-  const [ownershipsRaw, employeesRaw, typesRaw, categoriesRaw, brandsRaw, modelsRaw, departmentsRaw, costcentersRaw, districtsRaw] = await Promise.all([
-    assetModel.getAssetOwnerships(),
-    assetModel.getEmployees(),
-    assetModel.getTypes(),
-    assetModel.getCategories(),
-    assetModel.getBrands(),
-    assetModel.getModels(),
-    assetModel.getDepartments(),
-    assetModel.getCostcenters(),
-    assetModel.getDistricts()
-  ]);
-  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-  const types = Array.isArray(typesRaw) ? typesRaw : [];
-  const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
-  const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
-  const models = Array.isArray(modelsRaw) ? modelsRaw : [];
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
-  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-  const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-
-  // Type guards for mapping
-  function isEmployee(e: any): e is { id: any, ramco_id: any, full_name: any, district_id?: any, department_id?: any, costcenter_id?: any } {
-    return e && typeof e === 'object' && 'ramco_id' in e;
-  }
-  function isMapObj(obj: any): obj is { id: any, name: any } {
-    return obj && typeof obj === 'object' && 'name' in obj;
-  }
-
-  const employeeMap = new Map(employees.filter(isEmployee).map((e: any) => [e.ramco_id, e]));
-  const districtMap = new Map(districts.filter(isMapObj).map((d: any) => [d.id, d]));
-  const departmentMap = new Map(departments.filter(isMapObj).map((d: any) => [d.id, d]));
-  const costcenterMap = new Map(costcenters.filter(isMapObj).map((c: any) => [c.id, c]));
-  const ownershipsByAsset: Record<string, any[]> = {};
-  for (const o of ownerships) {
-    const own = o as { asset_code: string, ramco_id: string, effective_date: string };
-    if (!ownershipsByAsset[own.asset_code]) ownershipsByAsset[own.asset_code] = [];
-    const emp = employeeMap.get(own.ramco_id);
-    if (emp) {
-      ownershipsByAsset[own.asset_code].push({
-        id: emp.id,
-        ramco_id: emp.ramco_id,
-        name: emp.full_name,
-        district: emp.district_id ? (districtMap.get(emp.district_id)?.name || null) : null,
-        department: emp.department_id ? (departmentMap.get(emp.department_id)?.name || null) : null,
-        cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        effective_date: own.effective_date
-      });
-    }
-  }
-  function flatMapArr<T, U>(arr: T[], fn: (v: T) => U[]): U[] { return Array.isArray(arr) ? arr.map(fn).flat() : []; }
-  const assetTypeMap = new Map<any, any>(flatMapArr(types, (t: any) => [[t.code, t], [t.id, t]]));
-  const assetCategoryMap = new Map<any, any>(flatMapArr(categories, (c: any) => [[c.code, c], [c.id, c]]));
-  const assetBrandMap = new Map<any, any>(flatMapArr(brands, (b: any) => [[b.code, b], [b.id, b]]));
-  const assetModelMap = new Map<any, any>(flatMapArr(models, (m: any) => [[m.code, m], [m.id, m]]));
-  // Fetch specs and installed_software for this asset
-  let specs: any[] = [];
-  const specsRaw = await assetModel.getSpecsForAsset(asset.asset_code);
-  if (Array.isArray(specsRaw)) {
-    specs = await Promise.all(specsRaw.map(async (spec: any) => {
-      const installed_software = await assetModel.getInstalledSoftwareForAsset(asset.asset_code);
-      return {
-        id: spec.id,
-        effective_date: spec.effective_date || null,
-        cpu: spec.cpu,
-        cpu_generation: spec.cpu_generation,
-        memory_size: spec.memory_size,
-        storage_size: spec.storage_size,
-        os: spec.os,
-        screen_size: spec.screen_size || null,
-        installed_software: Array.isArray(installed_software) ? installed_software.map((sw: any) => ({
-          id: sw.software_id,
-          name: sw.name,
-          installed_at: sw.installed_at
-        })) : []
-      };
-    }));
-  }
-  const assetWithNested = {
-    id: asset.id,
-    asset_code: asset.asset_code,
-    item_code: asset.item_code,
-    finance_tag: asset.finance_tag,
-    serial_number: asset.serial_number,
-    pc_hostname: asset.pc_hostname,
-    dop: asset.dop,
-    year: asset.year,
-    unit_price: asset.unit_price,
-    depreciation_length: asset.depreciation_length,
-    depreciation_rate: asset.depreciation_rate,
-    cost_center: asset.cost_center,
-    types: assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)
-      ? { type_code: (assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)).code, name: (assetTypeMap.get(asset.type_id) || assetTypeMap.get(asset.type_code)).name }
-      : null,
-    categories: assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)
-      ? { category_code: (assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)).code, name: (assetCategoryMap.get(asset.category_id) || assetCategoryMap.get(asset.category_code)).name }
-      : null,
-    brands: assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)
-      ? { brand_code: (assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)).code, name: (assetBrandMap.get(asset.brand_id) || assetBrandMap.get(asset.brand_code)).name }
-      : null,
-    models: assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)
-      ? { model_code: (assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)).code, name: (assetModelMap.get(asset.model_id) || assetModelMap.get(asset.model_code)).name }
-      : null,
-    asses: asset.asses,
-    comment: asset.comment,
-    classification: asset.classification,
-    specs,
-    owner: (ownershipsByAsset[asset.asset_code] || []).map((o: any) => {
-      const emp = employeeMap.get(o.ramco_id);
-      return {
-        id: o.id,
-        ramco_id: o.ramco_id,
-        name: o.name,
-        district: emp && emp.district_id ? (districtMap.get(emp.district_id)?.name || null) : null,
-        department: emp && emp.department_id ? (departmentMap.get(emp.department_id)?.name || null) : null,
-        cost_center: emp && emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        effective_date: o.effective_date
-      };
-    })
-  };
-  res.json({
-    status: 'success',
-    message: 'Asset data retrieved successfully',
-    data: assetWithNested
-  });
-};
-
+// ASSETS CRUD
 export const createAsset = async (req: Request, res: Response) => {
-  const result = await assetModel.createAsset(req.body);
+  const assetData = req.body;
+  const result = await assetModel.createAsset(assetData);
   res.status(201).json({
     status: 'success',
     message: 'Asset created successfully',
@@ -699,7 +611,9 @@ export const createAsset = async (req: Request, res: Response) => {
 };
 
 export const updateAsset = async (req: Request, res: Response) => {
-  const result = await assetModel.updateAsset(Number(req.params.id), req.body);
+  const { id } = req.params;
+  const assetData = req.body;
+  const result = await assetModel.updateAsset(Number(id), assetData);
   res.json({
     status: 'success',
     message: 'Asset updated successfully',
@@ -708,7 +622,8 @@ export const updateAsset = async (req: Request, res: Response) => {
 };
 
 export const deleteAsset = async (req: Request, res: Response) => {
-  const result = await assetModel.deleteAsset(Number(req.params.id));
+  const { id } = req.params;
+  const result = await assetModel.deleteAsset(Number(id));
   res.json({
     status: 'success',
     message: 'Asset deleted successfully',
@@ -1652,4 +1567,287 @@ export const deleteSoftware = async (req: Request, res: Response) => {
     message: 'Software deleted successfully',
     result
   });
+};
+
+// Fetch assets by employee (ramco_id, email, or contact)
+export const getAssetsByEmployee = async (req: Request, res: Response) => {
+  const ramco_id = getStringParam(req.query.ramco_id);
+  const email = getStringParam(req.query.email);
+  const contactStr = getStringParam(req.query.contact);
+  let contactNum: number | undefined = undefined;
+  if (contactStr && !isNaN(Number(contactStr))) {
+    contactNum = Number(contactStr);
+  }
+  let employee: any = null;
+  if (ramco_id) {
+    employee = await assetModel.getEmployeeByRamco(ramco_id);
+  } else if (email) {
+    employee = await assetModel.getEmployeeByEmail(email);
+  } else if (contactNum !== undefined) {
+    employee = await assetModel.getEmployeeByContact(contactNum);
+  }
+  if (!employee) {
+    return res.status(404).json({ status: 'error', message: 'Employee not found', data: null });
+  }
+  // Find all asset ownerships for this employee
+  const ownershipsRaw = await assetModel.getAssetOwnerships();
+  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
+  const assetIds = ownerships.filter((o: any) => o.ramco_id === employee.ramco_id).map((o: any) => o.asset_id);
+  // Filter out invalid asset IDs
+  const validAssetIds = assetIds.filter((id: any) => typeof id === 'number' && !isNaN(id));
+  if (!validAssetIds.length) {
+    return res.json({ status: 'success', message: 'No assets found for employee', data: [] });
+  }
+  // Fetch assets by IDs
+  const assets = await getAssetsByIds(validAssetIds);
+  res.json({ status: 'success', message: 'Assets for employee', data: assets });
+};
+
+// Fetch assets by supervisor (ramco_id) with nested employees
+export const getAssetsBySupervisor = async (req: Request, res: Response) => {
+  const ramco_id = getStringParam(req.query.ramco_id);
+  if (!ramco_id) {
+    return res.status(400).json({ status: 'error', message: 'Supervisor ramco_id required', data: null });
+  }
+  // Find all employees under this supervisor
+  const employeesRaw = await assetModel.getEmployees();
+  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+  // Exclude employees with status = 'resigned'
+  const subordinates = employees.filter((e: any) => e.wk_spv_id === ramco_id && e.employment_status !== 'resigned');
+  if (!subordinates.length) {
+    return res.json({ status: 'success', message: 'No subordinates found', data: [] });
+  }
+  // Find all asset ownerships
+  const ownershipsRaw = await assetModel.getAssetOwnerships();
+  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
+  // Build lookup maps for department, type, category, brand, model, section, position, cost_center, district
+  const departmentsRaw = await assetModel.getDepartments();
+  const typesRaw = await assetModel.getTypes();
+  const categoriesRaw = await assetModel.getCategories();
+  const brandsRaw = await assetModel.getBrands();
+  const modelsRaw = await assetModel.getModels();
+  const sectionsRaw = await assetModel.getSections();
+  const positionsRaw = await assetModel.getPositions();
+  const costCentersRaw = await assetModel.getCostcenters();
+  const districtsRaw = await assetModel.getDistricts();
+  // Ensure all lookup arrays are arrays
+  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
+  const types = Array.isArray(typesRaw) ? typesRaw : [];
+  const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
+  const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
+  const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+  const sections = Array.isArray(sectionsRaw) ? sectionsRaw : [];
+  const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
+  const costCenters = Array.isArray(costCentersRaw) ? costCentersRaw : [];
+  const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+  const departmentMap = new Map(departments.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+  const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+  const categoryMap = new Map(categories.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+  const brandMap = new Map(brands.map((b: any) => [b.id, { id: b.id, name: b.name }]));
+  const modelMap = new Map(models.map((m: any) => [m.id, { id: m.id, name: m.name }]));
+  const sectionMap = new Map(sections.map((s: any) => [s.id, { id: s.id, name: s.name }]));
+  const positionMap = new Map(positions.map((p: any) => [p.id, { id: p.id, name: p.name }]));
+  const costCenterMap = new Map(costCenters.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+  const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+
+  // For each subordinate, get their assets and build nested output
+  const result = await Promise.all(subordinates.map(async (emp: any) => {
+    const assetIds = ownerships.filter((o: any) => o.ramco_id === emp.ramco_id).map((o: any) => o.asset_id);
+    const validAssetIds = assetIds.filter((id: any) => typeof id === 'number' && !isNaN(id));
+    const assetsRaw = validAssetIds.length ? await getAssetsByIds(validAssetIds) : [];
+    // Map assets to nested structure, add owner, cost_center, department, district
+    const assets = (assetsRaw as any[]).map(asset => ({
+      id: asset.id,
+      entry_code: asset.entry_code,
+      asset_code: asset.asset_code,
+      classification: asset.classification,
+      finance_tag: asset.finance_tag,
+      serial_number: asset.serial_number,
+      dop: asset.dop,
+      year: asset.year,
+      unit_price: asset.unit_price,
+      depreciation_length: asset.depreciation_length,
+      depreciation_rate: asset.depreciation_rate,
+      cost_center: asset.cost_center_id ? costCenterMap.get(asset.cost_center_id) || null : null,
+      item_code: asset.item_code,
+      type_id: asset.type_id ? typeMap.get(asset.type_id) || null : null,
+      status: asset.status,
+      disposed_date: asset.disposed_date,
+      category_id: asset.category_id ? categoryMap.get(asset.category_id) || null : null,
+      brand_id: asset.brand_id ? brandMap.get(asset.brand_id) || null : null,
+      model_id: asset.model_id ? modelMap.get(asset.model_id) || null : null,
+      department: asset.department_id ? departmentMap.get(asset.department_id) || null : null,
+      district: asset.district_id ? districtMap.get(asset.district_id) || null : null,
+      owner: {
+        id: emp.id,
+        ramco_id: emp.ramco_id,
+        full_name: emp.full_name
+      }
+    }));
+    // Build employee object with department, section, position, cost_center, district
+    const employeeObj: any = {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      department: emp.department_id ? departmentMap.get(emp.department_id) || null : null
+    };
+    if (emp.section_id) {
+      employeeObj.section = sectionMap.get(emp.section_id) || null;
+    }
+    if (emp.position_id) {
+      employeeObj.position = positionMap.get(emp.position_id) || null;
+    }
+    if (emp.cost_center_id) {
+      employeeObj.cost_center = costCenterMap.get(emp.cost_center_id) || null;
+    }
+    if (emp.district_id) {
+      employeeObj.district = districtMap.get(emp.district_id) || null;
+    }
+    return { employee: [employeeObj], assets };
+  }));
+  // Group all employees and all assets into single arrays
+  const allEmployees: any[] = [];
+  const allAssets: any[] = [];
+  for (const entry of result) {
+    if (Array.isArray(entry.employee)) {
+      allEmployees.push(...entry.employee);
+    } else if (entry.employee) {
+      allEmployees.push(entry.employee);
+    }
+    if (Array.isArray(entry.assets)) {
+      allAssets.push(...entry.assets);
+    } else if (entry.assets) {
+      allAssets.push(entry.assets);
+    }
+  }
+  res.json({ status: 'success', message: 'Assets for supervisor', data: [{ employee: allEmployees, assets: allAssets }] });
+};
+
+// Fetch assets by HOD (ramco_id) with nested employees
+export const getAssetsByHOD = async (req: Request, res: Response) => {
+  const ramco_id = getStringParam(req.query.ramco_id);
+  if (!ramco_id) {
+    return res.status(400).json({ status: 'error', message: 'HOD ramco_id required', data: null });
+  }
+  // Find HOD's department
+  const hod = await assetModel.getEmployeeByRamco(ramco_id);
+  if (!hod || !hod.department_id) {
+    return res.status(404).json({ status: 'error', message: 'HOD or department not found', data: null });
+  }
+  // Find all employees in this department
+  const employeesRaw = await assetModel.getEmployees();
+  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+  // Exclude employees with status = 'resigned'
+  const departmentEmployees = employees.filter((e: any) => e.department_id === hod.department_id && e.employment_status !== 'resigned');
+  if (!departmentEmployees.length) {
+    return res.json({ status: 'success', message: 'No employees found for department', data: [] });
+  }
+  // Find all asset ownerships
+  const ownershipsRaw = await assetModel.getAssetOwnerships();
+  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
+  // Build lookup maps for department, type, category, brand, model, section, position, cost_center, district
+  const departmentsRaw = await assetModel.getDepartments();
+  const typesRaw = await assetModel.getTypes();
+  const categoriesRaw = await assetModel.getCategories();
+  const brandsRaw = await assetModel.getBrands();
+  const modelsRaw = await assetModel.getModels();
+  const sectionsRaw = await assetModel.getSections();
+  const positionsRaw = await assetModel.getPositions();
+  const costCentersRaw = await assetModel.getCostcenters();
+  const districtsRaw = await assetModel.getDistricts();
+  // Ensure all lookup arrays are arrays
+  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
+  const types = Array.isArray(typesRaw) ? typesRaw : [];
+  const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
+  const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
+  const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+  const sections = Array.isArray(sectionsRaw) ? sectionsRaw : [];
+  const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
+  const costCenters = Array.isArray(costCentersRaw) ? costCentersRaw : [];
+  const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+  const departmentMap = new Map(departments.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+  const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+  const categoryMap = new Map(categories.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+  const brandMap = new Map(brands.map((b: any) => [b.id, { id: b.id, name: b.name }]));
+  const modelMap = new Map(models.map((m: any) => [m.id, { id: m.id, name: m.name }]));
+  const sectionMap = new Map(sections.map((s: any) => [s.id, { id: s.id, name: s.name }]));
+  const positionMap = new Map(positions.map((p: any) => [p.id, { id: p.id, name: p.name }]));
+  const costCenterMap = new Map(costCenters.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+  const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+
+  // For each employee, get their assets and build nested output
+  const result = await Promise.all(departmentEmployees.map(async (emp: any) => {
+    const assetIds = ownerships.filter((o: any) => o.ramco_id === emp.ramco_id).map((o: any) => o.asset_id);
+    const validAssetIds = assetIds.filter((id: any) => typeof id === 'number' && !isNaN(id));
+    const assetsRaw = validAssetIds.length ? await getAssetsByIds(validAssetIds) : [];
+    // Map assets to nested structure, add owner, cost_center, department, district
+    const assets = (assetsRaw as any[]).map(asset => ({
+      id: asset.id,
+      entry_code: asset.entry_code,
+      asset_code: asset.asset_code,
+      classification: asset.classification,
+      finance_tag: asset.finance_tag,
+      serial_number: asset.serial_number,
+      dop: asset.dop,
+      year: asset.year,
+      unit_price: asset.unit_price,
+      depreciation_length: asset.depreciation_length,
+      depreciation_rate: asset.depreciation_rate,
+      cost_center: asset.cost_center_id ? costCenterMap.get(asset.cost_center_id) || null : null,
+      item_code: asset.item_code,
+      type_id: asset.type_id ? typeMap.get(asset.type_id) || null : null,
+      status: asset.status,
+      disposed_date: asset.disposed_date,
+      category_id: asset.category_id ? categoryMap.get(asset.category_id) || null : null,
+      brand_id: asset.brand_id ? brandMap.get(asset.brand_id) || null : null,
+      model_id: asset.model_id ? modelMap.get(asset.model_id) || null : null,
+      department: asset.department_id ? departmentMap.get(asset.department_id) || null : null,
+      district: asset.district_id ? districtMap.get(asset.district_id) || null : null,
+      owner: {
+        id: emp.id,
+        ramco_id: emp.ramco_id,
+        full_name: emp.full_name
+      }
+    }));
+    // Build employee object with department, section, position, cost_center, district
+    const employeeObj: any = {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      department: emp.department_id ? departmentMap.get(emp.department_id) || null : null
+    };
+    if (emp.section_id) {
+      employeeObj.section = sectionMap.get(emp.section_id) || null;
+    }
+    if (emp.position_id) {
+      employeeObj.position = positionMap.get(emp.position_id) || null;
+    }
+    if (emp.cost_center_id) {
+      employeeObj.cost_center = costCenterMap.get(emp.cost_center_id) || null;
+    }
+    if (emp.district_id) {
+      employeeObj.district = districtMap.get(emp.district_id) || null;
+    }
+    return { employee: [employeeObj], assets };
+  }));
+  // Group all employees and all assets into single arrays
+  const allEmployees: any[] = [];
+  const allAssets: any[] = [];
+  for (const entry of result) {
+    if (Array.isArray(entry.employee)) {
+      allEmployees.push(...entry.employee);
+    } else if (entry.employee) {
+      allEmployees.push(entry.employee);
+    }
+    if (Array.isArray(entry.assets)) {
+      allAssets.push(...entry.assets);
+    } else if (entry.assets) {
+      allAssets.push(entry.assets);
+    }
+  }
+  res.json({ status: 'success', message: 'Assets for HOD', data: [{ employee: allEmployees, assets: allAssets }] });
 };

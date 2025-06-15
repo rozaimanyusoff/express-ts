@@ -5,27 +5,35 @@ import path from 'path';
 
 // Database and table declarations for easy swapping/testing
 const db = 'assetdata';
-const typeTable = `${db}.types`;
-const categoryTable = `${db}.pc_category`;
-const brandTable = `${db}.pc_brand`;
-const modelTable = `${db}.pc_model`;
-const departmentTable = `${db}.departments`;
-const positionTable = `${db}.positions`;
-const locationTable = `${db}.locations`;
-const districtTable = `${db}.districts`;
-const zoneTable = `${db}.zones`;
-const siteTable = `${db}.sites`;
+const assetTable = `${db}.asset_data`;
+const assetUserTable = `${db}.asset_ownership`;
+const brandTable = `${db}.brands`;
+const brandCategoryTable = `${db}.brand_category`;
+const categoryTable = `${db}.categories`;
 const costcenterTable = `${db}.costcenters`;
-const moduleTable = `${db}.modules`;
+const departmentTable = `${db}.departments`;
+const districtTable = `${db}.districts`;
 const employeeTable = `${db}.employees`;
+const employeeCostcenterTable = `${db}.employee_costcenters`;
+const employeeDepartmentTable = `${db}.employee_departments`;
+const employeeDistrictTable = `${db}.employee_districts`;
+const employeePositionTable = `${db}.employee_positions`;
+const modelTable = `${db}.models`;
+const moduleTable = `${db}.modules`;
+const softwareTable = `${db}.pc_software`;
+const computerSpecsTable = `${db}.pc_specs`;
+const vehicleSpecsTable = `${db}.v_specs`;
+const positionTable = `${db}.positions`;
+const sectionTable = `${db}.sections`;
+const siteTable = `${db}.sites`;
+const typeTable = `${db}.types`;
+const zoneTable = `${db}.zones`;
+const zoneDistrictTable = `${db}.zone_districts`;
+/* To be develop */
+const locationTable = `${db}.locations`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
-const assetTable = `${db}.pc_master`;
-const assetUserTable = `${db}.pc_ownership`;
-const sectionTable = `${db}.sections`;
-const zoneDistrictTable = `${db}.zone_districts`;
-const brandCategoryTable = `${db}.pc_brand_category`;
-const softwareTable = `${db}.pc_software`;
+
 
 // Helper to move type image to uploads/types/ if needed
 async function handleTypeImage(image: string) {
@@ -658,7 +666,7 @@ export const deleteProcurement = async (id: number) => {
 
 // ASSETS GETTERS
 export const getAssets = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTable}`);
+  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE status NOT IN ('personal')`);
   return rows;
 };
 
@@ -686,11 +694,11 @@ export const createAsset = async (data: any) => {
 };
 
 export const updateAsset = async (id: number, data: any) => {
-  const { serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
-  const [result] = await pool.query(
-    `UPDATE ${assetTable} SET serial_number = ?, finance_tag = ?, model_id = ?, brand_id = ?, category_id = ?, type_id = ?, status = ?, depreciation_rate = ?, procurement_id = ? WHERE id = ?`,
-    [serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id, id]
-  );
+  // Build update query dynamically from data keys
+  const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
+  const values = Object.values(data);
+  const sql = `UPDATE ${assetTable} SET ${fields} WHERE id = ?`;
+  const [result] = await pool.query(sql, [...values, id]);
   return result;
 };
 
@@ -903,27 +911,50 @@ export const getBrandByCode = async (code: string | number) => {
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
-// Fetch specs for an asset (by asset_code)
-export async function getSpecsForAsset(asset_code: string) {
+// Fetch specs for an asset (by asset_id)
+export async function getComputerSpecsForAsset(asset_id: number) {
   const [rows] = await pool.query(
-    `SELECT id, asset_code, cpu, cpu_generation, memory_size, storage_size, os
-     FROM assetdata.pc_specs WHERE asset_code = ?`,
-    [asset_code]
+    `SELECT * FROM ${computerSpecsTable} WHERE asset_id = ?`,
+    [asset_id]
   );
   return rows;
 }
 
-// Fetch installed software for an asset (by asset_code)
-export async function getInstalledSoftwareForAsset(asset_code: string) {
+// Fetch installed software for an asset (by asset_id)
+export async function getInstalledSoftwareForAsset(asset_id: number) {
   const [rows] = await pool.query(
     `SELECT pis.id, pis.software_id, s.name, pis.installed_at
      FROM assetdata.pc_installed_software pis
      JOIN assetdata.pc_software s ON pis.software_id = s.id
-     WHERE pis.asset_code = ?`,
-    [asset_code]
+     WHERE pis.asset_id = ?`,
+    [asset_id]
   );
   return rows;
 }
+
+// Fetch vehicle specs for an asset (by asset_id)
+export async function getVehicleSpecsForAsset(asset_id: number) {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${vehicleSpecsTable} WHERE asset_id = ?`,
+    [asset_id]
+  );
+  return rows;
+}
+
+// Helper: safely extract string from query param
+export function getStringParam(param: any): string | undefined {
+  if (typeof param === 'string') return param;
+  if (Array.isArray(param) && typeof param[0] === 'string') return param[0];
+  return undefined;
+}
+
+// Helper: get assets by array of asset IDs
+export const getAssetsByIds = async (assetIds: number[]) => {
+  if (!Array.isArray(assetIds) || !assetIds.length) return [];
+  const placeholders = assetIds.map(() => '?').join(',');
+  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE id IN (${placeholders})`, assetIds);
+  return rows;
+};
 
 export default {
   createType,
@@ -1038,6 +1069,7 @@ export default {
   createSoftware,
   updateSoftware,
   deleteSoftware,
-  getSpecsForAsset,
-  getInstalledSoftwareForAsset
+  getComputerSpecsForAsset,
+  getInstalledSoftwareForAsset,
+  getVehicleSpecsForAsset
 };
