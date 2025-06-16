@@ -71,6 +71,7 @@ router.delete('/employees/:id', asyncHandler(assetController.deleteEmployee));
 router.get('/employees/ramco/:ramco_id', asyncHandler(assetController.getEmployeeByRamco));
 router.get('/employees/email/:email', asyncHandler(assetController.getEmployeeByEmail));
 router.get('/employees/contact/:contact', asyncHandler(assetController.getEmployeeByContact));
+router.get('/employees/search', asyncHandler(assetController.searchEmployees));
 
 // DISTRICTS
 router.get('/districts', asyncHandler(assetController.getDistricts));
