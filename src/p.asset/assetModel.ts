@@ -956,6 +956,16 @@ export const getAssetsByIds = async (assetIds: number[]) => {
   return rows;
 };
 
+// Search employees for autocomplete
+export const searchEmployeesAutocomplete = async (query: string) => {
+  const q = `%${query.toLowerCase()}%`;
+  const [rows] = await pool.query(
+    `SELECT ramco_id, full_name FROM ${employeeTable} WHERE LOWER(full_name) LIKE ? OR LOWER(ramco_id) LIKE ? LIMIT 20`,
+    [q, q]
+  );
+  return rows;
+};
+
 export default {
   createType,
   getTypes,
@@ -1071,5 +1081,6 @@ export default {
   deleteSoftware,
   getComputerSpecsForAsset,
   getInstalledSoftwareForAsset,
-  getVehicleSpecsForAsset
+  getVehicleSpecsForAsset,
+  searchEmployeesAutocomplete
 };

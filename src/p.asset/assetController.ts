@@ -1892,43 +1892,10 @@ export const searchEmployees = async (req: Request, res: Response) => {
   if (!q || q.length < 2) {
     return res.json({ status: 'success', message: 'Query too short', data: [] });
   }
-  const employeesRaw = await assetModel.getEmployees();
-  const departmentsRaw = await assetModel.getDepartments();
-  const positionsRaw = await assetModel.getPositions();
-  const costcentersRaw = await assetModel.getCostcenters();
-  const districtsRaw = await assetModel.getDistricts();
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
-  const positions = Array.isArray(positionsRaw) ? positionsRaw : [];
-  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-  const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-  // Build lookup maps
-  const departmentMap = new Map(departments.map((d: any) => [d.id, { id: d.id, name: d.name }]));
-  const positionMap = new Map(positions.map((p: any) => [p.id, { id: p.id, name: p.name }]));
-  const costcenterMap = new Map(costcenters.map((c: any) => [c.id, { id: c.id, name: c.name }]));
-  const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
-  // Cast employees to any[] to ensure type safety for filtering
-  const employeesArr = Array.isArray(employees) ? (employees as any[]) : [];
-  const validEmployees = employeesArr.filter(isEmployeeObject);
-  // Filter and map
-  const data = validEmployees
-    .filter(emp =>
-      (emp.full_name && emp.full_name.toLowerCase().includes(q)) ||
-      (emp.email && emp.email.toLowerCase().includes(q)) ||
-      (emp.contact && emp.contact.toString().includes(q)) ||
-      (emp.ramco_id && emp.ramco_id.toLowerCase().includes(q))
-    )
-    .slice(0, 20)
-    .map(emp => ({
-      id: emp.id,
-      ramco_id: emp.ramco_id,
-      full_name: emp.full_name,
-      email: emp.email,
-      contact: emp.contact,
-      department: emp.department_id ? departmentMap.get(emp.department_id) || null : null,
-      position: emp.position_id ? positionMap.get(emp.position_id) || null : null,
-      costcenter: emp.costcenter_id ? costcenterMap.get(emp.costcenter_id) || null : null,
-      district: emp.district_id ? districtMap.get(emp.district_id) || null : null
-    }));
+  const employees = await assetModel.searchEmployeesAutocomplete(q);
+  // Ensure only objects with ramco_id and full_name are returned
+  const data = Array.isArray(employees)
+    ? employees.filter((emp: any) => typeof emp.ramco_id === 'string' && typeof emp.full_name === 'string')
+    : [];
   res.json({ status: 'success', message: 'Employee search results', data });
 };
