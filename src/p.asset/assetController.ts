@@ -1899,3 +1899,113 @@ export const searchEmployees = async (req: Request, res: Response) => {
     : [];
   res.json({ status: 'success', message: 'Employee search results', data });
 };
+
+// Lookup employee by ramco_id, email, or contact
+export const getEmployeeByUsername = async (req: Request, res: Response) => {
+  const username = req.params.username;
+  let emp = null;
+  // Try ramco_id (all digits or leading zeros)
+  if (/^\d{5,}$/.test(username) || /^0+\d+$/.test(username)) {
+    emp = await assetModel.getEmployeeByRamco(username);
+  }
+  // Try email
+  if (!emp && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(username)) {
+    emp = await assetModel.getEmployeeByEmail(username);
+  }
+  // Try contact (all digits, length >= 7)
+  if (!emp && /^\d{7,}$/.test(username)) {
+    emp = await assetModel.getEmployeeByContact(Number(username));
+  }
+  if (!emp) {
+    return res.status(404).json({ status: 'error', message: 'Employee not found' });
+  }
+  const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
+  const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
+  const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
+  const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
+  res.json({
+    status: 'success',
+    message: 'Employee data retrieved successfully',
+    data: {
+      id: emp.id,
+      ramco_id: emp.ramco_id,
+      full_name: emp.full_name,
+      email: emp.email,
+      contact: emp.contact,
+      gender: emp.gender,
+      dob: emp.dob,
+      avatar: emp.avatar,
+      hire_date: emp.hire_date,
+      resignation_date: emp.resignation_date,
+      employment_type: emp.employment_type,
+      employment_status: emp.employment_status,
+      grade: emp.grade,
+      position,
+      department,
+      costcenter,
+      district
+    }
+  });
+};
+
+// ASSET TRANSFER REQUESTS
+export const getAssetTransferRequests = async (req: Request, res: Response) => {
+  const requests = await assetModel.getAssetTransferRequests();
+  res.json({
+    status: 'success',
+    message: 'Asset transfer requests retrieved successfully',
+    data: requests
+  });
+};
+
+export const getAssetTransferRequestById = async (req: Request, res: Response) => {
+  const request = await assetModel.getAssetTransferRequestById(Number(req.params.id));
+  if (!request) {
+    return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+  }
+  res.json({
+    status: 'success',
+    message: 'Asset transfer request data retrieved successfully',
+    data: request
+  });
+};
+
+export const createAssetTransfer = async (req: Request, res: Response) => {
+  const { details, ...requestData } = req.body;
+  const transferRequestId = await assetModel.createAssetTransferRequest(requestData);
+  if (Array.isArray(details)) {
+    for (const detail of details) {
+      await assetModel.createAssetTransferDetail({ ...detail, transfer_request_id: transferRequestId });
+    }
+  }
+  res.status(201).json({ status: 'success', message: 'Asset transfer created', transfer_request_id: transferRequestId });
+};
+
+export const updateAssetTransfer = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { details, ...requestData } = req.body;
+  await assetModel.updateAssetTransferRequest(Number(id), requestData);
+  // Update details if provided
+  if (Array.isArray(details)) {
+    // First, delete existing details for this request
+    await assetModel.deleteAssetTransferDetailsByRequestId(Number(id));
+    // Then, insert updated details
+    for (const detail of details) {
+      await assetModel.createAssetTransferDetail({ ...detail, transfer_request_id: id });
+    }
+  }
+  res.json({ status: 'success', message: 'Asset transfer updated successfully' });
+};
+
+export const deleteAssetTransfer = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  // First, delete all details for this request
+  await assetModel.deleteAssetTransferDetailsByRequestId(Number(id));
+  // Then, delete the request itself
+  const result = await assetModel.deleteAssetTransferRequest(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Asset transfer deleted successfully',
+    result
+  });
+};

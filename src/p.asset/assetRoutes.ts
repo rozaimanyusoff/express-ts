@@ -73,6 +73,7 @@ router.delete('/employees/:id', asyncHandler(assetController.deleteEmployee));
 router.get('/employees/ramco/:ramco_id', asyncHandler(assetController.getEmployeeByRamco));
 router.get('/employees/email/:email', asyncHandler(assetController.getEmployeeByEmail));
 router.get('/employees/contact/:contact', asyncHandler(assetController.getEmployeeByContact));
+router.get('/employees/lookup/:username', asyncHandler(assetController.getEmployeeByUsername));
 
 
 // DISTRICTS
@@ -123,7 +124,8 @@ router.post('/', asyncHandler(assetController.createAsset));
 router.put('/:id', asyncHandler(assetController.updateAsset));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
 
-
+// TRANSFERS
+router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
 
 
 // BRAND-CATEGORY RELATIONSHIP
@@ -134,5 +136,14 @@ router.get('/categories/:category_code/brands', asyncHandler(assetController.get
 
 // Get all brand-category associations (for frontend mapping)
 router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
+
+
+// ASSET TRANSFER REQUESTS
+router.get('/transfer-requests', asyncHandler(assetController.getAssetTransferRequests));
+router.get('/transfer-requests/:id', asyncHandler(assetController.getAssetTransferRequestById));
+router.post('/transfer-requests', asyncHandler(assetController.createAssetTransfer));
+router.put('/transfer-requests/:id', asyncHandler(assetController.updateAssetTransfer));
+router.delete('/transfer-requests/:id', asyncHandler(assetController.deleteAssetTransfer));
+
 
 export default router;

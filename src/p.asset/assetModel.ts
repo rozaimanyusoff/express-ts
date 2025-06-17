@@ -33,7 +33,8 @@ const zoneDistrictTable = `${db}.zone_districts`;
 const locationTable = `${db}.locations`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
-
+const assetTransferRequestTable = `${db}.asset_transfer_requests`;
+const assetTransferDetailsTable = `${db}.asset_transfer_details`;
 
 // Helper to move type image to uploads/types/ if needed
 async function handleTypeImage(image: string) {
@@ -966,6 +967,51 @@ export const searchEmployeesAutocomplete = async (query: string) => {
   return rows;
 };
 
+// ASSET TRANSFER REQUESTS CRUD
+export const createAssetTransferRequest = async (data: any) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${assetTransferRequestTable} (request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.request_no, data.requestor, data.request_date, data.verifier_id, data.verified_date, data.approval_id, data.approval_date, data.asset_mgr_id, data.qa_id, data.qa_date, data.action_date, data.return_to_asset_manager ? 1 : 0]
+  );
+  return (result as any).insertId;
+};
+
+export const createAssetTransferDetail = async (data: any) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${assetTransferDetailsTable} (transfer_request_id, transfer_type, asset_type, identifier, curr_owner, curr_department_id, curr_district_id, curr_costcenter_id, new_department_id, new_district_id, new_costcenter_id, effective_date, reasons, attachment, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.transfer_request_id, data.transfer_type, data.asset_type, data.identifier, data.curr_owner, data.curr_department_id, data.curr_district_id, data.curr_costcenter_id, data.new_department_id, data.new_district_id, data.new_costcenter_id, data.effective_date, data.reasons, data.attachment]
+  );
+  return result;
+};
+
+export const getAssetTransferRequests = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable}`);
+  return rows;
+};
+export const getAssetTransferRequestById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+export const updateAssetTransferRequest = async (id: number, data: any) => {
+  const { request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager } = data;
+  const [result] = await pool.query(
+    `UPDATE ${assetTransferRequestTable} SET request_no = ?, requestor = ?, request_date = ?, verifier_id = ?, verified_date = ?, approval_id = ?, approval_date = ?, asset_mgr_id = ?, qa_id = ?, qa_date = ?, action_date = ?, return_to_asset_manager = ?, updated_at = NOW() WHERE id = ?`,
+    [request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager ? 1 : 0, id]
+  );
+  return result;
+};
+export const deleteAssetTransferRequest = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
+  return result;
+};
+export const deleteAssetTransferDetailsByRequestId = async (requestId: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetTransferDetailsTable} WHERE transfer_request_id = ?`, [requestId]);
+  return result;
+};
+
+
 export default {
   createType,
   getTypes,
@@ -1082,5 +1128,7 @@ export default {
   getComputerSpecsForAsset,
   getInstalledSoftwareForAsset,
   getVehicleSpecsForAsset,
-  searchEmployeesAutocomplete
+  searchEmployeesAutocomplete,
+  createAssetTransferRequest,
+  createAssetTransferDetail
 };
