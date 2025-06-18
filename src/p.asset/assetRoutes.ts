@@ -116,6 +116,14 @@ router.get('/by-employee', asyncHandler(assetController.getAssetsByEmployee));
 router.get('/by-supervisor', asyncHandler(assetController.getAssetsBySupervisor));
 router.get('/by-hod', asyncHandler(assetController.getAssetsByHOD));
 
+
+// ASSET TRANSFER REQUESTS
+router.get('/transfer-requests', asyncHandler(assetController.getAssetTransferRequests));
+router.get('/transfer-requests/:id', asyncHandler(assetController.getAssetTransferRequestById));
+router.post('/transfer-requests', asyncHandler(assetController.createAssetTransfer));
+router.put('/transfer-requests/:id', asyncHandler(assetController.updateAssetTransfer));
+router.delete('/transfer-requests/:id', asyncHandler(assetController.deleteAssetTransfer));
+
 // ASSETS
 router.get('/', asyncHandler(assetController.getAssets));
 router.get('/:id', asyncHandler(assetController.getAssetById));
@@ -124,8 +132,6 @@ router.post('/', asyncHandler(assetController.createAsset));
 router.put('/:id', asyncHandler(assetController.updateAsset));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
 
-// TRANSFERS
-router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
 
 
 // BRAND-CATEGORY RELATIONSHIP
@@ -138,12 +144,6 @@ router.get('/categories/:category_code/brands', asyncHandler(assetController.get
 router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
 
 
-// ASSET TRANSFER REQUESTS
-router.get('/transfer-requests', asyncHandler(assetController.getAssetTransferRequests));
-router.get('/transfer-requests/:id', asyncHandler(assetController.getAssetTransferRequestById));
-router.post('/transfer-requests', asyncHandler(assetController.createAssetTransfer));
-router.put('/transfer-requests/:id', asyncHandler(assetController.updateAssetTransfer));
-router.delete('/transfer-requests/:id', asyncHandler(assetController.deleteAssetTransfer));
 
 
 export default router;

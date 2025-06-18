@@ -1687,16 +1687,27 @@ export const getAssetsBySupervisor = async (req: Request, res: Response) => {
         unit_price: asset.unit_price,
         depreciation_length: asset.depreciation_length,
         depreciation_rate: asset.depreciation_rate,
-        costcenter: asset.costcenter_id ? costCenterMap.get(asset.costcenter_id) || null : null,
-        item_code: asset.item_code,
-        type: asset.type_id ? typeMap.get(asset.type_id) || null : null,
-        status: asset.status,
-        disposed_date: asset.disposed_date,
-        category: asset.category_id ? categoryMap.get(asset.category_id) || null : null,
-        brand: asset.brand_id ? brandMap.get(asset.brand_id) || null : null,
-        model: asset.model_id ? modelMap.get(asset.model_id) || null : null,
-        department: ownerEmp && ownerEmp.department_id ? departmentMap.get(ownerEmp.department_id) || null : null,
-        district: ownerEmp && ownerEmp.district_id ? districtMap.get(ownerEmp.district_id) || null : null,
+        costcenter: asset.costcenter_id && costCenterMap.has(asset.costcenter_id)
+          ? { id: asset.costcenter_id, name: costCenterMap.get(asset.costcenter_id)!.name }
+          : null,
+        type: asset.type_id && typeMap.has(asset.type_id)
+          ? { id: asset.type_id, name: typeMap.get(asset.type_id)!.name }
+          : null,
+        category: asset.category_id && categoryMap.has(asset.category_id)
+          ? { id: asset.category_id, name: categoryMap.get(asset.category_id)!.name }
+          : null,
+        brand: asset.brand_id && brandMap.has(asset.brand_id)
+          ? { id: asset.brand_id, name: brandMap.get(asset.brand_id)!.name }
+          : null,
+        model: asset.model_id && modelMap.has(asset.model_id)
+          ? { id: asset.model_id, name: modelMap.get(asset.model_id)!.name }
+          : null,
+        department: ownerEmp && ownerEmp.department_id && departmentMap.has(ownerEmp.department_id)
+          ? { id: ownerEmp.department_id, name: departmentMap.get(ownerEmp.department_id)!.name }
+          : null,
+        district: ownerEmp && ownerEmp.district_id && districtMap.has(ownerEmp.district_id)
+          ? { id: ownerEmp.district_id, name: districtMap.get(ownerEmp.district_id)!.name }
+          : null,
         owner: ownerEmp ? {
           id: ownerEmp.id,
           ramco_id: ownerEmp.ramco_id,
@@ -1823,16 +1834,27 @@ export const getAssetsByHOD = async (req: Request, res: Response) => {
         unit_price: asset.unit_price,
         depreciation_length: asset.depreciation_length,
         depreciation_rate: asset.depreciation_rate,
-        cost_center: asset.costcenter_id ? costCenterMap.get(asset.costcenter_id) || null : null,
-        item_code: asset.item_code,
-        type_id: asset.type_id ? typeMap.get(asset.type_id) || null : null,
-        status: asset.status,
-        disposed_date: asset.disposed_date,
-        category_id: asset.category_id ? categoryMap.get(asset.category_id) || null : null,
-        brand_id: asset.brand_id ? brandMap.get(asset.brand_id) || null : null,
-        model_id: asset.model_id ? modelMap.get(asset.model_id) || null : null,
-        department: ownerEmp && ownerEmp.department_id ? departmentMap.get(ownerEmp.department_id) || null : null,
-        district: ownerEmp && ownerEmp.district_id ? districtMap.get(ownerEmp.district_id) || null : null,
+        costcenter: asset.costcenter_id && costCenterMap.has(asset.costcenter_id)
+          ? { id: asset.costcenter_id, name: costCenterMap.get(asset.costcenter_id)!.name }
+          : null,
+        type: asset.type_id && typeMap.has(asset.type_id)
+          ? { id: asset.type_id, name: typeMap.get(asset.type_id)!.name }
+          : null,
+        category: asset.category_id && categoryMap.has(asset.category_id)
+          ? { id: asset.category_id, name: categoryMap.get(asset.category_id)!.name }
+          : null,
+        brand: asset.brand_id && brandMap.has(asset.brand_id)
+          ? { id: asset.brand_id, name: brandMap.get(asset.brand_id)!.name }
+          : null,
+        model: asset.model_id && modelMap.has(asset.model_id)
+          ? { id: asset.model_id, name: modelMap.get(asset.model_id)!.name }
+          : null,
+        department: ownerEmp && ownerEmp.department_id && departmentMap.has(ownerEmp.department_id)
+          ? { id: ownerEmp.department_id, name: departmentMap.get(ownerEmp.department_id)!.name }
+          : null,
+        district: ownerEmp && ownerEmp.district_id && districtMap.has(ownerEmp.district_id)
+          ? { id: ownerEmp.district_id, name: districtMap.get(ownerEmp.district_id)!.name }
+          : null,
         owner: ownerEmp ? {
           id: ownerEmp.id,
           ramco_id: ownerEmp.ramco_id,
@@ -1950,7 +1972,7 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 
 // ASSET TRANSFER REQUESTS
 export const getAssetTransferRequests = async (req: Request, res: Response) => {
-  const requests = await assetModel.getAssetTransferRequests();
+  const requests = await assetModel.getAssetTransferRequestsWithDetails();
   res.json({
     status: 'success',
     message: 'Asset transfer requests retrieved successfully',
@@ -1972,13 +1994,15 @@ export const getAssetTransferRequestById = async (req: Request, res: Response) =
 
 export const createAssetTransfer = async (req: Request, res: Response) => {
   const { details, ...requestData } = req.body;
-  const transferRequestId = await assetModel.createAssetTransferRequest(requestData);
+  // Generate request_no
+  const request_no = await assetModel.generateNextRequestNo();
+  const transferRequestId = await assetModel.createAssetTransferRequest({ ...requestData, request_no });
   if (Array.isArray(details)) {
     for (const detail of details) {
       await assetModel.createAssetTransferDetail({ ...detail, transfer_request_id: transferRequestId });
     }
   }
-  res.status(201).json({ status: 'success', message: 'Asset transfer created', transfer_request_id: transferRequestId });
+  res.status(201).json({ status: 'success', message: 'Asset transfer created', transfer_request_id: transferRequestId, request_no });
 };
 
 export const updateAssetTransfer = async (req: Request, res: Response) => {

@@ -967,12 +967,25 @@ export const searchEmployeesAutocomplete = async (query: string) => {
   return rows;
 };
 
+
+
 // ASSET TRANSFER REQUESTS CRUD
+
+export const getAssetTransferRequests = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable}`);
+  return rows;
+};
+
+export const getAssetTransferRequestById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
 export const createAssetTransferRequest = async (data: any) => {
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferRequestTable} (request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [data.request_no, data.requestor, data.request_date, data.verifier_id, data.verified_date, data.approval_id, data.approval_date, data.asset_mgr_id, data.qa_id, data.qa_date, data.action_date, data.return_to_asset_manager ? 1 : 0]
+    `INSERT INTO ${assetTransferRequestTable} (request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, request_status, return_to_asset_manager,  created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.request_no, data.requestor, data.request_date, data.verifier_id, data.verified_date, data.approval_id, data.approval_date, data.asset_mgr_id, data.qa_id, data.qa_date, data.action_date, data.request_status, data.return_to_asset_manager ? 1 : 0]
   );
   return (result as any).insertId;
 };
@@ -986,14 +999,6 @@ export const createAssetTransferDetail = async (data: any) => {
   return result;
 };
 
-export const getAssetTransferRequests = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable}`);
-  return rows;
-};
-export const getAssetTransferRequestById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
 export const updateAssetTransferRequest = async (id: number, data: any) => {
   const { request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager } = data;
   const [result] = await pool.query(
@@ -1010,7 +1015,48 @@ export const deleteAssetTransferDetailsByRequestId = async (requestId: number) =
   const [result] = await pool.query(`DELETE FROM ${assetTransferDetailsTable} WHERE transfer_request_id = ?`, [requestId]);
   return result;
 };
+export const getAssetTransferDetailsByRequestId = async (transfer_request_id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferDetailsTable} WHERE transfer_request_id = ?`, [transfer_request_id]);
+  return rows;
+};
 
+export const getAssetTransferRequestsWithDetails = async () => {
+  const requests = await (await pool.query(`SELECT * FROM ${assetTransferRequestTable}`))[0] as RowDataPacket[];
+  if (!requests.length) return [];
+  const allIds = requests.map((r: any) => r.id);
+  const placeholders = allIds.map(() => '?').join(',');
+  const [allDetails] = await pool.query(
+    `SELECT * FROM ${assetTransferDetailsTable} WHERE transfer_request_id IN (${placeholders})`,
+    allIds
+  );
+  // Group details by transfer_request_id
+  const detailsMap: Record<number, any[]> = {};
+  for (const detail of allDetails as any[]) {
+    if (!detailsMap[detail.transfer_request_id]) detailsMap[detail.transfer_request_id] = [];
+    detailsMap[detail.transfer_request_id].push(detail);
+  }
+  // Attach items to each request
+  return requests.map((r: any) => ({ ...r, items: detailsMap[r.id] || [] }));
+};
+
+// Helper to generate the next request_no in the format 'AR/0001/{year}'.
+export const generateNextRequestNo = async () => {
+  const year = new Date().getFullYear();
+  // Find the max number for this year
+  const [rows] = await pool.query(
+    `SELECT request_no FROM ${assetTransferRequestTable} WHERE request_no LIKE ? ORDER BY request_no DESC LIMIT 1`,
+    [`AR/%/${year}`]
+  );
+  let nextNumber = 1;
+  if (Array.isArray(rows) && rows.length > 0) {
+    const last = (rows[0] as any).request_no;
+    const match = last && last.match(/AR\/(\d{4})\//);
+    if (match) {
+      nextNumber = parseInt(match[1], 10) + 1;
+    }
+  }
+  return `AR/${nextNumber.toString().padStart(4, '0')}/${year}`;
+};
 
 export default {
   createType,
@@ -1130,5 +1176,7 @@ export default {
   getVehicleSpecsForAsset,
   searchEmployeesAutocomplete,
   createAssetTransferRequest,
-  createAssetTransferDetail
+  createAssetTransferDetail,
+  getAssetTransferRequestsWithDetails,
+  generateNextRequestNo
 };
