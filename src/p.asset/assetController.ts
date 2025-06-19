@@ -1985,13 +1985,14 @@ export const getAssetTransferRequests = async (req: Request, res: Response) => {
     if (reqObj.requestor) employeeRamcoIds.add(reqObj.requestor);
     for (const item of reqObj.items || []) {
       if (item.curr_owner) employeeRamcoIds.add(item.curr_owner);
+      if (item.new_owner) employeeRamcoIds.add(item.new_owner);
       if (item.accepted_by) employeeRamcoIds.add(item.accepted_by);
-      if (item.curr_department_id) departmentIds.add(item.curr_department_id);
-      if (item.new_department_id) departmentIds.add(item.new_department_id);
-      if (item.curr_district_id) districtIds.add(item.curr_district_id);
-      if (item.new_district_id) districtIds.add(item.new_district_id);
-      if (item.curr_costcenter_id) costcenterIds.add(item.curr_costcenter_id);
-      if (item.new_costcenter_id) costcenterIds.add(item.new_costcenter_id);
+      if (item.curr_department) departmentIds.add(item.curr_department);
+      if (item.new_department) departmentIds.add(item.new_department);
+      if (item.curr_district) districtIds.add(item.curr_district);
+      if (item.new_district) districtIds.add(item.new_district);
+      if (item.curr_costcenter) costcenterIds.add(item.curr_costcenter);
+      if (item.new_costcenter) costcenterIds.add(item.new_costcenter);
     }
   }
 
@@ -2041,13 +2042,14 @@ export const getAssetTransferRequests = async (req: Request, res: Response) => {
         const newItem: any = {
           ...item,
           curr_owner: mapEmployeeShortByRamco(item.curr_owner),
+          new_owner: mapEmployeeShortByRamco(item.new_owner),
           accepted_by: mapEmployeeShortByRamco(item.accepted_by),
-          curr_department: mapDepartment(item.curr_department_id),
-          new_department: mapDepartment(item.new_department_id),
-          curr_district: mapDistrict(item.curr_district_id),
-          new_district: mapDistrict(item.new_district_id),
-          curr_costcenter: mapCostcenter(item.curr_costcenter_id),
-          new_costcenter: mapCostcenter(item.new_costcenter_id)
+          curr_department: mapDepartment(item.curr_department),
+          new_department: mapDepartment(item.new_department),
+          curr_district: mapDistrict(item.curr_district),
+          new_district: mapDistrict(item.new_district),
+          curr_costcenter: mapCostcenter(item.curr_costcenter),
+          new_costcenter: mapCostcenter(item.new_costcenter)
         };
         // Remove redundant id fields
         delete newItem.curr_department_id;
@@ -2089,13 +2091,14 @@ export const getAssetTransferRequestById = async (req: Request, res: Response) =
   if (request.requestor) employeeRamcoIds.add(request.requestor);
   for (const item of items) {
     if (item.curr_owner) employeeRamcoIds.add(item.curr_owner);
+    if (item.new_owner) employeeRamcoIds.add(item.new_owner);
     if (item.accepted_by) employeeRamcoIds.add(item.accepted_by);
-    if (item.curr_department_id) departmentIds.add(item.curr_department_id);
-    if (item.new_department_id) departmentIds.add(item.new_department_id);
-    if (item.curr_district_id) districtIds.add(item.curr_district_id);
-    if (item.new_district_id) districtIds.add(item.new_district_id);
-    if (item.curr_costcenter_id) costcenterIds.add(item.curr_costcenter_id);
-    if (item.new_costcenter_id) costcenterIds.add(item.new_costcenter_id);
+    if (item.curr_department) departmentIds.add(item.curr_department);
+    if (item.new_department) departmentIds.add(item.new_department);
+    if (item.curr_district) districtIds.add(item.curr_district);
+    if (item.new_district) districtIds.add(item.new_district);
+    if (item.curr_costcenter) costcenterIds.add(item.curr_costcenter);
+    if (item.new_costcenter) costcenterIds.add(item.new_costcenter);
   }
 
   // Fetch all related objects in bulk (arrays)
@@ -2143,14 +2146,19 @@ export const getAssetTransferRequestById = async (req: Request, res: Response) =
       const newItem: any = {
         ...item,
         curr_owner: mapEmployeeShortByRamco(item.curr_owner),
+        new_owner: mapEmployeeShortByRamco(item.new_owner),
         accepted_by: mapEmployeeShortByRamco(item.accepted_by),
-        curr_department: mapDepartment(item.curr_department_id),
-        new_department: mapDepartment(item.new_department_id),
-        curr_district: mapDistrict(item.curr_district_id),
-        new_district: mapDistrict(item.new_district_id),
-        curr_costcenter: mapCostcenter(item.curr_costcenter_id),
-        new_costcenter: mapCostcenter(item.new_costcenter_id)
+        curr_department: mapDepartment(item.curr_department),
+        new_department: mapDepartment(item.new_department),
+        curr_district: mapDistrict(item.curr_district),
+        new_district: mapDistrict(item.new_district),
+        curr_costcenter: mapCostcenter(item.curr_costcenter),
+        new_costcenter: mapCostcenter(item.new_costcenter)
       };
+      // If transfer_type is Employee, resolve identifier as employee object
+      if (item.transfer_type === 'Employee' && item.identifier) {
+        newItem.identifier = mapEmployeeShortByRamco(item.identifier);
+      }
       // Remove redundant id fields
       delete newItem.curr_department_id;
       delete newItem.new_department_id;
@@ -2171,59 +2179,43 @@ export const getAssetTransferRequestById = async (req: Request, res: Response) =
 };
 
 export const createAssetTransfer = async (req: Request, res: Response) => {
-  const { requestor, items } = req.body;
-  if (!requestor || !Array.isArray(items) || items.length === 0) {
+  // Accepts new frontend payload: {requestor, request_no, request_date, request_status, details: [...]}
+  const { requestor, request_no, request_date, request_status, details } = req.body;
+  if (!requestor || !Array.isArray(details) || details.length === 0) {
     return res.status(400).json({ status: 'error', message: 'Invalid request data' });
   }
-  // Validate requestor exists
-  const requestorEmp = await assetModel.getEmployeeByRamco(requestor);
-  if (!requestorEmp) {
-    return res.status(404).json({ status: 'error', message: 'Requestor not found' });
-  }
-  // Validate each item
-  for (const item of items) {
-    if (!item.asset_id || !item.curr_owner || !item.new_department_id || !item.new_district_id || !item.new_costcenter_id) {
-      return res.status(400).json({ status: 'error', message: 'Invalid item data' });
-    }
-    // Validate current owner exists
-    const currOwner = await assetModel.getEmployeeByRamco(item.curr_owner);
-    if (!currOwner) {
-      return res.status(404).json({ status: 'error', message: `Current owner ${item.curr_owner} not found` });
-    }
-    // Validate new department, district, costcenter exist
-    if (item.new_department_id && !(await assetModel.getDepartmentById(item.new_department_id))) {
-      return res.status(404).json({ status: 'error', message: `New department ${item.new_department_id} not found` });
-    }
-    if (item.new_district_id && !(await assetModel.getDistrictById(item.new_district_id))) {
-      return res.status(404).json({ status: 'error', message: `New district ${item.new_district_id} not found` });
-    }
-    if (item.new_costcenter_id && !(await assetModel.getCostcenterById(item.new_costcenter_id))) {
-      return res.status(404).json({ status: 'error', message: `New cost center ${item.new_costcenter_id} not found` });
-    }
-  }
+  // Generate request_no if not provided
+  const finalRequestNo = request_no && request_no.trim() ? request_no : await assetModel.generateNextRequestNo();
+  // Use provided request_date or today
+  const finalRequestDate = request_date || new Date();
+  // Use provided request_status or default
+  const finalRequestStatus = request_status || 'submitted';
   // Create the transfer request and get its ID
-  const request_no = await assetModel.generateNextRequestNo();
-  const request_date = new Date();
-  const request_status = 'submitted';
-  const return_to_asset_manager = 0;
   const insertId = await assetModel.createAssetTransferRequest({
-    request_no,
+    request_no: finalRequestNo,
     requestor,
-    request_date,
-    request_status,
-    return_to_asset_manager
+    request_date: finalRequestDate,
+    request_status: finalRequestStatus,
+    return_to_asset_manager: 0
   });
-  // Insert each item as a detail row
-  for (const item of items) {
+  // Insert each detail, mapping nested objects to IDs
+  for (const detail of details) {
     await assetModel.createAssetTransferDetail({
+      ...detail,
       transfer_request_id: insertId,
-      ...item
+      curr_department: detail.curr_department?.id ?? null,
+      curr_district: detail.curr_district?.id ?? null,
+      curr_costcenter: detail.curr_costcenter?.id ?? null,
+      new_department: detail.new_department?.id ?? null,
+      new_district: detail.new_district?.id ?? null,
+      new_costcenter: detail.new_costcenter?.id ?? null
     });
   }
   res.status(201).json({
     status: 'success',
     message: 'Asset transfer request created successfully',
-    request_id: insertId
+    request_id: insertId,
+    request_no: finalRequestNo
   });
 };
 
@@ -2294,12 +2286,13 @@ export interface AssetTransferDetailItem {
   asset_type: string;
   identifier: string;
   curr_owner: string | null;
-  curr_department_id: number | null;
-  curr_district_id: number | null;
-  curr_costcenter_id: number | null;
-  new_department_id: number | null;
-  new_district_id: number | null;
-  new_costcenter_id: number | null;
+  curr_department: number | null;
+  curr_district: number | null;
+  curr_costcenter: number | null;
+  new_owner: string | null;
+  new_department: number | null;
+  new_district: number | null;
+  new_costcenter: number | null;
   effective_date: string | null;
   reasons: string | null;
   attachment: string | null;

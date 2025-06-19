@@ -991,10 +991,28 @@ export const createAssetTransferRequest = async (data: any) => {
 };
 
 export const createAssetTransferDetail = async (data: any) => {
+  // Ensure only primitive values are inserted
+  const getId = (v: any) => (v && typeof v === 'object' && 'id' in v) ? v.id : v ?? null;
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferDetailsTable} (transfer_request_id, transfer_type, asset_type, identifier, curr_owner, curr_department_id, curr_district_id, curr_costcenter_id, new_department_id, new_district_id, new_costcenter_id, effective_date, reasons, attachment, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [data.transfer_request_id, data.transfer_type, data.asset_type, data.identifier, data.curr_owner, data.curr_department_id, data.curr_district_id, data.curr_costcenter_id, data.new_department_id, data.new_district_id, data.new_costcenter_id, data.effective_date, data.reasons, data.attachment]
+    `INSERT INTO ${assetTransferDetailsTable} (transfer_request_id, transfer_type, asset_type, identifier, curr_owner, curr_department, curr_district, curr_costcenter, new_owner, new_department, new_district, new_costcenter, effective_date, reasons, attachment, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [
+      data.transfer_request_id,
+      data.transfer_type,
+      data.asset_type,
+      data.identifier,
+      typeof data.curr_owner === 'object' ? data.curr_owner?.ramco_id ?? null : data.curr_owner ?? null,
+      getId(data.curr_department),
+      getId(data.curr_district),
+      getId(data.curr_costcenter),
+      typeof data.curr_owner === 'object' ? data.new_owner?.ramco_id ?? null : data.new_owner ?? null,
+      getId(data.new_department),
+      getId(data.new_district),
+      getId(data.new_costcenter),
+      data.effective_date,
+      data.reasons,
+      data.attachment
+    ]
   );
   return result;
 };
