@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import * as assetModel from './assetModel';
 import path from 'path';
 import { getAssetsByIds, getStringParam } from "./assetModel";
+import { sendMail } from '../utils/mailer';
+import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 
 // --- Add this helper near the top of the file ---
 function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
@@ -2211,6 +2213,99 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
       new_costcenter: detail.new_costcenter?.id ?? null
     });
   }
+
+  // --- EMAIL NOTIFICATION LOGIC ---
+  try {
+    // Fetch the full request and its items for email
+    const request = await assetModel.getAssetTransferRequestById(insertId);
+    const itemsRaw = await assetModel.getAssetTransferDetailsByRequestId(insertId);
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    // Fetch all employees, costcenters, departments, districts for mapping
+    const [employees, costcenters, departments, districts] = await Promise.all([
+      assetModel.getEmployees(),
+      assetModel.getCostcenters(),
+      assetModel.getDepartments(),
+      assetModel.getDistricts()
+    ]);
+    // Ensure all lookup arrays are arrays
+    const empArr = Array.isArray(employees) ? employees : [];
+    const costcenterArr = Array.isArray(costcenters) ? costcenters : [];
+    const departmentArr = Array.isArray(departments) ? departments : [];
+    const districtArr = Array.isArray(districts) ? districts : [];
+    const empMap = new Map(empArr.map((e: any) => [e.ramco_id, e]));
+    const costcenterMap = new Map(costcenterArr.map((c: any) => [c.id, c]));
+    const departmentMap = new Map(departmentArr.map((d: any) => [d.id, d]));
+    const districtMap = new Map(districtArr.map((d: any) => [d.id, d]));
+    // Enrich items for email
+    const enrichedItems = items.map((item: any) => {
+      // Identifier logic
+      let identifierDisplay = item.identifier;
+      if (item.transfer_type === 'Employee' && item.identifier && empMap.has(item.identifier)) {
+        const emp = empMap.get(item.identifier);
+        identifierDisplay = emp && typeof emp === 'object' && 'full_name' in emp ? emp.full_name : item.identifier;
+      }
+      // Owners
+      const currOwnerEmp = item.curr_owner && empMap.has(item.curr_owner) ? empMap.get(item.curr_owner) : null;
+      const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.curr_owner || '-';
+      const newOwnerEmp = item.new_owner && empMap.has(item.new_owner) ? empMap.get(item.new_owner) : null;
+      const newOwnerName = newOwnerEmp && typeof newOwnerEmp === 'object' && 'full_name' in newOwnerEmp ? newOwnerEmp.full_name : item.new_owner || '-';
+      // Costcenters
+      const currCostcenterObj = item.curr_costcenter && costcenterMap.has(item.curr_costcenter) ? costcenterMap.get(item.curr_costcenter) : null;
+      const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? currCostcenterObj.name : item.curr_costcenter || '-';
+      const newCostcenterObj = item.new_costcenter && costcenterMap.has(item.new_costcenter) ? costcenterMap.get(item.new_costcenter) : null;
+      const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? newCostcenterObj.name : item.new_costcenter || '-';
+      // Departments (show code)
+      const currDepartmentObj = item.curr_department && departmentMap.has(item.curr_department) ? departmentMap.get(item.curr_department) : null;
+      const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? currDepartmentObj.code : item.curr_department || '-';
+      const newDepartmentObj = item.new_department && departmentMap.has(item.new_department) ? departmentMap.get(item.new_department) : null;
+      const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? newDepartmentObj.code : item.new_department || '-';
+      // Districts (show code)
+      const currDistrictObj = item.curr_district && districtMap.has(item.curr_district) ? districtMap.get(item.curr_district) : null;
+      const currDistrictCode = currDistrictObj && typeof currDistrictObj === 'object' && 'code' in currDistrictObj ? currDistrictObj.code : item.curr_district || '-';
+      const newDistrictObj = item.new_district && districtMap.has(item.new_district) ? districtMap.get(item.new_district) : null;
+      const newDistrictCode = newDistrictObj && typeof newDistrictObj === 'object' && 'code' in newDistrictObj ? newDistrictObj.code : item.new_district || '-';
+      return {
+        ...item,
+        identifierDisplay,
+        currOwnerName,
+        newOwnerName,
+        currCostcenterName,
+        newCostcenterName,
+        currDepartmentCode,
+        newDepartmentCode,
+        currDistrictCode,
+        newDistrictCode
+      };
+    });
+    // Fetch requestor info
+    const requestorObj = await assetModel.getEmployeeByRamco(requestor);
+    // Find supervisor by requestor's wk_spv_id
+    let supervisorObj = null;
+    if (requestorObj && requestorObj.wk_spv_id) {
+      supervisorObj = await assetModel.getEmployeeByRamco(requestorObj.wk_spv_id);
+    }
+    // Compose email content
+    const emailData = {
+      request,
+      items: enrichedItems,
+      requestor: requestorObj,
+      supervisor: supervisorObj || { name: 'Supervisor', email: '-' }
+    };
+    const { subject, html } = assetTransferRequestEmail(emailData);
+    // Send to requestor
+    if (requestorObj && requestorObj.email) {
+      await sendMail(requestorObj.email, subject, html);
+    }
+    // Send to supervisor
+    if (supervisorObj && supervisorObj.email) {
+      await sendMail(supervisorObj.email, subject, html);
+    }
+  } catch (err) {
+    // Log but do not block the response
+    console.error('Asset transfer email notification failed:', err);
+  }
+  // --- END EMAIL LOGIC ---
+
   res.status(201).json({
     status: 'success',
     message: 'Asset transfer request created successfully',

@@ -724,7 +724,7 @@ export const getAssetOwnerships = async () => {
 };
 
 export const getAssetOwnershipById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetUserTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assetUserTable} id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
