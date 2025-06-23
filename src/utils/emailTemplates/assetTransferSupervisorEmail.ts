@@ -1,19 +1,18 @@
-// Asset Transfer Request Email Template
-// Usage: import and call with { request, items, requestor, supervisor }
+// Asset Transfer Supervisor Email Template
+// Usage: import and call with { request, items, requestor, supervisor, actionToken, actionBaseUrl }
 
 import { AssetTransferDetailItem } from '../../p.asset/assetController';
-import crypto from 'crypto';
 
 interface EmailData {
   request: any;
   items: any[];
   requestor: any;
   supervisor: any;
-  actionToken?: string; // For supervisor action links
-  actionBaseUrl?: string; // e.g. https://yourdomain.com/api/asset-transfer
+  actionToken: string; // Required for supervisor action links
+  actionBaseUrl: string; // e.g. https://yourdomain.com/api/asset-transfer
 }
 
-export default function assetTransferRequestEmail({ request, items, requestor, supervisor, actionToken, actionBaseUrl }: EmailData) {
+export default function assetTransferSupervisorEmail({ request, items, requestor, supervisor, actionToken, actionBaseUrl }: EmailData) {
   // Helper for safe value
   const safe = (v: any) => v || '-';
   // Requestor details
@@ -28,32 +27,24 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
   const labelStyle = 'font-weight: bold; display: inline-block; min-width: 140px; vertical-align: top;';
   const valueStyle = 'display: inline-block; min-width: 180px;';
   const rowStyle = 'margin-bottom: 6px;';
-  // Action buttons (only for supervisor)
-  let actionButtons = '';
-  if (actionToken && actionBaseUrl && supervisor?.email) {
-    const approveUrl = `${actionBaseUrl}/approve?id=${encodeURIComponent(request.id)}&token=${encodeURIComponent(actionToken)}`;
-    const rejectUrl = `${actionBaseUrl}/reject?id=${encodeURIComponent(request.id)}&token=${encodeURIComponent(actionToken)}`;
-    actionButtons = `
-      <div style="margin: 1.5em 0 1em 0;">
-        <a href="${approveUrl}" style="background: #388e3c; color: #fff; padding: 10px 24px; border-radius: 5px; text-decoration: none; font-weight: bold; margin-right: 18px;">Approve</a>
-        <a href="${rejectUrl}" style="background: #d32f2f; color: #fff; padding: 10px 24px; border-radius: 5px; text-decoration: none; font-weight: bold;">Reject</a>
-      </div>
-      <div style="font-size: 13px; color: #888; margin-bottom: 1em;">You are receiving this as the supervisor for this request. Please review and take action above.</div>
-    `;
-  }
+  // Action buttons (always for supervisor)
+  const approveUrl = `${actionBaseUrl}/approve?id=${encodeURIComponent(request.id)}&token=${encodeURIComponent(actionToken)}`;
+  const rejectUrl = `${actionBaseUrl}/reject?id=${encodeURIComponent(request.id)}&token=${encodeURIComponent(actionToken)}`;
+  const actionButtons = `
+    <div style="margin: 1.5em 0 1em 0;">
+      <a href="${approveUrl}" style="background: #388e3c; color: #fff; padding: 10px 24px; border-radius: 5px; text-decoration: none; font-weight: bold; margin-right: 18px;">Approve</a>
+      <a href="${rejectUrl}" style="background: #d32f2f; color: #fff; padding: 10px 24px; border-radius: 5px; text-decoration: none; font-weight: bold;">Reject</a>
+    </div>
+    <div style="font-size: 13px; color: #888; margin-bottom: 1em;">You are receiving this as the supervisor for this request. Please review and take action above.</div>
+  `;
   // Email subject
-  const subject = `Asset Transfer Request #${safe(request?.request_no)} Submitted`;
-  // Determine greeting
-  let greeting = `Dear ${safe(requestor?.full_name)},`;
-  if (actionToken && actionBaseUrl && supervisor?.email && requestor?.email !== supervisor?.email) {
-    greeting = 'Dear Supervisor,';
-  }
+  const subject = `Asset Transfer Request #${safe(request?.request_no)} - Supervisor Action Required`;
   // Email HTML
   const html = `
     <div style="font-family: Arial, sans-serif; color: #222;">
-      <h2 style="margin-bottom: 0.5em;">Asset Transfer Request Initiated</h2>
-      <p>${greeting}</p>
-      <p>Your asset transfer request <b>#${safe(request?.request_no)}</b> has been submitted on <span style="color: #b26a00; font-weight: bold;">${formatDate(request?.request_date)}</span>.</p>
+      <h2 style="margin-bottom: 0.5em;">Asset Transfer Request - Supervisor Action Required</h2>
+      <p>Dear Supervisor,</p>
+      <p>An asset transfer request <b>#${safe(request?.request_no)}</b> has been submitted by <b>${safe(requestor?.full_name)}</b> on <span style="color: #b26a00; font-weight: bold;">${formatDate(request?.request_date)}</span>.</p>
       <h3 style="margin-bottom: 0.3em;">Request Details</h3>
       <ul style="margin-top: 0; margin-bottom: 0.7em;">
         <li><b>Requestor:</b> ${safe(requestor?.full_name)} (${safe(requestor?.email)})</li>
@@ -81,12 +72,9 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
           </div>
         </div>
       `).join('')}
-      <div style="margin-top: 1.5em;">
-        <span>This request will be reviewed by your supervisor: <b>${safe(supervisor?.name)}</b> (<span style="color: #b26a00; font-weight: bold;">${safe(supervisor?.email)}</span>).</span>
-      </div>
-      ${(actionToken && actionBaseUrl && supervisor?.email && requestor?.email !== supervisor?.email) ? actionButtons : ''}
+      ${actionButtons}
       <div style="margin-top: 2em; font-size: 13px; color: #888; border-top: 1px solid #eee; padding-top: 1em;">
-        <b>Disclaimer:</b> If this request has not been made by you, please contact the IT Asset Management team immediately. This is an automated notification; please do not reply to this email.
+        <b>Disclaimer:</b> If this request has not been made by your team, please contact the IT Asset Management team immediately. This is an automated notification; please do not reply to this email.
       </div>
       <div style="margin-top: 1.5em;">Thank you.</div>
     </div>

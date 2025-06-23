@@ -4,6 +4,7 @@ import path from 'path';
 import { getAssetsByIds, getStringParam } from "./assetModel";
 import { sendMail } from '../utils/mailer';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
+import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
 
 // --- Add this helper near the top of the file ---
 function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
@@ -1782,6 +1783,7 @@ export const getAssetsByHOD = async (req: Request, res: Response) => {
   const ownershipsRaw = await assetModel.getAssetOwnerships();
   const ownerships = isPlainObjectArray(ownershipsRaw) ? (ownershipsRaw as any[]) : [];
   // Build lookup maps for department, type, category, brand, model, section, position, cost_center, district
+
   const departmentsRaw = await assetModel.getDepartments();
   const typesRaw = await assetModel.getTypes();
   const categoriesRaw = await assetModel.getCategories();
@@ -2284,21 +2286,38 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
     if (requestorObj && requestorObj.wk_spv_id) {
       supervisorObj = await assetModel.getEmployeeByRamco(requestorObj.wk_spv_id);
     }
-    // Compose email content
-    const emailData = {
+    // Generate action token and base URL for supervisor email
+    // TODO: Replace with secure token generation and real base URL in production
+    const actionToken = require('crypto').randomBytes(32).toString('hex');
+    const actionBaseUrl = `${req.protocol}://${req.get('host')}/api/assets/asset-transfer`;
+    // Compose email content for requestor (no actionToken/actionBaseUrl)
+    const requestorEmailData = {
       request,
       items: enrichedItems,
       requestor: requestorObj,
       supervisor: supervisorObj || { name: 'Supervisor', email: '-' }
     };
-    const { subject, html } = assetTransferRequestEmail(emailData);
-    // Send to requestor
+    // Compose email content for supervisor (with actionToken/actionBaseUrl)
+    const supervisorEmailData = {
+      request,
+      items: enrichedItems,
+      requestor: requestorObj,
+      supervisor: supervisorObj || { name: 'Supervisor', email: '-' },
+      actionToken,
+      actionBaseUrl
+    };
+    // Send to requestor (notification only)
     if (requestorObj && requestorObj.email) {
+      const { subject, html } = assetTransferRequestEmail(requestorEmailData);
       await sendMail(requestorObj.email, subject, html);
     }
-    // Send to supervisor
+    // Send to supervisor (with action buttons)
     if (supervisorObj && supervisorObj.email) {
-      await sendMail(supervisorObj.email, subject, html);
+      // Only send if supervisor is not the same as requestor
+      if (!requestorObj || requestorObj.email !== supervisorObj.email) {
+        const { subject, html } = assetTransferSupervisorEmail(supervisorEmailData);
+        await sendMail(supervisorObj.email, subject, html);
+      }
     }
   } catch (err) {
     // Log but do not block the response
@@ -2398,4 +2417,94 @@ export interface AssetTransferDetailItem {
   updated_at: string;
   // ...add any other fields as needed
 }
+
+export const updateAssetTransferApprovalStatusById = async (req: Request, res: Response) => {
+  const requestId = Number(req.params.id);
+  const { status, supervisorId } = req.body; // status: 'approved' or 'rejected', supervisorId: ramco_id
+  if (!requestId || !status || !supervisorId) {
+    return res.status(400).json({ status: 'error', message: 'Invalid request data' });
+  }
+  // Fetch the request
+  const request = await assetModel.getAssetTransferRequestById(requestId);
+  if (!request) {
+    return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+  }
+  // Update approval fields
+  const now = new Date();
+  await assetModel.updateAssetTransferRequest(requestId, {
+    ...request,
+    approval_id: supervisorId,
+    approval_date: now,
+    request_status: status
+  });
+  // Fetch requestor and supervisor
+  const requestor = await assetModel.getEmployeeByRamco(request.requestor);
+  const supervisor = await assetModel.getEmployeeByRamco(supervisorId);
+  // Fetch transfer items
+  const itemsRaw = await assetModel.getAssetTransferDetailsByRequestId(requestId);
+  const items = Array.isArray(itemsRaw)
+    ? itemsRaw
+        .filter(item => item && typeof item === 'object' && 'transfer_type' in item && 'identifier' in item)
+        .map(item => item as any)
+    : [];
+  // Send notification to requestor
+  if (requestor?.email) {
+    await sendMail(requestor.email, `Asset Transfer Request ${status.toUpperCase()}`, `Your asset transfer request #${request.request_no} has been ${status} by your supervisor.`);
+  }
+  // Notify each item owner/employee
+  for (const item of items) {
+    if (item.transfer_type === 'Employee' && item.identifier) {
+      const emp = await assetModel.getEmployeeByRamco(item.identifier);
+      if (emp?.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your transfer status has been updated for request #${request.request_no}.`);
+    } else if (item.transfer_type === 'Asset' && item.curr_owner) {
+      const emp = await assetModel.getEmployeeByRamco(item.curr_owner);
+      if (emp?.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your asset transfer status has been updated for request #${request.request_no}.`);
+    }
+  }
+  res.json({ status: 'success', message: `Asset transfer request ${status}. Notifications sent.` });
+};
+
+// --- EMAIL APPROVAL/REJECTION HANDLERS FOR EMAIL LINKS ---
+// GET /api/assets/asset-transfer/approve?id=...&token=...
+export const approveAssetTransferByEmail = async (req: Request, res: Response) => {
+  const { id, token } = req.query;
+  // TODO: Validate token (implement real token validation in production)
+  if (!id || !token) {
+    return res.status(400).send('Invalid approval link.');
+  }
+  // Fetch the request
+  const request = await assetModel.getAssetTransferRequestById(Number(id));
+  if (!request) return res.status(404).send('Request not found.');
+  // Fetch requestor's employee record to get supervisor
+  const requestor = await assetModel.getEmployeeByRamco(request.requestor);
+  const supervisorId = requestor?.wk_spv_id;
+  if (!supervisorId) return res.status(400).send('Supervisor not found.');
+  // Call approval logic directly
+  await updateAssetTransferApprovalStatusById({
+    ...req,
+    params: { id },
+    body: { status: 'approved', supervisorId },
+  } as any, res);
+};
+// GET /api/assets/asset-transfer/reject?id=...&token=...
+export const rejectAssetTransferByEmail = async (req: Request, res: Response) => {
+  const { id, token } = req.query;
+  // TODO: Validate token (implement real token validation in production)
+  if (!id || !token) {
+    return res.status(400).send('Invalid rejection link.');
+  }
+  // Fetch the request
+  const request = await assetModel.getAssetTransferRequestById(Number(id));
+  if (!request) return res.status(404).send('Request not found.');
+  // Fetch requestor's employee record to get supervisor
+  const requestor = await assetModel.getEmployeeByRamco(request.requestor);
+  const supervisorId = requestor?.wk_spv_id;
+  if (!supervisorId) return res.status(400).send('Supervisor not found.');
+  // Call rejection logic directly
+  await updateAssetTransferApprovalStatusById({
+    ...req,
+    params: { id },
+    body: { status: 'rejected', supervisorId },
+  } as any, res);
+};
 

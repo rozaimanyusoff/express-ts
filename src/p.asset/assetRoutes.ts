@@ -124,6 +124,13 @@ router.post('/transfer-requests', asyncHandler(assetController.createAssetTransf
 router.put('/transfer-requests/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfer-requests/:id', asyncHandler(assetController.deleteAssetTransfer));
 
+// ASSET TRANSFER APPROVAL (for supervisor approve/reject buttons)
+router.post('/transfer-requests/:id/approval', asyncHandler(assetController.updateAssetTransferApprovalStatusById));
+
+// EMAIL APPROVAL/REJECTION LINKS
+router.get('/asset-transfer/approve', asyncHandler(assetController.approveAssetTransferByEmail));
+router.get('/asset-transfer/reject', asyncHandler(assetController.rejectAssetTransferByEmail));
+
 // ASSETS
 router.get('/', asyncHandler(assetController.getAssets));
 router.get('/:id', asyncHandler(assetController.getAssetById));
