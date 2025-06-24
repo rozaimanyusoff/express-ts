@@ -5,6 +5,7 @@ import { getAssetsByIds, getStringParam } from "./assetModel";
 import { sendMail } from '../utils/mailer';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
+import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
 
 // --- Add this helper near the top of the file ---
 function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
@@ -2453,6 +2454,26 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
   }
   // Notify each item owner/employee
   for (const item of items) {
+    let ownerRamcoId: string | null = null;
+    if (item.transfer_type === 'Employee' && item.identifier) {
+      ownerRamcoId = item.identifier;
+    } else if (item.transfer_type === 'Asset' && item.curr_owner) {
+      ownerRamcoId = item.curr_owner;
+    }
+    if (ownerRamcoId) {
+      const emp = await assetModel.getEmployeeByRamco(ownerRamcoId);
+      if (emp?.email) {
+        // Send asset transfer preparation email to current owner
+        const { subject, html } = assetTransferCurrentOwnerEmail({
+          request,
+          item,
+          currentOwner: emp,
+          supervisor
+        });
+        await sendMail(emp.email, subject, html);
+      }
+    }
+    // Existing notifications for transfer_type Employee/Asset
     if (item.transfer_type === 'Employee' && item.identifier) {
       const emp = await assetModel.getEmployeeByRamco(item.identifier);
       if (emp?.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your transfer status has been updated for request #${request.request_no}.`);
