@@ -12,7 +12,7 @@ export interface PurchaseRequest {
     id: number;
     req_no: string;
     req_date: string;
-    emp_id: string;
+    requestor: string;
     dept_id: number;
     costcenter_id: number;
     district_id: number;
@@ -71,14 +71,14 @@ export const getPurchaseRequestById = async (id: number): Promise<PurchaseReques
 };
 
 export const getPurchaseRequestDetails = async (request_id: number): Promise<PurchaseRequestDetail[]> => {
-    const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestDetailsTable} WHERE request_id = ?`, [request_id]);
+    const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestDetailsTable} WHERE pr_id = ?`, [request_id]);
     return rows as PurchaseRequestDetail[];
 };
 
 export const createPurchaseRequest = async (data: Partial<PurchaseRequest>): Promise<number> => {
     const [result] = await pool.query(
         `INSERT INTO ${purchaseRequestTable} (req_no, req_date, emp_id, dept_id, costcenter_id, district_id, required_date, purpose, remarks, verified_by, verification_status, verification_date, approved_by, req_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [data.req_no, data.req_date, data.emp_id, data.dept_id, data.costcenter_id, data.district_id, data.required_date, data.purpose, data.remarks, data.verified_by, data.verification_status, data.verification_date, data.approved_by, data.req_status]
+        [data.req_no, data.req_date, data.requestor, data.dept_id, data.costcenter_id, data.district_id, data.required_date, data.purpose, data.remarks, data.verified_by, data.verification_status, data.verification_date, data.approved_by, data.req_status]
     );
     return (result as ResultSetHeader).insertId;
 };
