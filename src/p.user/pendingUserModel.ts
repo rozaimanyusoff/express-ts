@@ -8,17 +8,34 @@ export interface PendingUser {
   email: string;
   contact: string;
   user_type: number;
-  activation_code: string;
+  status: number;
+  activation_code?: string;
   created_at?: Date;
   ip?: string | null;
   user_agent?: string | null;
 }
 
+// DB and table variables for easier maintenance
+export const DB_NAME = process.env.DB_NAME || 'auth';
+export const PENDING_USERS_TABLE = 'pending_users';
+
+export const getAllPendingUsers = async (): Promise<any[]> => {
+    try {
+        const [rows]: any[] = await pool.query(
+            `SELECT * FROM ${PENDING_USERS_TABLE}`
+        );
+        return rows;
+    } catch (error) {
+        logger.error(`Database error in getAllPendingUsers: ${error}`);
+        throw error;
+    }
+}
+
 export const createPendingUser = async (user: PendingUser): Promise<ResultSetHeader> => {
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      'INSERT INTO pending_users (fname, email, contact, user_type, activation_code, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [user.fname, user.email, user.contact, user.user_type, user.activation_code, user.ip ?? null, user.user_agent ?? null]
+      `INSERT INTO ${PENDING_USERS_TABLE} (fname, email, contact, user_type, status, activation_code, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [user.fname, user.email, user.contact, user.user_type, user.status, user.activation_code, user.ip ?? null, user.user_agent ?? null]
     );
     return result;
   } catch (error) {
@@ -30,7 +47,7 @@ export const createPendingUser = async (user: PendingUser): Promise<ResultSetHea
 export const findPendingUserByEmailOrContact = async (email: string, contact: string): Promise<PendingUser[]> => {
   try {
     const [rows]: any[] = await pool.query(
-      'SELECT * FROM pending_users WHERE email = ? OR contact = ?',
+      `SELECT * FROM ${PENDING_USERS_TABLE} WHERE email = ? OR contact = ?`,
       [email, contact]
     );
     return rows;
@@ -43,7 +60,7 @@ export const findPendingUserByEmailOrContact = async (email: string, contact: st
 export const findPendingUserByActivation = async (email: string, contact: string, activationCode: string): Promise<PendingUser | null> => {
   try {
     const [rows]: any[] = await pool.query(
-      'SELECT * FROM pending_users WHERE email = ? AND contact = ? AND activation_code = ?',
+      `SELECT * FROM ${PENDING_USERS_TABLE} WHERE email = ? AND contact = ? AND activation_code = ?`,
       [email, contact, activationCode]
     );
     return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
@@ -55,7 +72,7 @@ export const findPendingUserByActivation = async (email: string, contact: string
 
 export const deletePendingUser = async (id: number): Promise<void> => {
   try {
-    await pool.query('DELETE FROM pending_users WHERE id = ?', [id]);
+    await pool.query(`DELETE FROM ${PENDING_USERS_TABLE} WHERE id = ?`, [id]);
   } catch (error) {
     logger.error('Database error in deletePendingUser:', error);
     throw error;

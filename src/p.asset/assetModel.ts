@@ -58,11 +58,11 @@ async function handleTypeImage(image: string) {
 
 // TYPES CRUD
 export const createType = async (data: any) => {
-  const { code, name, description, image } = data;
+  const { code, name, description, image, ramco_id } = data;
   const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (code, name, description, image) VALUES (?, ?, ?, ?)` ,
-    [code, name, description, storedImage]
+    `INSERT INTO ${typeTable} (code, name, description, image, ramco_id) VALUES (?, ?, ?, ?, ?)` ,
+    [code, name, description, storedImage, ramco_id]
   );
   return result;
 };
@@ -78,11 +78,11 @@ export const getTypeById = async (id: number) => {
 };
 
 export const updateType = async (id: number, data: any) => {
-  const { code, name, description, image } = data;
+  const { code, name, description, image, ramco_id } = data;
   const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ? WHERE id = ?`,
-    [code, name, description, storedImage, id]
+    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, ramco_id = ? WHERE id = ?`,
+    [code, name, description, storedImage, ramco_id, id]
   );
   return result;
 };

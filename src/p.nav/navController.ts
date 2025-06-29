@@ -381,3 +381,35 @@ export const deleteNavigationHandler = async (req: Request, res: Response): Prom
         });
     }
 };
+
+// Handler for reordering navigation nodes
+export const reorderNavigationHandler = async (req: Request, res: Response): Promise<Response> => {
+    const { nodes } = req.body;
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+        return res.status(400).json({ status: 'error', message: 'nodes must be a non-empty array' });
+    }
+    try {
+        for (const node of nodes) {
+            const { navId, position, parent_nav_id, section_id } = node;
+            if (typeof navId !== 'number' || typeof position !== 'number') continue;
+            // Fetch current navigation to preserve required fields
+            const navRows = await getNavigation();
+            const nav = navRows.find((n) => n.id === navId);
+            if (!nav) continue;
+            // For root/section nodes, allow parent_nav_id and section_id to be null
+            await updateNavigation(navId, {
+                title: nav.title,
+                type: nav.type,
+                status: nav.status,
+                path: nav.path,
+                position,
+                parent_nav_id: nav.type === 'section' ? null : (parent_nav_id ?? null),
+                section_id: nav.type === 'section' ? null : (section_id ?? null),
+            });
+        }
+        return res.status(200).json({ status: 'success', message: 'Navigation reordered successfully' });
+    } catch (error) {
+        console.error('Error reordering navigation:', error);
+        return res.status(500).json({ status: 'error', message: 'Error reordering navigation' });
+    }
+};

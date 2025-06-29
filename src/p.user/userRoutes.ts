@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllUser, updateUser1, assignUserToGroups1, adminResetPasswords, changeUsersGroups, changeUsersRole, suspendOrActivateUsers, updateUserProfile, getTasks, postTask, putTask, getUserAuthLogs } from "./userController";
+import { getAllUser, updateUser1, assignUserToGroups1, adminResetPasswords, changeUsersGroups, changeUsersRole, suspendOrActivateUsers, updateUserProfile, getTasks, postTask, putTask, getUserAuthLogs, getAllPendingUser, getAuthLogs, getAllAuthLogs } from "./userController";
 import asyncHandler from "../utils/asyncHandler";
 import tokenValidator from '../middlewares/tokenValidator';
 import multer from 'multer';
@@ -18,6 +18,9 @@ router.get('/tasks', tokenValidator, asyncHandler(getTasks));
 router.post('/tasks', tokenValidator, asyncHandler(postTask));
 router.put('/tasks/:id', tokenValidator, asyncHandler(putTask));
 router.get('/user/:userId/auth-logs', tokenValidator, asyncHandler(getUserAuthLogs));
+router.get('/user/:userId/logs-auth', tokenValidator, asyncHandler(getAuthLogs));
+router.get("/logs", asyncHandler(getAllAuthLogs)); // Assuming this is for admin to view all auth logs
+router.get("/pending", asyncHandler(getAllPendingUser));
 
 
 export default router;

@@ -8,6 +8,13 @@ import path from 'path';
 import fs from 'fs';
 const { hash, compare } = bcrypt;
 
+// DB and table variables for easier maintenance
+export const DB_NAME = process.env.DB_NAME || 'auth';
+export const usersTable = 'users';
+export const userGroupsTable = 'user_groups';
+export const userProfileTable = 'user_profile';
+export const userTasksTable = 'user_tasks';
+
 // Define the interface
 export interface Users {
     id: number;
@@ -53,8 +60,8 @@ export const getAllUsers = async (): Promise<Users[]> => {
     try {
         const [rows]: any[] = await pool.query(
             `SELECT u.*, GROUP_CONCAT(ug.group_id) AS usergroups
-      FROM users u
-      LEFT JOIN user_groups ug ON u.id = ug.user_id
+      FROM ${usersTable} u
+      LEFT JOIN ${userGroupsTable} ug ON u.id = ug.user_id
       GROUP BY u.id`
         );
 
@@ -89,7 +96,7 @@ export const getAllUsers = async (): Promise<Users[]> => {
 export const findUserByEmailOrContact = async (email: string, contact: string): Promise<any[]> => {
     try {
         const [rows]: any[] = await pool.query(
-            'SELECT * FROM users WHERE email = ? OR contact = ?',
+            `SELECT * FROM ${usersTable} WHERE email = ? OR contact = ?`,
             [email, contact]
         );
         logger.info(`findUserByEmailOrContact query result: ${JSON.stringify(rows)}`);
@@ -102,9 +109,12 @@ export const findUserByEmailOrContact = async (email: string, contact: string): 
 
 // Register user if no existing user found
 export const registerUser = async (name: string, email: string, contact: string, userType: number, activationCode: string): Promise<ResultSetHeader> => {
+    // Normalize to lowercase for email and contact
+    const normalizedEmail = email.toLowerCase();
+    const normalizedName = name.toLowerCase();
     const [result] = await pool.query<ResultSetHeader>(
-        'INSERT INTO users (fname, email, contact, user_type, activation_code) VALUES (?, ?, ?, ?, ?)',
-        [name, email, contact, userType, activationCode]
+        `INSERT INTO ${usersTable} (fname, email, contact, user_type, activation_code) VALUES (?, ?, ?, ?, ?)`,
+        [normalizedName, normalizedEmail, contact, userType, activationCode]
     );
     return result;
 };
@@ -113,7 +123,7 @@ export const registerUser = async (name: string, email: string, contact: string,
 export const validateActivation = async (email: string, contact: string, activationCode: string): Promise<{ valid: boolean; user?: any; error?: unknown }> => {
     try {
         const [rows]: any[] = await pool.query(
-            'SELECT * FROM users WHERE email = ? AND contact = ? AND activation_code = ?',
+            `SELECT * FROM ${usersTable} WHERE email = ? AND contact = ? AND activation_code = ?`,
             [email, contact, activationCode]
         );
         return {
@@ -130,7 +140,7 @@ export const validateActivation = async (email: string, contact: string, activat
 export const activateUser = async (email: string, contact: string, activationCode: string, username: string, password: string): Promise<ResultSetHeader> => {
     const hashedPassword = await hash(password, 10);
     const [result] = await pool.query<ResultSetHeader>(
-        'UPDATE users SET password = ?, username = ?, activation_code = null, activated_at = NOW() WHERE email = ? AND contact = ? AND activation_code = ?',
+        `UPDATE ${usersTable} SET password = ?, username = ?, activation_code = null, activated_at = NOW() WHERE email = ? AND contact = ? AND activation_code = ?`,
         [hashedPassword, username, email, contact, activationCode]
     );
     return result;
@@ -144,8 +154,8 @@ export const verifyLoginCredentials = async (
     try {
         const [rows]: any[] = await pool.query(
             `SELECT u.*, GROUP_CONCAT(ug.group_id) AS usergroups
-      FROM users u
-      LEFT JOIN user_groups ug ON u.id = ug.user_id
+      FROM ${usersTable} u
+      LEFT JOIN ${userGroupsTable} ug ON u.id = ug.user_id
       WHERE (email = ? OR username = ?)
       AND activated_at IS NOT NULL
       GROUP BY u.id`,
@@ -204,7 +214,7 @@ export const verifyLoginCredentials = async (
 // Update last login
 export const updateLastLogin = async (userId: number): Promise<any> => {
     try {
-        const [result]: any = await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [userId]);
+        const [result]: any = await pool.query(`UPDATE ${usersTable} SET last_login = CURRENT_TIMESTAMP WHERE id = ?`, [userId]);
         return result;
     } catch (error) {
         logger.error(`Database error in updateLastLogin: ${error}`);
@@ -217,7 +227,7 @@ export const updateUserPassword = async (email: string, contact: string, newPass
     try {
         const hashedPassword = await hash(newPassword, 10);
         const [result]: any = await pool.query(
-            'UPDATE users SET password = ? WHERE email = ? AND contact = ?',
+            `UPDATE ${usersTable} SET password = ? WHERE email = ? AND contact = ?`,
             [hashedPassword, email, contact]
         );
         return result.affectedRows > 0;
@@ -230,7 +240,7 @@ export const updateUserPassword = async (email: string, contact: string, newPass
 // Find user by reset token
 export const findUserByResetToken = async (resetToken: string): Promise<Users | null> => {
     try {
-        const [rows]: any[] = await pool.query('SELECT * FROM users WHERE reset_token = ?', [resetToken]);
+        const [rows]: any[] = await pool.query(`SELECT * FROM ${usersTable} WHERE reset_token = ?`, [resetToken]);
         logger.info(`findUserByResetToken query result: ${JSON.stringify(rows)}`);
         return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
     } catch (error) {
@@ -243,7 +253,7 @@ export const findUserByResetToken = async (resetToken: string): Promise<Users | 
 export const updateUserResetTokenAndStatus = async (userId: number, resetToken: string, status: number): Promise<void> => {
     try {
         await pool.query(
-            'UPDATE users SET reset_token = ?, status = ? WHERE id = ?',
+            `UPDATE ${usersTable} SET reset_token = ?, status = ? WHERE id = ?`,
             [resetToken, status, userId]
         );
     } catch (error) {
@@ -256,7 +266,7 @@ export const updateUserResetTokenAndStatus = async (userId: number, resetToken: 
 export const reactivateUser = async (userId: number): Promise<void> => {
     try {
         await pool.query(
-            'UPDATE users SET status = 1, reset_token = null WHERE id = ? AND status = 3',
+            `UPDATE ${usersTable} SET status = 1, reset_token = null WHERE id = ? AND status = 3`,
             [userId]
         );
     } catch (error) {
@@ -269,7 +279,7 @@ export const reactivateUser = async (userId: number): Promise<void> => {
 export const updateUser = async (userId: number, { user_type, role, status }: Users): Promise<void> => {
     try {
         const query = `
-      UPDATE users
+      UPDATE ${usersTable}
       SET user_type = ?, role = ?, status = ?
       WHERE id = ?
     `;
@@ -280,6 +290,21 @@ export const updateUser = async (userId: number, { user_type, role, status }: Us
     }
 };
 
+// Update Role by admin
+export const updateUserRole = async (userId: number, role: number): Promise<void> => {
+    try {
+        const query = `
+      UPDATE ${usersTable}
+      SET role = ?
+      WHERE id = ?
+    `;
+        await pool.query(query, [role, userId]);
+    } catch (error) {
+        logger.error(`Database error in updateUserRole: ${error}`);
+        throw error;
+    }
+}
+
 // Assign user to groups
 export const assignUserToGroups = async (userId: number, groups: number[]): Promise<void> => {
     if (groups.length === 0) {
@@ -288,12 +313,12 @@ export const assignUserToGroups = async (userId: number, groups: number[]): Prom
 
     try {
         // Remove existing group associations for the user
-        await pool.query('DELETE FROM user_groups WHERE user_id = ?', [userId]);
+        await pool.query(`DELETE FROM ${userGroupsTable} WHERE user_id = ?`, [userId]);
 
         // Insert new group associations
         const values = groups.flatMap((groupId) => [userId, groupId]);
         const query = `
-      INSERT INTO user_groups (user_id, group_id)
+      INSERT INTO ${userGroupsTable} (user_id, group_id)
       VALUES ${groups.map(() => '(?, ?)').join(', ')}
     `;
         await pool.query(query, values);
@@ -306,7 +331,7 @@ export const assignUserToGroups = async (userId: number, groups: number[]): Prom
 // Get user by email and password
 export const getUserByEmailAndPassword = async (email: string, password: string): Promise<any[]> => {
     try {
-        const [rows]: any[] = await pool.query('SELECT * FROM users WHERE email = ? AND password = ?', [email, password]);
+        const [rows]: any[] = await pool.query(`SELECT * FROM ${usersTable} WHERE email = ? AND password = ?`, [email, password]);
         return rows;
     } catch (error) {
         logger.error(`Database error in getUserByEmailAndPassword: ${error}`);
@@ -321,7 +346,7 @@ export const updateUserLoginDetails = async (
 ): Promise<void> => {
     try {
         await pool.query(
-            'UPDATE users SET last_ip = ?, last_host = ?, last_os = ? WHERE id = ?',
+            `UPDATE ${usersTable} SET last_ip = ?, last_host = ?, last_os = ? WHERE id = ?`,
             [ip, host, os, userId]
         );
         logger.info(`Updated login details for user ID ${userId}: IP=${ip}, Host=${host}, OS=${os}`);
@@ -337,7 +362,7 @@ export const updateUsersRole = async (userIds: number[], roleId: number): Promis
     try {
         // Set role for all userIds
         await pool.query(
-            `UPDATE users SET role = ? WHERE id IN (${userIds.map(() => '?').join(',')})`,
+            `UPDATE ${usersTable} SET role = ? WHERE id IN (${userIds.map(() => '?').join(',')})`,
             [roleId, ...userIds]
         );
     } catch (error) {
@@ -348,24 +373,24 @@ export const updateUsersRole = async (userIds: number[], roleId: number): Promis
 
 // Get admin user IDs
 export const getAdminUserIds = async (): Promise<number[]> => {
-    const [rows]: any[] = await pool.query('SELECT id FROM users WHERE role = 1');
+    const [rows]: any[] = await pool.query(`SELECT id FROM ${usersTable} WHERE role = 1`);
     return rows.map((row: any) => row.id);
 };
 
 // Set or clear the user's current session token
 export const setUserSessionToken = async (userId: number, token: string | null): Promise<void> => {
-    await pool.query('UPDATE users SET current_session_token = ? WHERE id = ?', [token, userId]);
+    await pool.query(`UPDATE ${usersTable} SET current_session_token = ? WHERE id = ?`, [token, userId]);
 };
 
 // Get the user's current session token
 export const getUserSessionToken = async (userId: number): Promise<string | null> => {
-    const [rows]: any[] = await pool.query('SELECT current_session_token FROM users WHERE id = ?', [userId]);
+    const [rows]: any[] = await pool.query(`SELECT current_session_token FROM ${usersTable} WHERE id = ?`, [userId]);
     return rows[0]?.current_session_token || null;
 };
 
 // Get user profile
 export const getUserProfile = async (userId: number): Promise<UserProfile | null> => {
-    const [rows]: any[] = await pool.query('SELECT * FROM user_profile WHERE user_id = ?', [userId]);
+    const [rows]: any[] = await pool.query(`SELECT * FROM ${userProfileTable} WHERE user_id = ?`, [userId]);
     if (rows.length === 0) return null;
     const profile = rows[0];
     profile.profile_image_url = getFullImageUrl(profile.profile_image_url);
@@ -403,7 +428,7 @@ export const upsertUserProfile = async (userId: number, profile: Partial<UserPro
         imageUrl = `/uploads/${filename}`;
     }
     await pool.query(`
-    INSERT INTO user_profile (user_id, dob, location, job, profile_image_url)
+    INSERT INTO ${userProfileTable} (user_id, dob, location, job, profile_image_url)
     VALUES (?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE dob = VALUES(dob), location = VALUES(location), job = VALUES(job), profile_image_url = VALUES(profile_image_url)
   `, [userId, profile.dob, profile.location, profile.job, imageUrl]);
@@ -411,7 +436,7 @@ export const upsertUserProfile = async (userId: number, profile: Partial<UserPro
 
 export async function getUserTasks(userId: number) {
     const [rows] = await pool.query(
-        'SELECT id, title, completed, progress, created_at, updated_at FROM user_tasks WHERE user_id = ? ORDER BY created_at DESC',
+        `SELECT id, title, completed, progress, created_at, updated_at FROM ${userTasksTable} WHERE user_id = ? ORDER BY created_at DESC`,
         [userId]
     );
     return rows;
@@ -420,7 +445,7 @@ export async function getUserTasks(userId: number) {
 // Create a new task for a user
 export async function createUserTask(userId: number, title: string, progress: number = 0) {
     const [result] = await pool.query(
-        'INSERT INTO user_tasks (user_id, title, progress) VALUES (?, ?, ?)',
+        `INSERT INTO ${userTasksTable} (user_id, title, progress) VALUES (?, ?, ?)`,
         [userId, title, progress]
     );
     return result;
@@ -436,7 +461,7 @@ export async function updateUserTask(userId: number, taskId: number, updates: { 
     if (!fields.length) return null;
     values.push(userId, taskId);
     const [result] = await pool.query(
-        `UPDATE user_tasks SET ${fields.join(', ')} WHERE user_id = ? AND id = ?`,
+        `UPDATE ${userTasksTable} SET ${fields.join(', ')} WHERE user_id = ? AND id = ?`,
         values
     );
     return result;

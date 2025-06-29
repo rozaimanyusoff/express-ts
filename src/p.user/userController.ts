@@ -1,19 +1,14 @@
 import { Request, Response } from 'express';
-import {
-  getAllUsers,
-  updateUser,
-  assignUserToGroups,
-  verifyLoginCredentials,
-  updateUserResetTokenAndStatus,
-  upsertUserProfile, getUserTasks, createUserTask, updateUserTask
-} from './userModel';
+import * as userModel from './userModel';
 import dotenv from 'dotenv';
 import { sendMail } from '../utils/mailer';
 import crypto from 'crypto';
 import logger from '../utils/logger';
 import pool from '../utils/db';
-import { getRoleById } from '../p.role/roleModel';
-import { getGroupById } from '../p.group/groupModel';
+import * as roleModel from '../p.role/roleModel';
+import * as groupModel from '../p.group/groupModel';
+import * as pendingUserModel from '../p.user/pendingUserModel';
+import * as logModel from '../p.admin/logModel';
 
 dotenv.config({ path: '.env.local' });
 
@@ -94,13 +89,13 @@ async function getUserTimeSpent(userId: number): Promise<number> {
 
 export const getAllUser = async (_req: Request, res: Response): Promise<Response> => {
   try {
-    const users = await getAllUsers();
+    const users = await userModel.getAllUsers();
     // Map users to include role object and usergroups as array of objects
     const formattedUsers = await Promise.all(users.map(async (user) => {
       // Get role object
       let roleObj = null;
       if (user.role) {
-        const role = await getRoleById(user.role);
+        const role = await roleModel.getRoleById(user.role);
         if (role) roleObj = { id: role.id, name: role.name };
       }
       // Get usergroups as array of objects
@@ -108,7 +103,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
       if (user.usergroups) {
         const groupIds = String(user.usergroups).split(',').map(Number).filter(Boolean);
         usergroupsArr = await Promise.all(groupIds.map(async (gid) => {
-          const group = await getGroupById(gid);
+          const group = await groupModel.getGroupById(gid);
           return group ? { id: group.id, name: group.name } : null;
         }));
         usergroupsArr = usergroupsArr.filter(Boolean);
@@ -129,6 +124,17 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
   }
 };
 
+// New: Get all pending users
+export const getAllPendingUser = async (_req: Request, res: Response): Promise<Response> => {
+  try {
+    const pendingUsers = await pendingUserModel.getAllPendingUsers();
+    return res.status(200).json({ status: 'success', message: 'Pending user data retrieved successfully', data: pendingUsers });
+  } catch (error: any) {
+    console.error('Error getting all pending users:', error);
+    return res.status(500).json({ message: 'Error getting all pending users' });
+  }
+};
+
 // Update user and assign groups
 export const updateUser1 = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
@@ -142,7 +148,7 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
     }
 
     // Update the user details
-    await updateUser(userId, { user_type, role, status } as Users);
+    await userModel.updateUser(userId, { user_type, role, status } as any);
 
     // Handle user groups
     if (!Array.isArray(usergroups) || usergroups.length === 0) {
@@ -150,7 +156,7 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
     }
 
     // Assign user to groups
-    await assignUserToGroups(userId, usergroups);
+    await userModel.assignUserToGroups(userId, usergroups);
 
     return res.status(200).json({ message: 'User updated successfully' });
   } catch (error: any) {
@@ -171,7 +177,7 @@ export const assignUserToGroups1 = async (
   }
 
   try {
-    await assignUserToGroups(userId, groups);
+    await userModel.assignUserToGroups(userId, groups);
     return res
       .status(200)
       .json({ status: 'Success', message: 'User assigned to groups successfully' });
@@ -187,16 +193,16 @@ export const assignUserToGroups1 = async (
 export const changeUsersGroups = async (req: Request, res: Response): Promise<Response> => {
   const { userIds, groupIds } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0 || !Array.isArray(groupIds) || groupIds.length === 0) {
-    return res.status(400).json({ message: 'userIds and groupIds must be non-empty arrays' });
+    return res.status(400).json({ status: 'Error', message: 'userIds and groupIds must be non-empty arrays' });
   }
   try {
     for (const userId of userIds) {
-      await assignUserToGroups(userId, groupIds);
+      await userModel.assignUserToGroups(userId, groupIds);
     }
-    return res.status(200).json({ message: 'Groups updated for selected users' });
+    return res.status(200).json({ status: 'Success', message: 'Groups updated for selected users' });
   } catch (error: any) {
     console.error('Error changing users groups:', error);
-    return res.status(500).json({ message: 'Error changing users groups', error: error.message });
+    return res.status(500).json({ status: 'Error', message: 'Error changing users groups', error: error.message });
   }
 };
 
@@ -204,13 +210,13 @@ export const changeUsersGroups = async (req: Request, res: Response): Promise<Re
 export const changeUsersRole = async (req: Request, res: Response): Promise<Response> => {
   const { userIds, roleId } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0 || typeof roleId !== 'number') {
-    return res.status(400).json({ message: 'userIds must be a non-empty array and roleId must be a number' });
+    return res.status(400).json({ status: 'Error', message: 'userIds must be a non-empty array and roleId must be a number' });
   }
   try {
     for (const userId of userIds) {
-      await updateUser(userId, { role: roleId } as any);
+      await userModel.updateUserRole(userId, roleId);
     }
-    return res.status(200).json({ message: 'Role updated for selected users' });
+    return res.status(200).json({ status: 'Success', message: 'Role updated for selected users' });
   } catch (error: any) {
     console.error('Error changing users role:', error);
     return res.status(500).json({ message: 'Error changing users role', error: error.message });
@@ -221,16 +227,16 @@ export const changeUsersRole = async (req: Request, res: Response): Promise<Resp
 export const suspendOrActivateUsers = async (req: Request, res: Response): Promise<Response> => {
   const { user_ids, status } = req.body;
   if (!Array.isArray(user_ids) || user_ids.length === 0 || typeof status !== 'number') {
-    return res.status(400).json({ message: 'user_ids must be a non-empty array and status must be a number' });
+    return res.status(400).json({ status: 'Error', message: 'user_ids must be a non-empty array and status must be a number' });
   }
   try {
     for (const userId of user_ids) {
-      await updateUser(userId, { status } as any);
+      await userModel.updateUser(userId, { status } as any);
     }
-    return res.status(200).json({ message: 'Status updated for selected users' });
+    return res.status(200).json({ status: 'Success', message: 'Status updated for selected users' });
   } catch (error: any) {
     console.error('Error updating users status:', error);
-    return res.status(500).json({ message: 'Error updating users status', error: error.message });
+    return res.status(500).json({ status: 'Error', message: 'Error updating users status', error: error.message });
   }
 };
 
@@ -239,7 +245,7 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
   const { emailOrUsername, password } = req.body;
 
   try {
-    const { success, user, message } = await verifyLoginCredentials(emailOrUsername, password);
+    const { success, user, message } = await userModel.verifyLoginCredentials(emailOrUsername, password);
 
     if (!success) {
       return res.status(401).json({ success: false, message });
@@ -296,7 +302,7 @@ export const adminResetPasswords = async (req: Request, res: Response): Promise<
         const tokenString = Buffer.from(JSON.stringify(payload)).toString('base64');
         const randomBytes = crypto.randomBytes(4).toString('hex');
         const resetToken = `${tokenString}-${randomBytes}`;
-        await updateUserResetTokenAndStatus(user.id, resetToken, 3);
+        await userModel.updateUserResetTokenAndStatus(user.id, resetToken, 3);
         const html = `
           <h1>Reset Password</h1>
           <p>Hello ${name},</p>
@@ -346,7 +352,7 @@ export const updateUserProfile = async (req: Request, res: Response): Promise<Re
       }
     }
     // Update user_profile table for profile fields
-    await upsertUserProfile(userId, { dob, location, job, profileImage });
+    await userModel.upsertUserProfile(userId, { dob, location, job, profileImage });
     return res.status(200).json({ message: 'Profile updated successfully' });
   } catch (error: any) {
     return res.status(500).json({ message: 'Error updating profile', error: error.message });
@@ -355,7 +361,7 @@ export const updateUserProfile = async (req: Request, res: Response): Promise<Re
 
 export const getTasks = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
-    const tasks = await getUserTasks(userId) as any[];
+    const tasks = await userModel.getUserTasks(userId) as any[];
     // Format for frontend
     const now = new Date();
     const formatted = tasks.map((task: any) => ({
@@ -366,16 +372,16 @@ export const getTasks = async (req: Request, res: Response) => {
         done: `${task.progress}%`,
         time: timeAgo(task.updated_at || task.created_at, now)
     }));
-    res.json({ tasks: formatted });
+    res.json({ status: 'Success', tasks: formatted });
 };
 
 // POST /api/users/tasks
 export const postTask = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const { title, progress } = req.body;
-    if (!title) return res.status(400).json({ message: 'Title required' });
-    await createUserTask(userId, title, progress || 0);
-    res.status(201).json({ message: 'Task created' });
+    if (!title) return res.status(400).json({ status: 'Error', message: 'Title required' });
+    await userModel.createUserTask(userId, title, progress || 0);
+    res.status(201).json({ status: 'Success', message: 'Task created' });
 };
 
 // PUT /api/users/tasks/:id
@@ -383,11 +389,11 @@ export const putTask = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const taskId = Number(req.params.id);
     const { title, completed, progress } = req.body;
-    const result = await updateUserTask(userId, taskId, { title, completed, progress });
+    const result = await userModel.updateUserTask(userId, taskId, { title, completed, progress });
     if (result && (result as any).affectedRows > 0) {
-        res.json({ message: 'Task updated' });
+        res.json({ status: 'Success', message: 'Task updated' });
     } else {
-        res.status(404).json({ message: 'Task not found or not updated' });
+        res.status(404).json({ status: 'Error', message: 'Task not found or not updated' });
     }
 };
 
@@ -410,6 +416,44 @@ export const getUserAuthLogs = async (req: Request, res: Response): Promise<Resp
         logger.error('Error fetching user auth logs:', error);
         return res.status(500).json({ status: 'error', message: 'Failed to fetch user logs' });
     }
+};
+
+// Get all authentication logs (admin only, using logModel)
+export const getAllAuthLogs = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const logs = await logModel.getAuthLogs();
+        // Use userModel.getAllUsers to get user info
+        const users = await userModel.getAllUsers();
+        const userMap = new Map(users.map((u: any) => [u.id, u]));
+        const logsWithUser = logs.map((log: any) => {
+            const user = userMap.get(log.user_id);
+            // Remove user_id from log
+            const { user_id, ...rest } = log;
+            return {
+                ...rest,
+                user: user ? { id: user.id, name: user.username || user.email } : null
+            };
+        });
+        return res.status(200).json({ status: 'success', message: 'Logs data retrieved succesfully', logs: logsWithUser });
+    } catch (error) {
+        logger.error('Error fetching all auth logs:', error);
+        return res.status(500).json({ status: 'error', message: 'Failed to fetch auth logs' });
+    }
+}
+
+// Get authentication logs for a user (admin only, using logModel)
+export const getAuthLogs = async (req: Request, res: Response) => {
+  const userId = Number(req.params.userId);
+  if (!userId) {
+    return res.status(400).json({ status: 'error', message: 'Missing or invalid userId' });
+  }
+  try {
+    const logs = await logModel.getUserAuthLogs(userId);
+    return res.status(200).json({ status: 'success', logs });
+  } catch (error) {
+    logger.error('Error fetching user auth logs:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch user logs' });
+  }
 };
 
 // Helper for "time ago"

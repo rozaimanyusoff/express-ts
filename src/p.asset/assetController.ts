@@ -15,20 +15,52 @@ function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
   const rows = await assetModel.getTypes();
+  // Enhance: fetch all employees for manager lookup
+  const employees = await assetModel.getEmployees();
+  const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
+  const data = (rows as any[]).map((type) => {
+    let manager = null;
+    if (type.ramco_id && employeeMap.has(type.ramco_id)) {
+      const emp = employeeMap.get(type.ramco_id);
+      manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+    }
+    return {
+      ...type,
+      manager
+    };
+  });
   res.json({
     status: 'success',
     message: 'Asset type retrieved successfully',
-    data: rows
+    data
   });
 };
 export const getTypeById = async (req: Request, res: Response) => {
   const row = await assetModel.getTypeById(Number(req.params.id));
-  res.json(row);
+  if (!row) {
+    return res.status(404).json({ status: 'error', message: 'Type not found', data: null });
+  }
+  // Enhance: fetch all employees for manager lookup
+  const employees = await assetModel.getEmployees();
+  const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
+  let manager = null;
+  if (row.ramco_id && employeeMap.has(row.ramco_id)) {
+    const emp = employeeMap.get(row.ramco_id);
+    manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+  }
+  const data = { ...row, manager };
+  res.json({
+    status: 'success',
+    message: 'Asset type retrieved successfully',
+    data
+  });
 };
 export const createType = async (req: Request, res: Response) => {
   try {
-    const { code, name, description, image } = req.body;
-    const result = await assetModel.createType({ code, name, description, image });
+    const { code, name, description, image, manager, ramco_id } = req.body;
+    // Accept ramco_id from either manager object or direct field
+    const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
+    const result = await assetModel.createType({ code, name, description, image, ramco_id: resolvedRamcoId });
     // Ensure correct type for insertId
     const typeId = (result as import('mysql2').ResultSetHeader).insertId;
     // Fetch the created type to return with full image URL
@@ -45,8 +77,10 @@ export const createType = async (req: Request, res: Response) => {
 export const updateType = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { code, name, description, image } = req.body;
-    await assetModel.updateType(id, { code, name, description, image });
+    const { code, name, description, image, manager, ramco_id } = req.body;
+    // Accept ramco_id from either manager object or direct field
+    const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
+    await assetModel.updateType(id, { code, name, description, image, ramco_id: resolvedRamcoId });
     // Fetch the updated type to return with full image URL
     const type = await assetModel.getTypeById(id);
     if (type && type.image) {
