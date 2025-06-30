@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as assetController from './assetController';
+import * as assetPurchaseController from './assetPurchaseController';
 import asyncHandler from '../utils/asyncHandler';
 import uploadModelImage from '../utils/uploadModelImage';
 
@@ -150,7 +151,15 @@ router.get('/categories/:category_code/brands', asyncHandler(assetController.get
 // Get all brand-category associations (for frontend mapping)
 router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
 
-
-
+// ASSET PURCHASES
+router.get('/ap', asyncHandler(assetPurchaseController.getAssetPurchases));
+router.get('/ap/:id', asyncHandler(assetPurchaseController.getAssetPurchaseById));
+router.get('/ap/asset/:assetId', asyncHandler(assetPurchaseController.getAssetPurchasesByAssetId));
+router.get('/ap/department/:departmentId', asyncHandler(assetPurchaseController.getAssetPurchasesByDepartment));
+router.get('/ap/costcenter/:costcenterId', asyncHandler(assetPurchaseController.getAssetPurchasesByCostCenter));
+router.get('/ap/employee/:ramcoId', asyncHandler(assetPurchaseController.getAssetPurchasesByEmployee));
+router.post('/ap', asyncHandler(assetPurchaseController.createAssetPurchase));
+router.put('/ap/:id', asyncHandler(assetPurchaseController.updateAssetPurchase));
+router.delete('/ap/:id', asyncHandler(assetPurchaseController.deleteAssetPurchase));
 
 export default router;

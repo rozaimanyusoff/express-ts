@@ -33,6 +33,7 @@ const zoneDistrictTable = `${db}.zone_districts`;
 const locationTable = `${db}.locations`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
+const assetPurchaseTable = `${db}.asset_purchase`;
 const assetTransferRequestTable = `${db}.asset_transfer_requests`;
 const assetTransferDetailsTable = `${db}.asset_transfer_details`;
 
