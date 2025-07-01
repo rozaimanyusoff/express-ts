@@ -34,7 +34,7 @@ export const getAllPendingUsers = async (): Promise<any[]> => {
 export const createPendingUser = async (user: PendingUser): Promise<ResultSetHeader> => {
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO ${PENDING_USERS_TABLE} (fname, email, contact, user_type, status, activation_code, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${PENDING_USERS_TABLE} (fname, email, contact, user_type, status, activation_code, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [user.fname, user.email, user.contact, user.user_type, user.status, user.activation_code, user.ip ?? null, user.user_agent ?? null]
     );
     return result;
