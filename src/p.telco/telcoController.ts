@@ -122,17 +122,67 @@ export const TelcoController = {
     /* list subscribers with full data. ep: /subs */
     async getSubscribersFullData(req: Request, res: Response, next: NextFunction) {
         try {
-          const subscribers = await TelcoModel.getSubscribersFullData();
-    
-          if (!subscribers.length) {
-            return res.status(404).json({ status: 'error', message: 'No subscribers found', data: [] });
-          }
-    
-          res.status(200).json({ status: 'success', message: 'Subscribers full data', data: subscribers });
+            // Fetch all raw data
+            const [subscribers, accounts, accountSubs, contracts, vendors, simCards] = await Promise.all([
+                TelcoModel.getSubscribers(),
+                TelcoModel.getAccounts(),
+                TelcoModel.getAccountSubs(),
+                TelcoModel.getContracts(),
+                TelcoModel.getVendors(),
+                TelcoModel.getSimCards(),
+            ]);
+
+            // Map vendors by id
+            const vendorMap: Record<number, any> = Object.fromEntries(vendors.map((v: any) => [v.id, v]));
+            // Map contracts by account_id
+            const contractMap: Record<number, any[]> = {};
+            contracts.forEach((c: any) => {
+                if (!contractMap[c.account_id]) contractMap[c.account_id] = [];
+                contractMap[c.account_id].push(c);
+            });
+            // Map accounts by id
+            const accountMap: Record<number, any> = Object.fromEntries(accounts.map((a: any) => [a.id, a]));
+            // Map sim cards by sub_no_id
+            const simMap: Record<number, any[]> = {};
+            simCards.forEach((sim: any) => {
+                if (!simMap[sim.sub_no_id]) simMap[sim.sub_no_id] = [];
+                simMap[sim.sub_no_id].push(sim);
+            });
+            // Map accountSubs by sub_no_id
+            const subToAccount: Record<number, number[]> = {};
+            accountSubs.forEach((as: any) => {
+                if (!subToAccount[as.sub_no_id]) subToAccount[as.sub_no_id] = [];
+                subToAccount[as.sub_no_id].push(as.account_id);
+            });
+
+            // Assemble full data
+            const result = subscribers.map((sub: any) => {
+                const subAccounts = (subToAccount[sub.id] || []).map((accId: number) => {
+                    const acc = accountMap[accId];
+                    const accContracts = (contractMap[accId] || []).map((c: any) => ({
+                        ...c,
+                        vendor: vendorMap[c.vendor_id] || null,
+                    }));
+                    return {
+                        ...acc,
+                        contracts: accContracts,
+                    };
+                });
+                return {
+                    ...sub,
+                    accounts: subAccounts,
+                    sims: simMap[sub.id] || [],
+                };
+            });
+
+            if (!result.length) {
+                return res.status(404).json({ status: 'error', message: 'No subscribers found', data: [] });
+            }
+            res.status(200).json({ status: 'success', message: 'Subscribers full data', data: result });
         } catch (error) {
-          next(error);
+            next(error);
         }
-      },
+    },
 
     /* Create subs. POST /subs */
     async createSubscriber(req: Request, res: Response, next: NextFunction) {
@@ -193,29 +243,24 @@ export const TelcoController = {
     async getAccountWithSubscribersById(req: Request, res: Response, next: NextFunction) {
         try {
             const accountId = Number(req.params.id);
-
             if (isNaN(accountId)) {
                 return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
             }
-
-            const accounts: AccountData[] = await TelcoModel.getAccountsWithSubscribers();
-
-            const account = accounts.find(acc => acc.id === accountId);
-
+            const [accounts, accountSubs, subscribers] = await Promise.all([
+                TelcoModel.getAccounts(),
+                TelcoModel.getAccountSubs(),
+                TelcoModel.getSubscribers(),
+            ]);
+            const account = accounts.find((acc: any) => acc.id === accountId);
             if (!account) {
                 return res.status(404).json({ status: 'error', message: 'Account not found', data: null });
             }
-
+            const subIds: number[] = accountSubs.filter((as: any) => as.account_id === accountId).map((as: any) => as.sub_no_id);
+            const subs = subscribers.filter((sub: any) => subIds.includes(sub.id));
             const formattedData = {
-                id: account.id,
-                account_master: account.account_master,
-                subs: account.subs.map(sub => ({
-                    sub_no_id: sub.sub_no_id,
-                    sub_no: sub.sub_no,
-                    account_sub: sub.account_sub,
-                })),
+                ...account,
+                subs,
             };
-
             res.status(200).json({ status: 'success', message: 'Show specific account with its subscribers', data: formattedData });
         } catch (error) {
             next(error);
@@ -225,44 +270,23 @@ export const TelcoController = {
     /* list all accounts with its subscribers: /accounts/subs */
     async getAccountsWithSubscribers(req: Request, res: Response, next: NextFunction) {
         try {
-            const accounts: AccountData[] = await TelcoModel.getAccountsWithSubscribers();
-
-            if (!accounts.length) {
+            const [accounts, accountSubs, subscribers] = await Promise.all([
+                TelcoModel.getAccounts(),
+                TelcoModel.getAccountSubs(),
+                TelcoModel.getSubscribers(),
+            ]);
+            const result = accounts.map((account: any) => {
+                const subIds: number[] = accountSubs.filter((as: any) => as.account_id === account.id).map((as: any) => as.sub_no_id);
+                const subs = subscribers.filter((sub: any) => subIds.includes(sub.id));
+                return {
+                    ...account,
+                    subs,
+                };
+            });
+            if (!result.length) {
                 return res.status(404).json({ status: 'error', message: 'Data not found', data: [] });
             }
-
-            const formattedData = accounts.map(account => ({
-                id: account.id,
-                account_master: account.account_master,
-                subs: account.subs.map(sub => ({
-                    sub_no_id: sub.sub_no_id,
-                    sub_no: sub.sub_no,
-                    account_sub: sub.account_sub,
-                })),
-            }));
-
-            res.status(200).json({ status: 'success', message: 'Show all accounts with their subscribers', data: formattedData });
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    /* list accounts */
-    async getAccounts(req: Request, res: Response, next: NextFunction) {
-        try {
-            const accounts = await TelcoModel.getAccounts();
-            res.status(200).json({ status: "Success", message: 'Show all accounts', data: accounts });
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    /* Create account. POST /accounts */
-    async createAccount(req: Request, res: Response, next: NextFunction) {
-        try {
-            const account = req.body;
-            const id = await TelcoModel.createAccount(account);
-            res.status(201).json({ message: 'Account created', id });
+            res.status(200).json({ status: 'success', message: 'Show all accounts with their subscribers', data: result });
         } catch (error) {
             next(error);
         }
@@ -272,41 +296,31 @@ export const TelcoController = {
     async getContractWithAccountsAndSubsById(req: Request, res: Response, next: NextFunction) {
         try {
             const contractId = Number(req.params.id);
-
             if (isNaN(contractId)) {
                 return res.status(400).json({ status: 'error', message: 'Invalid contract ID' });
             }
-
-            const contract = await TelcoModel.getContractById(contractId);
-
+            const [contract, accounts, accountSubs, subscribers, vendors] = await Promise.all([
+                TelcoModel.getContractById(contractId),
+                TelcoModel.getAccounts(),
+                TelcoModel.getAccountSubs(),
+                TelcoModel.getSubscribers(),
+                TelcoModel.getVendors(),
+            ]);
             if (!contract) {
                 return res.status(404).json({ status: 'error', message: 'Contract not found', data: null });
             }
-
-            const accountsWithSubs = await TelcoModel.getAccountsWithSubscribersByContractId(contractId);
-
+            const vendor = vendors.find((v: any) => v.id === contract.vendor_id) || null;
+            const account = accounts.find((a: any) => a.id === contract.account_id);
+            let subs: any[] = [];
+            if (account) {
+                const subIds: number[] = accountSubs.filter((as: any) => as.account_id === account.id).map((as: any) => as.sub_no_id);
+                subs = subscribers.filter((sub: any) => subIds.includes(sub.id));
+            }
             const formattedData = {
-                id: contract.id,
-                product_type: contract.product_type,
-                contract_start_date: contract.contract_start_date,
-                contract_end_date: contract.contract_end_date,
-                plan: contract.plan,
-                status: contract.status,
-                vendor_id: contract.vendor_id,
-                vendor_name: contract.name,
-                price: contract.price,
-                duration: contract.duration,
-                accounts: accountsWithSubs.map(account => ({
-                    account_id: account.id,
-                    account_master: account.account_master,
-                    subs: account.subs.map(sub => ({
-                        sub_no_id: sub.sub_no_id,
-                        sub_no: sub.sub_no,
-                        account_sub: sub.account_sub,
-                    })),
-                })),
+                ...contract,
+                vendor,
+                accounts: account ? [{ ...account, subs }] : [],
             };
-
             res.status(200).json({ status: 'success', message: 'Show contract with accounts and subscribers by ID', data: formattedData });
         } catch (error) {
             next(error);
@@ -407,7 +421,7 @@ export const TelcoController = {
     async getVendors(req: Request, res: Response, next: NextFunction) {
         try {
             const vendors = await TelcoModel.getVendors();
-            res.status(200).json(vendors);
+            res.status(200).json({status: 'Success', message: 'Vendors data retrieved succesfully', data: vendors});
         } catch (error) {
             next(error);
         }
@@ -468,6 +482,25 @@ export const TelcoController = {
         }
     },
 
-    
+    /* list accounts. ep: /accounts */
+    async getAccounts(req: Request, res: Response, next: NextFunction) {
+        try {
+            const accounts = await TelcoModel.getAccounts();
+            res.status(200).json({ status: 'success', message: 'Show all accounts', data: accounts });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    /* Create account. POST /accounts */
+    async createAccount(req: Request, res: Response, next: NextFunction) {
+        try {
+            const account = req.body;
+            const id = await TelcoModel.createAccount(account);
+            res.status(201).json({ message: 'Account created', id });
+        } catch (error) {
+            next(error);
+        }
+    },
 
 };
