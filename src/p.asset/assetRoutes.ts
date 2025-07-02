@@ -132,6 +132,14 @@ router.post('/transfer-requests/:id/approval', asyncHandler(assetController.upda
 router.get('/asset-transfer/approve', asyncHandler(assetController.approveAssetTransferByEmail));
 router.get('/asset-transfer/reject', asyncHandler(assetController.rejectAssetTransferByEmail));
 
+// TRANSFER CHECKLIST
+router.get('/transfer-checklist', asyncHandler(assetController.getTransferChecklist));
+router.get('/transfer-checklist/:id', asyncHandler(assetController.getTransferChecklistById));
+router.post('/transfer-checklist', asyncHandler(assetController.createTransferChecklist));
+router.put('/transfer-checklist/:id', asyncHandler(assetController.updateTransferChecklist));
+router.delete('/transfer-checklist/:id', asyncHandler(assetController.deleteTransferChecklist));
+
+
 // ASSETS
 router.get('/', asyncHandler(assetController.getAssets));
 router.get('/:id', asyncHandler(assetController.getAssetById));
@@ -161,5 +169,6 @@ router.get('/ap/employee/:ramcoId', asyncHandler(assetPurchaseController.getAsse
 router.post('/ap', asyncHandler(assetPurchaseController.createAssetPurchase));
 router.put('/ap/:id', asyncHandler(assetPurchaseController.updateAssetPurchase));
 router.delete('/ap/:id', asyncHandler(assetPurchaseController.deleteAssetPurchase));
+
 
 export default router;

@@ -2861,3 +2861,87 @@ export const rejectAssetTransferByEmail = async (req: Request, res: Response) =>
   } as any, res);
 };
 
+// --- TRANSFER CHECKLIST ---
+export const getTransferChecklist = async (req: Request, res: Response) => {
+  // Fetch basic transfer checklist items
+  const checklistItems = await assetModel.getTransferChecklists();
+  if (!Array.isArray(checklistItems)) {
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch checklist items' });
+  }
+
+  // Fetch all types for mapping
+  const typesRaw = await assetModel.getTypes();
+  const types = Array.isArray(typesRaw) ? typesRaw : [];
+  const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+
+  // Enrich checklist items with type information
+  const enrichedChecklistItems = (checklistItems as any[]).map(item => ({
+    ...item,
+    type_id: item.type_id && typeMap.has(item.type_id) 
+      ? typeMap.get(item.type_id) 
+      : { id: item.type_id, name: null }
+  }));
+
+  res.json({ status: 'success', message: 'Transfer checklist items retrieved successfully', data: enrichedChecklistItems });
+}
+
+export const getTransferChecklistById = async (req: Request, res: Response) => {
+  const checklistId = Number(req.params.id);
+  if (!checklistId) {
+    return res.status(400).json({ status: 'error', message: 'Invalid checklist ID' });
+  }
+  // Fetch the checklist item
+  const checklistItem = await assetModel.getTransferChecklistById(checklistId);
+  if (!checklistItem) {
+    return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+  }
+  // Fetch all types for mapping
+  const typesRaw = await assetModel.getTypes();
+  const types = Array.isArray(typesRaw) ? typesRaw : [];
+  const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+  // Enrich with type information
+  checklistItem.type_id = checklistItem.type_id && typeMap.has(checklistItem.type_id)
+    ? typeMap.get(checklistItem.type_id)
+    : { id: checklistItem.type_id, name: null };
+  
+  res.json({ status: 'success', message: 'Transfer checklist item retrieved successfully', data: checklistItem });
+}
+
+
+export const createTransferChecklist = async (req: Request, res: Response) => {
+  const { item, type_id, is_required, created_by } = req.body;
+  if (!item || !type_id) {
+    return res.status(400).json({ status: 'error', message: 'Name and type_id are required' });
+  }
+  // Create the checklist item
+  const insertId = await assetModel.createTransferChecklist({ item, type_id, is_required, created_by });
+  res.status(201).json({ status: 'success', message: 'Transfer checklist item created successfully', data: { id: insertId } });
+}
+
+export const updateTransferChecklist = async (req: Request, res: Response) => {
+  const checklistId = Number(req.params.id);
+  const { item, type_id, is_required } = req.body;
+  if (!checklistId || !item || !type_id) {
+    return res.status(400).json({ status: 'error', message: 'Invalid checklist ID or missing fields' });
+  }
+  // Update the checklist item
+  const result = await assetModel.updateTransferChecklist(checklistId, { item, type_id, is_required });
+  if ((result as any).affectedRows === 0) {
+    return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+  }
+  res.json({ status: 'success', message: 'Transfer checklist item updated successfully' });
+}
+
+export const deleteTransferChecklist = async (req: Request, res: Response) => {
+  const checklistId = Number(req.params.id);
+  if (!checklistId) {
+    return res.status(400).json({ status: 'error', message: 'Invalid checklist ID' });
+  }
+  // Delete the checklist item
+  const result = await assetModel.deleteTransferChecklist(checklistId);
+  if ((result as any).affectedRows === 0) {
+    return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+  }
+  res.json({ status: 'success', message: 'Transfer checklist item deleted successfully' });
+}
+

@@ -36,6 +36,7 @@ const procurementTable = `${db}.procurements`;
 const assetPurchaseTable = `${db}.asset_purchase`;
 const assetTransferRequestTable = `${db}.asset_transfer_requests`;
 const assetTransferDetailsTable = `${db}.asset_transfer_details`;
+const transferChecklistTable = `${db}.transfer_checklists`;
 
 // Helper to move type image to uploads/types/ if needed
 async function handleTypeImage(image: string) {
@@ -1077,6 +1078,37 @@ export const generateNextRequestNo = async () => {
   return `AR/${nextNumber.toString().padStart(4, '0')}/${year}`;
 };
 
+// TRANSFER CHECKLISTS CRUD
+export const getTransferChecklists = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${transferChecklistTable}`);
+  return rows;
+};
+export const getTransferChecklistById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${transferChecklistTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+export const createTransferChecklist = async (data: any) => {
+  const { type_id, item, is_required, created_by } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${transferChecklistTable} (type_id, item, is_required, created_by, created_at)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [type_id, item, is_required ? 1 : 0, created_by]
+  );
+  return result;
+}
+export const updateTransferChecklist = async (id: number, data: any) => {
+  const { type_id, item, is_required, sort_order, created_by } = data;
+  const [result] = await pool.query(
+    `UPDATE ${transferChecklistTable} SET type_id = ?, item = ?, is_required = ?, created_by = ?, created_at = NOW() WHERE id = ?`,
+    [type_id, item, is_required ? 1 : 0, created_by, id]
+  );
+  return result;
+};
+export const deleteTransferChecklist = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${transferChecklistTable} WHERE id = ?`, [id]);
+  return result;
+};
+
 export default {
   createType,
   getTypes,
@@ -1197,5 +1229,10 @@ export default {
   createAssetTransferRequest,
   createAssetTransferDetail,
   getAssetTransferRequestsWithDetails,
-  generateNextRequestNo
+  generateNextRequestNo,
+  getTransferChecklists,
+  getTransferChecklistById,
+  createTransferChecklist,
+  updateTransferChecklist,
+  deleteTransferChecklist,
 };
