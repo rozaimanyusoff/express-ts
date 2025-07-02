@@ -6,7 +6,7 @@ const router = Router();
 
 router.get('/subs/:id/sims', asyncHandler(TelcoController.getSubscriberWithSimsById)); // show subscriber and its sim cards by id
 router.get('/subs/:id', asyncHandler(TelcoController.getSubscriberById)); // show subscriber by id
-router.get('/subs', asyncHandler(TelcoController.getSubscribersFullData)); // list subscribers
+router.get('/subs', asyncHandler(TelcoController.getSubscribers)); // list subscribers
 router.post('/subs', asyncHandler(TelcoController.createSubscriber));
 router.put('/subs/:id', asyncHandler(TelcoController.updateSubscriber));
 router.delete('/subs/:id', asyncHandler(TelcoController.deleteSubscriber));
