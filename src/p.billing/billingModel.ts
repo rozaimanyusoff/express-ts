@@ -14,7 +14,7 @@ export interface Billing {
 }
 
 // Database and table declarations
-const db = 'billingdata';
+const db = 'billings';
 const billingTable = `${db}.billings`;
 const vehicleMaintenanceTable = `${db}.tbl_inv`;
 

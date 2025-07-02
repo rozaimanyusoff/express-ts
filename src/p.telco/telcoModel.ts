@@ -2,7 +2,7 @@ import pool from '../utils/db';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 // Database and table names
-const db = 'assets';
+const db = 'billings';
 const tables = {
     subscribers: `${db}.subscribers`,
     accountSubs: `${db}.account_subs`,

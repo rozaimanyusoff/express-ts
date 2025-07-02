@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { TelcoModel } from './telcoModel';
+import * as assetModel from '../p.asset/assetModel';
 
 // Define the structure of the subscriber data
 type SubscriberData = {
@@ -222,7 +223,7 @@ export const TelcoController = {
     async getSimCards(req: Request, res: Response, next: NextFunction) {
         try {
             const simCards = await TelcoModel.getSimCards();
-            res.status(200).json(simCards);
+            res.status(200).json({ status: 'success', message: 'Fetched sim card data successfully', data: simCards});
         } catch (error) {
             next(error);
         }
