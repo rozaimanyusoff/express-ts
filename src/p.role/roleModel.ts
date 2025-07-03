@@ -1,4 +1,4 @@
-import pool from "../utils/db";
+import {pool} from "../utils/db";
 import { ResultSetHeader } from "mysql2";
 
 export interface Role {

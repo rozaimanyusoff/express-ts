@@ -1,4 +1,4 @@
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import logger from '../utils/logger';
 import { ResultSetHeader } from 'mysql2';
 

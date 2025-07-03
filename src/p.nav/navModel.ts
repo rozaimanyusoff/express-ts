@@ -1,4 +1,4 @@
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Type definitions

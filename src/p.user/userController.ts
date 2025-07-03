@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { sendMail } from '../utils/mailer';
 import crypto from 'crypto';
 import logger from '../utils/logger';
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import * as roleModel from '../p.role/roleModel';
 import * as groupModel from '../p.group/groupModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';

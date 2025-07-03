@@ -1,4 +1,4 @@
-import pool from "../utils/db";
+import {pool} from "../utils/db";
 
 // TEMP TABLE IMPORTER
 export const importTempTable = async (tableName: string, headers: string[], data: any[][]) => {

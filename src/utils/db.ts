@@ -12,4 +12,12 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
-export default pool;
+const pool2 = mysql.createPool({
+  host: process.env.DB2_HOST,
+  port: parseInt(process.env.DB2_PORT as string),
+  user: process.env.DB2_USER,
+  password: process.env.DB2_PASSWORD,
+  database: process.env.DB2_NAME,
+});
+
+export { pool, pool2 };

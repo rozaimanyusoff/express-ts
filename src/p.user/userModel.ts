@@ -1,5 +1,5 @@
 // Purpose: Model for user operations.
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import bcrypt from 'bcrypt';
 import logger from '../utils/logger';
 import { ResultSetHeader } from "mysql2";

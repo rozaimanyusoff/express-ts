@@ -1,4 +1,4 @@
-import pool from "../utils/db";
+import {pool} from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 
 // Database and table declarations for easy swapping/testing

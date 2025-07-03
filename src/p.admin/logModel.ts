@@ -1,4 +1,4 @@
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import logger from '../utils/logger';
 
 export type AuthAction = 'login' | 'logout' | 'register' | 'activate' | 'reset_password' | 'request_reset' | 'other';

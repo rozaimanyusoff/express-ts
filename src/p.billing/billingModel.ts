@@ -1,6 +1,4 @@
-// src/p.billing/billingModel.ts
-// Boilerplate Billing Model
-import pool from '../utils/db';
+import {pool} from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 export interface Billing {
