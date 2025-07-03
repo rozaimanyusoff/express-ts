@@ -8,6 +8,7 @@ import assetRoutes from './p.asset/assetRoutes';
 import stockRoutes from './p.stock/rt/stockRoutes';
 import telcoRoutes from './p.telco/telcoRoutes';
 import purchaseRoutes from './p.purchase/purchaseRoutes';
+import billingRoutes from './p.billing/billingRoutes';
 import importRoutes from './p.admin/importerRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
@@ -38,6 +39,7 @@ app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
 app.use('/api/stock', stockRoutes);
 app.use('/api/purchase', purchaseRoutes);
+app.use('/api/bills', billingRoutes);
 app.use('/api/importer', tokenValidator, importRoutes);
 
 app.use(errorHandler);
