@@ -74,7 +74,16 @@ export const TelcoController = {
                 return res.status(404).json({ status: 'error', message: 'Subscriber not found', data: null });
             }
 
-            const sims = await TelcoModel.getSimsBySubscriberId(subscriberId);
+            // Use join method to get all historical sims for this subscriber
+            const simCards = await (TelcoModel.getSimCardBySubscriber ? TelcoModel.getSimCardBySubscriber() : []);
+            const sims = Array.isArray(simCards)
+                ? simCards.filter((sim: any) => sim.sub_no_id === subscriberId).map((sim: any) => ({
+                    id: sim.sim_id || sim.id,
+                    sim_no: sim.sim_sn || sim.sim_no,
+                    status: sim.status,
+                    register_date: sim.register_date,
+                }))
+                : [];
 
             const formattedData = {
                 id: subscriber.id,
@@ -82,13 +91,7 @@ export const TelcoController = {
                 account_sub: subscriber.account_sub,
                 status: subscriber.status,
                 register_date: subscriber.register_date,
-                sims: sims.map(sim => ({
-                    id: sim.id,
-                    sim_sn: sim.sim_sn,
-                    register_date: sim.register_date,
-                    reason: sim.reason,
-                    note: sim.note,
-                })),
+                sims,
             };
 
             res.status(200).json({ status: 'success', message: 'Show subscriber with historical sims by ID', data: formattedData });
@@ -105,7 +108,35 @@ export const TelcoController = {
             if (!subscriber) {
                 return res.status(404).json({ message: 'Subscriber not found' });
             }
-            res.status(200).json({ status: 'success', message: 'Show subscriber by id', data: subscriber });
+            // Enrich with costcenter, department, district (id & name only)
+            const [costcenters, departments, districts, simCards] = await Promise.all([
+                assetModel.getCostcenters ? assetModel.getCostcenters() : [],
+                assetModel.getDepartments ? assetModel.getDepartments() : [],
+                assetModel.getDistricts ? assetModel.getDistricts() : [],
+                TelcoModel.getSimCardBySubscriber ? TelcoModel.getSimCardBySubscriber() : [],
+            ]);
+            const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+            const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+            const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+            // Remove costcenter_id, department_id, district_id
+            const { costcenter_id, department_id, district_id, ...rest } = subscriber;
+            // Filter simCards for this subscriber
+            const sims = Array.isArray(simCards)
+                ? simCards.filter((sim: any) => sim.sub_no_id === id).map((sim: any) => ({
+                    id: sim.sim_id || sim.id,
+                    sim_no: sim.sim_sn || sim.sim_no,
+                    status: sim.status,
+                    register_date: sim.register_date,
+                }))
+                : [];
+            const enriched = {
+                ...rest,
+                costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
+                department: department_id ? departmentMap[department_id] || null : null,
+                district: district_id ? districtMap[district_id] || null : null,
+                sims,
+            };
+            res.status(200).json({ status: 'success', message: 'Show subscriber by id', data: enriched });
         } catch (error) {
             next(error);
         }
@@ -158,7 +189,7 @@ export const TelcoController = {
                     sub_no: sub.sub_no,
                     account_sub: sub.account_sub,
                     status: sub.status,
-                    account: account ? { id: account.id, master_account: account.account_master } : null,
+                    account: account ? { id: account.id, account_master: account.account_master } : null,
                     simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                     costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
                     department: department ? { id: department.id, name: department.code } : null,
@@ -275,8 +306,19 @@ export const TelcoController = {
     /* list sim cards. ep: /sims */
     async getSimCards(req: Request, res: Response, next: NextFunction) {
         try {
-            const simCards = await TelcoModel.getSimCards();
-            res.status(200).json({ status: 'success', message: 'Fetched sim card data successfully', data: simCards});
+            // Use join to get sim cards with sub_no_id and sub_no
+            const simCards = await (TelcoModel.getSimCardBySubscriber ? TelcoModel.getSimCardBySubscriber() : []);
+            // Get all subscribers to map sub_no_id to sub_no
+            const subscribers = await TelcoModel.getSubscribers();
+            const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
+            const formatted = Array.isArray(simCards)
+                ? simCards.map((sim: any) => ({
+                    id: sim.sim_id || sim.id,
+                    sim_sn: sim.sim_sn || sim.sim_no,
+                    subs: sim.sub_no_id ? { id: sim.sub_no_id, sub_no: subNoMap[sim.sub_no_id] || null } : null,
+                }))
+                : [];
+            res.status(200).json({ status: 'success', message: 'Fetched sim card data successfully', data: formatted });
         } catch (error) {
             next(error);
         }
@@ -346,14 +388,32 @@ export const TelcoController = {
     /* list all accounts with its subscribers: /accounts/subs */
     async getAccountsWithSubscribers(req: Request, res: Response, next: NextFunction) {
         try {
-            const [accounts, accountSubs, subscribers] = await Promise.all([
+            const [accounts, accountSubs, subscribers, costcenters, departments, districts] = await Promise.all([
                 TelcoModel.getAccounts(),
                 TelcoModel.getAccountSubs(),
                 TelcoModel.getSubscribers(),
+                assetModel.getCostcenters ? assetModel.getCostcenters() : [],
+                assetModel.getDepartments ? assetModel.getDepartments() : [],
+                assetModel.getDistricts ? assetModel.getDistricts() : [],
             ]);
+
+            // Build lookup maps for enrichment (id & name only)
+            const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+            const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+            const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+
             const result = accounts.map((account: any) => {
                 const subIds: number[] = accountSubs.filter((as: any) => as.account_id === account.id).map((as: any) => as.sub_no_id);
-                const subs = subscribers.filter((sub: any) => subIds.includes(sub.id));
+                const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
+                    // Destructure to remove costcenter_id, department_id, district_id
+                    const { costcenter_id, department_id, district_id, ...rest } = sub;
+                    return {
+                        ...rest,
+                        costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
+                        department: department_id ? departmentMap[department_id] || null : null,
+                        district: district_id ? districtMap[district_id] || null : null,
+                    };
+                });
                 return {
                     ...account,
                     subs,
