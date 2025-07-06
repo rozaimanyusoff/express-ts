@@ -669,7 +669,7 @@ export const deleteProcurement = async (id: number) => {
 
 // ASSETS GETTERS
 export const getAssets = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE status NOT IN ('personal')`);
+  const [rows] = await pool.query(`SELECT * FROM ${assetTable}`);
   return rows;
 };
 
