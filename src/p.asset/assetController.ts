@@ -413,13 +413,14 @@ export const getAssets = async (req: Request, res: Response) => {
     if (!ownershipsByAsset[o.asset_id]) ownershipsByAsset[o.asset_id] = [];
     const emp = employeeMap.get(o.ramco_id);
     if (emp) {
+      // Add employee details to ownership
       ownershipsByAsset[o.asset_id].push({
         ramco_id: emp.ramco_id,
         name: emp.full_name,
         email: emp.email,
         contact: emp.contact,
         department: emp.department_id ? (departmentMap.get(emp.department_id)?.code || null) : null,
-        cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
+        //cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
         district: emp.district_id ? (districtMap.get(emp.district_id)?.code || null) : null,
         effective_date: (o as any).effective_date || null
       });
@@ -476,6 +477,8 @@ export const getAssets = async (req: Request, res: Response) => {
         };
       }
     }
+
+    // Todo: update cost_center to costcenter_id => costcenter: { id: number; name: string }
     return {
       id: asset.id,
       classification: asset.classification,
@@ -487,7 +490,8 @@ export const getAssets = async (req: Request, res: Response) => {
       unit_price: asset.unit_price,
       depreciation_length: asset.depreciation_length,
       depreciation_rate: asset.depreciation_rate,
-      cost_center: asset.cost_center,
+      //cost_center: asset.cost_center,
+      costcenter_id: asset.costcenter_id,
       status: asset.status,
       disposed_date: asset.disposed_date,
       types: type ? {
