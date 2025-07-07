@@ -146,7 +146,7 @@ export const TelcoController = {
     async getSubscribers(req: Request, res: Response, next: NextFunction) {
         try {
             // Fetch all required data in parallel
-            const [subscribers, accounts, accountSubs, simCards, departments, costcenters, employees, userSubs] = await Promise.all([
+            const [subscribers, accounts, accountSubs, simCards, departments, costcenters, employees, assets, userSubs] = await Promise.all([
                 TelcoModel.getSubscribers(),
                 TelcoModel.getAccounts(),
                 TelcoModel.getAccountSubs(),
@@ -154,6 +154,7 @@ export const TelcoController = {
                 assetModel.getDepartments ? assetModel.getDepartments() : [],
                 assetModel.getCostcenters ? assetModel.getCostcenters() : [],
                 assetModel.getEmployees ? assetModel.getEmployees() : [],
+                assetModel.getAssets ? assetModel.getAssets() : [],
                 TelcoModel.getUserSubs(),
             ]);
 
@@ -169,6 +170,13 @@ export const TelcoController = {
             const costcenterArr = Array.isArray(costcenters) && !(costcenters as any).hasOwnProperty('affectedRows') ? costcenters : [];
             const departmentMap = Object.fromEntries((departmentArr).map((d: any) => [d.id, d]));
             const costcenterMap = Object.fromEntries((costcenterArr).map((c: any) => [c.id, c]));
+            const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
+
+            // Fetch brands and models for asset enrichment
+            const brands = assetModel.getBrands ? await assetModel.getBrands() : [];
+            const models = assetModel.getModels ? await assetModel.getModels() : [];
+            const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
+            const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
 
             // Format each subscriber
             const formatted = subscribers.map((sub: any) => {
@@ -181,6 +189,20 @@ export const TelcoController = {
                 const department = sub.department_id ? departmentMap[sub.department_id] : null;
                 // Find costcenter
                 const costcenter = sub.costcenter_id ? costcenterMap[sub.costcenter_id] : null;
+                // Find asset
+                const asset = sub.asset_id ? assetMap[sub.asset_id] : null;
+                let assetData = null;
+                if (asset) {
+                    // Get brand and model
+                    const brand = asset.brand_id && brandMap[asset.brand_id] ? { id: asset.brand_id, name: brandMap[asset.brand_id].name } : null;
+                    const model = asset.model_id && modelMap[asset.model_id] ? { id: asset.model_id, name: modelMap[asset.model_id].name } : null;
+                    assetData = {
+                        asset_id: sub.asset_id,
+                        serial_number: asset.serial_number,
+                        brand,
+                        model
+                    };
+                }
                 // Find user
                 const ramcoId = userSubMap[sub.id];
                 const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, name: employeeMap[ramcoId].full_name } : null;
@@ -193,6 +215,7 @@ export const TelcoController = {
                     simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                     costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
                     department: department ? { id: department.id, name: department.code } : null,
+                    asset: assetData,
                     user,
                     register_date: sub.register_date,
                 };

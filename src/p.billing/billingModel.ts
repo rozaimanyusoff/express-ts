@@ -249,7 +249,7 @@ export const updateFuelIssuer = async (id: number, data: any): Promise<void> => 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} ORDER BY fc_id DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE fc_stat = 'active' ORDER BY fc_id DESC`);
   return rows as any[];
 };
 export const getFleetCardById = async (id: number): Promise<any | null> => {

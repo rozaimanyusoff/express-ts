@@ -5,13 +5,14 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 const db = 'billings';
 const tables = {
     subscribers: `${db}.subscribers`,
-    accountSubs: `${db}.account_subs`,
     accounts: `${db}.accounts`,
     contracts: `${db}.contracts`,
     vendors: `${db}.vendors`,
     simCards: `${db}.simcards`,
+    accountSubs: `${db}.account_subs`,
     simCardSubs: `${db}.simcard_subs`,
     userSubs: `${db}.user_subs`, // Assuming this is a table for user subscriptions
+    deptSubs: `${db}.department_subs`, // Assuming this is a table for department subscriptions
 };
 
 // Define the structure of the account data
@@ -44,11 +45,38 @@ export const TelcoModel = {
         );
         return result.insertId;
     },
+
+    /* table involved: subscribers, simcard_subs (createSimCard), user_subs, account_subs */
     async updateSubscriber(id: number, subscriber: any) {
-        const { sub_no, account_sub, status, register_date } = subscriber;
+        const { sub_no, account_sub, status, register_date, costcenter, department, account, simcard, user } = subscriber;
+        // 1. Fetch current subscriber
+        const [currentRows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers} WHERE id = ?`, [id]);
+        const current = currentRows[0];
+
+        // 2. Fetch latest simcard, department, account, user from *_subs tables
+        const [[simSub]] = await pool.query<RowDataPacket[]>(`SELECT sim_id FROM ${tables.simCardSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
+        const [[deptSub]] = await pool.query<RowDataPacket[]>(`SELECT dept_id FROM ${tables.deptSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
+        const [[accSub]] = await pool.query<RowDataPacket[]>(`SELECT account_id FROM ${tables.accountSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
+        const [[userSub]] = await pool.query<RowDataPacket[]>(`SELECT ramco_id FROM ${tables.userSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
+
+        // 3. Insert new row if changed
+        if (simcard && (!simSub || simSub.sim_id !== simcard)) {
+            await pool.query(`INSERT INTO ${tables.simCardSubs} (sub_no_id, sim_id, effective_date) VALUES (?, ?, NOW())`, [id, simcard]);
+        }
+        if (department && (!deptSub || deptSub.dept_id !== department)) {
+            await pool.query(`INSERT INTO ${tables.deptSubs} (sub_no_id, dept_id, effective_date) VALUES (?, ?, NOW())`, [id, department]);
+        }
+        if (account && (!accSub || accSub.account_id !== account)) {
+            await pool.query(`INSERT INTO ${tables.accountSubs} (sub_no_id, account_id) VALUES (?, ?)`, [id, account]);
+        }
+        if (user && (!userSub || userSub.ramco_id !== user)) {
+            await pool.query(`INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id) VALUES (?, ?)`, [id, user]);
+        }
+
+        // 4. Update subscribers table for basic fields
         await pool.query(
-            `UPDATE ${tables.subscribers} SET sub_no = ?, account_sub = ?, status = ?, register_date = ? WHERE id = ?`,
-            [sub_no, account_sub, status, register_date, id]
+            `UPDATE ${tables.subscribers} SET sub_no = ?, account_sub = ?, status = ?, register_date = ?, costcenter_id = ?, department_id = ? WHERE id = ?`,
+            [sub_no, account_sub, status, register_date, costcenter, department, id]
         );
     },
     async deleteSubscriber(id: number) {
@@ -71,6 +99,20 @@ export const TelcoModel = {
         return rows;
     },
 
+    // ===================== DEPARTMENT - SUBSCRIBER JOINS =====================
+    async getDepartmentSubs() {
+        // Returns all department_subs rows (dept_id, sub_no_id)
+        const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.deptSubs} ORDER BY id DESC`);
+        return rows;
+    },
+    async createDepartmentSub(departmentSub: any) {
+        const { dept_id, sub_no_id } = departmentSub;
+        const [result] = await pool.query<ResultSetHeader>(
+            `INSERT INTO ${tables.deptSubs} (dept_id, sub_no_id, effective_date) VALUES (?, ?, NOW())` ,
+            [dept_id, sub_no_id]
+        );
+        return result.insertId;
+    },
 
     // ===================== SIM CARDS =====================
     // CRUD for simcards
@@ -114,7 +156,7 @@ export const TelcoModel = {
         return result.insertId;
     },
 
-    // ===================== ACCOUNT SUBS =====================
+    // ===================== ACCOUNT SUBS JOINS =====================
     // CRUD for account_subs (assign subs to accounts)
     async getAccountSubs() {
         const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.accountSubs}`);
