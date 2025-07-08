@@ -334,6 +334,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
       s_id: d.s_id,
       stmt_id: d.stmt_id,
       asset,
+      fleetcard: fleetCard ? { fc_id: fleetCard.fc_id, fc_no: fleetCard.fc_no } : null,
       fc_no: fleetCard ? fleetCard.fc_no : null,
       stmt_date: d.stmt_date,
       start_odo: d.start_odo,
@@ -459,10 +460,12 @@ export const getFuelBillingByDate = async (req: Request, res: Response) => {
     return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
   }
   // Fetch all lookup data
-  const [assetsRaw, costcentersRaw, districtsRaw] = await Promise.all([
+  const [assetsRaw, costcentersRaw, districtsRaw, fleetCardRaw, fuelIssuer] = await Promise.all([
     assetsModel.getAssets(),
     assetsModel.getCostcenters(),
-    assetsModel.getDistricts()
+    assetsModel.getDistricts(),
+    billingModel.getFleetCards(),
+    billingModel.getFuelIssuer()
   ]);
   const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
@@ -470,9 +473,14 @@ export const getFuelBillingByDate = async (req: Request, res: Response) => {
   const assetMap = new Map(assets.map((a: any) => [a.id, a]));
   const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
   const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+  // Map by asset_id for correct lookup
+  const fleetCardMap = new Map(fleetCardRaw.map((fc: any) => [fc.asset_id, fc]));
 
   // Get all fuel billings in date range
   const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
+  // Build a map for fast fuel issuer lookup
+  const fuelIssuerMap = new Map((fuelIssuer || []).map((fi: any) => [fi.fuel_id, fi]));
+
   const data = await Promise.all(
     fuelBillings.map(async (bill: any) => {
       const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
@@ -480,18 +488,47 @@ export const getFuelBillingByDate = async (req: Request, res: Response) => {
         const assetObj = d.asset_id && assetMap.has(d.asset_id) ? assetMap.get(d.asset_id) : null;
         const ccObj = d.cc_id && ccMap.has(d.cc_id) ? ccMap.get(d.cc_id) : null;
         const districtObj = d.loc_id && districtMap.has(d.loc_id) ? districtMap.get(d.loc_id) : null;
+        // Use asset_id to get the fleet card
+        const fleetCard = d.asset_id && fleetCardMap.has(d.asset_id) ? fleetCardMap.get(d.asset_id) : null;
+        // Add fuel_issuer enrichment for each detail
+        let fuel_issuer = null;
+        if (d.fuel_id && fuelIssuerMap.has(d.fuel_id)) {
+          const fi = fuelIssuerMap.get(d.fuel_id);
+          fuel_issuer = { fuel_id: fi.fuel_id, f_issuer: fi.f_issuer };
+        }
+        // Add issuer to fleetcard if available
+        let fleetcard = null;
+        if (fleetCard) {
+          let issuer = null;
+          if (fleetCard.fuel_id && fuelIssuerMap.has(fleetCard.fuel_id)) {
+            issuer = fuelIssuerMap.get(fleetCard.fuel_id).f_issuer;
+          }
+          fleetcard = {
+            fc_id: fleetCard.fc_id,
+            fc_no: fleetCard.fc_no,
+            issuer
+          };
+        }
         return {
           s_id: d.s_id,
           stmt_id: d.stmt_id,
+          fleetcard,
           asset: assetObj ? { asset_id: d.asset_id, register_number: assetObj.serial_number } : null,
           costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
           district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
           stmt_date: d.stmt_date,
           total_litre: d.total_litre,
-          amount: d.amount
+          amount: d.amount,
+          fuel_issuer
         };
       });
-      return { ...bill, details };
+      // Add fuel_issuer enrichment
+      let fuel_issuer = null;
+      if (bill.fuel_id && fuelIssuerMap.has(bill.fuel_id)) {
+        const fi = fuelIssuerMap.get(bill.fuel_id);
+        fuel_issuer = { fuel_id: fi.fuel_id, f_issuer: fi.f_issuer };
+      }
+      return { ...bill, fuel_issuer, details };
     })
   );
   res.json({ status: 'success', message: 'Fuel billings by date range retrieved successfully', data });
