@@ -549,8 +549,8 @@ export const getFleetCards = async (req: Request, res: Response) => {
       asset = {
         asset_id: a.id,
         serial_number: a.serial_number,
-        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
-          ? costcenterMap.get(a.costcenter_id)
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) // use fleet.cc_id instead of getCostcenters().costcenter_id //Todo: once fleet updated, we will get updated cost center that will be updated on asset_data
+          ? costcenterMap.get(card.cc_id)
           : null
       };
     }
