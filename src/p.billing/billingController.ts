@@ -343,7 +343,24 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
       amount: d.amount
     };
   });
-  res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, details } });
+
+  // Build summary grouped by costcenter
+  const summaryMap = new Map();
+  for (const detail of details) {
+    const cc = detail.asset && detail.asset.costcenter;
+    if (cc && cc.id != null) {
+      const key = cc.id;
+      const name = cc.name;
+      const amount = parseFloat(detail.amount || '0');
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, { id: key, name, total_amount: 0 });
+      }
+      summaryMap.get(key).total_amount += amount;
+    }
+  }
+  const summary = Array.from(summaryMap.values()).map(s => ({ ...s, total_amount: s.total_amount.toFixed(2) }));
+
+  res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, summary, details } });
 };
 
 export const createFuelBilling = async (req: Request, res: Response) => {
@@ -519,8 +536,9 @@ export const updateFuelIssuer = async (req: Request, res: Response) => {
 
 export const getFleetCards = async (req: Request, res: Response) => {
   const assets = await assetsModel.getAssets() as any[];
-
+  const costcenters = await assetsModel.getCostcenters() as any[];
   const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+  const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
   const fleetCards = await billingModel.getFleetCards();
   const fuelIssuers = await billingModel.getFuelIssuer() as any[];
   const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
@@ -528,7 +546,13 @@ export const getFleetCards = async (req: Request, res: Response) => {
     let asset = null;
     if (card.asset_id && assetMap.has(card.asset_id)) {
       const a = assetMap.get(card.asset_id);
-      asset = { asset_id: a.id, serial_number: a.serial_number };
+      asset = {
+        asset_id: a.id,
+        serial_number: a.serial_number,
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+          ? costcenterMap.get(a.costcenter_id)
+          : null
+      };
     }
     let fuel = {};
     if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
@@ -555,11 +579,19 @@ export const getFleetCardById = async (req: Request, res: Response) => {
     return res.status(404).json({ status: 'error', message: 'Fleet card not found' });
   }
   const assets = await assetsModel.getAssets() as any[];
+  const costcenters = await assetsModel.getCostcenters() as any[];
   const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+  const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
   let asset = null;
   if (fleetCard.asset_id && assetMap.has(fleetCard.asset_id)) {
     const a = assetMap.get(fleetCard.asset_id);
-    asset = { asset_id: a.id, serial_number: a.serial_number };
+    asset = {
+      asset_id: a.id,
+      serial_number: a.serial_number,
+      costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+        ? costcenterMap.get(a.costcenter_id)
+        : null
+    };
   }
   const data = {
     fc_id: fleetCard.fc_id,

@@ -261,17 +261,17 @@ export const getFleetCardById = async (id: number): Promise<any | null> => {
 export const createFleetCard = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, fuel_id, fc_no, fc_pin, fc_regdate, fc_stat, fc_termdate
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [ data.asset_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate ]
+      asset_id, cc_id, fuel_id, fc_no, fc_pin, fc_regdate, fc_stat, fc_termdate
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, fc_no = ?, fc_pin = ?, fc_regdate = ?, fc_stat = ?, fc_termdate = ? WHERE fc_id = ?`,
-    [ data.asset_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate, id ]
+    `UPDATE ${fleetCardTable} SET asset_id = ?, cc_id = ?, fuel_id = ?, fc_no = ?, fc_pin = ?, fc_regdate = ?, fc_stat = ?, fc_termdate = ? WHERE fc_id = ?`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate, id ]
   );
 };
 
