@@ -40,7 +40,7 @@ export const TelcoModel = {
     async createSubscriber(subscriber: any) {
         const { sub_no, account_sub, status, register_date } = subscriber;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.subscribers} (sub_no, account_sub, status, register_date) VALUES (?, ?, ?, ?)` ,
+            `INSERT INTO ${tables.subscribers} (sub_no, account_sub, status, register_date) VALUES (?, ?, ?, ?)`,
             [sub_no, account_sub, status, register_date]
         );
         return result.insertId;
@@ -67,10 +67,10 @@ export const TelcoModel = {
             await pool.query(`INSERT INTO ${tables.deptSubs} (sub_no_id, dept_id, effective_date) VALUES (?, ?, NOW())`, [id, department]);
         }
         if (account && (!accSub || accSub.account_id !== account)) {
-            await pool.query(`INSERT INTO ${tables.accountSubs} (sub_no_id, account_id) VALUES (?, ?)`, [id, account]);
+            await pool.query(`INSERT INTO ${tables.accountSubs} (sub_no_id, account_id, effective_date) VALUES (?, ?, NOW())`, [id, account]);
         }
         if (user && (!userSub || userSub.ramco_id !== user)) {
-            await pool.query(`INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id) VALUES (?, ?)`, [id, user]);
+            await pool.query(`INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id, effective_date) VALUES (?, ?, NOW())`, [id, user]);
         }
 
         // 4. Update subscribers table for basic fields
@@ -108,7 +108,7 @@ export const TelcoModel = {
     async createDepartmentSub(departmentSub: any) {
         const { dept_id, sub_no_id } = departmentSub;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.deptSubs} (dept_id, sub_no_id, effective_date) VALUES (?, ?, NOW())` ,
+            `INSERT INTO ${tables.deptSubs} (dept_id, sub_no_id, effective_date) VALUES (?, ?, NOW())`,
             [dept_id, sub_no_id]
         );
         return result.insertId;
@@ -127,7 +127,7 @@ export const TelcoModel = {
     async createSimCard(simCard: any) {
         const { sim_sn, sub_no_id, register_date, reason, note } = simCard;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.simCards} (sim_sn, sub_no_id, register_date, reason, note) VALUES (?, ?, ?, ?, ?)` ,
+            `INSERT INTO ${tables.simCards} (sim_sn, sub_no_id, register_date, reason, note) VALUES (?, ?, ?, ?, ?)`,
             [sim_sn, sub_no_id, register_date, reason, note]
         );
         return result.insertId;
@@ -173,16 +173,28 @@ export const TelcoModel = {
     // ===================== ACCOUNT SUBS JOINS =====================
     // CRUD for account_subs (assign subs to accounts)
     async getAccountSubs() {
-        const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.accountSubs}`);
+        const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.accountSubs} WHERE status = 'active' ORDER BY effective_date DESC`);
         return rows;
     },
     async createAccountSub(accountSub: any) {
         const { sub_no_id, account_id } = accountSub;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.accountSubs} (sub_no_id, account_id) VALUES (?, ?)` ,
+            `INSERT INTO ${tables.accountSubs} (sub_no_id, account_id) VALUES (?, ?)`,
             [sub_no_id, account_id]
         );
         return result.insertId;
+    },
+    async moveSubscriberToAccount(subscriberId: number, accountId: number, old_account_id: number, updated_by: string) {
+        // 1. Mark all previous account_subs for this subscriber as moved
+        await pool.query(
+            `UPDATE ${tables.accountSubs} SET status = 'moved', updated_by = ? WHERE sub_no_id = ? AND status = 'active'`,
+            [updated_by, subscriberId]
+        );
+        // 2. Insert a new row in account_subs for assignment history
+        await pool.query(
+            `INSERT INTO ${tables.accountSubs} (sub_no_id, account_id, effective_date, status, updated_by) VALUES (?, ?, NOW(), 'active', ?)`,
+            [subscriberId, accountId, updated_by]
+        );
     },
 
     // ===================== CONTRACTS =====================
@@ -198,7 +210,7 @@ export const TelcoModel = {
     async createContract(contract: any) {
         const { account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration } = contract;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.contracts} (account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+            `INSERT INTO ${tables.contracts} (account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration]
         );
         return result.insertId;
@@ -217,7 +229,7 @@ export const TelcoModel = {
     async createVendor(vendor: any) {
         const { name, service_type, register_date, address, contact_name, contact_no, contact_email, status } = vendor;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.vendors} (name, service_type, register_date, address, contact_name, contact_no, contact_email, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
+            `INSERT INTO ${tables.vendors} (name, service_type, register_date, address, contact_name, contact_no, contact_email, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [name, service_type, register_date, address, contact_name, contact_no, contact_email, status]
         );
         return result.insertId;
@@ -239,5 +251,4 @@ export const TelcoModel = {
         const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.userSubs}`);
         return rows;
     },
-
 };

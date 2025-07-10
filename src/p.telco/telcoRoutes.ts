@@ -10,6 +10,7 @@ router.get('/subs', asyncHandler(TelcoController.getSubscribers)); // list subsc
 router.post('/subs', asyncHandler(TelcoController.createSubscriber));
 router.put('/subs/:id', asyncHandler(TelcoController.updateSubscriber));
 router.delete('/subs/:id', asyncHandler(TelcoController.deleteSubscriber));
+router.patch('/subs/:id/move', asyncHandler(TelcoController.moveSubscriberToAccount)); // update subscriber by id
 
 /* Sim Card */
 router.get('/sims', asyncHandler(TelcoController.getSimCards));
@@ -20,6 +21,7 @@ router.get('/accounts/:id/subs', asyncHandler(TelcoController.getAccountWithSubs
 router.get('/accounts/subs', asyncHandler(TelcoController.getAccountsWithSubscribers)); // show all accounts and its subscribers
 router.get('/accounts', asyncHandler(TelcoController.getAccounts)); // list accounts
 router.post('/accounts', asyncHandler(TelcoController.createAccount)); // create account
+router.put('/accounts/:id', asyncHandler(TelcoController.updateAccount)); // update account by id
 
 /* Contracts */
 router.get('/contracts/:id/accounts', asyncHandler(TelcoController.getContractWithAccountsAndSubsById)); // show contract and its accounts details by contract id

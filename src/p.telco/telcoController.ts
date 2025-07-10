@@ -317,6 +317,21 @@ export const deleteSubscriber = async (req: Request, res: Response, next: NextFu
     }
 };
 
+/** Move subscriber to another account. PATCH /subs/:id/move */
+export const moveSubscriberToAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const subscriberId = Number(req.params.id);
+        const { account_id, old_account_id, updated_by } = req.body;
+        if (isNaN(subscriberId) || !account_id) {
+            return res.status(400).json({ status: 'error', message: 'Invalid subscriber or account ID' });
+        }
+        await TelcoModel.moveSubscriberToAccount(subscriberId, account_id, old_account_id, updated_by);
+        res.status(200).json({ status: 'success', message: 'Subscriber moved to new account' });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // ===================== SIM CARDS =====================
 /* list sim cards. ep: /sims */
 export const getSimCards = async (req: Request, res: Response, next: NextFunction) => {
@@ -355,7 +370,18 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
 export const getAccounts = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const accounts = await TelcoModel.getAccounts();
-        res.status(200).json({ status: 'success', message: 'Show all accounts', data: accounts });
+        const accountSubs = await TelcoModel.getAccountSubs();
+        // Count total subscribers for each account
+        const subsCountMap: Record<number, number> = {};
+        for (const as of accountSubs) {
+            if (!subsCountMap[as.account_id]) subsCountMap[as.account_id] = 0;
+            subsCountMap[as.account_id]++;
+        }
+        const enriched = accounts.map((acc: any) => ({
+            ...acc,
+            total_subs: subsCountMap[acc.id] || 0
+        }));
+        res.status(200).json({ status: 'success', message: 'Show all accounts', data: enriched });
     } catch (error) {
         next(error);
     }
@@ -379,17 +405,26 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
         if (isNaN(accountId)) {
             return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
         }
-        const [accounts, accountSubs, subscribers] = await Promise.all([
+        const [accounts, accountSubs, subscribers, simCards] = await Promise.all([
             TelcoModel.getAccounts(),
             TelcoModel.getAccountSubs(),
             TelcoModel.getSubscribers(),
+            TelcoModel.getSimCardBySubscriber ? TelcoModel.getSimCardBySubscriber() : [],
         ]);
         const account = accounts.find((acc: any) => acc.id === accountId);
         if (!account) {
             return res.status(404).json({ status: 'error', message: 'Account not found', data: null });
         }
         const subIds: number[] = accountSubs.filter((as: any) => as.account_id === accountId).map((as: any) => as.sub_no_id);
-        const subs = subscribers.filter((sub: any) => subIds.includes(sub.id));
+        // Build sim card map by sub_no_id
+        const simMap = Object.fromEntries(simCards.map((sim: any) => [sim.sub_no_id, sim]));
+        const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
+            const sim = simMap[sub.id];
+            return {
+                ...sub,
+                sim_no: sim ? (sim.sim_sn || sim.sim_no) : null
+            };
+        });
         const formattedData = {
             ...account,
             subs,
@@ -442,6 +477,20 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
         next(error);
     }
 };
+
+export const updateAccount = async (req: Request, res: Response, next: NextFunction) => {
+    const accountId = Number(req.params.id);
+    if (isNaN(accountId)) {
+        return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+    }
+    try {
+        const accountData = req.body;
+        await TelcoModel.updateAccount(accountId, accountData);
+        res.status(200).json({ status: 'success', message: 'Account updated successfully' });
+    } catch (error) {
+        next(error);
+    }
+}
 
 export const deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
     const accountId = Number(req.params.id);
