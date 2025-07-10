@@ -29,7 +29,7 @@ const workshopTable = `${db}.costws`;
 const fuelBillingTable = `${db}.fuel_stmt`;
 const fuelVehicleAmountTable = `${db}.fuel_stmt_detail`;
 const fuelIssuerTable = `${db}.costfuel`;
-const fleetCardTable = `${dbAssets}.fleet`;
+const fleetCardTable = `${db}.fleet2`;
 const serviceOptionsTable = `${dbApps}.svctype`;
 
 /* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
@@ -249,11 +249,11 @@ export const updateFuelIssuer = async (id: number, data: any): Promise<void> => 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE fc_stat = 'active' ORDER BY fc_id DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY id DESC`);
   return rows as any[];
 };
 export const getFleetCardById = async (id: number): Promise<any | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE fc_id = ?`, [id]);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE id = ?`, [id]);
   const fleetCard = (rows as any[])[0];
   return fleetCard || null;
 };
@@ -261,17 +261,17 @@ export const getFleetCardById = async (id: number): Promise<any | null> => {
 export const createFleetCard = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, cc_id, fuel_id, fc_no, fc_pin, fc_regdate, fc_stat, fc_termdate
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate ]
+      asset_id, costcenter_id, fuel_id, card_no, pin, reg_date, status, expiry_date, category, remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, cc_id = ?, fuel_id = ?, fc_no = ?, fc_pin = ?, fc_regdate = ?, fc_stat = ?, fc_termdate = ? WHERE fc_id = ?`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fc_no, data.fc_pin, data.fc_regdate, data.fc_stat, data.fc_termdate, id ]
+    `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, category = ?, remarks = ? WHERE id = ?`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks, id ]
   );
 };
 

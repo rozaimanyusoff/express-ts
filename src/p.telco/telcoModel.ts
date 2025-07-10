@@ -147,13 +147,27 @@ export const TelcoModel = {
         const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.accounts}`);
         return rows;
     },
+    async getAccountById(accountId: number) {
+        const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.accounts} WHERE id = ?`, [accountId]);
+        return rows[0];
+    },
     async createAccount(account: any) {
-        const { account_master } = account;
+        const { account_master, description } = account;
         const [result] = await pool.query<ResultSetHeader>(
-            `INSERT INTO ${tables.accounts} (account_master) VALUES (?)`,
-            [account_master]
+            `INSERT INTO ${tables.accounts} (account_master, description) VALUES (?, ?)`,
+            [account_master, description]
         );
         return result.insertId;
+    },
+    async updateAccount(id: number, account: any) {
+        const { account_master, description } = account;
+        await pool.query(
+            `UPDATE ${tables.accounts} SET account_master = ?, description = ? WHERE id = ?`,
+            [account_master, description, id]
+        );
+    },
+    async deleteAccount(id: number) {
+        await pool.query(`DELETE FROM ${tables.accounts} WHERE id = ?`, [id]);
     },
 
     // ===================== ACCOUNT SUBS JOINS =====================

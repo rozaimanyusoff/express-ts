@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { TelcoController } from '../p.telco/telcoController';
+import * as TelcoController from '../p.telco/telcoController';
 import asyncHandler from '../utils/asyncHandler';
 
 const router = Router();

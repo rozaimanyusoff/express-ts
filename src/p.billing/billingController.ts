@@ -587,7 +587,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
         asset_id: a.id,
         serial_number: a.serial_number,
         costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) // use fleet.cc_id instead of getCostcenters().costcenter_id //Todo: once fleet updated, we will get updated cost center that will be updated on asset_data
-          ? costcenterMap.get(card.cc_id)
+          ? costcenterMap.get(card.costcenter_id)
           : null
       };
     }
@@ -597,13 +597,15 @@ export const getFleetCards = async (req: Request, res: Response) => {
       fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
     }
     return {
-      fc_id: card.fc_id,
+      id: card.id,
       fuel,
-      fc_no: card.fc_no,
-      fc_regdate: card.fc_regdate,
-      fc_pin: card.fc_pin,
-      fc_stat: card.fc_stat,
-      fc_termdate: card.fc_termdate,
+      card_no: card.card_no,
+      register_date: card.reg_date,
+      category: card.category,
+      remarks: card.remarks,
+      pin_no: card.pin,
+      status: card.status,
+      expiry: card.expiry_date,
       asset
     };
   });
@@ -630,14 +632,19 @@ export const getFleetCardById = async (req: Request, res: Response) => {
         : null
     };
   }
+  let fuel = {};
+  // get fuel issuer if needed (optional, for parity with getFleetCards)
+  // If you want to add fuel_issuer enrichment, you can fetch and add here
   const data = {
-    fc_id: fleetCard.fc_id,
-    fuel_id: fleetCard.fuel_id,
-    fc_no: fleetCard.fc_no,
-    fc_regdate: fleetCard.fc_regdate,
-    fc_pin: fleetCard.fc_pin,
-    fc_stat: fleetCard.fc_stat,
-    fc_termdate: fleetCard.fc_termdate,
+    id: fleetCard.id,
+    fuel,
+    card_no: fleetCard.card_no,
+    register_date: fleetCard.reg_date,
+    category: fleetCard.category,
+    remarks: fleetCard.remarks,
+    pin_no: fleetCard.pin,
+    status: fleetCard.status,
+    expiry: fleetCard.expiry_date,
     asset
   };
   res.json({ status: 'success', message: 'Fleet card retrieved successfully', data });
