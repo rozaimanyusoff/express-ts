@@ -190,14 +190,14 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
                 const model = asset.model_id && modelMap[asset.model_id] ? { id: asset.model_id, name: modelMap[asset.model_id].name } : null;
                 assetData = {
                     asset_id: sub.asset_id,
-                    serial_number: asset.serial_number,
+                    register_number: asset.register_number,
                     brand,
                     model
                 };
             }
             // Find user
             const ramcoId = userSubMap[sub.id];
-            const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, name: employeeMap[ramcoId].full_name } : null;
+            const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, full_name: employeeMap[ramcoId].full_name } : null;
             return {
                 id: sub.id,
                 sub_no: sub.sub_no,

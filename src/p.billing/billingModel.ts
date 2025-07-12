@@ -249,7 +249,7 @@ export const updateFuelIssuer = async (id: number, data: any): Promise<void> => 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY id DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY bill_order_no DESC`);
   return rows as any[];
 };
 export const getFleetCardById = async (id: number): Promise<any | null> => {
@@ -261,18 +261,26 @@ export const getFleetCardById = async (id: number): Promise<any | null> => {
 export const createFleetCard = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, costcenter_id, fuel_id, card_no, pin, reg_date, status, expiry_date, category, remarks
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks ]
+      asset_id, costcenter_id, fuel_id, fuel_type, card_no, pin, reg_date, status, expiry_date, category, remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fuel_type, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, category = ?, remarks = ? WHERE id = ?`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks, id ]
+    `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ?, fuel_id = ?, fuel_type = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, category = ?, remarks = ? WHERE id = ?`,
+    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fuel_type, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks, id ]
   );
+  // If costcenter_id is present, also update asset_data.costcenter_id
+  if (data.asset_id && data.costcenter_id) {
+    // Use pool for assetdata DB
+    await pool.query(
+      `UPDATE assetdata.asset_data SET costcenter_id = ? WHERE id = ?`,
+      [data.costcenter_id, data.asset_id]
+    );
+  }
 };
 
 /* =================== SERVICE OPTION TABLE ========================== */

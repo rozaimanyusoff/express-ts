@@ -373,8 +373,21 @@ function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; 
 }
 
 export const getAssets = async (req: Request, res: Response) => {
+  // Support ?type=[type_id] and ?status=[status] params
+  const typeIdParam = req.query.type;
+  const statusParam = req.query.status;
+  let typeIds: number[] | undefined = undefined;
+  let status: string | undefined = undefined;
+  if (typeof typeIdParam === 'string' && typeIdParam !== '' && typeIdParam !== 'all') {
+    // Support comma-separated type IDs
+    typeIds = typeIdParam.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
+    if (typeIds.length === 0) typeIds = undefined;
+  }
+  if (typeof statusParam === 'string' && statusParam !== '') {
+    status = statusParam;
+  }
   // Fetch all assets and related data
-  const assetsRaw = await assetModel.getAssets();
+  const assetsRaw = await assetModel.getAssets(typeIds, status);
   const ownershipsRaw = await assetModel.getAssetOwnerships();
   const employeesRaw = await assetModel.getEmployees();
   const typesRaw = await assetModel.getTypes();
@@ -432,11 +445,10 @@ export const getAssets = async (req: Request, res: Response) => {
     const type = typeMap.get(asset.type_id);
     let specs: any = null;
     if (type && type.id === 1) {
-      // Computer
+      // Computer specs
       const compSpecsArr = await assetModel.getComputerSpecsForAsset(asset.id);
       if (Array.isArray(compSpecsArr) && compSpecsArr.length > 0) {
         const compSpecs = compSpecsArr[0];
-        // Fetch installed software for this asset
         const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
         specs = {
           categories: asset.category_id ? {
@@ -456,7 +468,7 @@ export const getAssets = async (req: Request, res: Response) => {
         };
       }
     } else if (type && type.id === 2) {
-      // Vehicle
+      // Vehicle specs
       const vehSpecsArr = await assetModel.getVehicleSpecsForAsset(asset.id);
       if (Array.isArray(vehSpecsArr) && vehSpecsArr.length > 0) {
         const vehSpecs = vehSpecsArr[0];
@@ -477,26 +489,25 @@ export const getAssets = async (req: Request, res: Response) => {
         };
       }
     }
-
-    // Todo: update cost_center to costcenter_id => costcenter: { id: number; name: string }
     return {
       id: asset.id,
       classification: asset.classification,
       asset_code: asset.asset_code,
       finance_tag: asset.finance_tag,
-      serial_number: asset.serial_number,
+      register_number: asset.register_number,
       dop: asset.dop,
       year: asset.year,
       unit_price: asset.unit_price,
       depreciation_length: asset.depreciation_length,
       depreciation_rate: asset.depreciation_rate,
-      //cost_center: asset.cost_center,
-      costcenter_id: asset.costcenter_id,
+      costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+        ? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+        : null,
       status: asset.status,
       disposed_date: asset.disposed_date,
       types: type ? {
-        type_id: type.id,
-        type_code: type.code,
+        id: type.id,
+        code: type.code,
         name: type.name
       } : null,
       specs,
@@ -621,13 +632,15 @@ export const getAssetById = async (req: Request, res: Response) => {
     classification: asset.classification,
     asset_code: asset.asset_code,
     finance_tag: asset.finance_tag,
-    serial_number: asset.serial_number,
+    register_number: asset.register_number,
     dop: asset.dop,
     year: asset.year,
     unit_price: asset.unit_price,
     depreciation_length: asset.depreciation_length,
     depreciation_rate: asset.depreciation_rate,
-    cost_center: asset.cost_center,
+    costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+      ? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+      : null,
     status: asset.status,
     disposed_date: asset.disposed_date,
     types: type ? {
@@ -882,7 +895,9 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 
 // EMPLOYEES
 export const getEmployees = async (req: Request, res: Response) => {
-  const employees = await assetModel.getEmployees();
+  // Support ?status=active param
+  const status = typeof req.query.status === 'string' && req.query.status !== '' ? req.query.status : undefined;
+  const employees = await assetModel.getEmployees(status);
   const departments = await assetModel.getDepartments();
   const positions = await assetModel.getPositions();
   const costcenters = await assetModel.getCostcenters();
@@ -1399,7 +1414,7 @@ export const getSites = async (req: Request, res: Response) => {
       const a: any = assetMap.get(site.asset_id);
       asset = {
         id: a.id,
-        serial_no: a.serial_number,
+        serial_no: a.register_number,
         type: typeMap.get(a.type_id) || null,
         category: categoryMap.get(a.category_id) || null,
         brand: brandMap.get(a.brand_id) || null,
@@ -1684,7 +1699,7 @@ export const getAssetsByEmployee = async (req: Request, res: Response) => {
       asset_code: asset.asset_code,
       classification: asset.classification,
       finance_tag: asset.finance_tag,
-      serial_number: asset.serial_number,
+      register_number: asset.register_number,
       dop: asset.dop,
       year: asset.year,
       unit_price: asset.unit_price,
@@ -1809,7 +1824,7 @@ export const getAssetsByEmployee = async (req: Request, res: Response) => {
         asset_code: asset.asset_code,
         classification: asset.classification,
         finance_tag: asset.finance_tag,
-        serial_number: asset.serial_number,
+        register_number: asset.register_number,
         dop: asset.dop,
         year: asset.year,
         unit_price: asset.unit_price,
@@ -1949,7 +1964,7 @@ export const getAssetsBySupervisor = async (req: Request, res: Response) => {
     asset_code: asset.asset_code,
     classification: asset.classification,
     finance_tag: asset.finance_tag,
-    serial_number: asset.serial_number,
+    register_number: asset.register_number,
     dop: asset.dop,
     year: asset.year,
     unit_price: asset.unit_price,
@@ -2019,7 +2034,7 @@ export const getAssetsBySupervisor = async (req: Request, res: Response) => {
         asset_code: asset.asset_code,
         classification: asset.classification,
         finance_tag: asset.finance_tag,
-        serial_number: asset.serial_number,
+        register_number: asset.register_number,
         dop: asset.dop,
         year: asset.year,
         unit_price: asset.unit_price,
@@ -2169,7 +2184,7 @@ export const getAssetsByHOD = async (req: Request, res: Response) => {
         asset_code: asset.asset_code,
         classification: asset.classification,
         finance_tag: asset.finance_tag,
-        serial_number: asset.serial_number,
+        register_number: asset.register_number,
         dop: asset.dop,
         year: asset.year,
         unit_price: asset.unit_price,

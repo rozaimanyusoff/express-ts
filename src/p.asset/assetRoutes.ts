@@ -67,7 +67,6 @@ router.delete('/costcenters/:id', asyncHandler(assetController.deleteCostcenter)
 router.get('/employees/search', asyncHandler(assetController.searchEmployees));
 router.get('/employees/:id', asyncHandler(assetController.getEmployeeById));
 router.get('/employees', asyncHandler(assetController.getEmployees));
-
 router.post('/employees', asyncHandler(assetController.createEmployee));
 router.put('/employees/:id', asyncHandler(assetController.updateEmployee));
 router.delete('/employees/:id', asyncHandler(assetController.deleteEmployee));

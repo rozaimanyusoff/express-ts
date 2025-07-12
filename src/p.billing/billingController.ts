@@ -25,7 +25,7 @@ export const getVehicleMaintenance = async (req: Request, res: Response) => {
     svc_order: b.svc_order,
     asset: assetMap.has(b.asset_id) ? {
       asset_id: b.asset_id,
-      register_number: (assetMap.get(b.asset_id) as any)?.serial_number
+      register_number: (assetMap.get(b.asset_id) as any)?.register_number
     } : null,
     costcenter: ccMap.has(b.cc_id) ? {
       id: b.cc_id,
@@ -114,7 +114,7 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
     svc_order: b.svc_order,
     asset: assetMap.has(b.asset_id) ? {
       asset_id: b.asset_id,
-      register_number: (assetMap.get(b.asset_id) as any)?.serial_number
+      register_number: (assetMap.get(b.asset_id) as any)?.register_number
     } : null,
     costcenter: ccMap.has(b.cc_id) ? {
       id: b.cc_id,
@@ -161,7 +161,7 @@ export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Resp
     if (!assetSummary[asset_id]) {
       assetSummary[asset_id] = {
         asset_id,
-        serial_number: asset.serial_number || '',
+        register_number: asset.register_number || '',
         district: district ? { id: district.id, code: district.code } : null,
         costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
         total_maintenance: 0,
@@ -191,7 +191,7 @@ export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Resp
   // Format output
   const result = Object.values(assetSummary).map((asset: any) => ({
     asset_id: asset.asset_id,
-    register_number: asset.serial_number,
+    register_number: asset.register_number,
     district: asset.district,
     costcenter: asset.costcenter,
     total_maintenance: asset.total_maintenance,
@@ -321,7 +321,8 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
     if (assetObj) {
       asset = {
         asset_id: d.asset_id,
-        register_number: assetObj.serial_number,
+        register_number: assetObj.register_number,
+        fuel_type: fleetCard ? fleetCard.fuel_type : null, // Include fuel type from fleet card
         costcenter: assetObj.costcenter_id && ccMap.has(assetObj.costcenter_id)
           ? { id: assetObj.costcenter_id, name: ccMap.get(assetObj.costcenter_id).name }
           : null,
@@ -334,8 +335,8 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
       s_id: d.s_id,
       stmt_id: d.stmt_id,
       asset,
-      fleetcard: fleetCard ? { fc_id: fleetCard.fc_id, fc_no: fleetCard.fc_no } : null,
-      fc_no: fleetCard ? fleetCard.fc_no : null,
+      fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
+      card_no: fleetCard ? fleetCard.card_no : null,
       stmt_date: d.stmt_date,
       start_odo: d.start_odo,
       end_odo: d.end_odo,
@@ -415,7 +416,7 @@ export const getFuelBillingSummaryByDate = async (req: Request, res: Response) =
         const districtObj = d.loc_id && districtMap.has(d.loc_id) ? districtMap.get(d.loc_id) : null;
         summary[asset_id] = {
           asset_id,
-          asset: assetObj ? { asset_id, register_number: assetObj.serial_number } : null,
+          asset: assetObj ? { asset_id, register_number: assetObj.register_number } : null,
           costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
           district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
           total_litre: 0,
@@ -513,7 +514,7 @@ export const getFuelBillingByDate = async (req: Request, res: Response) => {
           s_id: d.s_id,
           stmt_id: d.stmt_id,
           fleetcard,
-          asset: assetObj ? { asset_id: d.asset_id, register_number: assetObj.serial_number } : null,
+          asset: assetObj ? { asset_id: d.asset_id, register_number: assetObj.register_number } : null,
           costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
           district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
           stmt_date: d.stmt_date,
@@ -585,8 +586,18 @@ export const getFleetCards = async (req: Request, res: Response) => {
       const a = assetMap.get(card.asset_id);
       asset = {
         asset_id: a.id,
-        serial_number: a.serial_number,
-        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) // use fleet.cc_id instead of getCostcenters().costcenter_id //Todo: once fleet updated, we will get updated cost center that will be updated on asset_data
+        register_number: a.register_number,
+        fuel_type: card.fuel_type,
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+          ? costcenterMap.get(card.costcenter_id)
+          : null
+      };
+    } else if (card.register_number) {
+      asset = {
+        asset_id: card.asset_id || null,
+        register_number: card.register_number,
+        fuel_type: card.fuel_type,
+        costcenter: card.costcenter_id && costcenterMap.has(card.costcenter_id)
           ? costcenterMap.get(card.costcenter_id)
           : null
       };
@@ -600,7 +611,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
       id: card.id,
       fuel,
       card_no: card.card_no,
-      register_date: card.reg_date,
+      reg_date: card.reg_date,
       category: card.category,
       remarks: card.remarks,
       pin_no: card.pin,
@@ -626,7 +637,8 @@ export const getFleetCardById = async (req: Request, res: Response) => {
     const a = assetMap.get(fleetCard.asset_id);
     asset = {
       asset_id: a.id,
-      serial_number: a.serial_number,
+      register_number: a.register_number,
+      fuel_type: fleetCard.fuel_type,
       costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
         ? costcenterMap.get(a.costcenter_id)
         : null
@@ -639,7 +651,7 @@ export const getFleetCardById = async (req: Request, res: Response) => {
     id: fleetCard.id,
     fuel,
     card_no: fleetCard.card_no,
-    register_date: fleetCard.reg_date,
+    reg_date: fleetCard.reg_date,
     category: fleetCard.category,
     remarks: fleetCard.remarks,
     pin_no: fleetCard.pin,
@@ -687,7 +699,8 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
         const a = assetMap.get(card.asset_id);
         asset = {
           asset_id: a.id,
-          serial_number: a.serial_number,
+          register_number: a.register_number,
+          fuel_type: card.fuel_type,
           costcenter: a.costcenter_id && ccMap.has(a.costcenter_id)
             ? { id: a.costcenter_id, name: ccMap.get(a.costcenter_id).name }
             : null,
@@ -697,13 +710,13 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
         };
       }
       return {
-        fc_id: card.fc_id,
+        id: card.id,
         fuel_id: fuelIssuer ? { fuel_id: fuelIssuer.fuel_id, fuel_issuer: fuelIssuer.f_issuer } : {},
-        fc_no: card.fc_no,
-        fc_regdate: card.fc_regdate,
-        fc_pin: card.fc_pin,
-        fc_stat: card.fc_stat,
-        fc_termdate: card.fc_termdate,
+        card_no: card.card_no,
+        reg_date: card.reg_date,
+        pin: card.pin,
+        status: card.status,
+        expiry_date: card.expiry_date,
         asset
       };
     });

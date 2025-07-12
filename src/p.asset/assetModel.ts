@@ -560,8 +560,14 @@ export const createEmployee = async (data: any) => {
   return result;
 };
 
-export const getEmployees = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${employeeTable}`);
+export const getEmployees = async (status?: string) => {
+  let query = `SELECT * FROM ${employeeTable}`;
+  const params: any[] = [];
+  if (status) {
+    query += ' WHERE employment_status = ?';
+    params.push(status);
+  }
+  const [rows] = await pool.query(query, params);
   return rows;
 };
 
@@ -668,8 +674,25 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTable}`);
+export const getAssets = async (type_ids?: number[] | number, status?: string) => {
+  let sql = `SELECT * FROM ${assetTable}`;
+  let params: any[] = [];
+  const conditions: string[] = [];
+  if (Array.isArray(type_ids) && type_ids.length > 0) {
+    conditions.push(`type_id IN (${type_ids.map(() => '?').join(',')})`);
+    params.push(...type_ids);
+  } else if (typeof type_ids === 'number' && !isNaN(type_ids)) {
+    conditions.push('type_id = ?');
+    params.push(type_ids);
+  }
+  if (typeof status === 'string' && status !== '') {
+    conditions.push('status = ?');
+    params.push(status);
+  }
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  const [rows] = await pool.query(sql, params);
   return rows;
 };
 
@@ -688,10 +711,10 @@ export const getAssetByCode = async (asset_code: string) => {
 
 // ASSETS CRUD
 export const createAsset = async (data: any) => {
-  const { serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
+  const { register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${assetTable} (serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [serial_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
+    `INSERT INTO ${assetTable} (register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
   );
   return result;
 };
