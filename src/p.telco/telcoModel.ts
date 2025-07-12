@@ -55,7 +55,7 @@ export const TelcoModel = {
 
         // 2. Fetch latest simcard, department, account, user from *_subs tables
         const [[simSub]] = await pool.query<RowDataPacket[]>(`SELECT sim_id FROM ${tables.simCardSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
-        const [[deptSub]] = await pool.query<RowDataPacket[]>(`SELECT dept_id FROM ${tables.deptSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
+        const [[deptSub]] = await pool.query<RowDataPacket[]>(`SELECT department_id FROM ${tables.deptSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
         const [[accSub]] = await pool.query<RowDataPacket[]>(`SELECT account_id FROM ${tables.accountSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
         const [[userSub]] = await pool.query<RowDataPacket[]>(`SELECT ramco_id FROM ${tables.userSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
 
@@ -64,7 +64,7 @@ export const TelcoModel = {
             await pool.query(`INSERT INTO ${tables.simCardSubs} (sub_no_id, sim_id, effective_date) VALUES (?, ?, NOW())`, [id, simcard]);
         }
         if (department && (!deptSub || deptSub.dept_id !== department)) {
-            await pool.query(`INSERT INTO ${tables.deptSubs} (sub_no_id, dept_id, effective_date) VALUES (?, ?, NOW())`, [id, department]);
+            await pool.query(`INSERT INTO ${tables.deptSubs} (sub_no_id, department_id, effective_date) VALUES (?, ?, NOW())`, [id, department]);
         }
         if (account && (!accSub || accSub.account_id !== account)) {
             await pool.query(`INSERT INTO ${tables.accountSubs} (sub_no_id, account_id, effective_date) VALUES (?, ?, NOW())`, [id, account]);
