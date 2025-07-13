@@ -41,7 +41,7 @@ export const getGroupById = async (id: number): Promise<Group> => {
 // Create new group
 export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'INSERT INTO auth.groups (name, `desc`, status) VALUES (?, ?, ?)',
+        'INSERT INTO auth.groups (name, description, status) VALUES (?, ?, ?)',
         [group.name, group.desc, group.status]
     );
     return result;
@@ -50,7 +50,7 @@ export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Prom
 // Update group
 export const updateGroup = async (id: number, group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
-        'UPDATE auth.groups SET name = ?, `desc` = ?, status = ? WHERE id = ?',
+        'UPDATE auth.groups SET name = ?, description = ?, status = ? WHERE id = ?',
         [group.name, group.desc, group.status, id]
     );
     return result;

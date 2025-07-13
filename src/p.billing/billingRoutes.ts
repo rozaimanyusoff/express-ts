@@ -36,6 +36,8 @@ router.get('/fuel/summary', asyncHandler(billingController.getFuelBillingSummary
 router.get('/fuel/filter', asyncHandler(billingController.getFuelBillingByDate)); /* /api/bills/fuel/filter?from=2024-01-01&to=2024-12-31 */
 router.get('/fuel/:id', asyncHandler(billingController.getFuelBillingById));
 router.get('/fuel', asyncHandler(billingController.getFuelBillings));
+router.post('/fuel', asyncHandler(billingController.createFuelBilling));
+router.put('/fuel/:id', asyncHandler(billingController.updateFuelBilling));
 
 /* =================== FLEET CARD TABLE ========================== */
 

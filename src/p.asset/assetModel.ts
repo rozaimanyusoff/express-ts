@@ -63,7 +63,7 @@ export const createType = async (data: any) => {
   const { code, name, description, image, ramco_id } = data;
   const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (code, name, description, image, ramco_id) VALUES (?, ?, ?, ?, ?)` ,
+    `INSERT INTO ${typeTable} (code, name, description, image, manager) VALUES (?, ?, ?, ?, ?)` ,
     [code, name, description, storedImage, ramco_id]
   );
   return result;
@@ -83,7 +83,7 @@ export const updateType = async (id: number, data: any) => {
   const { code, name, description, image, ramco_id } = data;
   const storedImage = await handleTypeImage(image);
   const [result] = await pool.query(
-    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, ramco_id = ? WHERE id = ?`,
+    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
     [code, name, description, storedImage, ramco_id, id]
   );
   return result;
@@ -986,7 +986,7 @@ export const getAssetsByIds = async (assetIds: number[]) => {
 export const searchEmployeesAutocomplete = async (query: string) => {
   const q = `%${query.toLowerCase()}%`;
   const [rows] = await pool.query(
-    `SELECT ramco_id, full_name FROM ${employeeTable} WHERE LOWER(full_name) LIKE ? OR LOWER(ramco_id) LIKE ? LIMIT 20`,
+    `SELECT ramco_id, full_name FROM ${employeeTable} WHERE employment_status = 'active' AND LOWER(full_name) LIKE ? OR LOWER(ramco_id) LIKE ? LIMIT 20`,
     [q, q]
   );
   return rows;

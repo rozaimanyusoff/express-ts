@@ -20,8 +20,8 @@ export const getTypes = async (req: Request, res: Response) => {
   const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
   const data = (rows as any[]).map((type) => {
     let manager = null;
-    if (type.ramco_id && employeeMap.has(type.ramco_id)) {
-      const emp = employeeMap.get(type.ramco_id);
+    if (type.manager && employeeMap.has(type.manager)) {
+      const emp = employeeMap.get(type.manager);
       manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
     }
     return {
@@ -44,7 +44,7 @@ export const getTypeById = async (req: Request, res: Response) => {
   const employees = await assetModel.getEmployees();
   const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
   let manager = null;
-  if (row.ramco_id && employeeMap.has(row.ramco_id)) {
+  if (row.manager && employeeMap.has(row.ramco_id)) {
     const emp = employeeMap.get(row.ramco_id);
     manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
   }

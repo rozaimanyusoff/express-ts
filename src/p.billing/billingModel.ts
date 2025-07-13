@@ -19,10 +19,9 @@ export interface VehicleMaintenance {
 }
 
 // Database and table declarations
-const db = 'billings';
+const db = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
-const billingTable = `${db}.billings`;
 const vehicleMaintenanceTable = `${db}.tbl_inv`;
 const vehicleMaintenancePartsTable = `${db}.tbl_inv_part`;
 const workshopTable = `${db}.costws`;
@@ -131,7 +130,7 @@ export const deleteWorkshop = async (id: number): Promise<void> => {
 /*  ================================= FUEL STATEMENT TABLE ======================================== */
 
 export const getFuelBilling = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fuelBillingTable} ORDER BY stmt_date DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${fuelBillingTable} ORDER BY stmt_id DESC`);
   return rows as any[];
 };
 
@@ -144,17 +143,17 @@ export const getFuelBillingById = async (id: number): Promise<any | null> => {
 export const createFuelBilling = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
     `INSERT INTO ${fuelBillingTable} (
-      fuel_id, stmt_no, stmt_date, stmt_issuer, stmt_ron95, stmt_ron97, stmt_diesel, bill_payment, stmt_count, stmt_litre, stmt_total_odo, stmt_stotal, stmt_tax, stmt_rounding, stmt_disc, stmt_total, stmt_entry
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.fuel_id, data.stmt_no, data.stmt_date, data.stmt_issuer, data.stmt_ron95, data.stmt_ron97, data.stmt_diesel, data.bill_payment, data.stmt_count, data.stmt_litre, data.stmt_total_odo, data.stmt_stotal, data.stmt_tax, data.stmt_rounding, data.stmt_disc, data.stmt_total, data.stmt_entry ]
+      stmt_no, stmt_date, stmt_litre, stmt_stotal, stmt_disc, stmt_total, stmt_ron95, stmt_ron97, stmt_diesel, stmt_issuer, petrol, diesel, stmt_count, stmt_total_odo
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.stmt_no, data.stmt_date, data.stmt_litre, data.stmt_stotal, data.stmt_disc, data.stmt_total, data.stmt_ron95, data.stmt_ron97, data.stmt_diesel, data.stmt_issuer, data.petrol_amount, data.diesel_amount, data.stmt_count, data.stmt_total_km ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateFuelBilling = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fuelBillingTable} SET fuel_id = ?, stmt_no = ?, stmt_date = ?, stmt_issuer = ?, stmt_ron95 = ?, stmt_ron97 = ?, stmt_diesel = ?, bill_payment = ?, stmt_count = ?, stmt_litre = ?, stmt_total_odo = ?, stmt_stotal = ?, stmt_tax = ?, stmt_rounding = ?, stmt_disc = ?, stmt_total = ?, stmt_entry = ? WHERE stmt_id = ?`,
-    [ data.fuel_id, data.stmt_no, data.stmt_date, data.stmt_issuer, data.stmt_ron95, data.stmt_ron97, data.stmt_diesel, data.bill_payment, data.stmt_count, data.stmt_litre, data.stmt_total_odo, data.stmt_stotal, data.stmt_tax, data.stmt_rounding, data.stmt_disc, data.stmt_total, data.stmt_entry,id ]
+    `UPDATE ${fuelBillingTable} SET stmt_no = ?, stmt_date = ?, stmt_litre = ?, stmt_stotal = ?, stmt_disc = ?, stmt_total = ?, stmt_ron95 = ?, stmt_ron97 = ?, stmt_diesel = ?, stmt_issuer = ?, petrol = ?, diesel = ?, stmt_count = ?, stmt_total_odo = ? WHERE stmt_id = ?`,
+    [ data.stmt_no, data.stmt_date, data.stmt_litre, data.stmt_stotal, data.stmt_disc, data.stmt_total, data.stmt_ron95, data.stmt_ron97, data.stmt_diesel, data.stmt_issuer, data.petrol_amount, data.diesel_amount, data.stmt_count, data.stmt_total_km, id ]
   );
 };
 
@@ -194,19 +193,16 @@ export const getFuelVehicleAmountById = async (id: number): Promise<any | null> 
 
 export const createFuelVehicleAmount = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
-    `INSERT INTO ${fuelVehicleAmountTable} (
-      stmt_id, fuel_id, vehicle_id, cc_id, loc_id, stmt_date, reg_no, costctr, location, claim_issuer, fuel_type, total_litre, start_odo, end_odo, total_km, effct, amount
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.stmt_id, data.fuel_id, data.vehicle_id, data.cc_id, data.loc_id, data.stmt_date, data.reg_no, data.costctr, data.location, data.claim_issuer, data.fuel_type, data.total_litre, data.start_odo, data.end_odo, data.total_km, data.effct, data.amount ]
+    `INSERT INTO ${fuelVehicleAmountTable} (stmt_id, stmt_date, fc_id, asset_id, cc_id, category, start_odo, end_odo, total_km, total_litre, effct, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.stmt_id, data.stmt_date, data.card_id, data.asset_id, data.costcenter_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateFuelVehicleAmount = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fuelVehicleAmountTable} SET stmt_id = ?, fuel_id = ?, vehicle_id = ?, cc_id = ?, loc_id = ?, stmt_date = ?, reg_no = ?, costctr = ?, location = ?, claim_issuer = ?, fuel_type = ?, total_litre = ?, start_odo = ?, end_odo = ?, total_km = ?,
-      effct = ?, amount = ? WHERE s_id = ?`,
-    [ data.stmt_id, data.fuel_id, data.vehicle_id, data.cc_id, data.loc_id, data.stmt_date, data.reg_no, data.costctr, data.location, data.claim_issuer, data.fuel_type, data.total_litre, data.start_odo, data.end_odo, data.total_km, data.effct, data.amount, id ]
+    `UPDATE ${fuelVehicleAmountTable} SET stmt_id = ?, stmt_date = ?, fc_id = ?, asset_id = ?, cc_id = ?, category = ?, start_odo = ?, end_odo = ?, total_km = ?, total_litre = ?, effct = ?, amount = ? WHERE s_id = ?`,
+    [ data.stmt_id, data.stmt_date, data.card_id, data.asset_id, data.costcenter_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount, id ]
   );
 };
 
@@ -249,7 +245,7 @@ export const updateFuelIssuer = async (id: number, data: any): Promise<void> => 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY bill_order_no DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY bill_order_no `);
   return rows as any[];
 };
 export const getFleetCardById = async (id: number): Promise<any | null> => {
