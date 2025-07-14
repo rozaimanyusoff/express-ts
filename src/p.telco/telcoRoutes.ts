@@ -41,4 +41,10 @@ router.delete('/vendors/:id', asyncHandler(TelcoController.deleteVendor)); // de
 router.get('/account-subs', asyncHandler(TelcoController.getAccountSubs)); // list account & subs assignment
 router.post('/account-subs', asyncHandler(TelcoController.createAccountSub)); // assign subs to accounts
 
+/* Telco Billing */
+router.get('/bills/:id', asyncHandler(TelcoController.getTelcoBillingById)); // show subscriber billing by id
+router.get('/bills', asyncHandler(TelcoController.getTelcoBillings)); // list subscribers billing
+router.post('/bills', asyncHandler(TelcoController.createTelcoBilling));
+router.put('/bills/:id', asyncHandler(TelcoController.updateTelcoBilling));
+
 export default router;
