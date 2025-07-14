@@ -19,16 +19,16 @@ export interface VehicleMaintenance {
 }
 
 // Database and table declarations
-const db = 'billings2';
+const dbBillings = 'billings';
 const dbAssets = 'assets';
 const dbApps = 'applications';
-const vehicleMaintenanceTable = `${db}.tbl_inv`;
-const vehicleMaintenancePartsTable = `${db}.tbl_inv_part`;
-const workshopTable = `${db}.costws`;
-const fuelBillingTable = `${db}.fuel_stmt`;
-const fuelVehicleAmountTable = `${db}.fuel_stmt_detail`;
-const fuelIssuerTable = `${db}.costfuel`;
-const fleetCardTable = `${db}.fleet2`;
+const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
+const vehicleMaintenancePartsTable = `${dbBillings}.tbl_inv_part`;
+const workshopTable = `${dbBillings}.costws`;
+const fuelBillingTable = `${dbBillings}.fuel_stmt`;
+const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
+const fuelIssuerTable = `${dbBillings}.costfuel`;
+const fleetCardTable = `${dbBillings}.fleet2`;
 const serviceOptionsTable = `${dbApps}.svctype`;
 
 /* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
