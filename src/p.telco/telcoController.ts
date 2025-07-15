@@ -150,6 +150,15 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                     if (subscriber) {
                         subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
                     }
+                 }
+                 // Support new records: map by sub_id if sim_id is null
+                 if (!subsObj && d.sub_id) {
+                     const subscriber = Array.isArray(subscribers)
+                         ? subscribers.find((sub: any) => sub.id === d.sub_id)
+                         : null;
+                     if (subscriber) {
+                         subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
+                     }
                 }
                 // Resolve costcenter and district
                 const costcenter = d.cc_id ? costcenterMap[d.cc_id] || null : null;
@@ -164,7 +173,7 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                 const { cc_id, loc_id, sim_user_id, ...rest } = d;
                 return {
                     ...rest,
-                    sim_id: d.sim_id || null,
+                    old_sim_id: d.sim_id || null,
                     subs: subsObj,
                     costcenter,
                     district,
@@ -194,8 +203,12 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             account: accountObj,
             ubill_date: billing.ubill_date,
             ubill_no: billing.ubill_no,
+            ubill_stotal: billing.ubill_stotal,
+            ubill_tax: billing.ubill_tax,
+            ubill_round: billing.ubill_round,
             ubill_gtotal: billing.ubill_gtotal,
             ubill_paystat: billing.ubill_paystat,
+            ubill_ref: billing.ubill_ref || null,
             summary,
             details: Array.isArray(details) ? details : []
         };
@@ -209,7 +222,20 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
 export const createTelcoBilling = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const billing = req.body;
+        // Insert parent billing
         const insertId = await telcoModel.createTelcoBilling(billing);
+        // Insert child details if present
+        if (Array.isArray(billing.details) && billing.details.length > 0) {
+            // Attach util_id to each detail
+            const detailsWithUtilId = billing.details.map((detail: any) => ({
+                ...detail,
+                util_id: insertId
+            }));
+            // Insert each detail
+            for (const detail of detailsWithUtilId) {
+                await telcoModel.createTelcoBillingDetail(detail);
+            }
+        }
         res.status(201).json({ status: 'success', message: 'Telco billing created', id: insertId });
     } catch (error) {
         next(error);
@@ -221,7 +247,21 @@ export const updateTelcoBilling = async (req: Request, res: Response, next: Next
     try {
         const id = Number(req.params.id);
         const billing = req.body;
+        // Update parent billing
         await telcoModel.updateTelcoBilling(id, billing);
+        // Update child details if present
+        if (Array.isArray(billing.details) && billing.details.length > 0) {
+            // Attach util_id to each detail
+            const detailsWithUtilId = billing.details.map((detail: any) => ({
+                ...detail,
+                util_id: id
+            }));
+            // Update each detail (assumes upsert or update logic in model)
+            for (const detail of detailsWithUtilId) {
+                // Use util2_id or another unique id for detail row
+                await telcoModel.updateTelcoBillingDetail(detail.util2_id, detail);
+            }
+        }
         res.status(200).json({ status: 'success', message: 'Telco billing updated' });
     } catch (error) {
         next(error);
@@ -612,6 +652,12 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
         const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
         const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
         const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
+        // Build employee map for user enrichment
+        const employeesArr = await (assetModel.getEmployees ? assetModel.getEmployees() : []);
+        const employeeMap = Object.fromEntries((Array.isArray(employeesArr) ? employeesArr : []).map((e: any) => [e.ramco_id, e]));
+        // Build userSubMap for mapping sub.id to ramco_id
+        const userSubs = await telcoModel.getUserSubs();
+        const userSubMap = Object.fromEntries((Array.isArray(userSubs) ? userSubs : []).map((us: any) => [us.sub_no_id, us.ramco_id]));
         const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
             const sim = simMap[sub.id];
             const assetObj = sub.asset_id && assetMap[sub.asset_id] ? assetMap[sub.asset_id] : null;
@@ -628,13 +674,24 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
                     model
                 };
             }
+            // Enrich user
+            const ramcoId = userSubMap[sub.id];
+            const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, full_name: employeeMap[ramcoId].full_name } : null;
+            let simObj = null;
+            if (sim) {
+                simObj = {
+                    id: sim.sim_id || sim.id || null,
+                    no: sim.sim_sn || sim.sim_no || null
+                };
+            }
             return {
                 ...rest,
                 costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
                 department: department_id ? departmentMap[department_id] || null : null,
                 district: district_id ? districtMap[district_id] || null : null,
                 asset: assetData,
-                sim_no: sim ? (sim.sim_sn || sim.sim_no) : null
+                sim: simObj,
+                user
             };
         });
         const formattedData = {

@@ -3,6 +3,7 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 // Database and table names
 const db = 'billings';
+const db25 = 'billings3'; //
 const tables = {
     subscribers: `${db}.subscribers`,
     accounts: `${db}.accounts`,
@@ -13,9 +14,9 @@ const tables = {
     simCardSubs: `${db}.simcard_subs`,
     userSubs: `${db}.user_subs`, // Assuming this is a table for user subscriptions
     deptSubs: `${db}.department_subs`, // Assuming this is a table for department subscriptions
-    telcoBilling: `${db}.tbl_util`, // Assuming this is a table for telco billing
-    telcoBillingDetails: `${db}.tbl_celcom_det`, // Assuming this is a table for telco billing history
-    oldSubscribers: `${db}.celcomsub`, // Assuming this is a table for old subscribers
+    telcoBilling: `${db25}.tbl_util`, // Assuming this is a table for telco billing
+    telcoBillingDetails: `${db25}.tbl_celcom_det`, // Assuming this is a table for telco billing history
+    oldSubscribers: `${db25}.celcomsub`, // Assuming this is a table for old subscribers
 };
 
 // Define the structure of the account data
@@ -280,20 +281,20 @@ export async function getTelcoBillingById(id: number) {
 
 export async function createTelcoBilling(billing: any) {
     // Adjust fields as needed for tbl_util
-    const { sub_no, account_id, amount, billing_date, remarks, status } = billing;
+    const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
     const [result] = await pool2.query<ResultSetHeader>(
-        `INSERT INTO ${tables.telcoBilling} (sub_no, account_id, amount, billing_date, remarks, status) VALUES (?, ?, ?, ?, ?, ?)`,
-        [sub_no, account_id, amount, billing_date, remarks, status]
+        `INSERT INTO ${tables.telcoBilling} (account_id, account, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 5)`,
+        [ account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat ]
     );
     return result.insertId;
 }
 
 export async function updateTelcoBilling(id: number, billing: any) {
     // Adjust fields as needed for tbl_util
-    const { sub_no, account_id, amount, billing_date, remarks, status } = billing;
+    const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
     await pool2.query(
-        `UPDATE ${tables.telcoBilling} SET sub_no = ?, account_id = ?, amount = ?, billing_date = ?, remarks = ?, status = ? WHERE id = ?`,
-        [sub_no, account_id, amount, billing_date, remarks, status, id]
+        `UPDATE ${tables.telcoBilling} SET account_id = ?, account = ?, ubill_no = ?, ubill_date = ?, ubill_stotal = ?, ubill_tax = ?, ubill_round = ?, ubill_gtotal = ?, ubill_paystat = ? WHERE util_id = ?`,
+        [account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat, id]
     );
 }
 
@@ -310,20 +311,20 @@ export async function getTelcoBillingDetailsById(util_id: number) {
 
 export async function createTelcoBillingDetail(detail: any) {
     // Adjust fields as needed for tbl_celcom_det
-    const { util_id, item, amount, remarks, status } = detail;
+    const { util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id } = detail;
     const [result] = await pool2.query<ResultSetHeader>(
-        `INSERT INTO ${tables.telcoBillingDetails} (util_id, item, amount, remarks, status) VALUES (?, ?, ?, ?, ?)`,
-        [util_id, item, amount, remarks, status]
+        `INSERT INTO ${tables.telcoBillingDetails} ( util_id, sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, cc_id, account_id, ramco_id ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id]
     );
     return result.insertId;
 }
 
-export async function updateTelcoBillingDetail(id: number, detail: any) {
+export async function updateTelcoBillingDetail(util2_id: number, detail: any) {
     // Adjust fields as needed for tbl_celcom_det
-    const { util_id, item, amount, remarks, status } = detail;
+    const { util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id } = detail;
     await pool2.query(
-        `UPDATE ${tables.telcoBillingDetails} SET util_id = ?, item = ?, amount = ?, remarks = ?, status = ? WHERE id = ?`,
-        [util_id, item, amount, remarks, status, id]
+        `UPDATE ${tables.telcoBillingDetails} SET util_id = ?, sim_id = ?, new_sim_id = ?, util2_plan = ?, util2_usage = ?, util2_disc = ?, util2_amt = ?, sub_id = ?, cc_id = ?, account_id = ?, ramco_id = ? WHERE util2_id = ?`,
+        [ util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id, util2_id ]
     );
 }
 
