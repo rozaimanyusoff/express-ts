@@ -103,6 +103,12 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
         if (!billing) {
             return res.status(404).json({ status: 'error', message: 'Telco billing not found' });
         }
+        // Resolve sim_subno if sim_id exists
+        let sim_subno = null;
+        if (billing.sim_id) {
+            const oldSub = await telcoModel.getOldSubscriberById(billing.sim_id);
+            sim_subno = oldSub?.sim_subno || null;
+        }
         // Fetch accounts for mapping
         const accounts = await telcoModel.getAccounts();
         const accountMap = Object.fromEntries(accounts.map((a: any) => [a.account_master, a]));
@@ -117,29 +123,70 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             };
         }
         // Fetch billing details by util_id
-        const details = await telcoModel.getTelcoBillingDetailsById(billing.util_id);
-        // Build summary: sum util2_amt by cc_id
-        let summary: Array<{ costcenter: { id: number, name: string }, total_amt: number }> = [];
-        // Fetch costcenters for mapping cc_id to name
-        const costcenters = await (assetModel.getCostcenters ? assetModel.getCostcenters() : []);
-        const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, c]));
-        // Aggregate util2_amt by cc_id
-        const summaryMap: Record<number, number> = {};
+        let details = await telcoModel.getTelcoBillingDetailsById(billing.util_id);
+        // Enrich each detail with sim_id and sim_subno
         if (Array.isArray(details)) {
-            for (const d of details) {
-                const ccId = d.cc_id;
-                const amt = parseFloat(d.util2_amt) || 0;
-                if (!summaryMap[ccId]) summaryMap[ccId] = 0;
-                summaryMap[ccId] += amt;
-            }
+            // Fetch all subscribers for mapping sub_no to id
+            const subscribers = await telcoModel.getSubscribers();
+            // Fetch costcenters and districts for lookup
+            const costcentersArr = await (assetModel.getCostcenters ? assetModel.getCostcenters() : []);
+            const districtsArr = await (assetModel.getDistricts ? assetModel.getDistricts() : []);
+            const costcenterMap = Object.fromEntries((Array.isArray(costcentersArr) ? costcentersArr : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+            const districtMap = Object.fromEntries((Array.isArray(districtsArr) ? districtsArr : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+            // Fetch employees for user enrichment
+            const employeesArr = await (assetModel.getEmployees ? assetModel.getEmployees() : []);
+            const employeeMap = Object.fromEntries((Array.isArray(employeesArr) ? employeesArr : []).map((e: any) => [e.ramco_id, e]));
+            details = await Promise.all(details.map(async (d: any) => {
+                let subsObj = null;
+                let sim_subno = null;
+                if (d.sim_id) {
+                    const oldSub = await telcoModel.getOldSubscriberById(d.sim_id);
+                    sim_subno = oldSub?.sim_subno || null;
+                }
+                if (sim_subno) {
+                    const subscriber = Array.isArray(subscribers)
+                        ? subscribers.find((sub: any) => sub.sub_no === sim_subno)
+                        : null;
+                    if (subscriber) {
+                        subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
+                    }
+                }
+                // Resolve costcenter and district
+                const costcenter = d.cc_id ? costcenterMap[d.cc_id] || null : null;
+                const district = d.loc_id ? districtMap[d.loc_id] || null : null;
+                // Enrich user from sim_user_id
+                let user = null;
+                if (d.sim_user_id && employeeMap[d.sim_user_id]) {
+                    const emp = employeeMap[d.sim_user_id];
+                    user = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+                }
+                // Remove cc_id and loc_id from details
+                const { cc_id, loc_id, sim_user_id, ...rest } = d;
+                return {
+                    ...rest,
+                    sim_id: d.sim_id || null,
+                    subs: subsObj,
+                    costcenter,
+                    district,
+                    user
+                };
+            }));
         }
-        // Build summary array in requested format
-        for (const ccId in summaryMap) {
-            const cc = costcenterMap[Number(ccId)];
-            summary.push({
-                costcenter: cc ? { id: cc.id, name: cc.name } : { id: Number(ccId), name: '' },
-                total_amt: summaryMap[ccId]
-            });
+        // Build summary: sum util2_amt by costcenter object from details
+        let summary: Array<{ costcenter: { id: number|null, name: string }, total_amt: number }> = [];
+        if (Array.isArray(details)) {
+            // Use a Map to group by costcenter stringified
+            const summaryMap = new Map();
+            for (const d of details) {
+                const cc = d.costcenter || { id: null, name: '' };
+                const key = JSON.stringify(cc);
+                const amt = parseFloat(d.util2_amt) || 0;
+                if (!summaryMap.has(key)) {
+                    summaryMap.set(key, { costcenter: cc, total_amt: 0 });
+                }
+                summaryMap.get(key).total_amt += amt;
+            }
+            summary = Array.from(summaryMap.values());
         }
         const formatted = {
             util_id: billing.util_id,
@@ -277,7 +324,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
 export const getSubscribers = async (req: Request, res: Response, next: NextFunction) => {
     try {
         // Fetch all required data in parallel
-        const [subscribers, accounts, accountSubs, simCards, departments, costcenters, employees, assets, userSubs] = await Promise.all([
+        const [subscribers, accounts, accountSubs, simCards, departments, costcenters, employees, assets, userSubs, brands, models] = await Promise.all([
             telcoModel.getSubscribers(),
             telcoModel.getAccounts(),
             telcoModel.getAccountSubs(),
@@ -287,6 +334,8 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             assetModel.getEmployees ? assetModel.getEmployees() : [],
             assetModel.getAssets ? assetModel.getAssets() : [],
             telcoModel.getUserSubs(),
+            assetModel.getBrands ? assetModel.getBrands() : [],
+            assetModel.getModels ? assetModel.getModels() : [],
         ]);
 
         // Build lookup maps for fast access
@@ -302,15 +351,13 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
         const departmentMap = Object.fromEntries((departmentArr).map((d: any) => [d.id, d]));
         const costcenterMap = Object.fromEntries((costcenterArr).map((c: any) => [c.id, c]));
         const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
-
-        // Fetch brands and models for asset enrichment
-        const brands = assetModel.getBrands ? await assetModel.getBrands() : [];
-        const models = assetModel.getModels ? await assetModel.getModels() : [];
         const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
         const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
 
         // Format each subscriber
         const formatted = subscribers.map((sub: any) => {
+            // Destructure to remove asset_id from the returned object
+            const { asset_id, ...rest } = sub;
             // Find account
             const accountId = accountSubMap[sub.id];
             const account = accountId ? accountMap[accountId] : null;
@@ -324,11 +371,10 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             const asset = sub.asset_id ? assetMap[sub.asset_id] : null;
             let assetData = null;
             if (asset) {
-                // Get brand and model
                 const brand = asset.brand_id && brandMap[asset.brand_id] ? { id: asset.brand_id, name: brandMap[asset.brand_id].name } : null;
                 const model = asset.model_id && modelMap[asset.model_id] ? { id: asset.model_id, name: modelMap[asset.model_id].name } : null;
                 assetData = {
-                    asset_id: sub.asset_id,
+                    id: asset.id,
                     register_number: asset.register_number,
                     brand,
                     model
@@ -338,17 +384,13 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             const ramcoId = userSubMap[sub.id];
             const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, full_name: employeeMap[ramcoId].full_name } : null;
             return {
-                id: sub.id,
-                sub_no: sub.sub_no,
-                account_sub: sub.account_sub,
-                status: sub.status,
-                account: account ? { id: account.id, account_master: account.account_master } : null,
+                ...rest,
+                account: account ? { id: account.id, account_master: account.account_master, provider: account.provider } : null,
                 simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                 costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
                 department: department ? { id: department.id, name: department.code } : null,
                 asset: assetData,
                 user,
-                register_date: sub.register_date,
             };
         });
 
@@ -544,10 +586,16 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
         if (isNaN(accountId)) {
             return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
         }
-        const [accounts, accountSubs, subscribers, simCards] = await Promise.all([
+        const [accounts, accountSubs, subscribers, assets, brands, models, costcenters, departments, districts, simCards] = await Promise.all([
             telcoModel.getAccounts(),
             telcoModel.getAccountSubs(),
             telcoModel.getSubscribers(),
+            assetModel.getAssets(),
+            assetModel.getBrands(),
+            assetModel.getModels(),
+            assetModel.getCostcenters(),
+            assetModel.getDepartments(),
+            assetModel.getDistricts(),
             telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : [],
         ]);
         const account = accounts.find((acc: any) => acc.id === accountId);
@@ -557,10 +605,35 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
         const subIds: number[] = accountSubs.filter((as: any) => as.account_id === accountId).map((as: any) => as.sub_no_id);
         // Build sim card map by sub_no_id
         const simMap = Object.fromEntries(simCards.map((sim: any) => [sim.sub_no_id, sim]));
+        // Build lookup maps for enrichment
+        const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+        const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+        const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+        const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
+        const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
+        const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
         const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
             const sim = simMap[sub.id];
+            const assetObj = sub.asset_id && assetMap[sub.asset_id] ? assetMap[sub.asset_id] : null;
+            // Destructure to remove *_id fields
+            const { costcenter_id, department_id, district_id, asset_id, ...rest } = sub;
+            let assetData = null;
+            if (assetObj) {
+                const brand = assetObj.brand_id && brandMap[assetObj.brand_id] ? { id: assetObj.brand_id, name: brandMap[assetObj.brand_id].name } : null;
+                const model = assetObj.model_id && modelMap[assetObj.model_id] ? { id: assetObj.model_id, name: modelMap[assetObj.model_id].name } : null;
+                assetData = {
+                    id: assetObj.id,
+                    register_number: assetObj.register_number,
+                    brand,
+                    model
+                };
+            }
             return {
-                ...sub,
+                ...rest,
+                costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
+                department: department_id ? departmentMap[department_id] || null : null,
+                district: district_id ? districtMap[district_id] || null : null,
+                asset: assetData,
                 sim_no: sim ? (sim.sim_sn || sim.sim_no) : null
             };
         });
@@ -577,30 +650,50 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
 /* list all accounts with its subscribers: /accounts/subs */
 export const getAccountsWithSubscribers = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const [accounts, accountSubs, subscribers, costcenters, departments, districts] = await Promise.all([
+        const [accounts, accountSubs, subscribers, costcenters, departments, districts, assets, brands, models] = await Promise.all([
             telcoModel.getAccounts(),
             telcoModel.getAccountSubs(),
             telcoModel.getSubscribers(),
             assetModel.getCostcenters ? assetModel.getCostcenters() : [],
             assetModel.getDepartments ? assetModel.getDepartments() : [],
             assetModel.getDistricts ? assetModel.getDistricts() : [],
+            assetModel.getAssets ? assetModel.getAssets() : [],
+            assetModel.getBrands ? assetModel.getBrands() : [],
+            assetModel.getModels ? assetModel.getModels() : [],
         ]);
 
         // Build lookup maps for enrichment (id & name only)
         const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
         const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
         const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
+        const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
+        const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
+        const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
 
         const result = accounts.map((account: any) => {
             const subIds: number[] = accountSubs.filter((as: any) => as.account_id === account.id).map((as: any) => as.sub_no_id);
             const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
-                // Destructure to remove costcenter_id, department_id, district_id
-                const { costcenter_id, department_id, district_id, ...rest } = sub;
+                // Destructure to remove costcenter_id, department_id, district_id, asset_id
+                const { costcenter_id, department_id, district_id, asset_id, ...rest } = sub;
+                // Find asset
+                const assetObj = sub.asset_id && assetMap[sub.asset_id] ? assetMap[sub.asset_id] : null;
+                let assetData = null;
+                if (assetObj) {
+                    const brand = assetObj.brand_id && brandMap[assetObj.brand_id] ? { id: assetObj.brand_id, name: brandMap[assetObj.brand_id].name } : null;
+                    const model = assetObj.model_id && modelMap[assetObj.model_id] ? { id: assetObj.model_id, name: modelMap[assetObj.model_id].name } : null;
+                    assetData = {
+                        id: assetObj.id,
+                        register_number: assetObj.register_number,
+                        brand,
+                        model
+                    };
+                }
                 return {
                     ...rest,
                     costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
                     department: department_id ? departmentMap[department_id] || null : null,
                     district: district_id ? districtMap[district_id] || null : null,
+                    asset: assetData,
                 };
             });
             return {

@@ -15,6 +15,7 @@ const tables = {
     deptSubs: `${db}.department_subs`, // Assuming this is a table for department subscriptions
     telcoBilling: `${db}.tbl_util`, // Assuming this is a table for telco billing
     telcoBillingDetails: `${db}.tbl_celcom_det`, // Assuming this is a table for telco billing history
+    oldSubscribers: `${db}.celcomsub`, // Assuming this is a table for old subscribers
 };
 
 // Define the structure of the account data
@@ -82,6 +83,17 @@ export async function updateSubscriber(id: number, subscriber: any) {
 }
 export async function deleteSubscriber(id: number) {
     await pool.query(`DELETE FROM ${tables.subscribers} WHERE id = ?`, [id]);
+}
+
+// ===================== OLD SUBSCRIBERS =====================
+export async function getOldSubscriberById(id: number) {
+    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.oldSubscribers} WHERE sim_id = ?`, [id]);
+    return rows[0];
+}
+
+export async function getOldSubscribers() {
+    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.oldSubscribers}`);
+    return rows;
 }
 
 // ===================== SIM CARD - SUBSCRIBER JOINS =====================
@@ -153,18 +165,18 @@ export async function getAccountById(accountId: number) {
     return rows[0];
 }
 export async function createAccount(account: any) {
-    const { account_master, description } = account;
+    const { account_master, provider, description, plan } = account;
     const [result] = await pool.query<ResultSetHeader>(
-        `INSERT INTO ${tables.accounts} (account_master, description) VALUES (?, ?)`,
-        [account_master, description]
+        `INSERT INTO ${tables.accounts} (account_master, provider, description, plan) VALUES (?, ?)`,
+        [account_master, provider, description, plan]
     );
     return result.insertId;
 }
 export async function updateAccount(id: number, account: any) {
-    const { account_master, description } = account;
+    const { account_master, provider, description, plan } = account;
     await pool.query(
-        `UPDATE ${tables.accounts} SET account_master = ?, description = ? WHERE id = ?`,
-        [account_master, description, id]
+        `UPDATE ${tables.accounts} SET account_master = ?, provider = ?, description = ?, plan = ? WHERE id = ?`,
+        [account_master, provider, description, plan, id]
     );
 }
 export async function deleteAccount(id: number) {
