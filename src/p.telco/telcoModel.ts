@@ -3,7 +3,7 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 // Database and table names
 const db = 'billings';
-const db25 = 'billings3'; //
+const db25 = 'billings'; //
 const tables = {
     subscribers: `${db}.subscribers`,
     accounts: `${db}.accounts`,
@@ -14,8 +14,8 @@ const tables = {
     simCardSubs: `${db}.simcard_subs`,
     userSubs: `${db}.user_subs`, // Assuming this is a table for user subscriptions
     deptSubs: `${db}.department_subs`, // Assuming this is a table for department subscriptions
-    telcoBilling: `${db25}.tbl_util`, // Assuming this is a table for telco billing
-    telcoBillingDetails: `${db25}.tbl_celcom_det`, // Assuming this is a table for telco billing history
+    telcoBilling: `${db25}.telco_bills`, // Assuming this is a table for telco billing
+    telcoBillingDetails: `${db25}.telco_bill_details`, // Assuming this is a table for telco billing history
     oldSubscribers: `${db25}.celcomsub`, // Assuming this is a table for old subscribers
 };
 
@@ -270,12 +270,12 @@ export async function getUserSubs() {
 // ===================== TELCO BILLING =====================
 // CRUD for telcoBilling
 export async function getTelcoBillings() {
-    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} WHERE category_id = 5 ORDER BY util_id DESC`);
+    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} ORDER BY id DESC`);
     return rows;
 }
 
 export async function getTelcoBillingById(id: number) {
-    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} WHERE util_id = ?`, [id]);
+    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} WHERE id = ?`, [id]);
     return rows[0];
 }
 
@@ -283,7 +283,7 @@ export async function createTelcoBilling(billing: any) {
     // Adjust fields as needed for tbl_util
     const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
     const [result] = await pool2.query<ResultSetHeader>(
-        `INSERT INTO ${tables.telcoBilling} (account_id, account, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 5)`,
+        `INSERT INTO ${tables.telcoBilling} (account_id, account, bill_no, bill_date, subtotal, tax, rounding, grand_total, status, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 5)`,
         [ account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat ]
     );
     return result.insertId;
@@ -293,7 +293,7 @@ export async function updateTelcoBilling(id: number, billing: any) {
     // Adjust fields as needed for tbl_util
     const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
     await pool2.query(
-        `UPDATE ${tables.telcoBilling} SET account_id = ?, account = ?, ubill_no = ?, ubill_date = ?, ubill_stotal = ?, ubill_tax = ?, ubill_round = ?, ubill_gtotal = ?, ubill_paystat = ? WHERE util_id = ?`,
+        `UPDATE ${tables.telcoBilling} SET account_id = ?, account = ?, ubill_no = ?, ubill_date = ?, ubill_stotal = ?, ubill_tax = ?, ubill_round = ?, ubill_gtotal = ?, ubill_paystat = ? WHERE id = ?`,
         [account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat, id]
     );
 }
@@ -304,27 +304,27 @@ export async function deleteTelcoBilling(id: number) {
 
 // ===================== TELCO BILLING DETAILS =====================
 // CRUD for telcoBillingDetails (mapped by util_id)
-export async function getTelcoBillingDetailsById(util_id: number) {
-    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBillingDetails} WHERE util_id = ?`, [util_id]);
+export async function getTelcoBillingDetailsById(id: number) {
+    const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBillingDetails} WHERE bill_id = ?`, [id]);
     return rows;
 }
 
 export async function createTelcoBillingDetail(detail: any) {
     // Adjust fields as needed for tbl_celcom_det
-    const { util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id } = detail;
+    const { id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id } = detail;
     const [result] = await pool2.query<ResultSetHeader>(
-        `INSERT INTO ${tables.telcoBillingDetails} ( util_id, sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, cc_id, account_id, ramco_id ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id]
+        `INSERT INTO ${tables.telcoBillingDetails} ( bill_id, sim_id, new_sim_id, plan, usage, discount, amount, sub_id, costcenter_id, account_id, ramco_id ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [ id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, subs_id, costcenter_id, account_id, ramco_id ]
     );
     return result.insertId;
 }
 
-export async function updateTelcoBillingDetail(util2_id: number, detail: any) {
+export async function updateTelcoBillingDetail(id: number, detail: any) {
     // Adjust fields as needed for tbl_celcom_det
-    const { util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id } = detail;
+    const { bill_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id } = detail;
     await pool2.query(
-        `UPDATE ${tables.telcoBillingDetails} SET util_id = ?, sim_id = ?, new_sim_id = ?, util2_plan = ?, util2_usage = ?, util2_disc = ?, util2_amt = ?, sub_id = ?, cc_id = ?, account_id = ?, ramco_id = ? WHERE util2_id = ?`,
-        [ util_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id, util2_id ]
+        `UPDATE ${tables.telcoBillingDetails} SET bill_id = ?, sim_id = ?, new_sim_id = ?, plan = ?, usage = ?, discount = ?, amount = ?, sub_id = ?, costcenter_id = ?, account_id = ?, ramco_id = ? WHERE id = ?`,
+        [ bill_id, old_sim_id, new_sim_id, util2_plan, util2_usage, util2_disc, util2_amt, sub_id, costcenter_id, account_id, ramco_id, id ]
     );
 }
 

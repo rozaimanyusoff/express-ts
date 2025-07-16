@@ -76,17 +76,21 @@ export const getTelcoBillings = async (req: Request, res: Response, next: NextFu
                     id: acc.id,
                     account_no: acc.account_master,
                     provider: acc.provider || null,
-                    old_id: acc.old_bill_id // Keep old_id for backward compatibility
                 };
             }
             return {
-                util_id: b.util_id,
+                id: b.id,
                 bfcy_id: b.bfcy_id,
                 account: accountObj,
-                ubill_date: b.ubill_date,
-                ubill_no: b.ubill_no,
-                ubill_gtotal: b.ubill_gtotal,
-                ubill_paystat: b.ubill_paystat
+                bill_date: b.bill_date,
+                bill_no: b.bill_no,
+                subtotal: b.subtotal,
+                discount: b.discount || 0,
+                tax: b.tax || 0,
+                rounding: b.rounding || 0,
+                grand_total: b.grand_total,
+                reference: b.reference || null,
+                status: b.status
             };
         });
         res.status(200).json({ status: 'success', message: 'Telco billing retrieved', data: formatted });
@@ -123,7 +127,7 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             };
         }
         // Fetch billing details by util_id
-        let details = await telcoModel.getTelcoBillingDetailsById(billing.util_id);
+        let details = await telcoModel.getTelcoBillingDetailsById(billing.id);
         // Enrich each detail with sim_id and sim_subno
         if (Array.isArray(details)) {
             // Fetch all subscribers for mapping sub_no to id
@@ -198,17 +202,17 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             summary = Array.from(summaryMap.values());
         }
         const formatted = {
-            util_id: billing.util_id,
+            id: billing.util_id,
             bfcy_id: billing.bfcy_id,
             account: accountObj,
-            ubill_date: billing.ubill_date,
-            ubill_no: billing.ubill_no,
-            ubill_stotal: billing.ubill_stotal,
-            ubill_tax: billing.ubill_tax,
-            ubill_round: billing.ubill_round,
-            ubill_gtotal: billing.ubill_gtotal,
-            ubill_paystat: billing.ubill_paystat,
-            ubill_ref: billing.ubill_ref || null,
+            bill_date: billing.ubill_date,
+            bill_no: billing.ubill_no,
+            subtotal: billing.ubill_stotal,
+            tax: billing.ubill_tax,
+            rounding: billing.ubill_round,
+            grand_total: billing.ubill_gtotal,
+            status: billing.ubill_paystat,
+            reference: billing.ubill_ref || null,
             summary,
             details: Array.isArray(details) ? details : []
         };
