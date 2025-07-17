@@ -281,20 +281,20 @@ export async function getTelcoBillingById(id: number) {
 
 export async function createTelcoBilling(billing: any) {
     // Adjust fields as needed for tbl_util
-    const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
+    const { account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status } = billing;
     const [result] = await pool2.query<ResultSetHeader>(
-        `INSERT INTO ${tables.telcoBilling} (account_id, account, bill_no, bill_date, subtotal, tax, rounding, grand_total, status, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 5)`,
-        [ account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat ]
+        `INSERT INTO ${tables.telcoBilling} (account_id, account, bill_no, bill_date, subtotal, tax, rounding, grand_total, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [ account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status ]
     );
     return result.insertId;
 }
 
 export async function updateTelcoBilling(id: number, billing: any) {
     // Adjust fields as needed for tbl_util
-    const { account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat } = billing;
+    const { account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status } = billing;
     await pool2.query(
-        `UPDATE ${tables.telcoBilling} SET account_id = ?, account = ?, ubill_no = ?, ubill_date = ?, ubill_stotal = ?, ubill_tax = ?, ubill_round = ?, ubill_gtotal = ?, ubill_paystat = ? WHERE id = ?`,
-        [account_id, account_master, ubill_no, ubill_date, ubill_stotal, ubill_tax, ubill_round, ubill_gtotal, ubill_paystat, id]
+        `UPDATE ${tables.telcoBilling} SET account_id = ?, account = ?, bill_no = ?, bill_date = ?, subtotal = ?, tax = ?, rounding = ?, grand_total = ?, status = ? WHERE id = ?`,
+        [account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status, id]
     );
 }
 

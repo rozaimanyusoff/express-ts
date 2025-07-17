@@ -154,27 +154,27 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                     if (subscriber) {
                         subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
                     }
-                 }
-                 // Support new records: map by sub_id if sim_id is null
-                 if (!subsObj && d.sub_id) {
-                     const subscriber = Array.isArray(subscribers)
-                         ? subscribers.find((sub: any) => sub.id === d.sub_id)
-                         : null;
-                     if (subscriber) {
-                         subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
-                     }
+                }
+                // Support new records: map by sub_id if sim_id is null
+                if (!subsObj && d.sub_id) {
+                    const subscriber = Array.isArray(subscribers)
+                        ? subscribers.find((sub: any) => sub.id === d.sub_id)
+                        : null;
+                    if (subscriber) {
+                        subsObj = { id: subscriber.id, sub_no: subscriber.sub_no };
+                    }
                 }
                 // Resolve costcenter and district
-                const costcenter = d.cc_id ? costcenterMap[d.cc_id] || null : null;
+                const costcenter = d.costcenter_id ? costcenterMap[d.costcenter_id] || null : null;
                 const district = d.loc_id ? districtMap[d.loc_id] || null : null;
                 // Enrich user from sim_user_id
                 let user = null;
-                if (d.sim_user_id && employeeMap[d.sim_user_id]) {
-                    const emp = employeeMap[d.sim_user_id];
+                if (d.ramco_id && employeeMap[d.ramco_id]) {
+                    const emp = employeeMap[d.ramco_id];
                     user = { ramco_id: emp.ramco_id, full_name: emp.full_name };
                 }
                 // Remove cc_id and loc_id from details
-                const { cc_id, loc_id, sim_user_id, ...rest } = d;
+                const { cc_id, loc_id, ramco_id, ...rest } = d;
                 return {
                     ...rest,
                     old_sim_id: d.sim_id || null,
@@ -186,33 +186,33 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             }));
         }
         // Build summary: sum util2_amt by costcenter object from details
-        let summary: Array<{ costcenter: { id: number|null, name: string }, total_amt: number }> = [];
+        let summary: Array<{ costcenter: { id: number | null, name: string }, cc_amount: number }> = [];
         if (Array.isArray(details)) {
             // Use a Map to group by costcenter stringified
             const summaryMap = new Map();
             for (const d of details) {
                 const cc = d.costcenter || { id: null, name: '' };
                 const key = JSON.stringify(cc);
-                const amt = parseFloat(d.util2_amt) || 0;
+                const amt = parseFloat(d.amount) || 0;
                 if (!summaryMap.has(key)) {
-                    summaryMap.set(key, { costcenter: cc, total_amt: 0 });
+                    summaryMap.set(key, { costcenter: cc, cc_amount: 0 });
                 }
-                summaryMap.get(key).total_amt += amt;
+                summaryMap.get(key).cc_amount += amt;
             }
             summary = Array.from(summaryMap.values());
         }
         const formatted = {
-            id: billing.util_id,
+            id: billing.id,
             bfcy_id: billing.bfcy_id,
             account: accountObj,
-            bill_date: billing.ubill_date,
-            bill_no: billing.ubill_no,
-            subtotal: billing.ubill_stotal,
-            tax: billing.ubill_tax,
-            rounding: billing.ubill_round,
-            grand_total: billing.ubill_gtotal,
-            status: billing.ubill_paystat,
-            reference: billing.ubill_ref || null,
+            bill_date: billing.bill_date,
+            bill_no: billing.bill_no,
+            subtotal: billing.subtotal,
+            tax: billing.tax,
+            rounding: billing.rounding,
+            grand_total: billing.grand_total,
+            status: billing.status,
+            reference: billing.reference || null,
             summary,
             details: Array.isArray(details) ? details : []
         };
@@ -917,7 +917,7 @@ export const createContract = async (req: Request, res: Response, next: NextFunc
 export const getVendors = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const vendors = await telcoModel.getVendors();
-        res.status(200).json({status: 'Success', message: 'Vendors data retrieved succesfully', data: vendors});
+        res.status(200).json({ status: 'Success', message: 'Vendors data retrieved succesfully', data: vendors });
     } catch (error) {
         next(error);
     }
