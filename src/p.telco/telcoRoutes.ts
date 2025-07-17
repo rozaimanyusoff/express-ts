@@ -43,6 +43,7 @@ router.post('/account-subs', asyncHandler(TelcoController.createAccountSub)); //
 
 /* Telco Billing */
 router.get('/bills/:id', asyncHandler(TelcoController.getTelcoBillingById)); // show subscriber billing by id
+router.get('/bills/:id/report', asyncHandler(TelcoController.getCostcenterSummaryReport)); // costcenter summary report by bill id and date range
 router.get('/bills', asyncHandler(TelcoController.getTelcoBillings)); // list subscribers billing
 router.post('/bills', asyncHandler(TelcoController.createTelcoBilling));
 router.put('/bills/:id', asyncHandler(TelcoController.updateTelcoBilling));

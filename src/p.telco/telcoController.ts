@@ -1,3 +1,4 @@
+
 import { Request, Response, NextFunction } from 'express';
 import * as telcoModel from './telcoModel';
 import * as assetModel from '../p.asset/assetModel';
@@ -284,6 +285,71 @@ export const deleteTelcoBilling = async (req: Request, res: Response, next: Next
 };
 
 
+// GET /api/telco/bills/:id/report?from=YYYY-MM-DD&to=YYYY-MM-DD
+export const getCostcenterSummaryReport = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const accountId = Number(req.params.id);
+        const { from, to } = req.query;
+        if (isNaN(accountId)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+        }
+        if (typeof from !== 'string' || typeof to !== 'string' || !from || !to) {
+            return res.status(400).json({ status: 'error', message: 'Missing or invalid from/to query params. Use ?from=YYYY-MM-DD&to=YYYY-MM-DD' });
+        }
+        // Always use the RAW result from telcoModel.getTelcoBillings(), not the formatted controller output
+        const bills = await telcoModel.getTelcoBillingByAccountDateRange(accountId, from, to);
+        // Debug: log the first bill to check structure
+        if (bills && bills.length > 0) {
+            // eslint-disable-next-line no-console
+            console.log('DEBUG: First bill from getTelcoBillings:', bills[0]);
+        }
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        // Filter bills by account_id and bill_date/date_bill in range
+        // Make sure to use b.account_id (from raw DB row)
+        const filteredBills = bills.filter((b: any) => {
+            if (b.account_id !== accountId) return false;
+            const date = b.date_bill || b.bill_date;
+            const billDate = date ? new Date(date) : null;
+            return billDate && billDate >= fromDate && billDate <= toDate;
+        });
+        if (!filteredBills.length) {
+            return res.status(404).json({ status: 'error', message: 'No bills found for this account in the date range' });
+        }
+        // Get all details for these bills
+        let allDetails: any[] = [];
+        for (const bill of filteredBills) {
+            const details = await telcoModel.getTelcoBillingDetailsById(bill.id); //ToDo: to be reviewed as this method will get data by bill_id & not accoun_id
+            // Attach bill date to each detail for grouping
+            const date = bill.date_bill || bill.bill_date;
+            const billDate = date ? new Date(date) : null;
+            for (const d of details) {
+                allDetails.push({ ...d, _billDate: billDate });
+            }
+        }
+        // Group by costcenter_id and month
+        const summaryMap = new Map();
+        for (const d of allDetails) {
+            const costcenterId = d.costcenter_id || null;
+            const billDate = d._billDate;
+            if (!billDate) continue;
+            const month = `${billDate.getFullYear()}-${String(billDate.getMonth() + 1).padStart(2, '0')}`;
+            const key = `${costcenterId || 'null'}_${month}`;
+            if (!summaryMap.has(key)) {
+                summaryMap.set(key, {
+                    costcenter_id: costcenterId,
+                    month,
+                    total_amount: 0
+                });
+            }
+            summaryMap.get(key).total_amount += parseFloat(d.amount) || 0;
+        }
+        const summary = Array.from(summaryMap.values());
+        res.status(200).json({ status: 'success', data: summary });
+    } catch (error) {
+        next(error);
+    }
+};
 
 
 // ===================== SUBSCRIBERS =====================
@@ -989,3 +1055,5 @@ export const deleteVendor = async (req: Request, res: Response, next: NextFuncti
         next(error);
     }
 };
+
+// ToDo: implement costcenter summary by bill ID with date range params

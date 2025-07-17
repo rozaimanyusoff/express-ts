@@ -266,7 +266,6 @@ export async function getUserSubs() {
     return rows;
 }
 
-
 // ===================== TELCO BILLING =====================
 // CRUD for telcoBilling
 export async function getTelcoBillings() {
@@ -282,6 +281,15 @@ export async function getTelcoBillingById(id: number) {
 export async function createTelcoBilling(billing: any) {
     // Adjust fields as needed for tbl_util
     const { account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status } = billing;
+    // Check for duplicate by bill_no and account_id
+    const [dupRows] = await pool2.query<RowDataPacket[]>(
+        `SELECT id FROM ${tables.telcoBilling} WHERE bill_no = ? AND account_id = ? LIMIT 1`,
+        [bill_no, account_id]
+    );
+    if (dupRows && dupRows.length > 0) {
+        // Duplicate found, return existing id (or throw error if preferred)
+        return dupRows[0].id;
+    }
     const [result] = await pool2.query<ResultSetHeader>(
         `INSERT INTO ${tables.telcoBilling} (account_id, account, bill_no, bill_date, subtotal, tax, rounding, grand_total, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [ account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status ]
@@ -302,10 +310,23 @@ export async function deleteTelcoBilling(id: number) {
     await pool.query(`DELETE FROM ${tables.telcoBilling} WHERE id = ?`, [id]);
 }
 
+
 // ===================== TELCO BILLING DETAILS =====================
 // CRUD for telcoBillingDetails (mapped by util_id)
 export async function getTelcoBillingDetailsById(id: number) {
     const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBillingDetails} WHERE bill_id = ?`, [id]);
+    return rows;
+}
+
+// Costcenter summary by bill ID and date range
+export async function getTelcoBillingByAccountDateRange(accountId: number, from: string, to: string) {
+    // Return all bills for the account and date range (no GROUP BY)
+    const [rows] = await pool2.query<RowDataPacket[]>(
+        `SELECT *
+         FROM ${tables.telcoBilling}
+         WHERE account_id = ? AND bill_date BETWEEN ? AND ?`,
+        [accountId, from, to]
+    );
     return rows;
 }
 
