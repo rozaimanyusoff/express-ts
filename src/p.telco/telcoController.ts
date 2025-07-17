@@ -233,7 +233,7 @@ export const createTelcoBilling = async (req: Request, res: Response, next: Next
             // Attach util_id to each detail
             const detailsWithUtilId = billing.details.map((detail: any) => ({
                 ...detail,
-                util_id: insertId
+                bill_id: insertId
             }));
             // Insert each detail
             for (const detail of detailsWithUtilId) {
