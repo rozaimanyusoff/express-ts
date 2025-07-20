@@ -27,7 +27,7 @@ export const getTypes = async (req: Request, res: Response) => {
     // Add full image URL if image exists
     let image = type.image;
     if (image) {
-      image = `${req.protocol}://${req.get('host')}/uploads/types/${image}`;
+      image = `https://${req.get('host')}/uploads/types/${image}`;
     }
     return {
       ...type,
