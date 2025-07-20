@@ -4,7 +4,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Table names
 const db = 'assetdata';
-const purchaseRequestTable = `${db}.purchase_request`;
+const purchaseRequestTable = `${db}.purchase_requests`;
 const purchaseRequestDetailsTable = `${db}.purchase_request_details`;
 
 // Parent: purchase_request
