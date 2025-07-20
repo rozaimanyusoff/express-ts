@@ -72,7 +72,7 @@ export const createType = async (req: Request, res: Response) => {
     // Fetch the created type to return with full image URL
     const type = await assetModel.getTypeById(typeId);
     if (type && type.image) {
-      type.image = `${req.protocol}://${req.get('host')}/uploads/types/${type.image}`;
+      type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
     }
     res.status(201).json({ status: 'success', message: 'Type created', data: type });
   } catch (err) {
@@ -90,7 +90,7 @@ export const updateType = async (req: Request, res: Response) => {
     // Fetch the updated type to return with full image URL
     const type = await assetModel.getTypeById(id);
     if (type && type.image) {
-      type.image = `${req.protocol}://${req.get('host')}/uploads/types/${type.image}`;
+      type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
     }
     res.json({ status: 'success', message: 'Type updated', data: type });
   } catch (err) {
@@ -213,7 +213,7 @@ export const getBrands = async (req: Request, res: Response) => {
       image: brand.image
         ? (brand.image.startsWith('http')
             ? brand.image
-            : `${req.protocol}://${req.get('host')}/uploads/brands/${brand.image}`)
+            : `https://${req.get('host')}/uploads/brands/${brand.image}`)
         : null,
       categories: categoriesForBrand
     };
@@ -322,7 +322,7 @@ export const createModel = async (req: Request, res: Response) => {
   const modelId = (result as import('mysql2').ResultSetHeader).insertId;
   const model = await assetModel.getModelById(modelId);
   if (model && model.image) {
-    model.image = `${req.protocol}://${req.get('host')}/uploads/models/${model.image}`;
+    model.image = `https://${req.get('host')}/uploads/models/${model.image}`;
   }
   res.status(201).json({ status: 'success', message: 'Model created successfully', data: model });
 };
@@ -363,7 +363,7 @@ export const updateModel = async (req: Request, res: Response) => {
   // Fetch the updated model to return with full image URL
   const model = await assetModel.getModelById(Number(req.params.id));
   if (model && model.image) {
-    model.image = `${req.protocol}://${req.get('host')}/uploads/models/${model.image}`;
+    model.image = `https://${req.get('host')}/uploads/models/${model.image}`;
   }
   res.json({ status: 'success', message: 'Model updated successfully', data: model });
 };
@@ -938,7 +938,7 @@ export const getEmployees = async (req: Request, res: Response) => {
     avatar: emp.avatar
       ? (emp.avatar.startsWith('http')
           ? emp.avatar
-          : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+          : `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
       : null,
     hire_date: emp.hire_date,
     resignation_date: emp.resignation_date,
@@ -982,7 +982,7 @@ export const getEmployeeById = async (req: Request, res: Response) => {
       avatar: emp.avatar
         ? (emp.avatar.startsWith('http')
             ? emp.avatar
-            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+            : `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
         : null,
       hire_date: emp.hire_date,
       resignation_date: emp.resignation_date,
@@ -1021,7 +1021,7 @@ export const getEmployeeByRamco = async (req: Request, res: Response) => {
       avatar: emp.avatar
         ? (emp.avatar.startsWith('http')
             ? emp.avatar
-            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+            : `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
         : null,
       hire_date: emp.hire_date,
       resignation_date: emp.resignation_date,
@@ -1060,7 +1060,7 @@ export const getEmployeeByEmail = async (req: Request, res: Response) => {
       avatar: emp.avatar
         ? (emp.avatar.startsWith('http')
             ? emp.avatar
-            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+            : `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
         : null,
       hire_date: emp.hire_date,
       resignation_date: emp.resignation_date,
@@ -1099,7 +1099,7 @@ export const getEmployeeByContact = async (req: Request, res: Response) => {
       avatar: emp.avatar
         ? (emp.avatar.startsWith('http')
             ? emp.avatar
-            : `${req.protocol}://${req.get('host')}/uploads/employees/${emp.avatar}`)
+            : `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
         : null,
       hire_date: emp.hire_date,
       resignation_date: emp.resignation_date,

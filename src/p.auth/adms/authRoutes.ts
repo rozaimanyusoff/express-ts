@@ -17,7 +17,7 @@ router.post('/reset-password-multi', rateLimiter[0], rateLimiter[1], asyncHandle
 router.post('/verifytoken', rateLimiter[0], rateLimiter[1], asyncHandler(verifyResetToken));
 router.post('/update-password', rateLimiter[0], rateLimiter[1], asyncHandler(updatePassword));
 router.post('/logout', tokenValidator, asyncHandler(logout));
-router.post('/refresh-token', tokenValidator, asyncHandler(refreshToken));
+router.post('/refresh-token', asyncHandler(refreshToken)); // not apply tokenValidator as it is used for refreshing token
 router.post('/approve-pending-user', asyncHandler(approvePendingUser));
 router.post('/invite-users', asyncHandler(inviteUsers));
 
