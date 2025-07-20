@@ -24,8 +24,14 @@ export const getTypes = async (req: Request, res: Response) => {
       const emp = employeeMap.get(type.manager);
       manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
     }
+    // Add full image URL if image exists
+    let image = type.image;
+    if (image) {
+      image = `${req.protocol}://${req.get('host')}/uploads/types/${image}`;
+    }
     return {
       ...type,
+      image,
       manager
     };
   });
