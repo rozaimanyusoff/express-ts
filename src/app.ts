@@ -28,7 +28,7 @@ app.options('*', corsMiddleware);
 app.use(securityHeaders);
 
 // Serve uploads directory for profile images
-app.use('/uploads', express.static(path.resolve(__dirname, '../../uploads')));
+app.use('/uploads', express.static('/mnt/winshare'));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
