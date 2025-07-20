@@ -28,6 +28,13 @@ app.options('*', corsMiddleware);
 app.use(securityHeaders);
 
 // Serve uploads directory for profile images
+// Add CORS headers for static file responses
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});
 app.use('/uploads', express.static('/mnt/winshare'));
 
 app.use('/api/auth', authRoutes);
