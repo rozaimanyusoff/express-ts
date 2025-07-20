@@ -39,11 +39,17 @@ const assetTransferDetailsTable = `${db}.asset_transfer_details`;
 const transferChecklistTable = `${db}.transfer_checklists`;
 
 // Helper to move type image to uploads/types/ if needed
+const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || '/mnt/winshare';
 async function handleTypeImage(image: string) {
   if (!image) return '';
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'types');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'types');
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+  } catch (err) {
+    console.error('Error creating uploadsDir:', uploadsDir, err);
+    return '';
   }
   // If image is a base64 string, save it as a file
   if (image.startsWith('data:image/')) {
@@ -51,7 +57,12 @@ async function handleTypeImage(image: string) {
     const base64Data = image.split(',')[1];
     const filename = `type_${Date.now()}.${ext}`;
     const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, base64Data, 'base64');
+    try {
+      fs.writeFileSync(filepath, base64Data, 'base64');
+    } catch (err) {
+      console.error('Error writing file:', filepath, err);
+      return '';
+    }
     return filename;
   }
   // If image is a filename, just return it
@@ -98,7 +109,7 @@ export const deleteType = async (id: number) => {
 // Helper to move category image to uploads/category/ if needed
 async function handleCategoryImage(image: string) {
   if (!image) return '';
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'category');
+  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'category');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
@@ -154,7 +165,7 @@ export const deleteCategory = async (id: number) => {
 // Helper to move logo image to uploads/brands/ if needed
 async function handleBrandLogo(logo: string) {
   if (!logo) return '';
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'brands');
+  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'brands');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }

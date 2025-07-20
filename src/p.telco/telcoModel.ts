@@ -42,6 +42,12 @@ export async function getSubscribers() {
 }
 export async function createSubscriber(subscriber: any) {
     const { sub_no, account_sub, status, register_date } = subscriber;
+    // Check for duplicate by sub_no
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.subscribers} WHERE sub_no = ? LIMIT 1`, [sub_no]);
+    if (dupRows && dupRows.length > 0) {
+        // Duplicate found, return existing id (or throw error if preferred)
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.subscribers} (sub_no, account_sub, status, register_date) VALUES (?, ?, ?, ?)`,
         [sub_no, account_sub, status, register_date]
@@ -140,6 +146,11 @@ export async function getSimsBySubscriberId(subscriberId: number) {
 }
 export async function createSimCard(simCard: any) {
     const { sim_sn, sub_no_id, register_date, reason, note } = simCard;
+    // Check for duplicate by sim_sn
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.simCards} WHERE sim_sn = ? LIMIT 1`, [sim_sn]);
+    if (dupRows && dupRows.length > 0) {
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.simCards} (sim_sn, sub_no_id, register_date, reason, note) VALUES (?, ?, ?, ?, ?)`,
         [sim_sn, sub_no_id, register_date, reason, note]
@@ -167,8 +178,13 @@ export async function getAccountById(accountId: number) {
 }
 export async function createAccount(account: any) {
     const { account_master, provider, description, plan } = account;
+    // Check for duplicate by account_master
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.accounts} WHERE account_master = ? LIMIT 1`, [account_master]);
+    if (dupRows && dupRows.length > 0) {
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
-        `INSERT INTO ${tables.accounts} (account_master, provider, description, plan) VALUES (?, ?)`,
+        `INSERT INTO ${tables.accounts} (account_master, provider, description, plan) VALUES (?, ?, ?, ?)`,
         [account_master, provider, description, plan]
     );
     return result.insertId;
@@ -192,6 +208,11 @@ export async function getAccountSubs() {
 }
 export async function createAccountSub(accountSub: any) {
     const { sub_no_id, account_id } = accountSub;
+    // Check for duplicate assignment
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.accountSubs} WHERE sub_no_id = ? AND account_id = ? AND status = 'active' LIMIT 1`, [sub_no_id, account_id]);
+    if (dupRows && dupRows.length > 0) {
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.accountSubs} (sub_no_id, account_id) VALUES (?, ?)`,
         [sub_no_id, account_id]
@@ -223,6 +244,11 @@ export async function getContractById(contractId: number) {
 }
 export async function createContract(contract: any) {
     const { account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration } = contract;
+    // Check for duplicate by account_id, product_type, contract_start_date
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.contracts} WHERE account_id = ? AND product_type = ? AND contract_start_date = ? LIMIT 1`, [account_id, product_type, contract_start_date]);
+    if (dupRows && dupRows.length > 0) {
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.contracts} (account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [account_id, product_type, contract_start_date, contract_end_date, plan, status, vendor_id, price, duration]
@@ -242,6 +268,11 @@ export async function getVendorById(vendorId: number) {
 }
 export async function createVendor(vendor: any) {
     const { name, service_type, register_date, address, contact_name, contact_no, contact_email, status } = vendor;
+    // Check for duplicate by name
+    const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.vendors} WHERE name = ? LIMIT 1`, [name]);
+    if (dupRows && dupRows.length > 0) {
+        return dupRows[0].id;
+    }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.vendors} (name, service_type, register_date, address, contact_name, contact_no, contact_email, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [name, service_type, register_date, address, contact_name, contact_no, contact_email, status]

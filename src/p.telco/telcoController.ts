@@ -1,4 +1,3 @@
-
 import { Request, Response, NextFunction } from 'express';
 import * as telcoModel from './telcoModel';
 import * as assetModel from '../p.asset/assetModel';
@@ -58,6 +57,7 @@ type ContractData = {
 };
 
 // ===================== TELCO BILLING =====================
+
 // GET all telco billings
 export const getTelcoBillings = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -223,6 +223,302 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
     }
 };
 
+// GET /api/telco/bills/account/:id
+export const getTelcoBillingByAccountId = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const accountId = Number(req.params.id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+        }
+        const { from, to } = req.query;
+        let fromDate: Date | null = null;
+        let toDate: Date | null = null;
+        if (from && typeof from === 'string') {
+            fromDate = new Date(from);
+        }
+        if (to && typeof to === 'string') {
+            toDate = new Date(to);
+        }
+        // Always use the RAW result from telcoModel.getTelcoBillings(), not the formatted controller output
+        const bills = await telcoModel.getTelcoBillings();
+        // Fetch all accounts for mapping
+        const accounts = await telcoModel.getAccounts();
+        const accountMap = Object.fromEntries(accounts.map((a: any) => [a.id, a]));
+        // Filter bills by account and date range
+        const filteredBills = bills.filter((b: any) => {
+            const billAccountId = b.account_id !== undefined ? b.account_id : (b.account && b.account.id !== undefined ? b.account.id : undefined);
+            if (billAccountId !== accountId) return false;
+            if (fromDate || toDate) {
+                const billDate = b.bill_date ? new Date(b.bill_date) : null;
+                if (!billDate) return false;
+                if (fromDate && billDate < fromDate) return false;
+                if (toDate && billDate > toDate) return false;
+            }
+            return true;
+        });
+
+        // Fetch all costcenters once for mapping
+        const costcentersArr = await (assetModel.getCostcenters ? assetModel.getCostcenters() : []);
+        const costcenterMap = Object.fromEntries((Array.isArray(costcentersArr) ? costcentersArr : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+
+        // For each bill, fetch details and aggregate by costcenter_id, resolving to {id, name}
+        const matchedBills = await Promise.all(filteredBills.map(async (b: any) => {
+            let provider = null;
+            if (b.account && b.account.provider) {
+                provider = b.account.provider;
+            } else if (b.provider) {
+                provider = b.provider;
+            }
+            // Fetch details for this bill
+            let details: Array<{ costcenter: { id: any, name: string|null }, amount: any }> = [];
+            try {
+                const billDetails = await telcoModel.getTelcoBillingDetailsById(b.id);
+                if (Array.isArray(billDetails)) {
+                    // Aggregate by costcenter_id
+                    const aggMap = new Map();
+                    for (const d of billDetails) {
+                        const ccid = d.costcenter_id;
+                        const amt = parseFloat(d.amount) || 0;
+                        if (!aggMap.has(ccid)) {
+                            aggMap.set(ccid, 0);
+                        }
+                        aggMap.set(ccid, aggMap.get(ccid) + amt);
+                    }
+                    details = Array.from(aggMap.entries()).map(([costcenter_id, amount]) => ({
+                        costcenter: costcenter_id ? (costcenterMap[costcenter_id] || { id: costcenter_id, name: null }) : { id: null, name: null },
+                        amount: amount.toFixed(2)
+                    }));
+                }
+            } catch (err) {
+                // If error, leave details empty
+            }
+            return {
+                id: b.id,
+                account_id: b.account_id !== undefined ? b.account_id : (b.account && b.account.id !== undefined ? b.account.id : null),
+                account: b.account && b.account.account_no ? b.account.account_no : (b.account_no || null),
+                provider,
+                bill_date: b.bill_date,
+                details
+            };
+        }));
+
+        // Prepare account info (from getAccounts mapping)
+        let accountInfo = null;
+        if (matchedBills.length > 0) {
+            const b = matchedBills[0];
+            const accObj = accountMap[b.account_id];
+            accountInfo = accObj ? {
+                id: accObj.id,
+                account_no: accObj.account_master,
+                description: accObj.description || null,
+                provider: accObj.provider || null
+            } : {
+                id: b.account_id,
+                account_no: b.account,
+                name: null,
+                description: null,
+                provider: b.provider || null
+            };
+        }
+
+        // Group bills by year and month, aggregate costcenters and total_amount
+        const yearMonthMap: Record<number, Record<number, { name: string, total_amount: string, costcenters: any[] }>> = {};
+        for (const bill of matchedBills) {
+            const date = bill.bill_date ? new Date(bill.bill_date) : null;
+            if (!date || isNaN(date.getTime())) continue;
+            const year = date.getFullYear();
+            const monthNum = date.getMonth(); // 0-based
+            // Format month as Jan'25, Feb'25, etc.
+            const monthShort = date.toLocaleString('default', { month: 'short' });
+            const yearShort = String(year).slice(-2);
+            const monthName = `${monthShort}'${yearShort}`;
+            if (!yearMonthMap[year]) yearMonthMap[year] = {};
+            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { name: monthName, total_amount: '0.00', costcenters: [] };
+
+            // Aggregate costcenters for this bill into month
+            for (const detail of bill.details) {
+                // Find if costcenter already exists in month
+                const idx = yearMonthMap[year][monthNum].costcenters.findIndex((cc: any) => cc.id === detail.costcenter.id);
+                if (idx === -1 && detail.costcenter.id != null) {
+                    yearMonthMap[year][monthNum].costcenters.push({
+                        id: detail.costcenter.id,
+                        name: detail.costcenter.name,
+                        amount: detail.amount
+                    });
+                } else if (idx !== -1) {
+                    // Sum amounts for same costcenter
+                    const prev = yearMonthMap[year][monthNum].costcenters[idx];
+                    prev.amount = (parseFloat(prev.amount) + parseFloat(detail.amount)).toFixed(2);
+                }
+            }
+            // Add bill's total to month total_amount
+            const billTotal = bill.details.reduce((sum: number, d: any) => sum + parseFloat(d.amount), 0);
+            yearMonthMap[year][monthNum].total_amount = (parseFloat(yearMonthMap[year][monthNum].total_amount) + billTotal).toFixed(2);
+        }
+
+        // Build final data array
+        const data = Object.entries(yearMonthMap).map(([year, months]) => ({
+            year: Number(year),
+            month: Object.values(months)
+        }));
+
+        // Build response
+        res.status(200).json({
+            status: 'success',
+            message: 'Telco costcenter summary retrieved successfully',
+            account: accountInfo,
+            from_date: fromDate ? fromDate.toISOString() : null,
+            to_date: toDate ? toDate.toISOString() : null,
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// GET /api/telco/bills/:id/report/costcenter
+export const getTelcoBillingByCostcenterId = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const costcenterId = Number(req.params.id);
+        if (isNaN(costcenterId)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid costcenter ID' });
+        }
+        const { from, to } = req.query;
+        let fromDate: Date | null = null;
+        let toDate: Date | null = null;
+        if (from && typeof from === 'string') {
+            fromDate = new Date(from);
+        }
+        if (to && typeof to === 'string') {
+            toDate = new Date(to);
+        }
+        // Fetch all bills and accounts
+        const bills = await telcoModel.getTelcoBillings();
+        const accounts = await telcoModel.getAccounts();
+        const accountMap = Object.fromEntries(accounts.map((a: any) => [a.id, a]));
+        // Fetch all costcenters for mapping
+        const costcentersArr = await (assetModel.getCostcenters ? assetModel.getCostcenters() : []);
+        const costcenterMap = Object.fromEntries((Array.isArray(costcentersArr) ? costcentersArr : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+
+        // Filter bills by date range if provided
+        const filteredBills = bills.filter((b: any) => {
+            if (fromDate || toDate) {
+                const billDate = b.bill_date ? new Date(b.bill_date) : null;
+                if (!billDate) return false;
+                if (fromDate && billDate < fromDate) return false;
+                if (toDate && billDate > toDate) return false;
+            }
+            return true;
+        });
+
+        // For each bill, fetch details and filter by costcenter_id
+        const matchedBills = [];
+        for (const b of filteredBills) {
+            try {
+                const billDetails = await telcoModel.getTelcoBillingDetailsById(b.id);
+                if (Array.isArray(billDetails)) {
+                    // Only keep details matching costcenterId
+                    const details = billDetails.filter((d: any) => d.costcenter_id == costcenterId);
+                    if (details.length > 0) {
+                        // Aggregate by account_id
+                        const aggMap = new Map();
+                        for (const d of details) {
+                            const accid = b.account_id;
+                            const amt = parseFloat(d.amount) || 0;
+                            if (!aggMap.has(accid)) {
+                                aggMap.set(accid, 0);
+                            }
+                            aggMap.set(accid, aggMap.get(accid) + amt);
+                        }
+                        const detailsAgg = Array.from(aggMap.entries()).map(([account_id, amount]) => ({
+                            account: account_id ? (accountMap[account_id] ? {
+                                id: accountMap[account_id].id,
+                                account_no: accountMap[account_id].account_master,
+                                description: accountMap[account_id].description || null,
+                                provider: accountMap[account_id].provider || null
+                            } : { id: account_id, account_no: null, description: null, provider: null }) : null,
+                            amount: amount.toFixed(2)
+                        }));
+                        matchedBills.push({
+                            id: b.id,
+                            costcenter_id: costcenterId,
+                            costcenter: costcenterMap[costcenterId] || { id: costcenterId, name: null },
+                            bill_date: b.bill_date,
+                            details: detailsAgg
+                        });
+                    }
+                }
+            } catch (err) {
+                // If error, skip bill
+            }
+        }
+
+        // Prepare costcenter info
+        let costcenterInfo = costcenterMap[costcenterId] ? {
+            id: costcenterId,
+            name: costcenterMap[costcenterId].name
+        } : {
+            id: costcenterId,
+            name: null
+        };
+
+        // Group bills by year and month, aggregate accounts and total_amount
+        const yearMonthMap: Record<number, Record<number, { name: string, total_amount: string, accounts: any[] }>> = {};
+        for (const bill of matchedBills) {
+            const date = bill.bill_date ? new Date(bill.bill_date) : null;
+            if (!date || isNaN(date.getTime())) continue;
+            const year = date.getFullYear();
+            const monthNum = date.getMonth(); // 0-based
+            // Format month as Jan'25, Feb'25, etc.
+            const monthShort = date.toLocaleString('default', { month: 'short' });
+            const yearShort = String(year).slice(-2);
+            const monthName = `${monthShort}'${yearShort}`;
+            if (!yearMonthMap[year]) yearMonthMap[year] = {};
+            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { name: monthName, total_amount: '0.00', accounts: [] };
+
+            // Aggregate accounts for this bill into month
+            for (const detail of bill.details) {
+                // Find if account already exists in month
+                const idx = yearMonthMap[year][monthNum].accounts.findIndex((acc: any) => acc.id === (detail.account ? detail.account.id : null));
+                if (idx === -1 && detail.account && detail.account.id != null) {
+                    yearMonthMap[year][monthNum].accounts.push({
+                        id: detail.account.id,
+                        account_no: detail.account.account_no,
+                        description: detail.account.description,
+                        provider: detail.account.provider,
+                        amount: detail.amount
+                    });
+                } else if (idx !== -1) {
+                    // Sum amounts for same account
+                    const prev = yearMonthMap[year][monthNum].accounts[idx];
+                    prev.amount = (parseFloat(prev.amount) + parseFloat(detail.amount)).toFixed(2);
+                }
+            }
+            // Add bill's total to month total_amount
+            const billTotal = bill.details.reduce((sum: number, d: any) => sum + parseFloat(d.amount), 0);
+            yearMonthMap[year][monthNum].total_amount = (parseFloat(yearMonthMap[year][monthNum].total_amount) + billTotal).toFixed(2);
+        }
+
+        // Build final data array
+        const data = Object.entries(yearMonthMap).map(([year, months]) => ({
+            year: Number(year),
+            month: Object.values(months)
+        }));
+
+        // Build response
+        res.status(200).json({
+            status: 'success',
+            message: 'Telco account summary by costcenter retrieved successfully',
+            costcenter: costcenterInfo,
+            from_date: fromDate ? fromDate.toISOString() : null,
+            to_date: toDate ? toDate.toISOString() : null,
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // CREATE telco billing
 export const createTelcoBilling = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -279,73 +575,6 @@ export const deleteTelcoBilling = async (req: Request, res: Response, next: Next
         const id = Number(req.params.id);
         await telcoModel.deleteTelcoBilling(id);
         res.status(200).json({ status: 'success', message: 'Telco billing deleted' });
-    } catch (error) {
-        next(error);
-    }
-};
-
-
-// GET /api/telco/bills/:id/report?from=YYYY-MM-DD&to=YYYY-MM-DD
-export const getCostcenterSummaryReport = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-        const accountId = Number(req.params.id);
-        const { from, to } = req.query;
-        if (isNaN(accountId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
-        }
-        if (typeof from !== 'string' || typeof to !== 'string' || !from || !to) {
-            return res.status(400).json({ status: 'error', message: 'Missing or invalid from/to query params. Use ?from=YYYY-MM-DD&to=YYYY-MM-DD' });
-        }
-        // Always use the RAW result from telcoModel.getTelcoBillings(), not the formatted controller output
-        const bills = await telcoModel.getTelcoBillingByAccountDateRange(accountId, from, to);
-        // Debug: log the first bill to check structure
-        if (bills && bills.length > 0) {
-            // eslint-disable-next-line no-console
-            console.log('DEBUG: First bill from getTelcoBillings:', bills[0]);
-        }
-        const fromDate = new Date(from);
-        const toDate = new Date(to);
-        // Filter bills by account_id and bill_date/date_bill in range
-        // Make sure to use b.account_id (from raw DB row)
-        const filteredBills = bills.filter((b: any) => {
-            if (b.account_id !== accountId) return false;
-            const date = b.date_bill || b.bill_date;
-            const billDate = date ? new Date(date) : null;
-            return billDate && billDate >= fromDate && billDate <= toDate;
-        });
-        if (!filteredBills.length) {
-            return res.status(404).json({ status: 'error', message: 'No bills found for this account in the date range' });
-        }
-        // Get all details for these bills
-        let allDetails: any[] = [];
-        for (const bill of filteredBills) {
-            const details = await telcoModel.getTelcoBillingDetailsById(bill.id); //ToDo: to be reviewed as this method will get data by bill_id & not accoun_id
-            // Attach bill date to each detail for grouping
-            const date = bill.date_bill || bill.bill_date;
-            const billDate = date ? new Date(date) : null;
-            for (const d of details) {
-                allDetails.push({ ...d, _billDate: billDate });
-            }
-        }
-        // Group by costcenter_id and month
-        const summaryMap = new Map();
-        for (const d of allDetails) {
-            const costcenterId = d.costcenter_id || null;
-            const billDate = d._billDate;
-            if (!billDate) continue;
-            const month = `${billDate.getFullYear()}-${String(billDate.getMonth() + 1).padStart(2, '0')}`;
-            const key = `${costcenterId || 'null'}_${month}`;
-            if (!summaryMap.has(key)) {
-                summaryMap.set(key, {
-                    costcenter_id: costcenterId,
-                    month,
-                    total_amount: 0
-                });
-            }
-            summaryMap.get(key).total_amount += parseFloat(d.amount) || 0;
-        }
-        const summary = Array.from(summaryMap.values());
-        res.status(200).json({ status: 'success', data: summary });
     } catch (error) {
         next(error);
     }
