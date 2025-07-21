@@ -4,67 +4,6 @@ import * as purchaseModel from './purchaseModel';
 import * as assetModel from '../p.asset/assetModel';
 import { PurchaseRequest } from './purchaseModel';
 
-export const getAllPurchaseRequests = async (req: Request, res: Response) => {
-  const requests: PurchaseRequest[] = await purchaseModel.getAllPurchaseRequests();
-  // Fetch all employees, departments, costcenters, districts, types, categories for mapping
-  const [employeesRaw, departmentsRaw, costcentersRaw, districtsRaw, typesRaw, categoriesRaw] = await Promise.all([
-    assetModel.getEmployees(),
-    assetModel.getDepartments(),
-    assetModel.getCostcenters(),
-    assetModel.getDistricts(),
-    assetModel.getTypes(),
-    assetModel.getCategories()
-  ]);
-  // Ensure arrays
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
-  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-  const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-  const types = Array.isArray(typesRaw) ? typesRaw : [];
-  const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
-  // Build lookup maps
-  const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
-  const deptMap = new Map(departments.map((d: any) => [d.id, d]));
-  const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
-  const districtMap = new Map(districts.map((d: any) => [d.id, d]));
-  const typeMap = new Map(types.map((t: any) => [t.id, t]));
-  const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
-  // Fetch all details for all requests
-  const allDetails = await Promise.all(requests.map(r => purchaseModel.getPurchaseRequestDetails(r.id)));
-  // Enrich each request and omit dept_id, costcenter_id, district_id, requestor
-  const enriched = (Array.isArray(requests) ? requests : []).map((req: PurchaseRequest, idx: number) => {
-    const requestorEmp = empMap.get(req.requestor);
-    const deptObj = deptMap.get(req.dept_id);
-    const costcenterObj = costcenterMap.get(req.costcenter_id);
-    const districtObj = districtMap.get(req.district_id);
-    let details = allDetails[idx] || [];
-    // Enrich details: type_id => type, category_id => category
-    details = details.map((item: any) => {
-      const typeObj = typeMap.get(item.type_id);
-      const categoryObj = categoryMap.get(item.category_id);
-      const { type_id, category_id, ...rest } = item;
-      return {
-        ...rest,
-        type: typeObj ? { id: typeObj.id, name: typeObj.name } : null,
-        category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null
-      };
-    });
-    // Omit dept_id, costcenter_id, district_id, requestor
-    const { dept_id, costcenter_id, district_id, requestor, ...rest } = req;
-    return {
-      ...rest,
-      requestor: requestorEmp && requestorEmp.ramco_id && requestorEmp.full_name
-        ? { ramco_id: requestorEmp.ramco_id, name: requestorEmp.full_name }
-        : req.requestor,
-      department: deptObj && deptObj.id && deptObj.name ? { id: deptObj.id, name: deptObj.name } : null,
-      costcenter: costcenterObj && costcenterObj.id && costcenterObj.name ? { id: costcenterObj.id, name: costcenterObj.name } : null,
-      district: districtObj && districtObj.id && districtObj.name ? { id: districtObj.id, name: districtObj.name } : null,
-      total_items: details.length,
-      details
-    };
-  });
-  res.json({ status: 'success', message: 'Purchase requests retrieved successfully', data: enriched });
-};
 
 export const getPurchaseRequestById = async (req: Request, res: Response) => {
   const request = await purchaseModel.getPurchaseRequestById(Number(req.params.id));
@@ -72,7 +11,7 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
     return res.status(404).json({ status: 'error', message: 'Purchase request not found' });
   }
   // Fetch details
-  let details = await purchaseModel.getPurchaseRequestDetails(request.id);
+  let details = await purchaseModel.getPurchaseRequestDetails(Number(request.id));
   // Fetch lookup data
   const [employeesRaw, departmentsRaw, costcentersRaw, districtsRaw, typesRaw, categoriesRaw] = await Promise.all([
     assetModel.getEmployees(),
@@ -105,20 +44,19 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
       category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null
     };
   });
-  // Omit dept_id, costcenter_id, district_id, requestor
-  const { dept_id, costcenter_id, district_id, requestor, ...rest } = request;
-  const requestorEmp = empMap.get(request.requestor);
-  const deptObj = deptMap.get(request.dept_id);
-  const costcenterObj = costcenterMap.get(request.costcenter_id);
-  const districtObj = districtMap.get(request.district_id);
+  // Only enrich details with type/category mapping
+  details = details.map((item: any) => {
+    const typeObj = typeMap.get(item.type_id);
+    const categoryObj = categoryMap.get(item.category_id);
+    const { type_id, category_id, ...rest } = item;
+    return {
+      ...rest,
+      type: typeObj ? { id: typeObj.id, name: typeObj.name } : null,
+      category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null
+    };
+  });
   const enriched = {
-    ...rest,
-    requestor: requestorEmp && requestorEmp.ramco_id && requestorEmp.full_name
-      ? { ramco_id: requestorEmp.ramco_id, name: requestorEmp.full_name }
-      : request.requestor,
-    department: deptObj && deptObj.id && deptObj.name ? { id: deptObj.id, name: deptObj.name } : null,
-    costcenter: costcenterObj && costcenterObj.id && costcenterObj.name ? { id: costcenterObj.id, name: costcenterObj.name } : null,
-    district: districtObj && districtObj.id && districtObj.name ? { id: districtObj.id, name: districtObj.name } : null,
+    ...request,
     total_items: details.length,
     details
   };
@@ -126,15 +64,100 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
 };
 
 export const createPurchaseRequest = async (req: Request, res: Response) => {
-  const { parent, details } = req.body;
-  // parent: purchase_request fields, details: array of purchase_request_details
-  const insertId = await purchaseModel.createPurchaseRequest(parent);
-  if (Array.isArray(details)) {
-    for (const detail of details) {
-      await purchaseModel.createPurchaseRequestDetail({ ...detail, purchase_request_id: insertId });
+  try {
+    // All fields in req.body are strings (from multipart/form-data)
+    const {
+      request_type = '',
+      backdated_purchase = 'false',
+      request_reference = '',
+      request_no = '',
+      request_date = '',
+      ramco_id = '',
+      costcenter_id = '',
+      department_id = '',
+      po_no = '',
+      po_date = '',
+      supplier = '',
+      do_no = '',
+      do_date = '',
+      inv_no = '',
+      inv_date = '',
+      items = '[]'
+    } = req.body;
+
+    // Parse booleans and numbers
+    const parent = {
+      request_type,
+      backdated_purchase: backdated_purchase === 'true' || backdated_purchase === true,
+      request_reference,
+      request_no,
+      request_date,
+      requestor: ramco_id,
+      costcenter_id: costcenter_id ? Number(costcenter_id) : undefined,
+      department_id: department_id ? Number(department_id) : undefined,
+      po_no,
+      po_date,
+      supplier,
+      do_no,
+      do_date,
+      inv_no,
+      inv_date,
+      request_upload: req.file ? req.file.filename : undefined
+    };
+    const insertId = await purchaseModel.createPurchaseRequest(parent);
+
+    // Parse items (should be a JSON string)
+    let itemsArr: any[] = [];
+    try {
+      itemsArr = typeof items === 'string' ? JSON.parse(items) : Array.isArray(items) ? items : [];
+    } catch (e) {
+      itemsArr = [];
     }
+
+    // Insert items (details)
+    if (Array.isArray(itemsArr)) {
+      for (const item of itemsArr) {
+        const {
+          type_id = null,
+          category_id = null,
+          qty = null,
+          description = '',
+          justification = '',
+          supplier = '',
+          unit_price = null,
+          delivery_status = '',
+          delivery_remarks = '',
+          register_numbers = []
+        } = item;
+        // Insert detail row (use correct property names for model)
+        const detailId = await purchaseModel.createPurchaseRequestDetail({
+          pr_id: insertId,
+          type_id: type_id ? Number(type_id) : undefined,
+          category_id: category_id ? Number(category_id) : undefined,
+          item_desc: description,
+          quantity: qty ? Number(qty) : undefined,
+          justification,
+          supplier,
+          unit_price: unit_price !== null && unit_price !== undefined && unit_price !== '' ? Number(unit_price) : undefined,
+          delivery_status,
+          delivery_remarks
+        });
+        // Insert register_numbers if present
+        if (Array.isArray(register_numbers) && register_numbers.length > 0) {
+          for (const reg of register_numbers) {
+            await purchaseModel.createPurchaseRequestRegisterNumber({
+              purchase_request_detail_id: detailId,
+              register_number: reg
+            });
+          }
+        }
+      }
+    }
+    res.status(201).json({ status: 'success', message: 'Purchase request created successfully', id: insertId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ status: 'error', message });
   }
-  res.status(201).json({ status: 'success', message: 'Purchase request created successfully', id: insertId });
 };
 
 export const deletePurchaseRequest = async (req: Request, res: Response) => {
