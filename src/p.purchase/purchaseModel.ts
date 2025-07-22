@@ -1,8 +1,8 @@
-import path from 'path';
-import fs from 'fs';
 // src/p.purchase/purchaseModel.ts
 import {pool} from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import path from 'path';
+import { handleImageUpload } from '../utils/fileUpload';
 
 // Table names
 const db = 'assetdata';
@@ -18,7 +18,7 @@ export interface PurchaseRequest {
     request_reference: string;
     request_no: string;
     request_date: string;
-    requestor: string; // ramco_id
+    ramco_id: string; // ramco_id
     costcenter_id: number;
     department_id: number;
     po_no: string;
@@ -66,27 +66,10 @@ export const getPurchaseRequestDetails = async (request_id: number): Promise<Pur
 
 export const createPurchaseRequest = async (data: Partial<PurchaseRequest> & { request_upload_base64?: string }): Promise<number> => {
     let request_upload_filename = '';
-    // Handle base64 file upload if present
     if (data.request_upload_base64 && typeof data.request_upload_base64 === 'string' && data.request_upload_base64.startsWith('data:')) {
-        const basePath = process.env.UPLOAD_BASE_PATH || '/mnt/winshare';
-        const uploadsDir = path.join(basePath, 'purchase');
-        try {
-            if (!fs.existsSync(uploadsDir)) {
-                fs.mkdirSync(uploadsDir, { recursive: true });
-            }
-            const extMatch = data.request_upload_base64.match(/^data:(.+?);base64,/);
-            const ext = extMatch ? extMatch[1].split('/')[1] : 'bin';
-            const filename = `purchase_${Date.now()}.${ext}`;
-            const filepath = path.join(uploadsDir, filename);
-            const base64Data = data.request_upload_base64.split(',')[1];
-            fs.writeFileSync(filepath, base64Data, 'base64');
-            request_upload_filename = filename;
-        } catch (err) {
-            console.error('Error writing purchase upload file:', err);
-            request_upload_filename = '';
-        }
+        const basePath = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
+        request_upload_filename = await handleImageUpload(data.request_upload_base64, 'purchase', 'purchase', basePath);
     } else if (data.request_upload) {
-        // If filename is provided directly (for backward compatibility)
         request_upload_filename = data.request_upload;
     }
     const [result] = await pool.query(
@@ -99,7 +82,7 @@ export const createPurchaseRequest = async (data: Partial<PurchaseRequest> & { r
           data.request_reference,
           data.request_no,
           data.request_date,
-          data.requestor,
+          data.ramco_id,
           data.costcenter_id,
           data.department_id,
           data.po_no,

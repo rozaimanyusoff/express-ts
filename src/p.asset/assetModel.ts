@@ -2,6 +2,7 @@ import {pool} from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import fs from 'fs';
 import path from 'path';
+import { handleImageUpload } from '../utils/fileUpload';
 
 // Database and table declarations for easy swapping/testing
 const db = 'assetdata';
@@ -38,41 +39,12 @@ const assetTransferRequestTable = `${db}.asset_transfer_requests`;
 const assetTransferDetailsTable = `${db}.asset_transfer_details`;
 const transferChecklistTable = `${db}.transfer_checklists`;
 
-// Helper to move type image to uploads/types/ if needed
-const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || '/mnt/winshare';
-async function handleTypeImage(image: string) {
-  if (!image) return '';
-  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'types');
-  try {
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-  } catch (err) {
-    console.error('Error creating uploadsDir:', uploadsDir, err);
-    return '';
-  }
-  // If image is a base64 string, save it as a file
-  if (image.startsWith('data:image/')) {
-    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
-    const base64Data = image.split(',')[1];
-    const filename = `type_${Date.now()}.${ext}`;
-    const filepath = path.join(uploadsDir, filename);
-    try {
-      fs.writeFileSync(filepath, base64Data, 'base64');
-    } catch (err) {
-      console.error('Error writing file:', filepath, err);
-      return '';
-    }
-    return filename;
-  }
-  // If image is a filename, just return it
-  return image;
-}
+const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
 
 // TYPES CRUD
 export const createType = async (data: any) => {
   const { code, name, description, image, ramco_id } = data;
-  const storedImage = await handleTypeImage(image);
+  const storedImage = await handleImageUpload(image, 'types', 'type', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${typeTable} (code, name, description, image, manager) VALUES (?, ?, ?, ?, ?)` ,
     [code, name, description, storedImage, ramco_id]
@@ -92,7 +64,7 @@ export const getTypeById = async (id: number) => {
 
 export const updateType = async (id: number, data: any) => {
   const { code, name, description, image, ramco_id } = data;
-  const storedImage = await handleTypeImage(image);
+  const storedImage = await handleImageUpload(image, 'types', 'type', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
     [code, name, description, storedImage, ramco_id, id]
@@ -106,29 +78,10 @@ export const deleteType = async (id: number) => {
 };
 
 // CATEGORIES CRUD
-// Helper to move category image to uploads/category/ if needed
-async function handleCategoryImage(image: string) {
-  if (!image) return '';
-  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'category');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-  // If image is a base64 string, save it as a file
-  if (image.startsWith('data:image/')) {
-    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
-    const base64Data = image.split(',')[1];
-    const filename = `category_${Date.now()}.${ext}`;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, base64Data, 'base64');
-    return filename;
-  }
-  // If image is a filename, just return it
-  return image;
-}
 
 export const createCategory = async (data: any) => {
   const { name, code, image, type_code } = data;
-  const storedImage = await handleCategoryImage(image);
+  const storedImage = await handleImageUpload(image, 'category', 'category', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${categoryTable} (name, code, image, type_code) VALUES (?, ?, ?, ?)` ,
     [name, code, storedImage, type_code]
@@ -148,7 +101,7 @@ export const getCategoryById = async (id: number) => {
 
 export const updateCategory = async (id: number, data: any) => {
   const { name, code, image, type_code } = data;
-  const storedImage = await handleCategoryImage(image);
+  const storedImage = await handleImageUpload(image, 'category', 'category', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${categoryTable} SET name = ?, code = ?, image = ?, type_code = ? WHERE id = ?`,
     [name, code, storedImage, type_code, id]
@@ -162,29 +115,10 @@ export const deleteCategory = async (id: number) => {
 };
 
 // BRANDS CRUD
-// Helper to move logo image to uploads/brands/ if needed
-async function handleBrandLogo(logo: string) {
-  if (!logo) return '';
-  const uploadsDir = path.join(UPLOAD_BASE_PATH, 'brands');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-  // If logo is a base64 string, save it as a file
-  if (logo.startsWith('data:image/')) {
-    const ext = logo.substring(logo.indexOf('/') + 1, logo.indexOf(';'));
-    const base64Data = logo.split(',')[1];
-    const filename = `brand_${Date.now()}.${ext}`;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, base64Data, 'base64');
-    return filename;
-  }
-  // If logo is a filename, just return it
-  return logo;
-}
 
 export const createBrand = async (data: any) => {
   const { name, code, logo, type_code, category_codes } = data;
-  const image = await handleBrandLogo(logo);
+  const image = await handleImageUpload(logo, 'brands', 'brand', UPLOAD_BASE_PATH);
   // Use type_code as type_code in DB
   const [result] = await pool.query(
     `INSERT INTO ${brandTable} (name, code, image${type_code ? ', type_code' : ''}) VALUES (?, ?, ?${type_code ? ', ?' : ''})`,
@@ -214,7 +148,7 @@ export const getBrandById = async (id: number) => {
 
 export const updateBrand = async (id: number, data: any) => {
   const { name, code, logo, type_code, category_codes } = data;
-  const image = await handleBrandLogo(logo);
+  const image = await handleImageUpload(logo, 'brands', 'brand', UPLOAD_BASE_PATH);
   // Only update type_code if type_code is present
   let sql = `UPDATE ${brandTable} SET name = ?, code = ?, image = ?`;
   let params: any[] = [name, code, image];
@@ -250,29 +184,10 @@ export const deleteBrand = async (id: number) => {
 };
 
 // MODELS CRUD
-// Helper to move model image to uploads/models/ if needed
-async function handleModelImage(image: string) {
-  if (!image) return '';
-  const uploadsDir = path.join(process.cwd(), 'uploads', 'models');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-  // If image is a base64 string, save it as a file
-  if (image.startsWith('data:image/')) {
-    const ext = image.substring(image.indexOf('/') + 1, image.indexOf(';'));
-    const base64Data = image.split(',')[1];
-    const filename = `model_${Date.now()}.${ext}`;
-    const filepath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filepath, base64Data, 'base64');
-    return filename;
-  }
-  // If image is a filename, just return it
-  return image;
-}
 
 export const createModel = async (data: any) => {
   const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
-  const storedImage = await handleModelImage(image);
+  const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status]
@@ -292,7 +207,7 @@ export const getModelById = async (id: number) => {
 
 export const updateModel = async (id: number, data: any) => {
   const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
-  const storedImage = await handleModelImage(image);
+  const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_code = ?, model_code = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
     [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status, id]

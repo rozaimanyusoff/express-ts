@@ -85,23 +85,23 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       items = '[]'
     } = req.body;
 
-    // Parse booleans and numbers
-    const parent = {
+    // Parse booleans and numbers, and ensure date fields are null if empty
+    const parent = { 
       request_type,
       backdated_purchase: backdated_purchase === 'true' || backdated_purchase === true,
       request_reference,
       request_no,
-      request_date,
+      request_date: request_date && request_date !== '' ? request_date : null,
       requestor: ramco_id,
       costcenter_id: costcenter_id ? Number(costcenter_id) : undefined,
       department_id: department_id ? Number(department_id) : undefined,
       po_no,
-      po_date,
+      po_date: po_date && po_date !== '' ? po_date : null,
       supplier,
       do_no,
-      do_date,
+      do_date: do_date && do_date !== '' ? do_date : null,
       inv_no,
-      inv_date,
+      inv_date: inv_date && inv_date !== '' ? inv_date : null,
       request_upload: req.file ? req.file.filename : undefined
     };
     const insertId = await purchaseModel.createPurchaseRequest(parent);
