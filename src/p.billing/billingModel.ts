@@ -29,6 +29,7 @@ const fuelBillingTable = `${dbBillings}.fuel_stmt`;
 const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
 const fuelIssuerTable = `${dbBillings}.costfuel`;
 const fleetCardTable = `${dbBillings}.fleet2`;
+const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
 const serviceOptionsTable = `${dbApps}.svctype`;
 
 /* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
@@ -255,6 +256,16 @@ export const getFleetCardById = async (id: number): Promise<any | null> => {
 };
 
 export const createFleetCard = async (data: any): Promise<number> => {
+  // Check for duplicate card_no
+  const [existingRows] = await pool2.query(
+    `SELECT id FROM ${fleetCardTable} WHERE card_no = ? LIMIT 1`,
+    [data.card_no]
+  );
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    // Duplicate found, return -1 or throw error
+    throw new Error('Fleet card with this card_no already exists.');
+    // Or: return (existingRows[0] as any).id;
+  }
   const [result] = await pool2.query(
     `INSERT INTO ${fleetCardTable} (
       asset_id, costcenter_id, fuel_id, fuel_type, card_no, pin, reg_date, status, expiry_date, category, remarks
@@ -265,6 +276,25 @@ export const createFleetCard = async (data: any): Promise<number> => {
 };
 
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
+  // Fetch current values for comparison
+  const [currentRows] = await pool2.query(
+    `SELECT asset_id, costcenter_id FROM ${fleetCardTable} WHERE id = ?`,
+    [id]
+  );
+  const current = Array.isArray(currentRows) && currentRows.length > 0 ? (currentRows[0] as any) : null;
+  let assetChanged = false;
+  let costcenterChanged = false;
+  if (current) {
+    assetChanged = data.asset_id !== undefined && data.asset_id !== current.asset_id;
+    costcenterChanged = data.costcenter_id !== undefined && data.costcenter_id !== current.costcenter_id;
+    if (assetChanged || costcenterChanged) {
+      // Insert into history table
+      await pool2.query(
+        `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) VALUES (?, ?, ?, ?, ?, NOW())`,
+        [id, current.asset_id, data.asset_id ?? current.asset_id, current.costcenter_id, data.costcenter_id ?? current.costcenter_id]
+      );
+    }
+  }
   await pool2.query(
     `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ?, fuel_id = ?, fuel_type = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, category = ?, remarks = ? WHERE id = ?`,
     [ data.asset_id, data.costcenter_id, data.fuel_id, data.fuel_type, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks, id ]

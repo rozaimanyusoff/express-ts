@@ -97,6 +97,17 @@ export const createPurchaseRequest = async (data: Partial<PurchaseRequest> & { r
     return (result as ResultSetHeader).insertId;
 };
 
+// Update purchase request by id (partial update)
+export const updatePurchaseRequest = async (id: number, data: Partial<PurchaseRequest>): Promise<void> => {
+    if (!id || !data || Object.keys(data).length === 0) return;
+    const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
+    const values = Object.values(data);
+    await pool.query(
+        `UPDATE ${purchaseRequestTable} SET ${fields} WHERE id = ?`,
+        [...values, id]
+    );
+};
+
 export const createPurchaseRequestDetail = async (data: Partial<PurchaseRequestDetail>): Promise<number> => {
     const [result] = await pool.query(
         `INSERT INTO ${purchaseRequestDetailsTable} (pr_id, type_id, category_id, item_desc, quantity, justification, supplier, unit_price, delivery_status, delivery_remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

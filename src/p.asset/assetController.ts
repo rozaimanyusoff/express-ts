@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import * as assetModel from './assetModel';
+import * as billingModel from '../p.billing/billingModel';
 import path from 'path';
 import { getAssetsByIds, getStringParam } from "./assetModel";
 import { sendMail } from '../utils/mailer';
@@ -403,6 +404,8 @@ export const getAssets = async (req: Request, res: Response) => {
   const departmentsRaw = await assetModel.getDepartments();
   const costcentersRaw = await assetModel.getCostcenters();
   const districtsRaw = await assetModel.getDistricts();
+  // Fetch fleet cards for vehicle assets
+  const fleetCards = await billingModel.getFleetCards();
 
   const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
   const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
@@ -478,6 +481,14 @@ export const getAssets = async (req: Request, res: Response) => {
       const vehSpecsArr = await assetModel.getVehicleSpecsForAsset(asset.id);
       if (Array.isArray(vehSpecsArr) && vehSpecsArr.length > 0) {
         const vehSpecs = vehSpecsArr[0];
+        // Find fleet card by register_number
+        let card_no = null;
+        if (asset.register_number) {
+          const fleetCard = fleetCards.find((fc: any) => fc.register_number === asset.register_number);
+          if (fleetCard && fleetCard.card_no) {
+            card_no = fleetCard.card_no;
+          }
+        }
         specs = {
           categories: asset.category_id ? {
             category_id: asset.category_id,
@@ -491,7 +502,8 @@ export const getAssets = async (req: Request, res: Response) => {
             model_id: asset.model_id,
             name: modelMap.get(asset.model_id)?.name || null
           } : null,
-          ...vehSpecs
+          ...vehSpecs,
+          card_no
         };
       }
     }

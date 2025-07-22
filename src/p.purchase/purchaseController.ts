@@ -5,9 +5,45 @@ import * as assetModel from '../p.asset/assetModel';
 import { PurchaseRequest } from './purchaseModel';
 
 
-export const getAllPurchaseRequests = async (req: Request, res: Response) => {
+export const getPurchaseRequests = async (req: Request, res: Response) => {
   const requests = await purchaseModel.getAllPurchaseRequests();
-  res.json({ status: 'success', message: 'Purchase requests retrieved successfully', data: requests });
+  // Fetch lookup data for costcenters, employees, and departments
+  const [costcentersRaw, employeesRaw, departmentsRaw] = await Promise.all([
+    assetModel.getCostcenters(),
+    assetModel.getEmployees(),
+    assetModel.getDepartments()
+  ]);
+  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
+  const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+  const departmentMap = new Map(departments.map((d: any) => [d.id, d]));
+
+  // Enrich each request with costcenter, department, and requestor (employee) objects
+  const enriched = requests.map((req: any) => {
+    const costcenterObj = req.costcenter_id && costcenterMap.has(req.costcenter_id)
+      ? costcenterMap.get(req.costcenter_id)
+      : null;
+    const requestorObj = req.requestor && employeeMap.has(req.requestor)
+      ? employeeMap.get(req.requestor)
+      : null;
+    const departmentObj = req.department_id && departmentMap.has(req.department_id)
+      ? departmentMap.get(req.department_id)
+      : null;
+    const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
+    const requestor = requestorObj ? { ramco_id: requestorObj.ramco_id, full_name: requestorObj.full_name } : null;
+    const department = departmentObj ? { id: departmentObj.id, name: departmentObj.name } : null;
+    // Remove costcenter_id and department_id from the response
+    const { costcenter_id, department_id, ...rest } = req;
+    return {
+      ...rest,
+      costcenter,
+      department,
+      requestor
+    };
+  });
+  res.json({ status: 'success', message: 'Purchase requests retrieved successfully', data: enriched });
 };
 
 export const getPurchaseRequestById = async (req: Request, res: Response) => {
@@ -109,7 +145,7 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
     }
 
     // Parse booleans and numbers, and ensure date fields are null if empty
-    const parent = {
+    let parent = {
       request_type,
       backdated_purchase: backdated_purchase === 'true' || backdated_purchase === true,
       request_reference,
@@ -127,7 +163,19 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       inv_date: inv_date && inv_date !== '' ? inv_date : null,
       request_upload
     };
+    // Insert first to get insertId
     const insertId = await purchaseModel.createPurchaseRequest(parent);
+
+    // If not backdated, generate request_no if not provided
+    if (!(backdated_purchase === 'true' || backdated_purchase === true)) {
+      if (!request_no || request_no === '') {
+        const padded = String(insertId).padStart(6, '0');
+        const year = new Date().getFullYear();
+        const generatedNo = `PR/${padded}/${year}`;
+        // Update the request_no in DB
+        await purchaseModel.updatePurchaseRequest(insertId, { request_no: generatedNo });
+      }
+    }
 
     // Parse items (should be a JSON string)
     let itemsArr: any[] = [];
