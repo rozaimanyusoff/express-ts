@@ -98,7 +98,8 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       const ext = path.extname(req.file.originalname) || '';
       const filename = `purchase_${Date.now()}${ext}`;
       const destPath = path.join(purchaseDir, filename);
-      fs.renameSync(req.file.path, destPath);
+      fs.copyFileSync(req.file.path, destPath);
+      fs.unlinkSync(req.file.path);
       request_upload = filename;
     }
 
