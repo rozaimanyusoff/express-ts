@@ -85,6 +85,23 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       items = '[]'
     } = req.body;
 
+    // Handle uploaded file: move from multer temp to correct location if present
+    let request_upload = undefined;
+    if (req.file) {
+      const fs = require('fs');
+      const path = require('path');
+      const uploadBase = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
+      const purchaseDir = path.join(uploadBase, 'purchase');
+      if (!fs.existsSync(purchaseDir)) {
+        fs.mkdirSync(purchaseDir, { recursive: true });
+      }
+      const ext = path.extname(req.file.originalname) || '';
+      const filename = `purchase_${Date.now()}${ext}`;
+      const destPath = path.join(purchaseDir, filename);
+      fs.renameSync(req.file.path, destPath);
+      request_upload = filename;
+    }
+
     // Parse booleans and numbers, and ensure date fields are null if empty
     const parent = { 
       request_type,
@@ -92,7 +109,7 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       request_reference,
       request_no,
       request_date: request_date && request_date !== '' ? request_date : null,
-      requestor: ramco_id,
+      ramco_id: ramco_id,
       costcenter_id: costcenter_id ? Number(costcenter_id) : undefined,
       department_id: department_id ? Number(department_id) : undefined,
       po_no,
@@ -102,7 +119,7 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
       do_date: do_date && do_date !== '' ? do_date : null,
       inv_no,
       inv_date: inv_date && inv_date !== '' ? inv_date : null,
-      request_upload: req.file ? req.file.filename : undefined
+      request_upload
     };
     const insertId = await purchaseModel.createPurchaseRequest(parent);
 
