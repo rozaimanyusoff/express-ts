@@ -12,6 +12,7 @@ const router = Router();
 
 
 router.get('/:id', asyncHandler(purchaseController.getPurchaseRequestById));
+router.get('/', asyncHandler(purchaseController.getAllPurchaseRequests));
 router.post('/', upload.single('request_upload'), asyncHandler(purchaseController.createPurchaseRequest));
 router.delete('/:id', purchaseController.deletePurchaseRequest);
 

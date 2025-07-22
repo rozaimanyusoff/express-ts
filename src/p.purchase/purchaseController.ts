@@ -5,6 +5,11 @@ import * as assetModel from '../p.asset/assetModel';
 import { PurchaseRequest } from './purchaseModel';
 
 
+export const getAllPurchaseRequests = async (req: Request, res: Response) => {
+  const requests = await purchaseModel.getAllPurchaseRequests();
+  res.json({ status: 'success', message: 'Purchase requests retrieved successfully', data: requests });
+};
+
 export const getPurchaseRequestById = async (req: Request, res: Response) => {
   const request = await purchaseModel.getPurchaseRequestById(Number(req.params.id));
   if (!request) {
@@ -104,7 +109,7 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
     }
 
     // Parse booleans and numbers, and ensure date fields are null if empty
-    const parent = { 
+    const parent = {
       request_type,
       backdated_purchase: backdated_purchase === 'true' || backdated_purchase === true,
       request_reference,
