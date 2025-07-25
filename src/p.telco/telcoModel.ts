@@ -298,6 +298,16 @@ export async function getUserSubs() {
 }
 
 // ===================== TELCO BILLING =====================
+// Get telco bills by multiple IDs
+export async function getTelcoBillingsByIds(ids: number[]) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await pool2.query<RowDataPacket[]>(
+        `SELECT * FROM ${tables.telcoBilling} WHERE id IN (${placeholders})`,
+        ids
+    );
+    return rows;
+}
 // CRUD for telcoBilling
 export async function getTelcoBillings() {
     const [rows] = await pool2.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} ORDER BY id DESC`);

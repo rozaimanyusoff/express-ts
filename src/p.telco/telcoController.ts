@@ -58,6 +58,91 @@ type ContractData = {
 
 // ===================== TELCO BILLING =====================
 
+// GET telco billings by multiple IDs
+export const getTelcoBillingsByIds = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        let ids: number[] = [];
+        if (Array.isArray(req.body.ids)) {
+            ids = req.body.ids.map((v: any) => Number(v)).filter((id: number) => !isNaN(id));
+        } else if (typeof req.body.ids === 'string') {
+            ids = req.body.ids.split(',').map((v: string) => Number(v)).filter((id: number) => !isNaN(id));
+        }
+        if (!ids.length) {
+            return res.status(400).json({ status: 'error', message: 'No valid IDs provided' });
+        }
+        const [billings, accounts, costcentersArr, subscribers] = await Promise.all([
+            telcoModel.getTelcoBillingsByIds(ids),
+            telcoModel.getAccounts(),
+            assetModel.getCostcenters ? assetModel.getCostcenters() : [],
+            telcoModel.getSubscribers()
+        ]);
+        // Map account_no to account object (reverse mapping)
+        const accountMap = Object.fromEntries(accounts.map((a: any) => [a.account_master, a]));
+        // Map costcenter_id to costcenter object
+        const costcenterMap = Object.fromEntries((Array.isArray(costcentersArr) ? costcentersArr : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
+        // Map subscribers by account_no/master (assuming subscriber.account_sub or similar matches b.account)
+        // Try to map by account_sub (or adjust as needed to match b.account)
+        const subscriberMap = Object.fromEntries(subscribers.map((s: any) => [s.account_sub, s]));
+        // Format each billing
+        const formatted = billings.map((b: any) => {
+            let accountObj = null;
+            if (b.account && accountMap[b.account]) {
+                const acc = accountMap[b.account];
+                accountObj = {
+                    id: acc.id,
+                    account_no: acc.account_master,
+                    provider: acc.provider || null
+                };
+            }
+            // Find subscriber by account (account_no/master)
+            let subscriberObj = null;
+            if (b.account && subscriberMap[b.account]) {
+                const s = subscriberMap[b.account];
+                let costcenter = null;
+                if (s.costcenter_id && costcenterMap[s.costcenter_id]) {
+                    costcenter = costcenterMap[s.costcenter_id];
+                }
+                subscriberObj = {
+                    id: s.id,
+                    sub_no: s.sub_no,
+                    account_sub: s.account_sub,
+                    status: s.status,
+                    register_date: s.register_date,
+                    costcenter
+                };
+            }
+            return {
+                id: b.id,
+                bfcy_id: b.bfcy_id,
+                account: accountObj,
+                subscriber: subscriberObj,
+                bill_date: b.bill_date,
+                bill_no: b.bill_no,
+                subtotal: b.subtotal,
+                discount: b.discount || 0,
+                tax: b.tax || 0,
+                rounding: b.rounding || 0,
+                grand_total: b.grand_total,
+                reference: b.reference || null,
+                status: b.status
+            };
+        });
+        // Calculate grand_total summary
+        const grandTotal = formatted.reduce((sum: number, b: any) => {
+            const val = b.grand_total !== null && b.grand_total !== undefined ? parseFloat(b.grand_total) : 0;
+            return sum + (isNaN(val) ? 0 : val);
+        }, 0);
+        res.status(200).json({
+            status: 'success',
+            message: 'Telco billings retrieved',
+            summary: { grand_total: grandTotal.toFixed(2) },
+            data: formatted
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // GET all telco billings
 export const getTelcoBillings = async (req: Request, res: Response, next: NextFunction) => {
     try {

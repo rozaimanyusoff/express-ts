@@ -42,6 +42,7 @@ router.get('/account-subs', asyncHandler(TelcoController.getAccountSubs)); // li
 router.post('/account-subs', asyncHandler(TelcoController.createAccountSub)); // assign subs to accounts
 
 /* Telco Billing */
+router.post('/bills/by-ids', asyncHandler(TelcoController.getTelcoBillingsByIds));
 router.get('/bills/:id', asyncHandler(TelcoController.getTelcoBillingById)); // show subscriber billing by id
 router.get('/bills/:id/report/account', asyncHandler(TelcoController.getTelcoBillingByAccountId)); // summary report of cost centers by account id
 // summary report of accounts by cost center id
