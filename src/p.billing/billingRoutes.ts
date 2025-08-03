@@ -5,6 +5,13 @@ import asyncHandler from '../utils/asyncHandler';
 
 const router = Router();
 
+// ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
+router.get('/temp-vehicle', asyncHandler(billingController.getTempVehicleRecords));
+router.get('/temp-vehicle/:id', asyncHandler(billingController.getTempVehicleRecordById));
+router.post('/temp-vehicle', asyncHandler(billingController.createTempVehicleRecord));
+router.put('/temp-vehicle/:id', asyncHandler(billingController.updateTempVehicleRecord));
+router.delete('/temp-vehicle/:id', asyncHandler(billingController.deleteTempVehicleRecord));
+
 /* ================== VEHICLE MAINTENANCE ================== */
 
 router.get('/vehicle/summary', asyncHandler(billingController.getVehicleMaintenanceSummaryByDate)); // /api/bills/vehicle/summary?from=YYYY-MM-DD&to=YYYY-MM-DD

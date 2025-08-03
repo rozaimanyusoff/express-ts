@@ -19,7 +19,7 @@ export interface VehicleMaintenance {
 }
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
@@ -31,6 +31,8 @@ const fuelIssuerTable = `${dbBillings}.costfuel`;
 const fleetCardTable = `${dbBillings}.fleet2`;
 const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
 const serviceOptionsTable = `${dbApps}.svctype`;
+const tempVehicleRecordTable = `${dbAssets}.vehicle`;
+const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
 
 /* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
 
@@ -246,7 +248,7 @@ export const updateFuelIssuer = async (id: number, data: any): Promise<void> => 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} WHERE status = 'active' ORDER BY bill_order_no `);
+  const [rows] = await pool2.query(`SELECT * FROM ${fleetCardTable} ORDER BY bill_order_no `);
   return rows as any[];
 };
 export const getFleetCardById = async (id: number): Promise<any | null> => {
@@ -266,47 +268,63 @@ export const createFleetCard = async (data: any): Promise<number> => {
     throw new Error('Fleet card with this card_no already exists.');
     // Or: return (existingRows[0] as any).id;
   }
+
   const [result] = await pool2.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, costcenter_id, fuel_id, fuel_type, card_no, pin, reg_date, status, expiry_date, category, remarks
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fuel_type, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks ]
+      vehicle_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.vehicle_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.remarks ]
   );
-  return (result as ResultSetHeader).insertId;
+
+  const cardId = (result as ResultSetHeader).insertId;
+
+  // Update card_id in tempVehicleRecordTable
+  if (data.vehicle_id) {
+    await pool2.query(
+      `UPDATE ${tempVehicleRecordTable} SET card_id = ? WHERE vehicle_id = ?`,
+      [cardId, data.vehicle_id]
+    );
+  }
+
+  return cardId;
 };
 
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   // Fetch current values for comparison
   const [currentRows] = await pool2.query(
-    `SELECT asset_id, costcenter_id FROM ${fleetCardTable} WHERE id = ?`,
+    `SELECT vehicle_id FROM ${fleetCardTable} WHERE id = ?`,
     [id]
   );
   const current = Array.isArray(currentRows) && currentRows.length > 0 ? (currentRows[0] as any) : null;
   let assetChanged = false;
-  let costcenterChanged = false;
   if (current) {
-    assetChanged = data.asset_id !== undefined && data.asset_id !== current.asset_id;
-    costcenterChanged = data.costcenter_id !== undefined && data.costcenter_id !== current.costcenter_id;
-    if (assetChanged || costcenterChanged) {
+    assetChanged = data.vehicle_id !== undefined && data.vehicle_id !== current.vehicle_id;
+    if (assetChanged) {
       // Insert into history table
       await pool2.query(
-        `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) VALUES (?, ?, ?, ?, ?, NOW())`,
-        [id, current.asset_id, data.asset_id ?? current.asset_id, current.costcenter_id, data.costcenter_id ?? current.costcenter_id]
+        `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
+        [id, current.vehicle_id, data.vehicle_id ?? current.vehicle_id]
       );
+
+      // Update card_id in tempVehicleRecordTable
+      await pool2.query(
+        `UPDATE ${tempVehicleRecordTable} SET card_id = ? WHERE vehicle_id = ?`,
+        [id, data.vehicle_id]
+      );
+
+      // Set vehicle_id as NULL on old card id
+      if (current.vehicle_id) {
+        await pool2.query(
+          `UPDATE ${fleetCardTable} SET vehicle_id = NULL WHERE id = ?`,
+          [current.vehicle_id]
+        );
+      }
     }
   }
   await pool2.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ?, fuel_id = ?, fuel_type = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, category = ?, remarks = ? WHERE id = ?`,
-    [ data.asset_id, data.costcenter_id, data.fuel_id, data.fuel_type, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.category, data.remarks, id ]
+    `UPDATE ${fleetCardTable} SET vehicle_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ? WHERE id = ?`,
+    [ data.vehicle_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.remarks, id ]
   );
-  // If costcenter_id is present, also update asset_data.costcenter_id
-  if (data.asset_id && data.costcenter_id) {
-    // Use pool for assetdata DB
-    await pool.query(
-      `UPDATE assetdata.asset_data SET costcenter_id = ? WHERE id = ?`,
-      [data.costcenter_id, data.asset_id]
-    );
-  }
 };
 
 /* =================== SERVICE OPTION TABLE ========================== */
@@ -334,4 +352,122 @@ export const updateServiceOption = async (id: number, data: any): Promise<void> 
     `UPDATE ${serviceOptionsTable} SET svcType = ?, svcOpt = ?, group_desc = ? WHERE svcTypeId = ?`,
     [ data.svcType, data.svcOpt, data.group_desc, id ]
   );
+};
+
+
+// ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
+export interface TempVehicleRecord {
+  vehicle_id: number;
+  vehicle_regno: string;
+  vehicle_make: string;
+  make_id: number;
+  vehicle_model: string;
+  model_id: number;
+  vehicle_type: string;
+  vtype_id: number;
+  vchassis_no: string;
+  vengine_no: string;
+  vtrans_type: string;
+  vfuel_type: string;
+  ft_id: number;
+  fuel_id: number;
+  fc_id: number;
+  vcubic: string;
+  v_dop: string;
+  v_lend: string;
+  v_hp: string;
+  v_instmt: string;
+  v_tenure: number;
+  v_insurer: string;
+  rt_id: number;
+  v_policy: string;
+  v_insexp: string;
+  v_ncdrate: string;
+  v_rtexp: string;
+  v_insdate: string;
+  vdept: string;
+  dept_id: number;
+  v_costctr: string;
+  vsect: string;
+  vloc: string;
+  cc_id: number;
+  loc_id: number;
+  vdrv: string;
+  ramco_id: string;
+  vcod1: string;
+  vcod2: string;
+  v_stat: string;
+  v_fcno: string;
+  v_fcpin: string;
+  v_fcrem: string;
+  v_disp: string;
+  v_return_date: string;
+  avls_availability: string;
+  avls_install_date: string;
+  avls_uninstall_date: string;
+  avls_transfer_date: string;
+  classification: string;
+  record_status: string;
+  purpose: string;
+  condition_status: string;
+  [key: string]: any;
+}
+
+export const getTempVehicleRecords = async (): Promise<TempVehicleRecord[]> => {
+  const [rows] = await pool2.query(`SELECT vehicle_id, vehicle_regno, category_id, brand_id, model_id, vtrans_type, vfuel_type, v_dop, card_id, cc_id, dept_id, ramco_id, classification, record_status, purpose, condition_status FROM ${tempVehicleRecordTable}`);
+  return rows as TempVehicleRecord[];
+};
+
+export const getTempVehicleRecordById = async (id: number): Promise<TempVehicleRecord | null> => {
+  const [rows] = await pool2.query(`SELECT vehicle_id, vehicle_regno, category_id, brand_id, model_id, vtrans_type, vfuel_type, v_dop, card_id, cc_id, dept_id, ramco_id, classification, record_status, purpose, condition_status FROM ${tempVehicleRecordTable} WHERE vehicle_id = ?`, [id]);
+  const record = (rows as TempVehicleRecord[])[0];
+  return record || null;
+};
+
+export const createTempVehicleRecord = async (data: Partial<TempVehicleRecord>): Promise<number> => {
+  // Check for duplicate vehicle_regno
+  if (data.vehicle_regno) {
+    const [existingRows] = await pool2.query(
+      `SELECT vehicle_id FROM ${tempVehicleRecordTable} WHERE vehicle_regno = ? LIMIT 1`,
+      [data.vehicle_regno]
+    );
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      throw new Error('A record with this vehicle_regno already exists.');
+    }
+  }
+
+  await pool2.query(
+    `INSERT INTO ${tempVehicleRecordTable} (
+      brand_id, category_id, cc_id, classification, condition_status, dept_id, model_id, purpose, ramco_id, record_status, v_dop, vehicle_regno, vfuel_type, vtrans_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`,
+    [ data.brand_id, data.category_id, data.cc_id, data.classification, data.condition_status, data.dept_id, data.model_id, data.purpose, data.ramco_id, data.record_status, data.vehicle_regno, data.vfuel_type, data.vtrans_type ]
+  );
+
+  const [result] = await pool2.query(`SELECT LAST_INSERT_ID() AS vehicle_id`);
+  const vehicleId = (result as RowDataPacket[])[0].vehicle_id;
+
+  // Log creation to tempVehicleRecordDetailsTable
+  await pool2.query(
+    `INSERT INTO ${tempVehicleRecordDetailsTable} (vehicle_id, cc_id, dept_id, ramco_id, v_datechg) VALUES (?, ?, ?, ?, NOW())`,
+    [vehicleId, data.cc_id, data.dept_id, data.ramco_id]
+  );
+
+  return vehicleId;
+};
+
+export const updateTempVehicleRecord = async (id: number, data: Partial<TempVehicleRecord>): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${tempVehicleRecordTable} SET brand_id = ?, category_id = ?, cc_id = ?, classification = ?, condition_status = ?, dept_id = ?, model_id = ?, purpose = ?, ramco_id = ?, record_status = ?, vfuel_type = ?, vtrans_type = ? WHERE vehicle_id = ?`,
+    [ data.brand_id, data.category_id, data.cc_id, data.classification, data.condition_status, data.dept_id,  data.model_id, data.purpose, data.ramco_id, data.record_status, data.vfuel_type, data.vtrans_type, id]
+  );
+
+  // Log update to tempVehicleRecordDetailsTable
+  await pool2.query(
+    `INSERT INTO ${tempVehicleRecordDetailsTable} (vehicle_id, cc_id, dept_id, ramco_id, v_datechg) VALUES (?, ?, ?, ?, NOW())`,
+    [id, data.cc_id, data.dept_id, data.ramco_id]
+  );
+};
+
+export const deleteTempVehicleRecord = async (id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${tempVehicleRecordTable} WHERE vehicle_id = ?`, [id]);
 };

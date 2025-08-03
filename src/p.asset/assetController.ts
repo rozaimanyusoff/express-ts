@@ -106,7 +106,17 @@ export const deleteType = async (req: Request, res: Response) => {
 
 // CATEGORIES
 export const getCategories = async (req: Request, res: Response) => {
-  const rows = await assetModel.getCategories();
+  // Support ?type={type_id} param (optional)
+  let typeId: number | undefined = undefined;
+  if (typeof req.query.type === 'string' && req.query.type !== '' && req.query.type !== 'all') {
+    const parsed = Number(req.query.type);
+    if (!isNaN(parsed)) typeId = parsed;
+  }
+  let rowsRaw = await assetModel.getCategories();
+  let rows: any[] = Array.isArray(rowsRaw) ? rowsRaw : [];
+  if (typeId !== undefined) {
+    rows = rows.filter((c: any) => c.type_id === typeId);
+  }
   const brands = await assetModel.getBrands();
   // Build brand map
   const brandMap = new Map<string, { id: number; name: string; code: string }>();
@@ -186,8 +196,18 @@ async function getAllBrandCategoryAssociations() {
 }
 
 export const getBrands = async (req: Request, res: Response) => {
-  // Fetch all brands and categories
-  const brands = await assetModel.getBrands();
+  // Support ?type={type_id} param (optional)
+  let typeId: number | undefined = undefined;
+  if (typeof req.query.type === 'string' && req.query.type !== '' && req.query.type !== 'all') {
+    const parsed = Number(req.query.type);
+    if (!isNaN(parsed)) typeId = parsed;
+  }
+  // Fetch all brands and categories, filter brands by type_id if provided
+  let brandsRaw = await assetModel.getBrands();
+  let brands: any[] = Array.isArray(brandsRaw) ? brandsRaw : [];
+  if (typeId !== undefined) {
+    brands = brands.filter((b: any) => b.type_id === typeId);
+  }
   const categories = await assetModel.getCategories();
 
   // Build category map by code
@@ -255,8 +275,18 @@ export const deleteBrand = async (req: Request, res: Response) => {
 
 // MODELS
 export const getModels = async (req: Request, res: Response) => {
-  // Fetch all models, brands, and categories
-  const models = await assetModel.getModels();
+  // Support ?type={type_id} param (optional)
+  let typeId: number | undefined = undefined;
+  if (typeof req.query.type === 'string' && req.query.type !== '' && req.query.type !== 'all') {
+    const parsed = Number(req.query.type);
+    if (!isNaN(parsed)) typeId = parsed;
+  }
+  // Fetch all models, brands, and categories, filter models by type_id if provided
+  let modelsRaw = await assetModel.getModels();
+  let models: any[] = Array.isArray(modelsRaw) ? modelsRaw : [];
+  if (typeId !== undefined) {
+    models = models.filter((m: any) => m.type_id === typeId);
+  }
   const brands = await assetModel.getBrands();
   const categories = await assetModel.getCategories();
 
