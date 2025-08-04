@@ -39,8 +39,8 @@ router.put('/fuel/issuer/:id', asyncHandler(billingController.updateFuelIssuer))
 
 /* =================== FUEL BILLING ======================== */
 
-router.get('/fuel/summary', asyncHandler(billingController.getFuelBillingSummaryByDate)); // /api/bills/fuel/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
-router.get('/fuel/filter', asyncHandler(billingController.getFuelBillingByDate)); /* /api/bills/fuel/filter?from=2024-01-01&to=2024-12-31 */
+router.get('/fuel/summary/vehicle', asyncHandler(billingController.getFuelBillingVehicleSummary)); // /api/bills/fuel/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
+router.get('/fuel/summary/costcenter', asyncHandler(billingController.getFuelBillingCostcenterSummary)); /* /api/bills/fuel/summary/costcenter?from=2024-01-01&to=2024-12-31 */
 router.get('/fuel/:id', asyncHandler(billingController.getFuelBillingById));
 router.get('/fuel', asyncHandler(billingController.getFuelBillings));
 router.post('/fuel', asyncHandler(billingController.createFuelBilling));

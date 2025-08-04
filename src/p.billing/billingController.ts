@@ -1,3 +1,4 @@
+
 // src/p.billing/billingController.ts
 import { Request, Response } from 'express';
 import * as billingModel from './billingModel';
@@ -9,7 +10,7 @@ import dayjs from 'dayjs';
 export const getVehicleMaintenance = async (req: Request, res: Response) => {
 	const vehicleMtn = await billingModel.getVehicleMaintenance();
 	const workshops = await billingModel.getWorkshops() as any[];
-	const assets = await assetsModel.getAssets() as any[];
+	const assets = await billingModel.getTempVehicleRecords() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const districts = await assetsModel.getDistricts() as any[];
 	// Build lookup maps for fast access
@@ -23,9 +24,9 @@ export const getVehicleMaintenance = async (req: Request, res: Response) => {
 		inv_no: b.inv_no,
 		inv_date: b.inv_date,
 		svc_order: b.svc_order,
-		asset: assetMap.has(b.asset_id) ? {
-			asset_id: b.asset_id,
-			register_number: (assetMap.get(b.asset_id) as any)?.register_number
+		asset: assetMap.has(b.vehicle_id) ? {
+			vehicle_id: b.vehicle_id,
+			vehicle_regno: (assetMap.get(b.vehicle_id) as any)?.vehicle_regno
 		} : null,
 		costcenter: ccMap.has(b.cc_id) ? {
 			id: b.cc_id,
@@ -62,11 +63,11 @@ export const getVehicleMaintenanceById = async (req: Request, res: Response) => 
 
 export const createVehicleMaintenance = async (req: Request, res: Response) => {
 	const {
-		inv_no, inv_date, svc_order, asset_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
 	const insertId = await billingModel.createVehicleMaintenance({
-		inv_no, inv_date, svc_order, asset_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
 	res.status(201).json({ status: 'success', message: 'Billing created successfully', id: insertId });
@@ -75,11 +76,11 @@ export const createVehicleMaintenance = async (req: Request, res: Response) => {
 export const updateVehicleMaintenance = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const {
-		inv_no, inv_date, svc_order, asset_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
 	await billingModel.updateVehicleMaintenance(id, {
-		inv_no, inv_date, svc_order, asset_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
 	res.json({ status: 'success', message: 'Billing updated successfully' });
@@ -97,7 +98,7 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	const vehicleMtn = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
-	const assets = await assetsModel.getAssets() as any[];
+	const assets = await billingModel.getTempVehicleRecords() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const districts = await assetsModel.getDistricts() as any[];
 	const workshops = await billingModel.getWorkshops() as any[];
@@ -112,9 +113,9 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 		inv_no: b.inv_no,
 		inv_date: b.inv_date,
 		svc_order: b.svc_order,
-		asset: assetMap.has(b.asset_id) ? {
-			asset_id: b.asset_id,
-			register_number: (assetMap.get(b.asset_id) as any)?.register_number
+		asset: assetMap.has(b.vehicle_id) ? {
+			vehicle_id: b.vehicle_id,
+			vehicle_regno: (assetMap.get(b.vehicle_id) as any)?.vehicle_regno
 		} : null,
 		costcenter: ccMap.has(b.cc_id) ? {
 			id: b.cc_id,
@@ -144,7 +145,7 @@ export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Resp
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	const vehicleMtn = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
-	const assets = await assetsModel.getAssets() as any[];
+	const assets = await billingModel.getTempVehicleRecords() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const districts = await assetsModel.getDistricts() as any[];
 	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
@@ -154,14 +155,14 @@ export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Resp
 	// Group by asset
 	const assetSummary: Record<string, any> = {};
 	for (const b of vehicleMtn) {
-		const asset_id = b.asset_id;
-		const asset = assetMap.get(asset_id) || {};
+		const vehicle_id = b.vehicle_id;
+		const asset = assetMap.get(vehicle_id) || {};
 		const costcenter = ccMap.get(b.cc_id) || {};
 		const district = districtMap.get(b.loc_id) || {};
-		if (!assetSummary[asset_id]) {
-			assetSummary[asset_id] = {
-				asset_id,
-				register_number: asset.register_number || '',
+		if (!assetSummary[vehicle_id]) {
+			assetSummary[vehicle_id] = {
+				vehicle_id,
+				vehicle_regno: asset.vehicle_regno || '',
 				district: district ? { id: district.id, code: district.code } : null,
 				costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
 				total_maintenance: 0,
@@ -172,26 +173,26 @@ export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Resp
 		const date = dayjs(b.inv_date);
 		const year = date.year();
 		const month = date.month() + 1;
-		if (!assetSummary[asset_id].details[year]) {
-			assetSummary[asset_id].details[year] = { expenses: 0, maintenance: [] };
+		if (!assetSummary[vehicle_id].details[year]) {
+			assetSummary[vehicle_id].details[year] = { expenses: 0, maintenance: [] };
 		}
 		// Find if this month already exists in maintenance
-		let monthEntry = assetSummary[asset_id].details[year].maintenance.find((m: any) => m.month === month);
+		let monthEntry = assetSummary[vehicle_id].details[year].maintenance.find((m: any) => m.month === month);
 		if (!monthEntry) {
 			monthEntry = { month, total_maintenance: 0, amount: 0 };
-			assetSummary[asset_id].details[year].maintenance.push(monthEntry);
+			assetSummary[vehicle_id].details[year].maintenance.push(monthEntry);
 		}
 		monthEntry.total_maintenance += 1;
 		monthEntry.amount += parseFloat(b.inv_total || '0');
-		assetSummary[asset_id].details[year].expenses += parseFloat(b.inv_total || '0');
-		assetSummary[asset_id].total_maintenance += 1;
-		assetSummary[asset_id].total_amount += parseFloat(b.inv_total || '0');
+		assetSummary[vehicle_id].details[year].expenses += parseFloat(b.inv_total || '0');
+		assetSummary[vehicle_id].total_maintenance += 1;
+		assetSummary[vehicle_id].total_amount += parseFloat(b.inv_total || '0');
 	}
 
 	// Format output
 	const result = Object.values(assetSummary).map((asset: any) => ({
-		asset_id: asset.asset_id,
-		register_number: asset.register_number,
+		vehicle_id: asset.vehicle_id,
+		vehicle_regno: asset.vehicle_regno,
 		district: asset.district,
 		costcenter: asset.costcenter,
 		total_maintenance: asset.total_maintenance,
@@ -284,9 +285,9 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 export const getFuelBillingById = async (req: Request, res: Response) => {
   // Fetch all lookup data
   const [costcentersRaw, districtsRaw, tempVehicleRecordsRaw] = await Promise.all([
-    assetsModel.getCostcenters(),
-    assetsModel.getDistricts(),
-    billingModel.getTempVehicleRecords()
+	assetsModel.getCostcenters(),
+	assetsModel.getDistricts(),
+	billingModel.getTempVehicleRecords()
   ]);
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
   const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
@@ -303,24 +304,24 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const fuelBilling = await billingModel.getFuelBillingById(id);
   if (!fuelBilling) {
-    return res.status(404).json({ status: 'error', message: 'Fuel billing not found' });
+	return res.status(404).json({ status: 'error', message: 'Fuel billing not found' });
   }
 
   // Map fuel_issuer using stmt_issuer (not fuel_id)
   let fuel_issuer = null;
   if (fuelBilling.stmt_issuer) {
-    const issuer = await billingModel.getFuelIssuerById(fuelBilling.stmt_issuer);
-    if (issuer && issuer.f_issuer) {
-      fuel_issuer = {
-        fuel_id: fuelBilling.stmt_issuer,
-        issuer: issuer.f_issuer
-      };
-    } else if (issuer) {
-      fuel_issuer = {
-        fuel_id: fuelBilling.stmt_issuer,
-        issuer: issuer.fuel_issuer || issuer.name || issuer.fuel_name || null
-      };
-    }
+	const issuer = await billingModel.getFuelIssuerById(fuelBilling.stmt_issuer);
+	if (issuer && issuer.f_issuer) {
+	  fuel_issuer = {
+		fuel_id: fuelBilling.stmt_issuer,
+		issuer: issuer.f_issuer
+	  };
+	} else if (issuer) {
+	  fuel_issuer = {
+		fuel_id: fuelBilling.stmt_issuer,
+		issuer: issuer.fuel_issuer || issuer.name || issuer.fuel_name || null
+	  };
+	}
   }
 
   // Remove fuel_id and stmt_issuer from the result
@@ -328,67 +329,67 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 
   const detailsRaw = await billingModel.getFuelVehicleAmount(id);
   const details = (Array.isArray(detailsRaw) ? detailsRaw : []).map((d: any) => {
-    let fleetCard = null;
-    if (d.card_id && fleetCardMap.has(d.card_id)) {
-      fleetCard = fleetCardMap.get(d.card_id);
-    }
+	let fleetCard = null;
+	if (d.card_id && fleetCardMap.has(d.card_id)) {
+	  fleetCard = fleetCardMap.get(d.card_id);
+	}
 
-    let asset = null;
-    if (d.vehicle_id && vehicleMap.has(d.vehicle_id)) {
-      const vehicle = vehicleMap.get(d.vehicle_id);
-      asset = {
-        vehicle_id: vehicle.vehicle_id,
-        vehicle_regno: vehicle.vehicle_regno,
-        vfuel_type: vehicle.vfuel_type,
-        costcenter: vehicle.cc_id && ccMap.has(vehicle.cc_id)
-          ? ccMap.get(vehicle.cc_id)
-          : null,
+	let asset = null;
+	if (d.vehicle_id && vehicleMap.has(d.vehicle_id)) {
+	  const vehicle = vehicleMap.get(d.vehicle_id);
+	  asset = {
+		vehicle_id: vehicle.vehicle_id,
+		vehicle_regno: vehicle.vehicle_regno,
+		vfuel_type: vehicle.vfuel_type,
+		costcenter: vehicle.cc_id && ccMap.has(vehicle.cc_id)
+		  ? ccMap.get(vehicle.cc_id)
+		  : null,
 		purpose: vehicle.purpose || null,
-      };
-    }
+	  };
+	}
 
-    return {
-      s_id: d.s_id,
-      stmt_id: d.stmt_id,
-      fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
-      asset,
-      category: fleetCard ? fleetCard.category : null,
-      stmt_date: d.stmt_date,
-      start_odo: d.start_odo,
-      end_odo: d.end_odo,
-      total_km: d.total_km,
-      total_litre: d.total_litre,
-      amount: d.amount
-    };
+	return {
+	  s_id: d.s_id,
+	  stmt_id: d.stmt_id,
+	  fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
+	  asset,
+	  category: fleetCard ? fleetCard.category : null,
+	  stmt_date: d.stmt_date,
+	  start_odo: d.start_odo,
+	  end_odo: d.end_odo,
+	  total_km: d.total_km,
+	  total_litre: d.total_litre,
+	  amount: d.amount
+	};
   });
 
   // Build costcenter summary grouped by costcenter and purpose
   const costcenterSummaryMap = new Map<string, number>();
   
   details.forEach((detail: any) => {
-    if (detail.asset && detail.asset.costcenter) {
-      const costcenterName = detail.asset.costcenter.name;
-      const purpose = detail.asset.purpose;
-      
-      // Create the summary key based on costcenter and purpose
-      let summaryName = costcenterName;
-      if (purpose === 'staff cost') {
-        summaryName = `${costcenterName} (Staff Cost)`;
-      }
-      
-      const amount = parseFloat(detail.amount) || 0;
-      const currentAmount = costcenterSummaryMap.get(summaryName) || 0;
-      costcenterSummaryMap.set(summaryName, currentAmount + amount);
-    }
+	if (detail.asset && detail.asset.costcenter) {
+	  const costcenterName = detail.asset.costcenter.name;
+	  const purpose = detail.asset.purpose;
+	  
+	  // Create the summary key based on costcenter and purpose
+	  let summaryName = costcenterName;
+	  if (purpose === 'staff cost') {
+		summaryName = `${costcenterName} (Staff Cost)`;
+	  }
+	  
+	  const amount = parseFloat(detail.amount) || 0;
+	  const currentAmount = costcenterSummaryMap.get(summaryName) || 0;
+	  costcenterSummaryMap.set(summaryName, currentAmount + amount);
+	}
   });
 
   // Convert map to array format and sort by cost center name
   const costcenter_summ = Array.from(costcenterSummaryMap.entries())
-    .map(([name, total_amount]) => ({
-      name,
-      total_amount: total_amount.toFixed(2)
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+	.map(([name, total_amount]) => ({
+	  name,
+	  total_amount: total_amount.toFixed(2)
+	}))
+	.sort((a, b) => a.name.localeCompare(b.name));
 
   res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, costcenter_summ, details } });
 };
@@ -418,7 +419,7 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 			stmt_count,
 			stmt_total_km,
 			details: Array.isArray(details) ? details.map((d: any) => ({
-				asset_id: d.asset_id,
+				vehicle_id: d.vehicle_id,
 				stmt_date: d.stmt_date,
 				card_id: d.card_id,
 				costcenter_id: d.costcenter_id,
@@ -442,7 +443,7 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 					stmt_id: insertId,
 					stmt_date: detail.stmt_date,
 					card_id: detail.card_id,
-					asset_id: detail.asset_id,
+					vehicle_id: detail.vehicle_id,
 					costcenter_id: detail.costcenter_id,
 					category: detail.category,
 					start_odo: detail.start_odo,
@@ -477,7 +478,7 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 					stmt_id: id,
 					stmt_date: detail.stmt_date,
 					card_id: detail.card_id,
-					asset_id: detail.asset_id,
+					vehicle_id: detail.vehicle_id,
 					costcenter_id: detail.costcenter_id,
 					category: detail.category,
 					start_odo: detail.start_odo,
@@ -495,39 +496,43 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 	}
 };
 
-export const getFuelBillingSummaryByDate = async (req: Request, res: Response) => {
-	const { from, to } = req.query;
+//Purposely to export fuel consumption report data to Excel
+export const getFuelBillingVehicleSummary = async (req: Request, res: Response) => {
+	const { from, to, cc } = req.query;
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	// Fetch all lookup data
 	const [assetsRaw, costcentersRaw, districtsRaw] = await Promise.all([
-		assetsModel.getAssets(),
+		billingModel.getTempVehicleRecords(),
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts()
 	]);
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-	const assetMap = new Map(assets.map((a: any) => [a.id, a]));
+	// Use vehicle_id as key for assetMap (not id)
+	const assetMap = new Map(assets.map((a: any) => [a.vehicle_id, a]));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
 
 	// Get all fuel billings in date range
 	const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
-	// Group by asset_id
+	// Group by vehicle_id
 	const summary: Record<string, any> = {};
 	for (const bill of fuelBillings) {
 		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
 		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
-			const asset_id = d.asset_id;
-			if (!summary[asset_id]) {
-				const assetObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) : null;
+			// If cc filter is provided, skip if not matching
+			if (cc && String(d.cc_id) !== String(cc)) continue;
+			const vehicle_id = d.vehicle_id;
+			if (!summary[vehicle_id]) {
+				const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
 				const ccObj = d.cc_id && ccMap.has(d.cc_id) ? ccMap.get(d.cc_id) : null;
 				const districtObj = d.loc_id && districtMap.has(d.loc_id) ? districtMap.get(d.loc_id) : null;
-				summary[asset_id] = {
-					asset_id,
-					asset: assetObj ? { asset_id, register_number: assetObj.register_number } : null,
+				summary[vehicle_id] = {
+					vehicle_id,
+					vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
 					costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
 					district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
 					total_litre: 0,
@@ -535,15 +540,15 @@ export const getFuelBillingSummaryByDate = async (req: Request, res: Response) =
 					_yearMap: {} // temp for grouping by year
 				};
 			}
-			summary[asset_id].total_litre += parseFloat(d.total_litre || '0');
-			summary[asset_id].total_amount += parseFloat(d.amount || '0');
+			summary[vehicle_id].total_litre += parseFloat(d.total_litre || '0');
+			summary[vehicle_id].total_amount += parseFloat(d.amount || '0');
 			// Group by year
 			const year = dayjs(bill.stmt_date).year();
-			if (!summary[asset_id]._yearMap[year]) {
-				summary[asset_id]._yearMap[year] = { expenses: 0, fuel: [] };
+			if (!summary[vehicle_id]._yearMap[year]) {
+				summary[vehicle_id]._yearMap[year] = { expenses: 0, fuel: [] };
 			}
-			summary[asset_id]._yearMap[year].expenses += parseFloat(d.amount || '0');
-			summary[asset_id]._yearMap[year].fuel.push({
+			summary[vehicle_id]._yearMap[year].expenses += parseFloat(d.amount || '0');
+			summary[vehicle_id]._yearMap[year].fuel.push({
 				s_id: d.s_id,
 				stmt_id: d.stmt_id,
 				stmt_date: bill.stmt_date, // Use parent bill's stmt_date
@@ -563,87 +568,84 @@ export const getFuelBillingSummaryByDate = async (req: Request, res: Response) =
 		const { _yearMap, ...rest } = asset;
 		return { ...rest, details };
 	});
-	res.json({ status: 'success', message: 'Fuel billing summary by date range retrieved successfully', data: result });
+	res.json({
+		status: 'success',
+		message: 'Fuel billing summary by date range retrieved successfully',
+		data: result,
+	});
 };
 
-export const getFuelBillingByDate = async (req: Request, res: Response) => {
-	const { from, to } = req.query;
-	if (!from || !to) {
-		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+
+// Costcenter-based fuel billing summary grouped by year - Export to Excel
+export const getFuelBillingCostcenterSummary = async (req: Request, res: Response) => {
+  const { from, to } = req.query;
+  if (!from || !to) {
+	return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+  }
+  // Fetch all lookup data
+  const [costcentersRaw] = await Promise.all([
+	await assetsModel.getCostcenters()
+  ]);
+  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+  // Get all fuel billings in date range
+  const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
+  // Group by costcenter name
+  const summary: Record<string, any> = {};
+  for (const bill of fuelBillings) {
+	const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
+	for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
+	  const cc_id = d.cc_id;
+	  const ccObj = cc_id && ccMap.has(cc_id) ? ccMap.get(cc_id) : null;
+	  const ccName = ccObj ? ccObj.name : 'Unknown';
+	  if (!summary[ccName]) {
+		summary[ccName] = { costcenter: ccName, _yearMap: {} };
+	  }
+	  // Group by year and month
+	  const date = dayjs(bill.stmt_date);
+	  const year = date.year();
+	  const month = date.month() + 1; // 1-based month
+	  if (!summary[ccName]._yearMap[year]) {
+		summary[ccName]._yearMap[year] = { expenses: 0, _monthMap: {} };
+	  }
+	  if (!summary[ccName]._yearMap[year]._monthMap[month]) {
+		summary[ccName]._yearMap[year]._monthMap[month] = { expenses: 0, fuel: [] };
+	  }
+	  const amount = parseFloat(d.amount || '0');
+	  summary[ccName]._yearMap[year].expenses += amount;
+	  summary[ccName]._yearMap[year]._monthMap[month].expenses += amount;
+	  summary[ccName]._yearMap[year]._monthMap[month].fuel.push({
+		s_id: d.s_id,
+		total_litre: d.total_litre,
+		amount: d.amount
+	  });
 	}
-	// Fetch all lookup data
-	const [assetsRaw, costcentersRaw, districtsRaw, fleetCardRaw, fuelIssuer] = await Promise.all([
-		assetsModel.getAssets(),
-		assetsModel.getCostcenters(),
-		assetsModel.getDistricts(),
-		billingModel.getFleetCards(),
-		billingModel.getFuelIssuer()
-	]);
-	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
-	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-	const assetMap = new Map(assets.map((a: any) => [a.id, a]));
-	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
-	// Map by asset_id for correct lookup
-	const fleetCardMap = new Map(fleetCardRaw.map((fc: any) => [fc.asset_id, fc]));
-
-	// Get all fuel billings in date range
-	const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
-	// Build a map for fast fuel issuer lookup
-	const fuelIssuerMap = new Map((fuelIssuer || []).map((fi: any) => [fi.fuel_id, fi]));
-
-	const data = await Promise.all(
-		fuelBillings.map(async (bill: any) => {
-			const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
-			const details = (Array.isArray(detailsRaw) ? detailsRaw : []).map((d: any) => {
-				const assetObj = d.asset_id && assetMap.has(d.asset_id) ? assetMap.get(d.asset_id) : null;
-				const ccObj = d.cc_id && ccMap.has(d.cc_id) ? ccMap.get(d.cc_id) : null;
-				const districtObj = d.loc_id && districtMap.has(d.loc_id) ? districtMap.get(d.loc_id) : null;
-				// Use asset_id to get the fleet card
-				const fleetCard = d.asset_id && fleetCardMap.has(d.asset_id) ? fleetCardMap.get(d.asset_id) : null;
-				// Add fuel_issuer enrichment for each detail
-				let fuel_issuer = null;
-				if (d.fuel_id && fuelIssuerMap.has(d.fuel_id)) {
-					const fi = fuelIssuerMap.get(d.fuel_id);
-					fuel_issuer = { fuel_id: fi.fuel_id, f_issuer: fi.f_issuer };
-				}
-				// Add issuer to fleetcard if available
-				let fleetcard = null;
-				if (fleetCard) {
-					let issuer = null;
-					if (fleetCard.fuel_id && fuelIssuerMap.has(fleetCard.fuel_id)) {
-						issuer = fuelIssuerMap.get(fleetCard.fuel_id).f_issuer;
-					}
-					fleetcard = {
-						fc_id: fleetCard.fc_id,
-						fc_no: fleetCard.fc_no,
-						issuer
-					};
-				}
-				return {
-					s_id: d.s_id,
-					stmt_id: d.stmt_id,
-					fleetcard,
-					asset: assetObj ? { asset_id: d.asset_id, register_number: assetObj.register_number } : null,
-					costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
-					district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
-					stmt_date: d.stmt_date,
-					total_litre: d.total_litre,
-					amount: d.amount,
-					fuel_issuer
-				};
-			});
-			// Add fuel_issuer enrichment
-			let fuel_issuer = null;
-			if (bill.fuel_id && fuelIssuerMap.has(bill.fuel_id)) {
-				const fi = fuelIssuerMap.get(bill.fuel_id);
-				fuel_issuer = { fuel_id: fi.fuel_id, f_issuer: fi.f_issuer };
-			}
-			return { ...bill, fuel_issuer, details };
-		})
-	);
-	res.json({ status: 'success', message: 'Fuel billings by date range retrieved successfully', data });
+  }
+  // Format output and sort by costcenter name
+  const result = Object.values(summary)
+	.map((cc: any) => {
+	  const details = Object.entries(cc._yearMap).map(([year, yearData]: [string, any]) => {
+		const months = Object.entries(yearData._monthMap).map(([month, monthData]: [string, any]) => ({
+		  month: Number(month),
+		  expenses: monthData.expenses.toFixed(2),
+		  //fuel: monthData.fuel
+		}));
+		return {
+		  year: Number(year),
+		  expenses: yearData.expenses.toFixed(2),
+		  months
+		};
+	  });
+	  const { _yearMap, ...rest } = cc;
+	  return { ...rest, details };
+	})
+	.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
+  res.json({
+	status: 'success',
+	message: 'Fuel billing costcenter summary by date range retrieved successfully',
+	data: result
+  });
 };
 
 /* ============ FUEL ISSUER ================ */
@@ -692,32 +694,32 @@ export const getFleetCards = async (req: Request, res: Response) => {
   const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
 
   const data = fleetCards.map((card: any) => {
-    let fuel = {};
-    if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
-      const fi = fuelIssuerMap.get(card.fuel_id);
-      fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
-    }
+	let fuel = {};
+	if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
+	  const fi = fuelIssuerMap.get(card.fuel_id);
+	  fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
+	}
 
-    const asset = card.vehicle_id && assetMap.has(card.vehicle_id)
-      ? {
-          vehicle_id: card.vehicle_id,
-          vehicle_regno: assetMap.get(card.vehicle_id).vehicle_regno,
+	const asset = card.vehicle_id && assetMap.has(card.vehicle_id)
+	  ? {
+		  vehicle_id: card.vehicle_id,
+		  vehicle_regno: assetMap.get(card.vehicle_id).vehicle_regno,
 		  fuel_type: assetMap.get(card.vehicle_id).vfuel_type,
 		  purpose: assetMap.get(card.vehicle_id).purpose || null,
-        }
-      : null;
+		}
+	  : null;
 
-    return {
-      id: card.id,
-      fuel,
-      asset,
-      card_no: card.card_no,
-      reg_date: card.reg_date,
-      remarks: card.remarks,
-      pin_no: card.pin,
-      status: card.status,
-      expiry: card.expiry_date
-    };
+	return {
+	  id: card.id,
+	  fuel,
+	  asset,
+	  card_no: card.card_no,
+	  reg_date: card.reg_date,
+	  remarks: card.remarks,
+	  pin_no: card.pin,
+	  status: card.status,
+	  expiry: card.expiry_date
+	};
   });
 
   res.json({ status: 'success', message: 'Fleet cards retrieved successfully', data });
@@ -785,7 +787,7 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 export const getFleetCardByIssuer = async (req: Request, res: Response) => {
   const fuel_id = Number(req.params.id);
   if (!fuel_id) {
-    return res.status(400).json({ status: 'error', message: 'fuel_id is required' });
+	return res.status(400).json({ status: 'error', message: 'fuel_id is required' });
   }
 
   const assets = await billingModel.getTempVehicleRecords() as any[];
@@ -797,41 +799,41 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
   const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
 
   const data = fleetCards
-    .filter((card: any) => card.fuel_id === fuel_id)
-    .map((card: any) => {
-      let asset = null;
-      if (card.vehicle_id && assetMap.has(card.vehicle_id)) {
-        const a = assetMap.get(card.vehicle_id);
-        asset = {
-          vehicle_id: a.vehicle_id,
-          vehicle_regno: a.vehicle_regno,
-          vfuel_type: a.vfuel_type,
-          costcenter: a.cc_id && costcenterMap.has(a.cc_id)
-            ? costcenterMap.get(a.cc_id)
-            : null,
+	.filter((card: any) => card.fuel_id === fuel_id)
+	.map((card: any) => {
+	  let asset = null;
+	  if (card.vehicle_id && assetMap.has(card.vehicle_id)) {
+		const a = assetMap.get(card.vehicle_id);
+		asset = {
+		  vehicle_id: a.vehicle_id,
+		  vehicle_regno: a.vehicle_regno,
+		  vfuel_type: a.vfuel_type,
+		  costcenter: a.cc_id && costcenterMap.has(a.cc_id)
+			? costcenterMap.get(a.cc_id)
+			: null,
 		  purpose: a.purpose || null
-        };
-      }
+		};
+	  }
 
-      let issuer = {};
-      if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
-        const fi = fuelIssuerMap.get(card.fuel_id);
-        issuer = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
-      }
+	  let issuer = {};
+	  if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
+		const fi = fuelIssuerMap.get(card.fuel_id);
+		issuer = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
+	  }
 
-      return {
-        id: card.id,
-        card_no: card.card_no,
-        issuer,
-        reg_date: card.reg_date,
-        category: card.category,
-        remarks: card.remarks,
-        pin_no: card.pin,
-        status: card.status,
-        expiry: card.expiry_date,
-        asset
-      };
-    });
+	  return {
+		id: card.id,
+		card_no: card.card_no,
+		issuer,
+		reg_date: card.reg_date,
+		category: card.category,
+		remarks: card.remarks,
+		pin_no: card.pin,
+		status: card.status,
+		expiry: card.expiry_date,
+		asset
+	  };
+	});
 
   res.json({ status: 'success', message: 'Fleet cards by issuer retrieved successfully', data });
 };
@@ -873,13 +875,13 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
   const records = await billingModel.getTempVehicleRecords();
   // Fetch costcenters, employees, brands, models, categories, departments, and fleet cards lookup
   const [costcentersRaw, employeesRaw, brandsRaw, modelsRaw, categoriesRaw, departmentsRaw, fleetCardsRaw] = await Promise.all([
-    assetsModel.getCostcenters(),
-    assetsModel.getEmployees(),
-    assetsModel.getBrands(),
-    assetsModel.getModels(),
-    assetsModel.getCategories(),
-    assetsModel.getDepartments(),
-    billingModel.getFleetCards()
+	assetsModel.getCostcenters(),
+	assetsModel.getEmployees(),
+	assetsModel.getBrands(),
+	assetsModel.getModels(),
+	assetsModel.getCategories(),
+	assetsModel.getDepartments(),
+	billingModel.getFleetCards()
   ]);
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
   const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -899,53 +901,53 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 
   // Enrich each record with costcenter, owner, brand, model, category, department, and fleetcard object
   const enriched = records.map((rec: any) => {
-    const costcenterObj = rec.cc_id && ccMap.has(rec.cc_id)
-      ? ccMap.get(rec.cc_id)
-      : null;
-    const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
+	const costcenterObj = rec.cc_id && ccMap.has(rec.cc_id)
+	  ? ccMap.get(rec.cc_id)
+	  : null;
+	const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
 
-    const ownerObj = rec.ramco_id && empMap.has(rec.ramco_id)
-      ? empMap.get(rec.ramco_id)
-      : null;
-    const owner = ownerObj ? { ramco_id: ownerObj.ramco_id, full_name: ownerObj.full_name } : null;
+	const ownerObj = rec.ramco_id && empMap.has(rec.ramco_id)
+	  ? empMap.get(rec.ramco_id)
+	  : null;
+	const owner = ownerObj ? { ramco_id: ownerObj.ramco_id, full_name: ownerObj.full_name } : null;
 
-    const brandObj = rec.brand_id && brandMap.has(rec.brand_id)
-      ? brandMap.get(rec.brand_id)
-      : null;
-    const brand = brandObj ? { id: brandObj.id, name: brandObj.name } : null;
+	const brandObj = rec.brand_id && brandMap.has(rec.brand_id)
+	  ? brandMap.get(rec.brand_id)
+	  : null;
+	const brand = brandObj ? { id: brandObj.id, name: brandObj.name } : null;
 
-    const modelObj = rec.model_id && modelMap.has(rec.model_id)
-      ? modelMap.get(rec.model_id)
-      : null;
-    const model = modelObj ? { id: modelObj.id, name: modelObj.name } : null;
+	const modelObj = rec.model_id && modelMap.has(rec.model_id)
+	  ? modelMap.get(rec.model_id)
+	  : null;
+	const model = modelObj ? { id: modelObj.id, name: modelObj.name } : null;
 
-    const categoryObj = rec.category_id && categoryMap.has(rec.category_id)
-      ? categoryMap.get(rec.category_id)
-      : null;
-    const category = categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null;
+	const categoryObj = rec.category_id && categoryMap.has(rec.category_id)
+	  ? categoryMap.get(rec.category_id)
+	  : null;
+	const category = categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null;
 
-    const deptObj = rec.dept_id && deptMap.has(rec.dept_id)
-      ? deptMap.get(rec.dept_id)
-      : null;
-    const department = deptObj ? { id: deptObj.id, name: deptObj.code } : null;
+	const deptObj = rec.dept_id && deptMap.has(rec.dept_id)
+	  ? deptMap.get(rec.dept_id)
+	  : null;
+	const department = deptObj ? { id: deptObj.id, name: deptObj.code } : null;
 
-    const fleetCardObj = rec.card_id && fleetCardMap.has(rec.card_id)
-      ? fleetCardMap.get(rec.card_id)
-      : null;
-    const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
+	const fleetCardObj = rec.card_id && fleetCardMap.has(rec.card_id)
+	  ? fleetCardMap.get(rec.card_id)
+	  : null;
+	const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
 
-    // Remove cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id from response, add costcenter, owner, brand, model, category, department, fleetcard
-    const { cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id, ...rest } = rec;
-    return {
-      ...rest,
-      costcenter,
-      owner,
-      brand,
-      model,
-      category,
-      department,
-      fleetcard
-    };
+	// Remove cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id from response, add costcenter, owner, brand, model, category, department, fleetcard
+	const { cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id, ...rest } = rec;
+	return {
+	  ...rest,
+	  costcenter,
+	  owner,
+	  brand,
+	  model,
+	  category,
+	  department,
+	  fleetcard
+	};
   });
 
   res.json({ status: 'success', message: 'Temp vehicle records retrieved successfully', data: enriched });
@@ -984,38 +986,38 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
   const fleetCardMap = new Map(fleetCards.map((fc: any) => [fc.id, fc]));
 
   const costcenterObj = record.cc_id && ccMap.has(record.cc_id)
-    ? ccMap.get(record.cc_id)
-    : null;
+	? ccMap.get(record.cc_id)
+	: null;
   const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
 
   const ownerObj = record.ramco_id && empMap.has(record.ramco_id)
-    ? empMap.get(record.ramco_id)
-    : null;
+	? empMap.get(record.ramco_id)
+	: null;
   const owner = ownerObj ? { ramco_id: ownerObj.ramco_id, full_name: ownerObj.full_name } : null;
 
   const brandObj = record.brand_id && brandMap.has(record.brand_id)
-    ? brandMap.get(record.brand_id)
-    : null;
+	? brandMap.get(record.brand_id)
+	: null;
   const brand = brandObj ? { id: brandObj.id, name: brandObj.name } : null;
 
   const modelObj = record.model_id && modelMap.has(record.model_id)
-    ? modelMap.get(record.model_id)
-    : null;
+	? modelMap.get(record.model_id)
+	: null;
   const model = modelObj ? { id: modelObj.id, name: modelObj.name } : null;
 
   const categoryObj = record.category_id && categoryMap.has(record.category_id)
-    ? categoryMap.get(record.category_id)
-    : null;
+	? categoryMap.get(record.category_id)
+	: null;
   const category = categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null;
 
   const deptObj = record.dept_id && deptMap.has(record.dept_id)
-    ? deptMap.get(record.dept_id)
-    : null;
+	? deptMap.get(record.dept_id)
+	: null;
   const department = deptObj ? { id: deptObj.id, name: deptObj.name } : null;
 
   const fleetCardObj = record.card_id && fleetCardMap.has(record.card_id)
-    ? fleetCardMap.get(record.card_id)
-    : null;
+	? fleetCardMap.get(record.card_id)
+	: null;
   const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
 
   const { cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id, ...rest } = record;
