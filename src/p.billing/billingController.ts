@@ -362,7 +362,35 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, details } });
+  // Build costcenter summary grouped by costcenter and purpose
+  const costcenterSummaryMap = new Map<string, number>();
+  
+  details.forEach((detail: any) => {
+    if (detail.asset && detail.asset.costcenter) {
+      const costcenterName = detail.asset.costcenter.name;
+      const purpose = detail.asset.purpose;
+      
+      // Create the summary key based on costcenter and purpose
+      let summaryName = costcenterName;
+      if (purpose === 'staff cost') {
+        summaryName = `${costcenterName} (Staff Cost)`;
+      }
+      
+      const amount = parseFloat(detail.amount) || 0;
+      const currentAmount = costcenterSummaryMap.get(summaryName) || 0;
+      costcenterSummaryMap.set(summaryName, currentAmount + amount);
+    }
+  });
+
+  // Convert map to array format and sort by cost center name
+  const costcenter_summ = Array.from(costcenterSummaryMap.entries())
+    .map(([name, total_amount]) => ({
+      name,
+      total_amount: total_amount.toFixed(2)
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, costcenter_summ, details } });
 };
 
 export const createFuelBilling = async (req: Request, res: Response) => {

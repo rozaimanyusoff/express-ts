@@ -19,7 +19,7 @@ export interface VehicleMaintenance {
 }
 
 // Database and table declarations
-const dbBillings = 'billings2';
+const dbBillings = 'billings';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
