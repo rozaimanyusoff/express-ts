@@ -414,7 +414,7 @@ export interface TempVehicleRecord {
 }
 
 export const getTempVehicleRecords = async (): Promise<TempVehicleRecord[]> => {
-  const [rows] = await pool2.query(`SELECT vehicle_id, vehicle_regno, category_id, brand_id, model_id, vtrans_type, vfuel_type, v_dop, card_id, cc_id, dept_id, ramco_id, classification, record_status, purpose, condition_status FROM ${tempVehicleRecordTable}`);
+  const [rows] = await pool2.query(`SELECT vehicle_id, vehicle_regno, category_id, brand_id, model_id, vtrans_type, vfuel_type, v_dop, card_id, cc_id, dept_id, ramco_id, classification, record_status, purpose, condition_status FROM ${tempVehicleRecordTable} ORDER BY vehicle_regno`);
   return rows as TempVehicleRecord[];
 };
 
