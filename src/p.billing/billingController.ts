@@ -1,4 +1,3 @@
-
 // src/p.billing/billingController.ts
 import { Request, Response } from 'express';
 import * as billingModel from './billingModel';
@@ -467,38 +466,64 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 };
 
 export const updateFuelBilling = async (req: Request, res: Response) => {
-	try {
-		const id = Number(req.params.id);
-		// Update parent record
-		await billingModel.updateFuelBilling(id, req.body);
+try {
+  const id = Number(req.params.id);
+  // Update parent record
+  await billingModel.updateFuelBilling(id, req.body);
 
-		// Delete existing child details
-		await billingModel.deleteFuelVehicleAmount(id);
-
-		// Insert new child detail records
-		const details = req.body.details;
-		if (Array.isArray(details)) {
-			for (const detail of details) {
-				await billingModel.createFuelVehicleAmount({
-					stmt_id: id,
-					stmt_date: detail.stmt_date,
-					card_id: detail.card_id,
-					vehicle_id: detail.vehicle_id,
-					costcenter_id: detail.costcenter_id,
-					category: detail.category,
-					start_odo: detail.start_odo,
-					end_odo: detail.end_odo,
-					total_km: detail.total_km,
-					total_litre: detail.total_litre,
-					efficiency: detail.efficiency,
-					amount: detail.amount
-				});
-			}
-		}
-		res.json({ status: 'success', message: 'Fuel billing updated successfully' });
-	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update fuel billing', error });
+  // Fetch details from request
+  const details = req.body.details;
+  let submittedSids: number[] = [];
+  if (Array.isArray(details)) {
+	submittedSids = details.filter((d: any) => d.s_id).map((d: any) => d.s_id);
+	// Delete rows not present in submitted details (before inserts)
+	const existingDetails = await billingModel.getFuelVehicleAmount(id);
+	const existingSids = (existingDetails || []).map((d: any) => d.s_id);
+	const toDelete = existingSids.filter((sid: any) => !submittedSids.includes(sid));
+	for (const sid of toDelete) {
+	  await billingModel.deleteFuelVehicleAmountBySid(sid);
 	}
+	// Now update existing and insert new
+	for (const detail of details) {
+	  if (detail.s_id) {
+		// Update existing row
+		await billingModel.updateFuelVehicleAmount(detail.s_id, {
+		  stmt_id: id,
+		  stmt_date: detail.stmt_date,
+		  card_id: detail.card_id,
+		  vehicle_id: detail.vehicle_id,
+		  costcenter_id: detail.costcenter_id,
+		  category: detail.category,
+		  start_odo: detail.start_odo,
+		  end_odo: detail.end_odo,
+		  total_km: detail.total_km,
+		  total_litre: detail.total_litre,
+		  efficiency: detail.efficiency,
+		  amount: detail.amount
+		});
+	  } else {
+		// Insert new row
+		await billingModel.createFuelVehicleAmount({
+		  stmt_id: id,
+		  stmt_date: detail.stmt_date,
+		  card_id: detail.card_id,
+		  vehicle_id: detail.vehicle_id,
+		  costcenter_id: detail.costcenter_id,
+		  category: detail.category,
+		  start_odo: detail.start_odo,
+		  end_odo: detail.end_odo,
+		  total_km: detail.total_km,
+		  total_litre: detail.total_litre,
+		  efficiency: detail.efficiency,
+		  amount: detail.amount
+		});
+	  }
+	}
+  }
+  res.json({ status: 'success', message: 'Fuel billing updated successfully' });
+} catch (error) {
+  res.status(500).json({ status: 'error', message: 'Failed to update fuel billing', error });
+}
 };
 
 //Purposely to export fuel consumption report data to Excel
@@ -694,9 +719,11 @@ export const getFleetCards = async (req: Request, res: Response) => {
   const assets = await billingModel.getTempVehicleRecords();
   const fleetCards = await billingModel.getFleetCards();
   const fuelIssuers = await billingModel.getFuelIssuer() as any[];
+  const costcenters = await assetsModel.getCostcenters() as any[];
 
   const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
   const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
+  const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
   const data = fleetCards.map((card: any) => {
 	let fuel = {};
@@ -705,14 +732,19 @@ export const getFleetCards = async (req: Request, res: Response) => {
 	  fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
 	}
 
-	const asset = card.vehicle_id && assetMap.has(card.vehicle_id)
-	  ? {
-		  vehicle_id: card.vehicle_id,
-		  vehicle_regno: assetMap.get(card.vehicle_id).vehicle_regno,
-		  fuel_type: assetMap.get(card.vehicle_id).vfuel_type,
-		  purpose: assetMap.get(card.vehicle_id).purpose || null,
-		}
-	  : null;
+	let asset = null;
+	if (card.vehicle_id && assetMap.has(card.vehicle_id)) {
+	  const assetObj = assetMap.get(card.vehicle_id);
+	  asset = {
+		vehicle_id: card.vehicle_id,
+		vehicle_regno: assetObj.vehicle_regno,
+		costcenter: assetObj.cc_id && costcenterMap.has(assetObj.cc_id)
+		  ? { id: assetObj.cc_id, name: costcenterMap.get(assetObj.cc_id).name }
+		  : null,
+		fuel_type: assetObj.vfuel_type,
+		purpose: assetObj.purpose || null,
+	  };
+	}
 
 	return {
 	  id: card.id,

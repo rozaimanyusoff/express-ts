@@ -1,3 +1,7 @@
+// Delete a single fuel vehicle amount row by s_id (detail row id)
+export const deleteFuelVehicleAmountBySid = async (sid: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE s_id = ?`, [sid]);
+};
 import { pool, pool2 } from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
