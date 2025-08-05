@@ -146,6 +146,16 @@ export const getFuelBillingById = async (id: number): Promise<any | null> => {
 };
 
 export const createFuelBilling = async (data: any): Promise<number> => {
+  // Check for duplicate entry based on stmt_no, stmt_date, and stmt_issuer
+  const [existingRows] = await pool2.query(
+    `SELECT stmt_id FROM ${fuelBillingTable} WHERE stmt_no = ? AND stmt_date = ? AND stmt_issuer = ? LIMIT 1`,
+    [data.stmt_no, data.stmt_date, data.stmt_issuer]
+  );
+  
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    throw new Error('Fuel billing with this statement number, date, and issuer already exists.');
+  }
+
   const [result] = await pool2.query(
     `INSERT INTO ${fuelBillingTable} (
       stmt_no, stmt_date, stmt_litre, stmt_stotal, stmt_disc, stmt_total, stmt_ron95, stmt_ron97, stmt_diesel, stmt_issuer, petrol, diesel, stmt_count, stmt_total_odo
@@ -198,7 +208,7 @@ export const getFuelVehicleAmountById = async (id: number): Promise<any | null> 
 
 export const createFuelVehicleAmount = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
-    `INSERT INTO ${fuelVehicleAmountTable} (stmt_id, stmt_date, fc_id, vehicle_id, cc_id, purpose, start_odo, end_odo, total_km, total_litre, effct, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${fuelVehicleAmountTable} (stmt_id, stmt_date, card_id, vehicle_id, cc_id, purpose, start_odo, end_odo, total_km, total_litre, effct, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ data.stmt_id, data.stmt_date, data.card_id, data.vehicle_id, data.costcenter_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount ]
   );
   return (result as ResultSetHeader).insertId;
@@ -206,7 +216,7 @@ export const createFuelVehicleAmount = async (data: any): Promise<number> => {
 
 export const updateFuelVehicleAmount = async (id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${fuelVehicleAmountTable} SET stmt_id = ?, stmt_date = ?, fc_id = ?, vehicle_id = ?, cc_id = ?, purpose = ?, start_odo = ?, end_odo = ?, total_km = ?, total_litre = ?, effct = ?, amount = ? WHERE s_id = ?`,
+    `UPDATE ${fuelVehicleAmountTable} SET stmt_id = ?, stmt_date = ?, card_id = ?, vehicle_id = ?, cc_id = ?, purpose = ?, start_odo = ?, end_odo = ?, total_km = ?, total_litre = ?, effct = ?, amount = ? WHERE s_id = ?`,
     [ data.stmt_id, data.stmt_date, data.card_id, data.vehicle_id, data.costcenter_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount, id ]
   );
 };
@@ -328,6 +338,25 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
     [ data.vehicle_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.remarks, id ]
   );
 };
+
+// Instantly update fleet card info from fuel billings -- payload data: vehicle_id, card_id, card_no, costcenter_id, & purpose
+export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
+  if (!data.vehicle_id || !data.card_id || !data.card_no || !data.costcenter_id || !data.purpose) {
+    throw new Error('Missing required fields for fleet card update');
+  }
+
+  // Update the fleet card details
+  await pool2.query(
+    `UPDATE ${fleetCardTable} SET vehicle_id = ?, card_no = ?, costcenter_id = ?, purpose = ? WHERE id = ?`,
+    [ data.vehicle_id, data.card_no, data.costcenter_id, data.purpose, data.card_id ]
+  );
+
+  // Update the temp vehicle record table
+  await pool2.query(
+    `UPDATE ${tempVehicleRecordTable} SET card_id = ?, purpose = ?, cc_id = ? WHERE vehicle_id = ?`,
+    [ data.card_id, data.purpose, data.costcenter_id, data.vehicle_id ]
+  );
+}
 
 /* =================== SERVICE OPTION TABLE ========================== */
 

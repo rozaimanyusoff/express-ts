@@ -457,7 +457,12 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 		}
 		res.status(201).json({ status: 'success', message: 'Fuel billing created successfully', id: insertId });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create fuel billing', error });
+		// Check if it's a duplicate entry error
+		if (error instanceof Error && error.message.includes('already exists')) {
+			res.status(409).json({ status: 'error', message: error.message });
+		} else {
+			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to create fuel billing', error });
+		}
 	}
 };
 
@@ -784,6 +789,16 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 		res.status(500).json({ status: 'error', message: 'Failed to update fleet card', error });
 	}
 }
+// Instantly update fleet card from billing
+export const updateFleetCardFromBilling = async (req: Request, res: Response) => {
+	try {
+		await billingModel.updateFleetCardFromBilling(req.body);
+		res.json({ status: 'success', message: 'Fleet card updated from billing successfully' });
+	} catch (error) {
+		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', error });
+	}
+};
+
 export const getFleetCardByIssuer = async (req: Request, res: Response) => {
   const fuel_id = Number(req.params.id);
   if (!fuel_id) {
