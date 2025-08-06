@@ -84,7 +84,7 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
         // Try to map by account_sub (or adjust as needed to match b.account)
         const subscriberMap = Object.fromEntries(subscribers.map((s: any) => [s.account_sub, s]));
         // Format each billing
-        const formatted = billings.map((b: any) => {
+        const formatted = await Promise.all(billings.map(async (b: any) => {
             let accountObj = null;
             if (b.account && accountMap[b.account]) {
                 const acc = accountMap[b.account];
@@ -110,6 +110,27 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
                     register_date: s.register_date,
                     costcenter
                 };
+            } else {
+                // If no subscriber found, try to get costcenter from billing details
+                try {
+                    const details = await telcoModel.getTelcoBillingDetailsById(b.id);
+                    if (Array.isArray(details) && details.length > 0) {
+                        // Find the first detail with a costcenter_id
+                        const detailWithCC = details.find((d: any) => d.costcenter_id && costcenterMap[d.costcenter_id]);
+                        if (detailWithCC) {
+                            subscriberObj = {
+                                id: null,
+                                sub_no: null,
+                                account_sub: null,
+                                status: null,
+                                register_date: null,
+                                costcenter: costcenterMap[detailWithCC.costcenter_id]
+                            };
+                        }
+                    }
+                } catch (err) {
+                    // ignore error, leave subscriberObj as null
+                }
             }
             return {
                 id: b.id,
@@ -126,7 +147,7 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
                 reference: b.reference || null,
                 status: b.status
             };
-        });
+        }));
         // Calculate grand_total summary
         const grandTotal = formatted.reduce((sum: number, b: any) => {
             const val = b.grand_total !== null && b.grand_total !== undefined ? parseFloat(b.grand_total) : 0;
