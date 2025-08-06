@@ -1,3 +1,4 @@
+
 // src/p.billing/billingRoutes.ts
 import { Router } from 'express';
 import * as billingController from './billingController';
@@ -62,6 +63,9 @@ router.post('/service/options', asyncHandler(billingController.createServiceOpti
 router.put('/service/options/:id', asyncHandler(billingController.updateServiceOption));
 
 // =================== UTILITIES TABLE ROUTES ===================
+router.get('/util/summary/costcenter', asyncHandler(billingController.getUtilityBillingCostcenterSummary)); // /api/bills/util/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
+// Utility billing service summary
+router.get('/util/summary/service', asyncHandler(billingController.getUtilityBillingServiceSummary)); // /api/bills/util/summary/service?costcenter=ID&from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
 router.get('/util', asyncHandler(billingController.getUtilityBills));
 router.post('/util', asyncHandler(billingController.createUtilityBill));

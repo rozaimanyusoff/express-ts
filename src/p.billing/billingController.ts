@@ -1095,26 +1095,31 @@ export const deleteTempVehicleRecord = async (req: Request, res: Response) => {
 
 // =================== UTILITIES TABLE CONTROLLER ===================
 export const getUtilityBills = async (req: Request, res: Response) => {
-	const { service, from, to } = req.query;
-	let bills = await billingModel.getUtilityBills();
-	const accounts = await billingModel.getBillingAccounts();
-	const costcentersRaw = await assetsModel.getCostcenters();
-	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
-	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+  const { costcenter, from, to, service } = req.query;
+  let bills = await billingModel.getUtilityBills();
+  const accounts = await billingModel.getBillingAccounts();
+  const costcentersRaw = await assetsModel.getCostcenters();
+  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+  const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
-	// Filter by date range if from/to provided
-	if (from || to) {
-		const fromDate = from ? new Date(from as string) : null;
-		const toDate = to ? new Date(to as string) : null;
-		bills = bills.filter((bill: any) => {
-			const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
-			if (!billDate) return false;
-			if (fromDate && billDate < fromDate) return false;
-			if (toDate && billDate > toDate) return false;
-			return true;
-		});
-	}
+  // Filter by costcenter if provided
+  if (costcenter) {
+	bills = bills.filter((bill: any) => String(bill.cc_id) === String(costcenter));
+  }
+
+  // Filter by date range if from/to provided
+  if (from || to) {
+	const fromDate = from ? new Date(from as string) : null;
+	const toDate = to ? new Date(to as string) : null;
+	bills = bills.filter((bill: any) => {
+	  const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
+	  if (!billDate) return false;
+	  if (fromDate && billDate < fromDate) return false;
+	  if (toDate && billDate > toDate) return false;
+	  return true;
+	});
+  }
 
 	const filtered = bills.map((bill: any) => {
 		// Build account object
@@ -1242,6 +1247,219 @@ export const deleteUtilityBill = async (req: Request, res: Response) => {
 	await billingModel.deleteUtilityBill(bill_id);
 	res.json({ status: 'success', message: 'Utility bill deleted successfully' });
 };
+
+
+// Summarize utility bills by cost center, year, and month -- export to Excel
+export const getUtilityBillingCostcenterSummary = async (req: Request, res: Response) => {
+  const { service, from, to } = req.query;
+  let rawBills = await billingModel.getUtilityBills();
+  // Use a single accounts/accountMap declaration for both enrichment and grouping
+  const accounts = await billingModel.getBillingAccounts();
+  const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+
+  // Enrich each bill with its account object
+  let bills = rawBills.map((bill: any) => {
+	let account = null;
+	if (bill.bill_id && accountMap.has(bill.bill_id)) {
+	  const acc = accountMap.get(bill.bill_id);
+	  account = {
+		bill_id: acc.bill_id,
+		bill_ac: acc.bill_ac,
+		provider: acc.provider,
+		service: acc.service,
+		desc: acc.bill_desc
+	  };
+	}
+	return { ...bill, account };
+  });
+
+  // Filter by date range if from/to provided
+  if (from || to) {
+	const fromDate = from ? new Date(from as string) : null;
+	const toDate = to ? new Date(to as string) : null;
+	bills = bills.filter((bill: any) => {
+	  const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
+	  if (!billDate) return false;
+	  if (fromDate && billDate < fromDate) return false;
+	  if (toDate && billDate > toDate) return false;
+	  return true;
+	});
+  }
+
+  // Filter by service if provided (match getUtilityBills logic: item.account.service, fallback to account.provider)
+  if (service) {
+	bills = bills.filter((item: any) => {
+	  if (item.account && item.account.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase())) {
+		return true;
+	  }
+	  if (item.account && item.account.provider && String(item.account.provider).toLowerCase().includes(String(service).toLowerCase())) {
+		return true;
+	  }
+	  return false;
+	});
+  }
+
+  // Group by costcenter name, then year, then month (use bill.costcenter.name)
+  const summary: Record<string, any> = {};
+  // Prepare costcenter and account maps for lookup
+  const costcentersRaw = await assetsModel.getCostcenters();
+  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+  // Group by costcenter, year, month, and service within each month
+  for (const bill of bills) {
+	let ccName = 'Unknown';
+	if (bill.cc_id && ccMap.has(bill.cc_id)) {
+	  ccName = ccMap.get(bill.cc_id).name;
+	}
+	// Build account object for service/provider
+	let serviceValue = 'Unknown';
+	if (bill.bill_id && accountMap.has(bill.bill_id)) {
+	  const acc = accountMap.get(bill.bill_id);
+	  if (acc.service) serviceValue = acc.service;
+	  else if (acc.provider) serviceValue = acc.provider;
+	}
+	// If service param is provided, skip bills that don't match
+	if (service && !String(serviceValue).toLowerCase().includes(String(service).toLowerCase())) {
+	  continue;
+	}
+	if (!summary[ccName]) {
+	  summary[ccName] = { costcenter: ccName, _yearMap: {} };
+	}
+	const date = bill.ubill_date ? dayjs(bill.ubill_date) : null;
+	if (!date) continue;
+	const year = date.year();
+	const month = date.month() + 1;
+	const amount = parseFloat(bill.ubill_gtotal || '0');
+	// Year grouping
+	if (!summary[ccName]._yearMap[year]) {
+	  summary[ccName]._yearMap[year] = { expenses: 0, _monthMap: {} };
+	}
+	summary[ccName]._yearMap[year].expenses += amount;
+	// Month grouping
+	if (!summary[ccName]._yearMap[year]._monthMap[month]) {
+	  summary[ccName]._yearMap[year]._monthMap[month] = { expenses: 0, _serviceMap: {} };
+	}
+	summary[ccName]._yearMap[year]._monthMap[month].expenses += amount;
+	// Service grouping within month
+	if (!summary[ccName]._yearMap[year]._monthMap[month]._serviceMap[serviceValue]) {
+	  summary[ccName]._yearMap[year]._monthMap[month]._serviceMap[serviceValue] = 0;
+	}
+	summary[ccName]._yearMap[year]._monthMap[month]._serviceMap[serviceValue] += amount;
+  }
+
+  // Transform to requested output structure
+  const result = Object.values(summary).map((cc: any) => ({
+	costcenter: cc.costcenter,
+	details: Object.entries(cc._yearMap).map(([year, yval]: any) => ({
+	  year: Number(year),
+	  expenses: yval.expenses.toFixed(2),
+	  months: Object.entries(yval._monthMap).map(([month, mval]: any) => ({
+		month: Number(month),
+		expenses: mval.expenses.toFixed(2),
+		/* details: Object.entries(mval._serviceMap).map(([service, amount]: any) => ({
+		  service,
+		  amount: amount.toFixed(2)
+		})) */
+	  }))
+	}))
+  }));
+
+  // Sort by costcenter name
+  const sortedResult = result.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
+
+  res.json({
+	status: 'success',
+	message: `Utility billing costcenter summary by date range retrieved successfully${service ? ` (filtered by service: ${service})` : ' (no service filter)'}`,
+	data: sortedResult
+  });
+};
+
+// Summarize utility bills by service, with optional costcenter filter and date range
+export const getUtilityBillingServiceSummary = async (req: Request, res: Response) => {
+  const { from, to, costcenter } = req.query;
+  let rawBills = await billingModel.getUtilityBills();
+  const accounts = await billingModel.getBillingAccounts();
+  const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+
+  // Enrich each bill with its account object
+  let bills = rawBills.map((bill: any) => {
+	let account = null;
+	if (bill.bill_id && accountMap.has(bill.bill_id)) {
+	  const acc = accountMap.get(bill.bill_id);
+	  account = {
+		bill_id: acc.bill_id,
+		bill_ac: acc.bill_ac,
+		provider: acc.provider,
+		service: acc.service,
+		desc: acc.bill_desc
+	  };
+	}
+	return { ...bill, account };
+  });
+
+  // Filter by date range if from/to provided
+  if (from || to) {
+	const fromDate = from ? new Date(from as string) : null;
+	const toDate = to ? new Date(to as string) : null;
+	bills = bills.filter((bill: any) => {
+	  const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
+	  if (!billDate) return false;
+	  if (fromDate && billDate < fromDate) return false;
+	  if (toDate && billDate > toDate) return false;
+	  return true;
+	});
+  }
+
+  // Filter by costcenter if provided and resolve name for message
+  let costcenterName = '';
+  if (costcenter) {
+	bills = bills.filter((bill: any) => String(bill.cc_id) === String(costcenter));
+	// Lookup costcenter name
+	const costcentersRaw = await assetsModel.getCostcenters();
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const ccObj = costcenters.find((cc: any) => String(cc.id) === String(costcenter));
+	if (ccObj && (ccObj as any).name) costcenterName = (ccObj as any).name;
+  }
+
+  // Group by service, then year, then month
+  const summary: Record<string, any> = {};
+  for (const bill of bills) {
+	let service = 'Unknown';
+	if (bill.account && bill.account.service) service = bill.account.service;
+	else if (bill.account && bill.account.provider) service = bill.account.provider;
+	const date = bill.ubill_date ? dayjs(bill.ubill_date) : null;
+	if (!date) continue;
+	const year = date.year();
+	const month = date.month() + 1;
+	const amount = parseFloat(bill.ubill_gtotal || '0');
+	if (!summary[service]) summary[service] = { service, _yearMap: {} };
+	if (!summary[service]._yearMap[year]) summary[service]._yearMap[year] = { expenses: 0, _monthMap: {} };
+	summary[service]._yearMap[year].expenses += amount;
+	if (!summary[service]._yearMap[year]._monthMap[month]) summary[service]._yearMap[year]._monthMap[month] = { expenses: 0 };
+	summary[service]._yearMap[year]._monthMap[month].expenses += amount;
+  }
+
+  // Format output
+  const result = Object.values(summary).map((s: any) => ({
+	service: s.service,
+	details: Object.entries(s._yearMap).map(([year, yval]: any) => ({
+	  year: Number(year),
+	  expenses: yval.expenses.toFixed(2),
+	  months: Object.entries(yval._monthMap).map(([month, mval]: any) => ({
+		month: Number(month),
+		expenses: mval.expenses.toFixed(2)
+	  }))
+	}))
+  })).sort((a, b) => a.service.localeCompare(b.service));
+
+  res.json({
+	status: 'success',
+	message: `Utility billing service summary by date range${costcenter ? ` (filtered by costcenter: ${costcenterName || costcenter})` : ''}`,
+	data: result
+  });
+};
+
 
 // =================== BILLING ACCOUNT TABLE CONTROLLER ===================
 export const getBillingAccounts = async (req: Request, res: Response) => {
