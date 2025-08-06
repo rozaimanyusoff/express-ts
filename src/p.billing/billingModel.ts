@@ -1,9 +1,26 @@
-// Delete a single fuel vehicle amount row by s_id (detail row id)
-export const deleteFuelVehicleAmountBySid = async (sid: number): Promise<void> => {
-  await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE s_id = ?`, [sid]);
-};
 import { pool, pool2 } from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+
+
+// Database and table declarations
+const dbBillings = 'billings';
+const dbAssets = 'assets';
+const dbApps = 'applications';
+const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
+const vehicleMaintenancePartsTable = `${dbBillings}.tbl_inv_part`;
+const workshopTable = `${dbBillings}.costws`;
+const fuelBillingTable = `${dbBillings}.fuel_stmt`;
+const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
+const fuelIssuerTable = `${dbBillings}.costfuel`;
+const fleetCardTable = `${dbBillings}.fleet2`;
+const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
+const serviceOptionsTable = `${dbApps}.svctype`;
+const tempVehicleRecordTable = `${dbAssets}.vehicle`;
+const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
+const utilitiesTable = `${dbBillings}.tbl_util`;
+const billingAccountTable = `${dbBillings}.costbill`;
+
+/* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
 
 export interface VehicleMaintenance {
   inv_id: number;
@@ -21,26 +38,6 @@ export interface VehicleMaintenance {
   inv_remarks: string | null;
   running_no: number;
 }
-
-// Database and table declarations
-const dbBillings = 'billings';
-const dbAssets = 'assets';
-const dbApps = 'applications';
-const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
-const vehicleMaintenancePartsTable = `${dbBillings}.tbl_inv_part`;
-const workshopTable = `${dbBillings}.costws`;
-const fuelBillingTable = `${dbBillings}.fuel_stmt`;
-const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
-const fuelIssuerTable = `${dbBillings}.costfuel`;
-const fleetCardTable = `${dbBillings}.fleet2`;
-const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
-const serviceOptionsTable = `${dbApps}.svctype`;
-const tempVehicleRecordTable = `${dbAssets}.vehicle`;
-const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
-const utilitiesTable = `${dbApps}.utilities`;
-const providerTable = `${dbApps}.provider`;
-
-/* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
 
 export const getVehicleMaintenance = async (): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(`SELECT * FROM ${vehicleMaintenanceTable}`);
@@ -227,6 +224,11 @@ export const updateFuelVehicleAmount = async (id: number, data: any): Promise<vo
 
 export const deleteFuelVehicleAmount = async (id: number): Promise<void> => {
   await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE stmt_id = ?`, [id]);
+};
+
+// Delete a single fuel vehicle amount row by s_id (detail row id)
+export const deleteFuelVehicleAmountBySid = async (sid: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE s_id = ?`, [sid]);
 };
 
 
@@ -505,4 +507,121 @@ export const updateTempVehicleRecord = async (id: number, data: Partial<TempVehi
 
 export const deleteTempVehicleRecord = async (id: number): Promise<void> => {
   await pool2.query(`DELETE FROM ${tempVehicleRecordTable} WHERE vehicle_id = ?`, [id]);
+};
+
+
+// =================== UTILITIES TABLE CRUD ===================
+export interface UtilityBill {
+  bill_id: number;
+  loc_id: number;
+  cc_id: number;
+  ubill_date: string;
+  ubill_no: string;
+  ubill_stotal: string;
+  ubill_tax: string;
+  ubill_disc: string;
+  ubill_round: string;
+  ubill_rent: string;
+  ubill_bw: string;
+  ubill_color: string;
+  ubill_gtotal: string;
+  ubill_paystat: string;
+  ubill_payref: string;
+}
+
+export const getUtilityBills = async (): Promise<UtilityBill[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${utilitiesTable} ORDER BY util_id DESC`);
+  return rows as UtilityBill[];
+};
+
+export const getUtilityBillById = async (util_id: number): Promise<UtilityBill | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${utilitiesTable} WHERE util_id = ?`, [util_id]);
+  const bill = (rows as UtilityBill[])[0];
+  return bill || null;
+};
+
+export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<number> => {
+  // Check for duplicate ubill_no and ubill_date
+  const [existingRows] = await pool2.query(
+    `SELECT util_id FROM ${utilitiesTable} WHERE bill_id = ?, ubill_no = ? AND ubill_date = ? LIMIT 1`,
+    [data.bill_id, data.ubill_no, data.ubill_date]
+  );
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    throw new Error('Utility bill with this bill number and date already exists.');
+  }
+
+  const [result] = await pool2.query(
+    `INSERT INTO ${utilitiesTable} (
+      bill_id, loc_id, cc_id, ubill_date, ubill_no, ubill_stotal, ubill_tax, ubill_disc, ubill_round, ubill_rent, ubill_bw, ubill_color, ubill_gtotal, ubill_paystat, ubill_payref
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.bill_id, data.loc_id, data.cc_id, data.ubill_date, data.ubill_no, data.ubill_stotal, data.ubill_tax, data.ubill_disc, data.ubill_round, data.ubill_rent, data.ubill_bw, data.ubill_color, data.ubill_gtotal, data.ubill_paystat, data.ubill_payref
+    ]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateUtilityBill = async (util_id: number, data: Partial<UtilityBill>): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${utilitiesTable} SET loc_id = ?, cc_id = ?, ubill_date = ?, ubill_no = ?, ubill_stotal = ?, ubill_tax = ?, ubill_disc = ?, ubill_round = ?, ubill_rent = ?, ubill_bw = ?, ubill_color = ?, ubill_gtotal = ?, ubill_paystat = ?, ubill_payref = ? WHERE util_id = ?`,
+    [
+      data.bill_id, data.loc_id, data.cc_id, data.ubill_date, data.ubill_no, data.ubill_stotal, data.ubill_tax, data.ubill_disc, data.ubill_round, data.ubill_rent, data.ubill_bw, data.ubill_color, data.ubill_gtotal, data.ubill_paystat, data.ubill_payref, util_id
+    ]
+  );
+};
+
+export const deleteUtilityBill = async (util_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${utilitiesTable} WHERE util_id = ?`, [util_id]);
+};
+
+// =================== BILLING ACCOUNT TABLE CRUD ===================
+export interface BillingAccount {
+  bfcy_id: number;
+  bill_ac: string;
+  bill_product: string;
+  bill_desc: string;
+  cc_id: number;
+  loc_id: number;
+  bill_cont_start: string;
+  bill_cont_end: string;
+  bill_depo: string;
+  bill_mth: string;
+  bill_stat: string;
+  bill_consumable: string;
+}
+
+export const getBillingAccounts = async (): Promise<BillingAccount[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} ORDER BY bfcy_id DESC`);
+  return rows as BillingAccount[];
+};
+
+export const getBillingAccountById = async (bfcy_id: number): Promise<BillingAccount | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
+  const account = (rows as BillingAccount[])[0];
+  return account || null;
+};
+
+export const createBillingAccount = async (data: Partial<BillingAccount>): Promise<number> => {
+  const [result] = await pool2.query(
+    `INSERT INTO ${billingAccountTable} (
+      bill_ac, bill_product, bill_desc, cc_id, loc_id, bill_cont_start, bill_cont_end, bill_depo, bill_mth, bill_stat, bill_consumable
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.bill_ac, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable
+    ]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateBillingAccount = async (bfcy_id: number, data: Partial<BillingAccount>): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${billingAccountTable} SET bill_ac = ?, bill_product = ?, bill_desc = ?, cc_id = ?, loc_id = ?, bill_cont_start = ?, bill_cont_end = ?, bill_depo = ?, bill_mth = ?, bill_stat = ?, bill_consumable = ? WHERE bfcy_id = ?`,
+    [
+      data.bill_ac, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable, bfcy_id
+    ]
+  );
+};
+
+export const deleteBillingAccount = async (bfcy_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
 };

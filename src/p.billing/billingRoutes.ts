@@ -61,4 +61,18 @@ router.get('/service/options/:id', asyncHandler(billingController.getServiceOpti
 router.post('/service/options', asyncHandler(billingController.createServiceOption));
 router.put('/service/options/:id', asyncHandler(billingController.updateServiceOption));
 
+// =================== UTILITIES TABLE ROUTES ===================
+router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
+router.get('/util', asyncHandler(billingController.getUtilityBills));
+router.post('/util', asyncHandler(billingController.createUtilityBill));
+router.put('/util/:id', asyncHandler(billingController.updateUtilityBill));
+router.delete('/util/:id', asyncHandler(billingController.deleteUtilityBill));
+
+// =================== BILLING ACCOUNT TABLE ROUTES ===================
+router.get('/util/accounts/:id', asyncHandler(billingController.getBillingAccountById));
+router.get('/util/accounts', asyncHandler(billingController.getBillingAccounts));
+router.post('/util/accounts', asyncHandler(billingController.createBillingAccount));
+router.put('/util/accounts/:id', asyncHandler(billingController.updateBillingAccount));
+router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBillingAccount));
+
 export default router;
