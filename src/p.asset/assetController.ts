@@ -202,24 +202,30 @@ export const getBrands = async (req: Request, res: Response) => {
     const parsed = Number(req.query.type);
     if (!isNaN(parsed)) typeId = parsed;
   }
-  // Fetch all brands and categories, filter brands by type_id if provided
+  // Fetch all brands, categories, and types; filter brands by type_id if provided
   let brandsRaw = await assetModel.getBrands();
   let brands: any[] = Array.isArray(brandsRaw) ? brandsRaw : [];
   if (typeId !== undefined) {
     brands = brands.filter((b: any) => b.type_id === typeId);
   }
   const categories = await assetModel.getCategories();
+  const types = await assetModel.getTypes();
 
   // Build category map by code
   const categoryMap = new Map<string, { id: number; name: string; code: string }>();
   for (const c of categories as any[]) {
     categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
   }
+  // Build type map by id
+  const typeMap = new Map<number, { id: number; name: string }>();
+  for (const t of types as any[]) {
+    typeMap.set(t.id, { id: t.id, name: t.name });
+  }
 
   // Get brand-category associations
   const { brandToCategories } = await getAllBrandCategoryAssociations();
 
-  // Map brands to include only required fields and categories[]
+  // Map brands to include only required fields, categories[], and type object
   const data = (brands as any[]).map((brand) => {
     let categoriesForBrand: any[] = [];
     if (brand.code && brandToCategories[brand.code]) {
@@ -227,6 +233,12 @@ export const getBrands = async (req: Request, res: Response) => {
         .map((catCode: string) => categoryMap.get(catCode))
         .filter(Boolean);
     }
+    let type = null;
+    if (brand.type_id && typeMap.has(brand.type_id)) {
+      type = typeMap.get(brand.type_id);
+    }
+    // Exclude type_code from the response
+    const { type_code, ...rest } = brand;
     return {
       id: brand.id,
       name: brand.name,
@@ -236,7 +248,8 @@ export const getBrands = async (req: Request, res: Response) => {
             ? brand.image
             : `https://${req.get('host')}/uploads/brands/${brand.image}`)
         : null,
-      categories: categoriesForBrand
+      categories: categoriesForBrand,
+      type
     };
   });
 

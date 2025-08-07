@@ -187,10 +187,18 @@ export const deleteBrand = async (id: number) => {
 
 export const createModel = async (data: any) => {
   const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
+  // Check for duplicate by name and type_id (type_code)
+  const [dupRows] = await pool.query(
+    `SELECT id FROM ${modelTable} WHERE name = ? AND type_id = ?`,
+    [name, type_code]
+  );
+  if (Array.isArray(dupRows) && dupRows.length > 0) {
+    throw new Error('Model with the same name and type already exists');
+  }
   const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
-    `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status]
+    `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_id, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, storedImage, brand_code, category_code, type_code, item_code, specification, generation, status]
   );
   return result;
 };
