@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import * as billingModel from './billingModel';
 import * as assetsModel from '../p.asset/assetModel';
 import dayjs from 'dayjs';
+import { stat } from 'fs';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
@@ -533,18 +534,32 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	// Fetch all lookup data
-	const [assetsRaw, costcentersRaw, districtsRaw] = await Promise.all([
+	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
 		billingModel.getTempVehicleRecords(),
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts()
+		assetsModel.getDistricts(),
+		assetsModel.getCategories(),
+		assetsModel.getBrands(),
+		assetsModel.getModels(),
+		assetsModel.getEmployees()
 	]);
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
+	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
+	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	// Use vehicle_id as key for assetMap (not id)
 	const assetMap = new Map(assets.map((a: any) => [a.vehicle_id, a]));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+	// Use id as key for categoryMap (since getCategories returns id, not category_id)
+	const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
+	const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+	const modelMap = new Map(models.map((m: any) => [m.id, m]));
+	// Use ramco_id as key for employeeMap (since we match by ramco_id from vehicle records)
+	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
 	// Get all fuel billings in date range
 	const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
@@ -556,6 +571,40 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 			// If cc filter is provided, skip if not matching
 			if (cc && String(d.cc_id) !== String(cc)) continue;
 			const vehicle_id = d.vehicle_id;
+			// Resolve category, brand, and model objects
+			let category = null;
+			let brand = null;
+			let model = null;
+			let categoryId = d.category;
+			let brandId = null;
+			let modelId = null;
+			let ramcoId = null;
+			if (assetMap.has(vehicle_id)) {
+				const asset = assetMap.get(vehicle_id);
+				if (!categoryId) categoryId = asset.category_id;
+				brandId = asset.brand_id;
+				modelId = asset.model_id;
+				ramcoId = asset.ramco_id;
+			}
+			if (categoryId && categoryMap.has(categoryId)) {
+				const catObj = categoryMap.get(categoryId);
+				category = { id: catObj.id, name: catObj.name };
+			}
+			if (brandId && brandMap.has(brandId)) {
+				const brandObj = brandMap.get(brandId);
+				brand = { id: brandObj.id, name: brandObj.name };
+			}
+			if (modelId && modelMap.has(modelId)) {
+				const modelObj = modelMap.get(modelId);
+				model = { id: modelObj.id, name: modelObj.name };
+			}
+			// Resolve owner object by ramco_id
+			let owner = null;
+			if (ramcoId && employeeMap.has(ramcoId)) {
+				const empObj = employeeMap.get(ramcoId);
+				owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
+			}
+
 			if (!summary[vehicle_id]) {
 				const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
 				const ccObj = d.cc_id && ccMap.has(d.cc_id) ? ccMap.get(d.cc_id) : null;
@@ -563,8 +612,18 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 				summary[vehicle_id] = {
 					vehicle_id,
 					vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
+					category,
+					brand,
+					model,
+					owner,
+					transmission: vehicleObj ? vehicleObj.vtrans_type : null,
+					fuel: vehicleObj ? vehicleObj.vfuel_type : null,
+					purchase_date: dayjs(vehicleObj?.v_dop).format('DD/MM/YYYY'),
+					age: vehicleObj ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null,
 					costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
 					district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
+					classification: vehicleObj ? vehicleObj.classification : null,
+					record_status: vehicleObj ? vehicleObj.record_status : null,
 					total_litre: 0,
 					total_amount: 0,
 					_yearMap: {} // temp for grouping by year
@@ -1464,7 +1523,7 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 // =================== BILLING ACCOUNT TABLE CONTROLLER ===================
 export const getBillingAccounts = async (req: Request, res: Response) => {
 	const accounts = await billingModel.getBillingAccounts();
-	res.json(accounts);
+	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: accounts });
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
@@ -1473,13 +1532,13 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	if (!account) {
 		return res.status(404).json({ error: 'Billing account not found' });
 	}
-	res.json(account);
+	res.json({ status: 'success', message: 'Billing account retrieved successfully', data: account });
 };
 
 export const createBillingAccount = async (req: Request, res: Response) => {
 	const payload = req.body;
 	const id = await billingModel.createBillingAccount(payload);
-	res.status(201).json({ status: 'success', id });
+	res.status(201).json({ status: 'success', message: 'Billing account created successfully', id });
 };
 
 export const updateBillingAccount = async (req: Request, res: Response) => {

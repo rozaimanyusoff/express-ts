@@ -62,6 +62,13 @@ router.get('/service/options/:id', asyncHandler(billingController.getServiceOpti
 router.post('/service/options', asyncHandler(billingController.createServiceOption));
 router.put('/service/options/:id', asyncHandler(billingController.updateServiceOption));
 
+// =================== BILLING ACCOUNT TABLE ROUTES ===================
+router.get('/util/accounts/:id', asyncHandler(billingController.getBillingAccountById));
+router.get('/util/accounts', asyncHandler(billingController.getBillingAccounts));
+router.post('/util/accounts', asyncHandler(billingController.createBillingAccount));
+router.put('/util/accounts/:id', asyncHandler(billingController.updateBillingAccount));
+router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBillingAccount));
+
 // =================== UTILITIES TABLE ROUTES ===================
 router.get('/util/summary/costcenter', asyncHandler(billingController.getUtilityBillingCostcenterSummary)); // /api/bills/util/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
 // Utility billing service summary
@@ -72,11 +79,5 @@ router.post('/util', asyncHandler(billingController.createUtilityBill));
 router.put('/util/:id', asyncHandler(billingController.updateUtilityBill));
 router.delete('/util/:id', asyncHandler(billingController.deleteUtilityBill));
 
-// =================== BILLING ACCOUNT TABLE ROUTES ===================
-router.get('/util/accounts/:id', asyncHandler(billingController.getBillingAccountById));
-router.get('/util/accounts', asyncHandler(billingController.getBillingAccounts));
-router.post('/util/accounts', asyncHandler(billingController.createBillingAccount));
-router.put('/util/accounts/:id', asyncHandler(billingController.updateBillingAccount));
-router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBillingAccount));
 
 export default router;
