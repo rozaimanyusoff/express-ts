@@ -214,11 +214,11 @@ export const getModelById = async (id: number) => {
 };
 
 export const updateModel = async (id: number, data: any) => {
-  const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
+  const { name, image, brand_code, category_code, type_code, item_code, specification, generation, status } = data;
   const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
-    `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_code = ?, model_code = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
-    [name, storedImage, brand_code, category_code, type_code, model_code, item_code, specification, generation, status, id]
+    `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_id = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
+    [name, storedImage, brand_code, category_code, type_code, item_code, specification, generation, status, id]
   );
   return result;
 };

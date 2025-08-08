@@ -46,7 +46,7 @@ app.use('/api/nav', tokenValidator, navRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
 app.use('/api/stock', stockRoutes);
-app.use('/api/purchase', purchaseRoutes);
+app.use('/api/purchases', purchaseRoutes);
 app.use('/api/bills', billingRoutes);
 app.use('/api/importer', tokenValidator, importRoutes);
 
