@@ -10,6 +10,7 @@ import telcoRoutes from './p.telco/telcoRoutes';
 import purchaseRoutes from './p.purchase/purchaseRoutes';
 import billingRoutes from './p.billing/billingRoutes';
 import importRoutes from './p.admin/importerRoutes';
+import webstockRoutes from './s.webstock/webstockRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -49,6 +50,7 @@ app.use('/api/stock', stockRoutes);
 app.use('/api/purchases', purchaseRoutes);
 app.use('/api/bills', billingRoutes);
 app.use('/api/importer', tokenValidator, importRoutes);
+app.use('/api/webstock', webstockRoutes);
 
 app.use(errorHandler);
 

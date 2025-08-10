@@ -8,6 +8,13 @@
 			"problemMatcher": [],
 			"group": "build",
 			"isBackground": true
+		},
+		{
+			"label": "Restart backend server (if needed)",
+			"type": "shell",
+			"command": "npm run dev",
+			"isBackground": true,
+			"group": "build"
 		}
 	]
 }
