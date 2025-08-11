@@ -15,10 +15,10 @@ router.delete('/temp-vehicle/:id', asyncHandler(billingController.deleteTempVehi
 
 /* ================== VEHICLE MAINTENANCE ================== */
 
-router.get('/vehicle/summary', asyncHandler(billingController.getVehicleMaintenanceSummaryByDate)); // /api/bills/vehicle/summary?from=YYYY-MM-DD&to=YYYY-MM-DD
-router.get('/vehicle/filter', asyncHandler(billingController.getVehicleMaintenanceByDate)); /* /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 */
-router.get('/vehicle/:id', asyncHandler(billingController.getVehicleMaintenanceById));
-router.get('/vehicle', asyncHandler(billingController.getVehicleMaintenance));
+router.get('/mtn/summary/vehicle', asyncHandler(billingController.getMaintenanceByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
+router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMaintenanceByDate)); /* /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 */
+router.get('/mtn/:id', asyncHandler(billingController.getVehicleMaintenanceById));
+router.get('/mtn', asyncHandler(billingController.getVehicleMaintenance));
 
 router.post('/vehicle', asyncHandler(billingController.createVehicleMaintenance));
 router.put('/vehicle/:id', asyncHandler(billingController.updateVehicleMaintenance));

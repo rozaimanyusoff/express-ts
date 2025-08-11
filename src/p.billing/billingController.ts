@@ -139,72 +139,149 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 	res.json({ status: 'success', message: 'Vehicle maintenance by date range retrieved successfully', data: filtered });
 };
 
-export const getVehicleMaintenanceSummaryByDate = async (req: Request, res: Response) => {
-	const { from, to } = req.query;
+//Purposely to export maintenance consumption report data to Excel
+export const getMaintenanceByVehicleSummary = async (req: Request, res: Response) => {
+	const { from, to, cc } = req.query;
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
-	const vehicleMtn = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
-	const assets = await billingModel.getTempVehicleRecords() as any[];
-	const costcenters = await assetsModel.getCostcenters() as any[];
-	const districts = await assetsModel.getDistricts() as any[];
-	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
-	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+	// Fetch all lookup data
+	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
+		billingModel.getTempVehicleRecords(),
+		assetsModel.getCostcenters(),
+		assetsModel.getDistricts(),
+		assetsModel.getCategories(),
+		assetsModel.getBrands(),
+		assetsModel.getModels(),
+		assetsModel.getEmployees()
+	]);
+	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
+	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
+	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+	// Use vehicle_id as key for assetMap (not id)
+	const assetMap = new Map(assets.map((a: any) => [a.vehicle_id, a]));
+	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+	// Use id as key for categoryMap (since getCategories returns id, not category_id)
+	const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
+	const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+	const modelMap = new Map(models.map((m: any) => [m.id, m]));
+	// Use ramco_id as key for employeeMap (since we match by ramco_id from vehicle records)
+	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
-	// Group by asset
-	const assetSummary: Record<string, any> = {};
-	for (const b of vehicleMtn) {
-		const vehicle_id = b.vehicle_id;
-		const asset = assetMap.get(vehicle_id) || {};
-		const costcenter = ccMap.get(b.cc_id) || {};
-		const district = districtMap.get(b.loc_id) || {};
-		if (!assetSummary[vehicle_id]) {
-			assetSummary[vehicle_id] = {
-				vehicle_id,
-				vehicle_regno: asset.vehicle_regno || '',
-				district: district ? { id: district.id, code: district.code } : null,
-				costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
-				total_maintenance: 0,
-				total_amount: 0,
-				details: {}
-			};
-		}
-		const date = dayjs(b.inv_date);
-		const year = date.year();
-		const month = date.month() + 1;
-		if (!assetSummary[vehicle_id].details[year]) {
-			assetSummary[vehicle_id].details[year] = { expenses: 0, maintenance: [] };
-		}
-		// Find if this month already exists in maintenance
-		let monthEntry = assetSummary[vehicle_id].details[year].maintenance.find((m: any) => m.month === month);
-		if (!monthEntry) {
-			monthEntry = { month, total_maintenance: 0, amount: 0 };
-			assetSummary[vehicle_id].details[year].maintenance.push(monthEntry);
-		}
-		monthEntry.total_maintenance += 1;
-		monthEntry.amount += parseFloat(b.inv_total || '0');
-		assetSummary[vehicle_id].details[year].expenses += parseFloat(b.inv_total || '0');
-		assetSummary[vehicle_id].total_maintenance += 1;
-		assetSummary[vehicle_id].total_amount += parseFloat(b.inv_total || '0');
+	// Parse cost center filter - support comma-separated cost center IDs
+	let costcenterIds: number[] = [];
+	if (cc) {
+		// Support comma-separated cost center IDs
+		const ccIds = (cc as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+		costcenterIds = ccIds;
 	}
 
+	// Get all vehicle maintenance records in date range
+	const maintenanceRecords = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
+	// Group by vehicle_id
+	const summary: Record<string, any> = {};
+	for (const maintenance of maintenanceRecords) {
+		// If cost center filter is provided, skip if not matching
+		if (costcenterIds.length > 0 && !costcenterIds.includes(maintenance.cc_id)) continue;
+		const vehicle_id = maintenance.vehicle_id;
+		
+		// Resolve category, brand, and model objects
+		let category = null;
+		let brand = null;
+		let model = null;
+		let categoryId = null;
+		let brandId = null;
+		let modelId = null;
+		let ramcoId = null;
+		if (assetMap.has(vehicle_id)) {
+			const asset = assetMap.get(vehicle_id);
+			categoryId = asset.category_id;
+			brandId = asset.brand_id;
+			modelId = asset.model_id;
+			ramcoId = asset.ramco_id;
+		}
+		if (categoryId && categoryMap.has(categoryId)) {
+			const catObj = categoryMap.get(categoryId);
+			category = { id: catObj.id, name: catObj.name };
+		}
+		if (brandId && brandMap.has(brandId)) {
+			const brandObj = brandMap.get(brandId);
+			brand = { id: brandObj.id, name: brandObj.name };
+		}
+		if (modelId && modelMap.has(modelId)) {
+			const modelObj = modelMap.get(modelId);
+			model = { id: modelObj.id, name: modelObj.name };
+		}
+		// Resolve owner object by ramco_id
+		let owner = null;
+		if (ramcoId && employeeMap.has(ramcoId)) {
+			const empObj = employeeMap.get(ramcoId);
+			owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
+		}
+
+		if (!summary[vehicle_id]) {
+			const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
+			const ccObj = maintenance.cc_id && ccMap.has(maintenance.cc_id) ? ccMap.get(maintenance.cc_id) : null;
+			const districtObj = maintenance.loc_id && districtMap.has(maintenance.loc_id) ? districtMap.get(maintenance.loc_id) : null;
+			summary[vehicle_id] = {
+				vehicle_id,
+				vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
+				category,
+				brand,
+				model,
+				owner,
+				transmission: vehicleObj ? vehicleObj.vtrans_type : null,
+				fuel: vehicleObj ? vehicleObj.vfuel_type : null,
+				purchase_date: dayjs(vehicleObj?.v_dop).format('DD/MM/YYYY'),
+				age: vehicleObj ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null,
+				costcenter: ccObj ? { id: maintenance.cc_id, name: ccObj.name } : null,
+				district: districtObj ? { id: maintenance.loc_id, code: districtObj.code } : null,
+				classification: vehicleObj ? vehicleObj.classification : null,
+				record_status: vehicleObj ? vehicleObj.record_status : null,
+				total_maintenance: 0,
+				total_amount: 0,
+				_yearMap: {} // temp for grouping by year
+			};
+		}
+		summary[vehicle_id].total_maintenance += 1;
+		summary[vehicle_id].total_amount += parseFloat(maintenance.inv_total || '0');
+		// Group by year
+		const year = dayjs(maintenance.inv_date).year();
+		if (!summary[vehicle_id]._yearMap[year]) {
+			summary[vehicle_id]._yearMap[year] = { expenses: 0, maintenance: [] };
+		}
+		summary[vehicle_id]._yearMap[year].expenses += parseFloat(maintenance.inv_total || '0');
+		summary[vehicle_id]._yearMap[year].maintenance.push({
+			inv_id: maintenance.inv_id,
+			inv_no: maintenance.inv_no,
+			inv_date: maintenance.inv_date,
+			svc_order: maintenance.svc_order,
+			svc_date: maintenance.svc_date,
+			svc_odo: maintenance.svc_odo,
+			amount: maintenance.inv_total
+		});
+	}
 	// Format output
-	const result = Object.values(assetSummary).map((asset: any) => ({
-		vehicle_id: asset.vehicle_id,
-		vehicle_regno: asset.vehicle_regno,
-		district: asset.district,
-		costcenter: asset.costcenter,
-		total_maintenance: asset.total_maintenance,
-		total_amount: asset.total_amount,
-		details: Object.entries(asset.details).map(([year, data]: [string, any]) => ({
+	const result = Object.values(summary).map((asset: any) => {
+		const details = Object.entries(asset._yearMap).map(([year, data]: [string, any]) => ({
 			year: Number(year),
 			expenses: data.expenses.toFixed(2),
 			maintenance: data.maintenance
-		}))
-	}));
-
-	res.json({ status: 'success', message: 'Vehicle maintenance summary by date range retrieved successfully', data: result });
+		}));
+		// Remove temp _yearMap from output
+		const { _yearMap, ...rest } = asset;
+		return { ...rest, details };
+	});
+	res.json({
+		status: 'success',
+		message: 'Vehicle maintenance summary by date range retrieved successfully',
+		data: result,
+	});
 };
 
 
