@@ -228,6 +228,11 @@ export const deleteModel = async (id: number) => {
   return result;
 };
 
+export const getModelsByBrand = async (brand_code: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE brand_code = ?`, [brand_code]);
+  return rows;
+};
+
 // DEPARTMENTS CRUD
 export const createDepartment = async (data: any) => {
   const { name } = data;
@@ -810,10 +815,32 @@ export const getCategoriesByBrand = async (brand_code: string) => {
   return rows;
 };
 
+export const getCategoriesByBrandId = async (brand_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT c.id, c.name, c.code 
+     FROM ${categoryTable} c 
+     JOIN ${brandCategoryTable} bc ON c.id = bc.category_id 
+     WHERE bc.brand_id = ?`,
+    [brand_id]
+  );
+  return rows;
+};
+
 export const getBrandsByCategory = async (category_code: string) => {
   const [rows] = await pool.query(
     `SELECT brand_code FROM ${brandCategoryTable} WHERE category_code = ?`,
     [category_code]
+  );
+  return rows;
+};
+
+export const getBrandsByCategoryId = async (category_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT b.id, b.name, b.code 
+     FROM ${brandTable} b 
+     JOIN ${brandCategoryTable} bc ON b.id = bc.brand_id 
+     WHERE bc.category_id = ?`,
+    [category_id]
   );
   return rows;
 };
@@ -1085,6 +1112,7 @@ export default {
   createModel,
   getModels,
   getModelById,
+  getModelsByBrand,
   updateModel,
   deleteModel,
   createDepartment,
@@ -1173,7 +1201,9 @@ export default {
   addBrandCategory,
   removeBrandCategory,
   getCategoriesByBrand,
+  getCategoriesByBrandId,
   getBrandsByCategory,
+  getBrandsByCategoryId,
   getSoftwares,
   getSoftwareById,
   createSoftware,

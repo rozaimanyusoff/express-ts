@@ -106,38 +106,37 @@ export const deleteType = async (req: Request, res: Response) => {
 
 // CATEGORIES
 export const getCategories = async (req: Request, res: Response) => {
-  // Support ?type={type_id} param (optional)
-  let typeId: number | undefined = undefined;
+  // Support ?type={type_id} param (optional) - can be comma-separated
+  let typeIds: number[] = [];
   if (typeof req.query.type === 'string' && req.query.type !== '' && req.query.type !== 'all') {
-    const parsed = Number(req.query.type);
-    if (!isNaN(parsed)) typeId = parsed;
+    const ids = (req.query.type as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+    typeIds = ids;
   }
   let rowsRaw = await assetModel.getCategories();
   let rows: any[] = Array.isArray(rowsRaw) ? rowsRaw : [];
-  if (typeId !== undefined) {
-    rows = rows.filter((c: any) => c.type_id === typeId);
+  if (typeIds.length > 0) {
+    rows = rows.filter((c: any) => typeIds.includes(c.type_id));
   }
-  const brands = await assetModel.getBrands();
-  // Build brand map
-  const brandMap = new Map<string, { id: number; name: string; code: string }>();
-  for (const b of brands as any[]) {
-    brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
-  }
-  // Get brand-category associations
-  const { categoryToBrands } = await getAllBrandCategoryAssociations();
-  // Map categories to include all fields plus brands[]
-  const data = (rows as any[]).map((cat) => {
+
+  // Map categories to include brands using proper brand_id/category_id relationship
+  const data = [];
+  for (const category of rows) {
     let brandsForCategory: any[] = [];
-    if (cat.code && categoryToBrands[cat.code]) {
-      brandsForCategory = categoryToBrands[cat.code]
-        .map((brandCode: string) => brandMap.get(brandCode))
-        .filter(Boolean);
+    if (category.id) {
+      // Use the proper method to get brands for this category by category_id
+      const categoryBrandsRaw = await assetModel.getBrandsByCategoryId(category.id);
+      const categoryBrands = Array.isArray(categoryBrandsRaw) ? categoryBrandsRaw : [];
+      brandsForCategory = categoryBrands.map((brand: any) => ({
+        id: brand.id,
+        name: brand.name,
+      }));
     }
-    return {
-      ...cat,
+    
+    data.push({
+      ...category,
       brands: brandsForCategory
-    };
-  });
+    });
+  }
   res.json({
     status: 'success',
     message: 'Categories data retrieved successfully',
@@ -202,60 +201,94 @@ export const getBrands = async (req: Request, res: Response) => {
     const parsed = Number(req.query.type);
     if (!isNaN(parsed)) typeId = parsed;
   }
-  // Fetch all brands, categories, and types; filter brands by type_id if provided
+  
+  // Support ?categories={category_id} param (optional) - can be comma-separated
+  let categoryIds: number[] = [];
+  if (typeof req.query.categories === 'string' && req.query.categories !== '' && req.query.categories !== 'all') {
+    const catIds = (req.query.categories as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+    categoryIds = catIds;
+  }
+  
+  // Fetch all brands, categories, types, and models
   let brandsRaw = await assetModel.getBrands();
   let brands: any[] = Array.isArray(brandsRaw) ? brandsRaw : [];
   if (typeId !== undefined) {
     brands = brands.filter((b: any) => b.type_id === typeId);
   }
-  const categories = await assetModel.getCategories();
-  const types = await assetModel.getTypes();
+  
+  const [categories, types, allModels] = await Promise.all([
+    assetModel.getCategories(),
+    assetModel.getTypes(),
+    assetModel.getModels()
+  ]);
 
-  // Build category map by code
-  const categoryMap = new Map<string, { id: number; name: string; code: string }>();
-  for (const c of categories as any[]) {
-    categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
-  }
   // Build type map by id
   const typeMap = new Map<number, { id: number; name: string }>();
   for (const t of types as any[]) {
     typeMap.set(t.id, { id: t.id, name: t.name });
   }
+  
+  // Build models map by brand_code
+  const modelsMap = new Map<string, any[]>();
+  for (const model of allModels as any[]) {
+    if (model.brand_code) {
+      if (!modelsMap.has(model.brand_code)) {
+        modelsMap.set(model.brand_code, []);
+      }
+      modelsMap.get(model.brand_code)!.push({
+        id: model.id.toString(),
+        name: model.name
+      });
+    }
+  }
 
-  // Get brand-category associations
-  const { brandToCategories } = await getAllBrandCategoryAssociations();
+  // Filter brands by categories if specified
+  if (categoryIds.length > 0) {
+    const filteredBrands = [];
+    for (const brand of brands) {
+      if (brand.id) {
+        // Get categories for this brand using the proper method with brand_id
+        const brandCategoriesRaw = await assetModel.getCategoriesByBrandId(brand.id);
+        const brandCategories = Array.isArray(brandCategoriesRaw) ? brandCategoriesRaw : [];
+        const brandCategoryIds = brandCategories.map((cat: any) => cat.id);
+        
+        // Check if any of the brand's categories match the requested category IDs
+        if (categoryIds.some(catId => brandCategoryIds.includes(catId))) {
+          filteredBrands.push(brand);
+        }
+      }
+    }
+    brands = filteredBrands;
+  }
 
-  // Map brands to include only required fields, categories[], and type object
-  const data = (brands as any[]).map((brand) => {
+  // Map brands to include categories and models
+  const data = [];
+  for (const brand of brands) {
     let categoriesForBrand: any[] = [];
-    if (brand.code && brandToCategories[brand.code]) {
-      categoriesForBrand = brandToCategories[brand.code]
-        .map((catCode: string) => categoryMap.get(catCode))
-        .filter(Boolean);
+    if (brand.id) {
+      // Use the proper method to get categories for this brand by brand_id
+      const brandCategoriesRaw = await assetModel.getCategoriesByBrandId(brand.id);
+      const brandCategories = Array.isArray(brandCategoriesRaw) ? brandCategoriesRaw : [];
+      categoriesForBrand = brandCategories.map((cat: any) => ({
+        id: cat.id.toString(),
+        name: cat.name
+      }));
     }
-    let type = null;
-    if (brand.type_id && typeMap.has(brand.type_id)) {
-      type = typeMap.get(brand.type_id);
-    }
-    // Exclude type_code from the response
-    const { type_code, ...rest } = brand;
-    return {
-      id: brand.id,
+    
+    // Get models for this brand
+    const modelsForBrand = modelsMap.get(brand.code) || [];
+    
+    data.push({
+      id: brand.id.toString(),
       name: brand.name,
-      code: brand.code,
-      image: brand.image
-        ? (brand.image.startsWith('http')
-            ? brand.image
-            : `https://${req.get('host')}/uploads/brands/${brand.image}`)
-        : null,
       categories: categoriesForBrand,
-      type
-    };
-  });
+      models: modelsForBrand
+    });
+  }
 
   res.json({
     status: 'success',
-    message: 'Brands data retrieved successfully',
+    message: 'Models data retrieved successfully',
     data
   });
 };
@@ -294,11 +327,22 @@ export const getModels = async (req: Request, res: Response) => {
     const parsed = Number(req.query.type);
     if (!isNaN(parsed)) typeId = parsed;
   }
-  // Fetch all models, brands, and categories, filter models by type_id if provided
+  
+  // Support ?brand={brand_id} param (optional) - can be comma-separated
+  let brandIds: number[] = [];
+  if (typeof req.query.brand === 'string' && req.query.brand !== '' && req.query.brand !== 'all') {
+    const ids = (req.query.brand as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+    brandIds = ids;
+  }
+  
+  // Fetch all models, brands, and categories, filter models by type_id and brand_id if provided
   let modelsRaw = await assetModel.getModels();
   let models: any[] = Array.isArray(modelsRaw) ? modelsRaw : [];
   if (typeId !== undefined) {
     models = models.filter((m: any) => m.type_id === typeId);
+  }
+  if (brandIds.length > 0) {
+    models = models.filter((m: any) => brandIds.includes(m.brand_id));
   }
   const brands = await assetModel.getBrands();
   const categories = await assetModel.getCategories();

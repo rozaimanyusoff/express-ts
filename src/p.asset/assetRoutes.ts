@@ -13,21 +13,21 @@ router.put('/types/:id', asyncHandler(assetController.updateType));
 router.delete('/types/:id', asyncHandler(assetController.deleteType));
 
 // CATEGORIES
-router.get('/categories', asyncHandler(assetController.getCategories));
+router.get('/categories', asyncHandler(assetController.getCategories)); // ?type={type_id1,type_id2}
 router.get('/categories/:id', asyncHandler(assetController.getCategoryById));
 router.post('/categories', asyncHandler(assetController.createCategory));
 router.put('/categories/:id', asyncHandler(assetController.updateCategory));
 router.delete('/categories/:id', asyncHandler(assetController.deleteCategory));
 
 // BRANDS
-router.get('/brands', asyncHandler(assetController.getBrands));
+router.get('/brands', asyncHandler(assetController.getBrands)); // ?type={type_id}&categories={category_id1,category_id2}
 router.get('/brands/:id', asyncHandler(assetController.getBrandById));
 router.post('/brands', asyncHandler(assetController.createBrand));
 router.put('/brands/:id', asyncHandler(assetController.updateBrand));
 router.delete('/brands/:id', asyncHandler(assetController.deleteBrand));
 
 // MODELS
-router.get('/models', asyncHandler(assetController.getModels));
+router.get('/models', asyncHandler(assetController.getModels)); // ?type={type_id}&brand={brand_id1,brand_id2}
 router.get('/models/:id', asyncHandler(assetController.getModelById));
 router.post('/models', uploadModelImage.single('image'), asyncHandler(assetController.createModel));
 router.put('/models/:id', uploadModelImage.single('image'), asyncHandler(assetController.updateModel));
