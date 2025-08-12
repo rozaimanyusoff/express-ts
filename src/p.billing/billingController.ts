@@ -1600,7 +1600,15 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 // =================== BILLING ACCOUNT TABLE CONTROLLER ===================
 export const getBillingAccounts = async (req: Request, res: Response) => {
 	const accounts = await billingModel.getBillingAccounts();
-	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: accounts });
+	const baseUrl = process.env.BACKEND_URL || '';
+	
+	// Convert relative logo paths to full URLs
+	const accountsWithFullUrls = accounts.map((account: any) => ({
+		...account,
+		logo: account.logo ? `${baseUrl.replace(/\/$/, '')}${account.logo}` : account.logo
+	}));
+	
+	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: accountsWithFullUrls });
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
