@@ -6,6 +6,7 @@ import asyncHandler from '../utils/asyncHandler';
 const router = Router();
 
 // ========== MAINTENANCE RECORDS CRUD ==========
+router.get('/vehicle/record/:vehicle_id', asyncHandler(maintenanceController.getMaintenanceRecordsByVehicle)); // Get maintenance records by vehicle ID
 router.get('/vehicle/:id', asyncHandler(maintenanceController.getMaintenanceRecordById));
 router.get('/vehicle', asyncHandler(maintenanceController.getMaintenanceRecords)); // ?status={pending|verified|recommended|approved}
 router.post('/vehicle', asyncHandler(maintenanceController.createMaintenanceRecord));
@@ -18,6 +19,14 @@ router.get('/types/:id', asyncHandler(maintenanceController.getMaintenanceTypeBy
 router.post('/types', asyncHandler(maintenanceController.createMaintenanceType));
 router.put('/types/:id', asyncHandler(maintenanceController.updateMaintenanceType));
 router.delete('/types/:id', asyncHandler(maintenanceController.deleteMaintenanceType));
+
+/* ========== ADDITIONAL MAINTENANCE ROUTES ========== */
+
+// Force invoice creation for approved maintenance record
+router.post('/vehicle/:requestId/forceinvoice', asyncHandler(maintenanceController.forceInvoiceMaintenanceRecord));
+
+// Resend portal link to requester
+router.post('/vehicle/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
 
 /* ========== ADD MORE ROUTES HERE ========== */
 
