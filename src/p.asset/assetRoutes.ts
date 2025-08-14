@@ -74,6 +74,9 @@ router.get('/employees/email/:email', asyncHandler(assetController.getEmployeeBy
 router.get('/employees/contact/:contact', asyncHandler(assetController.getEmployeeByContact));
 router.get('/employees/lookup/:username', asyncHandler(assetController.getEmployeeByUsername));
 
+/* LOCATIONS */
+router.get('/locations', asyncHandler(assetController.getLocations));
+
 
 // DISTRICTS
 router.get('/districts', asyncHandler(assetController.getDistricts));

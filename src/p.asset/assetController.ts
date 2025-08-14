@@ -3069,3 +3069,14 @@ export const deleteTransferChecklist = async (req: Request, res: Response) => {
   res.json({ status: 'success', message: 'Transfer checklist item deleted successfully' });
 }
 
+/* LOCATIONS */
+
+export const getLocations = async (req: Request, res: Response) => {
+  // Fetch all locations
+  const locations = await assetModel.getLocations();
+  if (!Array.isArray(locations)) {
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch locations' });
+  }
+  res.json({ status: 'success', message: 'Locations retrieved successfully', data: locations });
+}
+
