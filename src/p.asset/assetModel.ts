@@ -6,9 +6,9 @@ import { handleImageUpload } from '../utils/fileUpload';
 import { get } from "axios";
 
 // Database and table declarations for easy swapping/testing
-const db = 'assetdata';
+const db = 'assets';
 const companyDb = 'companies';
-const assetTable = `${db}.asset_data`;
+const assetTable = `${db}.assetdata`;
 const assetUserTable = `${db}.asset_ownership`;
 const brandTable = `${db}.brands`;
 const brandCategoryTable = `${db}.brand_category`;
@@ -33,7 +33,7 @@ const typeTable = `${db}.types`;
 const zoneTable = `${db}.zones`;
 const zoneDistrictTable = `${db}.zone_districts`;
 /* To be develop */
-const locationTable = `${companyDb}.locations`;
+const locationTable = `${db}.locations`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
 const assetPurchaseTable = `${db}.asset_purchase`;
@@ -294,28 +294,28 @@ export const deletePosition = async (id: number) => {
 // LOCATIONS CRUD
 export const createLocation = async (data: any) => {
   const { name } = data;
-  const [result] = await pool2.query(`INSERT INTO ${locationTable} (name) VALUES (?)`, [name]);
+  const [result] = await pool.query(`INSERT INTO ${locationTable} (name) VALUES (?)`, [name]);
   return result;
 };
 
 export const getLocations = async () => {
-  const [rows] = await pool2.query(`SELECT * FROM ${locationTable}`);
+  const [rows] = await pool.query(`SELECT * FROM ${locationTable}`);
   return rows;
 };
 
 export const getLocationById = async (id: number) => {
-  const [rows] = await pool2.query(`SELECT * FROM ${locationTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${locationTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
 export const updateLocation = async (id: number, data: any) => {
   const { name } = data;
-  const [result] = await pool2.query(`UPDATE ${locationTable} SET name = ? WHERE id = ?`, [name, id]);
+  const [result] = await pool.query(`UPDATE ${locationTable} SET name = ? WHERE id = ?`, [name, id]);
   return result;
 };
 
 export const deleteLocation = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${locationTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${locationTable} WHERE id = ?`, [id]);
   return result;
 };
 

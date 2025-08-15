@@ -461,7 +461,7 @@ export const deleteModel = async (req: Request, res: Response) => {
 };
 
 // ASSETS
-// Helper type guard for RowDataPacket with asset_id and ramco_id
+// Helper type guard for RowDataPacket with asset_id and ramco_id (used by getAssetById)
 function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; effective_date?: string } {
   return obj && typeof obj === 'object' && 'asset_id' in obj && 'ramco_id' in obj;
 }
@@ -482,143 +482,90 @@ export const getAssets = async (req: Request, res: Response) => {
   }
   // Fetch all assets and related data
   const assetsRaw = await assetModel.getAssets(typeIds, status);
-  const ownershipsRaw = await assetModel.getAssetOwnerships();
-  const employeesRaw = await assetModel.getEmployees();
   const typesRaw = await assetModel.getTypes();
   const categoriesRaw = await assetModel.getCategories();
   const brandsRaw = await assetModel.getBrands();
   const modelsRaw = await assetModel.getModels();
-  const departmentsRaw = await assetModel.getDepartments();
   const costcentersRaw = await assetModel.getCostcenters();
+  const departmentsRaw = await assetModel.getDepartments();
   const districtsRaw = await assetModel.getDistricts();
-  // Fetch fleet cards for vehicle assets
-  const fleetCards = await billingModel.getFleetCards();
+  const locationsRaw = await assetModel.getLocations();
+  const employeesRaw = await assetModel.getEmployees();
 
   const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
-  const ownerships = Array.isArray(ownershipsRaw) ? ownershipsRaw : [];
-  const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
   const types = Array.isArray(typesRaw) ? typesRaw : [];
   const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
   const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
   const models = Array.isArray(modelsRaw) ? modelsRaw : [];
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
   const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+  const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+  const employees = isPlainObjectArray(employeesRaw) ? (employeesRaw as any[]) : [];
 
   // Build lookup maps
   const typeMap = new Map(types.map((t: any) => [t.id, t]));
   const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
   const brandMap = new Map(brands.map((b: any) => [b.id, b]));
   const modelMap = new Map(models.map((m: any) => [m.id, m]));
-  const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
-  const departmentMap = new Map(departments.map((d: any) => [d.id, d]));
   const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const departmentMap = new Map(departments.map((d: any) => [d.id, d]));
   const districtMap = new Map(districts.map((d: any) => [d.id, d]));
-
-  // Group ownerships by asset_id
-  const ownershipsByAsset: Record<number, any[]> = {};
-  for (const o of ownerships) {
-    if (!isOwnershipRow(o)) continue;
-    if (!ownershipsByAsset[o.asset_id]) ownershipsByAsset[o.asset_id] = [];
-    const emp = employeeMap.get(o.ramco_id);
-    if (emp) {
-      // Add employee details to ownership
-      ownershipsByAsset[o.asset_id].push({
-        ramco_id: emp.ramco_id,
-        name: emp.full_name,
-        email: emp.email,
-        contact: emp.contact,
-        department: emp.department_id ? (departmentMap.get(emp.department_id)?.code || null) : null,
-        //cost_center: emp.costcenter_id ? (costcenterMap.get(emp.costcenter_id)?.name || null) : null,
-        district: emp.district_id ? (districtMap.get(emp.district_id)?.code || null) : null,
-        effective_date: (o as any).effective_date || null
-      });
-    }
-  }
+  const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+  const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
   // Build asset data
-  const data = await Promise.all(assets.map(async (asset: any) => {
+  const data = assets.map((asset: any) => {
     const type = typeMap.get(asset.type_id);
-    let specs: any = null;
-    if (type && type.id === 1) {
-      // Computer specs
-      const compSpecsArr = await assetModel.getComputerSpecsForAsset(asset.id);
-      if (Array.isArray(compSpecsArr) && compSpecsArr.length > 0) {
-        const compSpecs = compSpecsArr[0];
-        const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
-        specs = {
-          categories: asset.category_id ? {
-            category_id: asset.category_id,
-            name: categoryMap.get(asset.category_id)?.name || null
-          } : null,
-          brands: asset.brand_id ? {
-            brand_id: asset.brand_id,
-            name: brandMap.get(asset.brand_id)?.name || null
-          } : null,
-          models: asset.model_id ? {
-            model_id: asset.model_id,
-            name: modelMap.get(asset.model_id)?.name || null
-          } : null,
-          ...compSpecs,
-          installed_software: installedSoftware || []
-        };
-      }
-    } else if (type && type.id === 2) {
-      // Vehicle specs
-      const vehSpecsArr = await assetModel.getVehicleSpecsForAsset(asset.id);
-      if (Array.isArray(vehSpecsArr) && vehSpecsArr.length > 0) {
-        const vehSpecs = vehSpecsArr[0];
-        // Find fleet card by register_number
-        let card_no = null;
-        if (asset.register_number) {
-          const fleetCard = fleetCards.find((fc: any) => fc.register_number === asset.register_number);
-          if (fleetCard && fleetCard.card_no) {
-            card_no = fleetCard.card_no;
-          }
-        }
-        specs = {
-          categories: asset.category_id ? {
-            category_id: asset.category_id,
-            name: categoryMap.get(asset.category_id)?.name || null
-          } : null,
-          brands: asset.brand_id ? {
-            brand_id: asset.brand_id,
-            name: brandMap.get(asset.brand_id)?.name || null
-          } : null,
-          models: asset.model_id ? {
-            model_id: asset.model_id,
-            name: modelMap.get(asset.model_id)?.name || null
-          } : null,
-          ...vehSpecs,
-          card_no
-        };
-      }
-    }
+    
     return {
       id: asset.id,
       classification: asset.classification,
+      record_status: asset.record_status,
       asset_code: asset.asset_code,
-      finance_tag: asset.finance_tag,
       register_number: asset.register_number,
-      dop: asset.dop,
-      year: asset.year,
+      purchase_date: asset.purchase_date,
+      purchase_year: asset.purchase_year,
       unit_price: asset.unit_price,
       depreciation_length: asset.depreciation_length,
-      depreciation_rate: asset.depreciation_rate,
       costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
         ? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+        : null,
+      department: asset.department_id && departmentMap.has(asset.department_id)
+        ? { id: asset.department_id, name: departmentMap.get(asset.department_id)?.code || null }
+        : null,
+      district: asset.district_id && districtMap.has(asset.district_id)
+        ? { id: asset.district_id, code: districtMap.get(asset.district_id)?.code || null }
+        : null,
+      location: asset.location_id && locationMap.has(asset.location_id)
+        ? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
         : null,
       status: asset.status,
       disposed_date: asset.disposed_date,
       types: type ? {
         id: type.id,
-        code: type.code,
         name: type.name
       } : null,
-      specs,
-      owner: ownershipsByAsset[asset.id] || []
+      categories: asset.category_id && categoryMap.has(asset.category_id)
+        ? {
+            id: asset.category_id,
+            name: categoryMap.get(asset.category_id)?.name || null
+          }
+        : null,
+      brands: asset.brand_id && brandMap.has(asset.brand_id)
+        ? {
+            id: asset.brand_id,
+            name: brandMap.get(asset.brand_id)?.name || null
+          }
+        : null,
+      owner: asset.ramco_id && employeeMap.has(asset.ramco_id)
+        ? {
+            ramco_id: employeeMap.get(asset.ramco_id)?.ramco_id || null,
+            full_name: employeeMap.get(asset.ramco_id)?.full_name || null
+        }
+        : null,
     };
-  }));
+  });
 
   res.json({
     status: 'success',

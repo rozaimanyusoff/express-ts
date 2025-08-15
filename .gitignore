@@ -9,3 +9,11 @@ express-ts.code-workspace
 # key files
 *.pem
 certs/*.pem
+
+# ignore old files that begins with single & double underscore
+# files
+*_bak.*
+_*
+__*
+*_
+*__
