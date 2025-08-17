@@ -9,7 +9,7 @@ import { get } from "axios";
 const db = 'assets';
 const companyDb = 'companies';
 const assetTable = `${db}.assetdata`;
-const assetUserTable = `${db}.asset_ownership`;
+const assetUserTable = `${db}.asset_history`;
 const brandTable = `${db}.brands`;
 const brandCategoryTable = `${db}.brand_category`;
 const categoryTable = `${db}.categories`;
@@ -615,7 +615,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, status?: string) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -626,15 +626,22 @@ export const getAssets = async (type_ids?: number[] | number, status?: string) =
     conditions.push('type_id = ?');
     params.push(type_ids);
   }
+  if (typeof classification === 'string' && classification !== '') {
+    conditions.push('classification = ?');
+    params.push(classification);
+  } 
   if (typeof status === 'string' && status !== '') {
-    conditions.push('status = ?');
+    conditions.push('record_status = ?');
     params.push(status);
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
   const [rows] = await pool.query(sql, params);
-  return rows;
+  // Ensure compatibility: some callers expect `asset_id` field (billing code).
+  // Mirror `id` to `asset_id` when `asset_id` is not present.
+  const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
+  return mapped;
 };
 
 export const getAssetById = async (id: number) => {

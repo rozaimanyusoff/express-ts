@@ -4,17 +4,24 @@ import * as billingModel from './billingModel';
 import * as assetsModel from '../p.asset/assetModel';
 import dayjs from 'dayjs';
 import { stat } from 'fs';
+import { register } from 'module';
+import logger from '../utils/logger';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMaintenance = async (req: Request, res: Response) => {
 	const vehicleMtn = await billingModel.getVehicleMaintenance();
 	const workshops = await billingModel.getWorkshops() as any[];
-	const assets = await billingModel.getTempVehicleRecords() as any[];
+	const assets = await assetsModel.getAssets() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const districts = await assetsModel.getDistricts() as any[];
 	// Build lookup maps for fast access
-	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+	// Build asset map keyed by both id and vehicle_id for compatibility
+	const assetMap = new Map((assets || []).flatMap((asset: any) => {
+		const entries: any[] = [[asset.id, asset]];
+		if (asset.vehicle_id) entries.push([asset.vehicle_id, asset]);
+		return entries;
+	}));
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -28,13 +35,13 @@ export const getVehicleMaintenance = async (req: Request, res: Response) => {
 			vehicle_id: b.vehicle_id,
 			vehicle_regno: (assetMap.get(b.vehicle_id) as any)?.vehicle_regno
 		} : null,
-		costcenter: ccMap.has(b.cc_id) ? {
-			id: b.cc_id,
-			name: (ccMap.get(b.cc_id) as any)?.name
+		costcenter: ccMap.has(b.costcenter_id) ? {
+			id: b.costcenter_id,
+			name: (ccMap.get(b.costcenter_id) as any)?.name
 		} : null,
-		district: districtMap.has(b.loc_id) ? {
-			id: b.loc_id,
-			name: (districtMap.get(b.loc_id) as any)?.code
+		district: districtMap.has(b.location_id) ? {
+			id: b.location_id,
+			name: (districtMap.get(b.location_id) as any)?.code
 		} : null,
 		workshop: wsMap.has(b.ws_id) ? {
 			id: b.ws_id,
@@ -63,11 +70,11 @@ export const getVehicleMaintenanceById = async (req: Request, res: Response) => 
 
 export const createVehicleMaintenance = async (req: Request, res: Response) => {
 	const {
-		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
 	const insertId = await billingModel.createVehicleMaintenance({
-		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
 	res.status(201).json({ status: 'success', message: 'Billing created successfully', id: insertId });
@@ -76,11 +83,11 @@ export const createVehicleMaintenance = async (req: Request, res: Response) => {
 export const updateVehicleMaintenance = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const {
-		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
 	await billingModel.updateVehicleMaintenance(id, {
-		inv_no, inv_date, svc_order, vehicle_id, cc_id, loc_id, ws_id, svc_date, svc_odo,
+		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
 	res.json({ status: 'success', message: 'Billing updated successfully' });
@@ -98,12 +105,18 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	const vehicleMtn = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
-	const assets = await billingModel.getTempVehicleRecords() as any[];
+	// Use assetModel.getAssets() instead of billingModel.getTempVehicleRecords() (DB schema changed)
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const districts = await assetsModel.getDistricts() as any[];
 	const workshops = await billingModel.getWorkshops() as any[];
 	// Build lookup maps for fast access
-	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+		// Build asset map keyed by id and by asset_id if present to keep compatibility
+		const assetMap = new Map();
+		for (const a of (assets || [])) {
+			if (a.id) assetMap.set(a.id, a);
+			if (a.asset_id) assetMap.set(a.asset_id, a);
+		}
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -114,16 +127,19 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 		inv_date: b.inv_date,
 		svc_order: b.svc_order,
 		asset: assetMap.has(b.vehicle_id) ? {
-			vehicle_id: b.vehicle_id,
-			vehicle_regno: (assetMap.get(b.vehicle_id) as any)?.vehicle_regno
+			asset_id: b.vehicle_id,
+			register_number: (assetMap.get(b.vehicle_id) as any)?.register_number || (assetMap.get(b.vehicle_id) as any)?.vehicle_regno || null,
+			transmission: (assetMap.get(b.vehicle_id) as any)?.transmission || (assetMap.get(b.vehicle_id) as any)?.vtrans_type || null,
+			fuel_type: (assetMap.get(b.vehicle_id) as any)?.fuel_type || (assetMap.get(b.vehicle_id) as any)?.vfuel_type || null,
+			purchase_date: (assetMap.get(b.vehicle_id) as any)?.purchase_date || (assetMap.get(b.vehicle_id) as any)?.v_dop || null
 		} : null,
-		costcenter: ccMap.has(b.cc_id) ? {
-			id: b.cc_id,
-			name: (ccMap.get(b.cc_id) as any)?.name
+		costcenter: ccMap.has(b.costcenter_id) ? {
+			id: b.costcenter_id,
+			name: (ccMap.get(b.costcenter_id) as any)?.name
 		} : null,
-		district: districtMap.has(b.loc_id) ? {
-			id: b.loc_id,
-			name: (districtMap.get(b.loc_id) as any)?.code
+		district: districtMap.has(b.location_id) ? {
+			id: b.location_id,
+			name: (districtMap.get(b.location_id) as any)?.code
 		} : null,
 		workshop: wsMap.has(b.ws_id) ? {
 			id: b.ws_id,
@@ -147,7 +163,7 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 	}
 	// Fetch all lookup data
 	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
-		billingModel.getTempVehicleRecords(),
+		assetsModel.getAssets(),
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts(),
 		assetsModel.getCategories(),
@@ -162,8 +178,12 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-	// Use vehicle_id as key for assetMap (not id)
-	const assetMap = new Map(assets.map((a: any) => [a.vehicle_id, a]));
+	// Build assetMap keyed by both id and vehicle_id for compatibility
+	const assetMap = new Map((assets as any[]).flatMap((a: any) => {
+		const entries: any[] = [[a.id, a]];
+		if (a.vehicle_id) entries.push([a.vehicle_id, a]);
+		return entries;
+	}));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
 	// Use id as key for categoryMap (since getCategories returns id, not category_id)
@@ -187,7 +207,7 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 	const summary: Record<string, any> = {};
 	for (const maintenance of maintenanceRecords) {
 		// If cost center filter is provided, skip if not matching
-		if (costcenterIds.length > 0 && !costcenterIds.includes(maintenance.cc_id)) continue;
+		if (costcenterIds.length > 0 && !costcenterIds.includes(maintenance.costcenter_id)) continue;
 		const vehicle_id = maintenance.vehicle_id;
 		
 		// Resolve category, brand, and model objects
@@ -199,11 +219,11 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 		let modelId = null;
 		let ramcoId = null;
 		if (assetMap.has(vehicle_id)) {
-			const asset = assetMap.get(vehicle_id);
-			categoryId = asset.category_id;
-			brandId = asset.brand_id;
-			modelId = asset.model_id;
-			ramcoId = asset.ramco_id;
+			const asset = assetMap.get(vehicle_id) as any;
+			categoryId = asset.category_id || asset.categoryId || null;
+			brandId = asset.brand_id || asset.brandId || null;
+			modelId = asset.model_id || asset.modelId || null;
+			ramcoId = asset.ramco_id || asset.ramcoId || null;
 		}
 		if (categoryId && categoryMap.has(categoryId)) {
 			const catObj = categoryMap.get(categoryId);
@@ -225,24 +245,24 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 		}
 
 		if (!summary[vehicle_id]) {
-			const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
-			const ccObj = maintenance.cc_id && ccMap.has(maintenance.cc_id) ? ccMap.get(maintenance.cc_id) : null;
-			const districtObj = maintenance.loc_id && districtMap.has(maintenance.loc_id) ? districtMap.get(maintenance.loc_id) : null;
+			const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) as any : null;
+			const ccObj = maintenance.costcenter_id && ccMap.has(maintenance.costcenter_id) ? ccMap.get(maintenance.costcenter_id) : null;
+			const districtObj = maintenance.location_id && districtMap.has(maintenance.location_id) ? districtMap.get(maintenance.location_id) : null;
 			summary[vehicle_id] = {
 				vehicle_id,
-				vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
+				vehicle: vehicleObj ? (vehicleObj.register_number || vehicleObj.vehicle_regno || null) : null,
 				category,
 				brand,
 				model,
 				owner,
-				transmission: vehicleObj ? vehicleObj.vtrans_type : null,
-				fuel: vehicleObj ? vehicleObj.vfuel_type : null,
-				purchase_date: dayjs(vehicleObj?.v_dop).format('DD/MM/YYYY'),
-				age: vehicleObj ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null,
-				costcenter: ccObj ? { id: maintenance.cc_id, name: ccObj.name } : null,
-				district: districtObj ? { id: maintenance.loc_id, code: districtObj.code } : null,
-				classification: vehicleObj ? vehicleObj.classification : null,
-				record_status: vehicleObj ? vehicleObj.record_status : null,
+				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
+				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
+				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
+				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
+				costcenter: ccObj ? { id: maintenance.costcenter_id, name: ccObj.name } : null,
+				district: districtObj ? { id: maintenance.location_id, code: districtObj.code } : null,
+				classification: vehicleObj ? (vehicleObj.classification || null) : null,
+				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
 				total_maintenance: 0,
 				total_amount: 0,
 				_yearMap: {} // temp for grouping by year
@@ -336,43 +356,45 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 	const fuelBillings = await billingModel.getFuelBilling();
 	const data = await Promise.all(
 		fuelBillings.map(async (bill: any) => {
-			let fuel_issuer = null;
-			if (bill.stmt_issuer) {
-				const issuer = await billingModel.getFuelIssuerById(bill.stmt_issuer);
-				if (issuer && issuer.f_issuer) {
-					fuel_issuer = {
-						fuel_id: bill.stmt_issuer,
-						issuer: issuer.f_issuer
-					};
-				} else if (issuer) {
-					fuel_issuer = {
-						fuel_id: bill.stmt_issuer,
-						issuer: issuer.fuel_issuer || issuer.name || issuer.fuel_name || null
-					};
+				let vendor = null;
+				if (bill.stmt_issuer) {
+					const fv = await billingModel.getFuelVendorById(bill.stmt_issuer);
+					if (fv) {
+						// New schema: { id, name, logo, image2 }
+						const name = fv.name;
+						const baseUrl = process.env.BACKEND_URL || '';
+						const logo = fv.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fv.logo).replace(/^\//, '')}` : fv.logo;
+						vendor = { id: bill.stmt_issuer, name, logo };
+					}
 				}
-			}
 			// Remove fuel_id and stmt_issuer from the result
 			const { fuel_id, stmt_issuer, ...rest } = bill;
-			return { ...rest, fuel_issuer };
+			return { ...rest, vendor };
 		})
 	);
 	res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data });
 };
+
 
 export const getFuelBillingById = async (req: Request, res: Response) => {
 	// Fetch all lookup data
 	const [costcentersRaw, districtsRaw, tempVehicleRecordsRaw] = await Promise.all([
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts(),
-		billingModel.getTempVehicleRecords()
+		assetsModel.getAssets()
 	]);
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-	const tempVehicleRecords = Array.isArray(tempVehicleRecordsRaw) ? tempVehicleRecordsRaw : [];
+	const assets = Array.isArray(tempVehicleRecordsRaw) ? tempVehicleRecordsRaw : [];
 
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
-	const vehicleMap = new Map(tempVehicleRecords.map((v: any) => [v.vehicle_id, v]));
+	// Build assetMap keyed by both vehicle_id and id
+	const assetMap = new Map((assets as any[]).flatMap((v: any) => {
+		const entries: any[] = [[v.id, v]];
+		if (v.asset_id) entries.push([v.asset_id, v]);
+		return entries;
+	}));
 
 	// Fetch all fleet cards
 	const fleetCards = await billingModel.getFleetCards();
@@ -385,21 +407,15 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 	}
 
 	// Map fuel_issuer using stmt_issuer (not fuel_id)
-	let fuel_issuer = null;
-	if (fuelBilling.stmt_issuer) {
-		const issuer = await billingModel.getFuelIssuerById(fuelBilling.stmt_issuer);
-		if (issuer && issuer.f_issuer) {
-			fuel_issuer = {
-				fuel_id: fuelBilling.stmt_issuer,
-				issuer: issuer.f_issuer
-			};
-		} else if (issuer) {
-			fuel_issuer = {
-				fuel_id: fuelBilling.stmt_issuer,
-				issuer: issuer.fuel_issuer || issuer.name || issuer.fuel_name || null
-			};
+		let fuel_vendor = null;
+		if (fuelBilling.stmt_issuer) {
+			const fv = await billingModel.getFuelVendorById(fuelBilling.stmt_issuer);
+			if (fv) {
+				const name = fv.name;
+				const logo = fv.logo ? `${process.env.BACKEND_URL}/${fv.logo}` : null;
+				fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
+			}
 		}
-	}
 
 	// Remove fuel_id and stmt_issuer from the result
 	const { fuel_id, stmt_issuer, ...rest } = fuelBilling;
@@ -412,16 +428,16 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		}
 
 		let asset = null;
-		if (d.vehicle_id && vehicleMap.has(d.vehicle_id)) {
-			const vehicle = vehicleMap.get(d.vehicle_id);
+		if (d.asset_id && assetMap.has(d.asset_id)) {
+			const assetData = assetMap.get(d.asset_id) as any;
 			asset = {
-				vehicle_id: vehicle.vehicle_id,
-				vehicle_regno: vehicle.vehicle_regno,
-				vfuel_type: vehicle.vfuel_type,
-				costcenter: vehicle.cc_id && ccMap.has(vehicle.cc_id)
-					? ccMap.get(vehicle.cc_id)
+				id: assetData.asset_id,
+				register_number: assetData.register_number,
+				fuel_type: assetData.fuel_type,
+				costcenter: assetData.costcenter_id && ccMap.has(assetData.costcenter_id)
+					? ccMap.get(assetData.costcenter_id)
 					: null,
-				purpose: vehicle.purpose || null,
+				purpose: assetData.purpose || null,
 			};
 		}
 
@@ -468,8 +484,128 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name));
 
-	res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_issuer, costcenter_summ, details } });
+	res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_vendor, costcenter_summ, details } });
 };
+
+// Get fuel consumption records and summary for a specific vehicle (asset_id)
+export const getFuelConsumptionByVehicle = async (req: Request, res: Response) => {
+	const vehicleId = Number(req.params.asset_id || req.params.id);
+	if (!vehicleId || isNaN(vehicleId)) {
+		return res.status(400).json({ status: 'error', message: 'Invalid vehicle id' });
+	}
+
+	// Fetch fuel detail rows for the vehicle
+	const rows = await billingModel.getFuelVehicleAmountByVehicleId(vehicleId);
+
+	// Try to resolve register_number from assetModel (asset id -> register_number)
+	let registerNumber: string | null = null;
+	try {
+		const asset = await assetsModel.getAssetById(vehicleId as number);
+		if (asset && asset.register_number) registerNumber = asset.register_number;
+	} catch (err) {
+		// ignore - fallback to any register_number present in rows
+	}
+
+	// Build a summary: total litres, total amount, total distance (if available), average efficiency
+	let totalLitre = 0;
+	let totalAmount = 0;
+	let totalKm = 0;
+	let countEff = 0;
+
+	const records = (rows || []).map((r: any) => {
+		const litre = parseFloat(r.total_litre || '0');
+		const amount = parseFloat(r.amount || r.total_litre * 0 || '0');
+		const km = parseFloat(r.total_km || '0');
+		const eff = parseFloat(r.effct || r.efficiency || '0');
+		totalLitre += litre;
+		totalAmount += amount;
+		totalKm += km;
+		if (eff > 0) countEff += 1;
+		return {
+			s_id: r.s_id,
+			stmt_id: r.stmt_id,
+			stmt_no: r.stmt_no,
+			stmt_date: r.stmt_date,
+			card_id: r.card_id,
+			vehicle_id: r.vehicle_id,
+			costcenter_id: r.costcenter_id,
+			purpose: r.purpose,
+			start_odo: r.start_odo,
+			end_odo: r.end_odo,
+			total_km: r.total_km,
+			total_litre: r.total_litre,
+			effct: r.effct,
+			amount: r.amount
+		};
+	});
+
+	const avgEfficiency = countEff > 0 ? (rows.reduce((acc: number, r: any) => acc + parseFloat(r.effct || r.efficiency || '0'), 0) / countEff) : null;
+
+	res.json({
+		status: 'success',
+		message: `Fuel consumption for vehicle ${vehicleId} retrieved successfully`,
+		data: {
+			vehicle_id: vehicleId,
+			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null),
+			total_litre: totalLitre.toFixed(2),
+			total_amount: totalAmount.toFixed(2),
+			total_km: totalKm.toFixed(2),
+			average_efficiency: avgEfficiency ? Number(avgEfficiency.toFixed(2)) : null,
+			records
+		}
+	});
+};
+
+// Get maintenance records and summary for a specific vehicle (asset_id)
+export const getVehicleMaintenanceByVehicle = async (req: Request, res: Response) => {
+	const vehicleId = Number(req.params.asset_id || req.params.id);
+	if (!vehicleId || isNaN(vehicleId)) {
+		return res.status(400).json({ status: 'error', message: 'Invalid vehicle id' });
+	}
+
+	const rows = await billingModel.getVehicleMaintenanceByVehicleId(vehicleId);
+
+	// Try to resolve register_number from assetModel
+	let registerNumber: string | null = null;
+	try {
+		const asset = await assetsModel.getAssetById(vehicleId as number);
+		if (asset && asset.register_number) registerNumber = asset.register_number;
+	} catch (err) {
+		// ignore
+	}
+
+	// Build totals
+	let totalMaintenance = 0;
+	let totalAmount = 0;
+	const records = (rows || []).map((r: any) => {
+		totalMaintenance += 1;
+		totalAmount += parseFloat(r.inv_total || '0');
+		return {
+			inv_id: r.inv_id,
+			inv_no: r.inv_no,
+			inv_date: r.inv_date,
+			svc_order: r.svc_order,
+			svc_date: r.svc_date,
+			svc_odo: r.svc_odo,
+			inv_total: r.inv_total,
+			inv_stat: r.inv_stat,
+			inv_remarks: r.inv_remarks
+		};
+	});
+
+	res.json({
+		status: 'success',
+		message: `Vehicle maintenance for vehicle ${vehicleId} retrieved successfully`,
+		data: {
+			vehicle_id: vehicleId,
+			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null),
+			total_maintenance: totalMaintenance,
+			total_amount: totalAmount.toFixed(2),
+			records
+		}
+	});
+};
+
 
 export const createFuelBilling = async (req: Request, res: Response) => {
 	try {
@@ -610,9 +746,9 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
-	// Fetch all lookup data
+	// Fetch all lookup data (use assetsModel.getAssets() after schema change)
 	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
-		billingModel.getTempVehicleRecords(),
+		assetsModel.getAssets(),
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts(),
 		assetsModel.getCategories(),
@@ -627,8 +763,19 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-	// Use vehicle_id as key for assetMap (not id)
-	const assetMap = new Map(assets.map((a: any) => [a.vehicle_id, a]));
+	// Build asset map keyed by vehicle_id and id for compatibility
+	const assetsArr = assets as any[];
+	const assetMap = new Map<any, any>();
+	for (const a of assetsArr) {
+		if (a && (a.vehicle_id !== undefined && a.vehicle_id !== null)) {
+			assetMap.set(a.vehicle_id, a);
+			assetMap.set(String(a.vehicle_id), a);
+		}
+		if (a && (a.id !== undefined && a.id !== null)) {
+			assetMap.set(a.id, a);
+			assetMap.set(String(a.id), a);
+		}
+	}
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
 	// Use id as key for categoryMap (since getCategories returns id, not category_id)
@@ -646,7 +793,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
 		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
 			// If cc filter is provided, skip if not matching
-			if (cc && String(d.cc_id) !== String(cc)) continue;
+			if (cc && String(d.costcenter_id) !== String(cc)) continue;
 			const vehicle_id = d.vehicle_id;
 			// Resolve category, brand, and model objects
 			let category = null;
@@ -684,8 +831,8 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 
 			if (!summary[vehicle_id]) {
 				const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
-				const ccObj = d.cc_id && ccMap.has(d.cc_id) ? ccMap.get(d.cc_id) : null;
-				const districtObj = d.loc_id && districtMap.has(d.loc_id) ? districtMap.get(d.loc_id) : null;
+				const ccObj = d.costcenter_id && ccMap.has(d.costcenter_id) ? ccMap.get(d.costcenter_id) : null;
+				const districtObj = d.location_id && districtMap.has(d.location_id) ? districtMap.get(d.location_id) : null;
 				summary[vehicle_id] = {
 					vehicle_id,
 					vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
@@ -697,8 +844,8 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 					fuel: vehicleObj ? vehicleObj.vfuel_type : null,
 					purchase_date: dayjs(vehicleObj?.v_dop).format('DD/MM/YYYY'),
 					age: vehicleObj ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null,
-					costcenter: ccObj ? { id: d.cc_id, name: ccObj.name } : null,
-					district: districtObj ? { id: d.loc_id, code: districtObj.code } : null,
+					costcenter: ccObj ? { id: d.costcenter_id, name: ccObj.name } : null,
+					district: districtObj ? { id: d.location_id, code: districtObj.code } : null,
 					classification: vehicleObj ? vehicleObj.classification : null,
 					record_status: vehicleObj ? vehicleObj.record_status : null,
 					total_litre: 0,
@@ -762,8 +909,8 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 	for (const bill of fuelBillings) {
 		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
 		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
-			const cc_id = d.cc_id;
-			const ccObj = cc_id && ccMap.has(cc_id) ? ccMap.get(cc_id) : null;
+			const costcenter_id = d.costcenter_id;
+			const ccObj = costcenter_id && ccMap.has(costcenter_id) ? ccMap.get(costcenter_id) : null;
 			const ccName = ccObj ? ccObj.name : 'Unknown';
 			if (!summary[ccName]) {
 				summary[ccName] = { costcenter: ccName, _yearMap: {} };
@@ -816,121 +963,218 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 
 /* ============ FUEL ISSUER ================ */
 
-export const getFuelIssuers = async (req: Request, res: Response) => {
-	const fuelIssuers = await billingModel.getFuelIssuer();
-	res.json({ status: 'success', message: 'Fuel issuers retrieved successfully', data: fuelIssuers });
+export const getFuelVendors = async (req: Request, res: Response) => {
+	const fuelVendors = await billingModel.getFuelVendor();
+	const baseUrl = process.env.BACKEND_URL || '';
+	const vendorsWithUrls = (fuelVendors || []).map((v: any) => ({
+		...v,
+		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo,
+		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2
+	}));
+	res.json({ status: 'success', message: 'Fuel vendors retrieved successfully', data: vendorsWithUrls });
 };
 
-export const getFuelIssuerById = async (req: Request, res: Response) => {
+export const getFuelVendorById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
-	const fuelIssuer = await billingModel.getFuelIssuerById(id);
-	if (!fuelIssuer) {
-		return res.status(404).json({ status: 'error', message: 'Fuel issuer not found' });
+	const fuelVendor = await billingModel.getFuelVendorById(id);
+	if (!fuelVendor) {
+		return res.status(404).json({ status: 'error', message: 'Fuel vendor not found' });
 	}
-	res.json({ status: 'success', message: 'Fuel issuer retrieved successfully', data: fuelIssuer });
+	const baseUrl = process.env.BACKEND_URL || '';
+	const vendorWithUrl = {
+		...fuelVendor,
+		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo,
+		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2
+	};
+	res.json({ status: 'success', message: 'Fuel vendor retrieved successfully', data: vendorWithUrl });
 };
 
-export const createFuelIssuer = async (req: Request, res: Response) => {
+export const createFuelVendor = async (req: Request, res: Response) => {
 	try {
-		const insertId = await billingModel.createFuelIssuer(req.body);
-		res.status(201).json({ status: 'success', message: 'Fuel issuer created successfully', id: insertId });
+		const insertId = await billingModel.createFuelVendor(req.body);
+		res.status(201).json({ status: 'success', message: 'Fuel vendor created successfully', id: insertId });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create fuel issuer', error });
+		res.status(500).json({ status: 'error', message: 'Failed to create fuel vendor', error });
 	}
 };
 
-export const updateFuelIssuer = async (req: Request, res: Response) => {
+export const updateFuelVendor = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		await billingModel.updateFuelIssuer(id, req.body);
-		res.json({ status: 'success', message: 'Fuel issuer updated successfully' });
+		await billingModel.updateFuelVendor(id, req.body);
+		res.json({ status: 'success', message: 'Fuel vendor updated successfully' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update fuel issuer', error });
+		res.status(500).json({ status: 'error', message: 'Failed to update fuel vendor', error });
 	}
 };
 
 /* =================== FLEET CARD TABLE ========================== */
 
 export const getFleetCards = async (req: Request, res: Response) => {
-	const assets = await billingModel.getTempVehicleRecords();
-	const fleetCards = await billingModel.getFleetCards();
-	const fuelIssuers = await billingModel.getFuelIssuer() as any[];
-	const costcenters = await assetsModel.getCostcenters() as any[];
+	try {
+		const vendorQ = req.query.vendor as string | undefined;
 
-	const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
-	const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
-	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+		// If vendor param provided, validate and use model helper to fetch
+		if (vendorQ !== undefined) {
+			const vendorId = Number(vendorQ);
+			if (!Number.isFinite(vendorId)) {
+				return res.status(400).json({ status: 'error', message: 'vendor must be a valid number' });
+			}
+			const fleetCards = await billingModel.getFleetCardsByVendor(vendorId);
+			// Keep existing enrichment logic but limited to returned cards
+			const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+			const fuelVendors = await billingModel.getFuelVendor() as any[];
+			const costcenters = await assetsModel.getCostcenters() as any[];
 
-	const data = fleetCards.map((card: any) => {
-		let fuel = {};
-		if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
-			const fi = fuelIssuerMap.get(card.fuel_id);
-			fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
+			const assetMap = new Map();
+			for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+			// fuel_vendors now use `id` as primary key
+			const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+			const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+			const data = fleetCards.map((card: any) => {
+				let vendor = {};
+				if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+					const fv = fuelVendorMap.get(card.fuel_id);
+					const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+					vendor = { fuel_id: fv.id ?? fv.fuel_id, name: name };
+				}
+
+				let asset = null;
+				if (card.asset_id && assetMap.has(card.asset_id)) {
+					const assetObj = assetMap.get(card.asset_id);
+					asset = {
+						id: card.asset_id,
+						register_number: assetObj.register_number || assetObj.vehicle_regno,
+						costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
+							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
+							: null,
+						fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+						purpose: assetObj.purpose || null,
+					};
+				}
+
+				return {
+					id: card.id,
+					card_no: card.card_no,
+					vendor,
+					asset,
+					vehicle_id: card.vehicle_id,
+					reg_date: card.reg_date,
+					remarks: card.remarks,
+					pin_no: card.pin,
+					status: card.status,
+					expiry: card.expiry_date
+				};
+			});
+
+			// Resolve vendor name from fuelVendorMap using several possible fields
+			const vendorObj = fuelVendorMap.get(vendorId);
+			const vendorName = vendorObj ? (vendorObj.f_issuer || vendorObj.fuel_issuer || vendorObj.name || vendorObj.fuel_name || null) : null;
+			// include length in message & vendor name (resolved vendor) in vendor:
+			return res.json({ status: 'success', message: `Fleet cards retrieved successfully${vendorName ? ` (vendor: ${vendorName})` : ''} - Total: ${data.length}`, data });
 		}
 
-		let asset = null;
-		if (card.vehicle_id && assetMap.has(card.vehicle_id)) {
-			const assetObj = assetMap.get(card.vehicle_id);
-			asset = {
+		// No vendor filter - return all fleet cards with enrichment
+		const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+		const fleetCards = await billingModel.getFleetCards();
+	const fuelVendors = await billingModel.getFuelVendor() as any[];
+		const costcenters = await assetsModel.getCostcenters() as any[];
+
+		// assetModel.getAssets() returns assets keyed by id; create map for id and asset_id for compatibility
+		const assetMap = new Map();
+		for (const a of assets) {
+			if (a.id) assetMap.set(a.id, a);
+			if (a.asset_id) assetMap.set(a.asset_id, a);
+		}
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+		const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+		const data = fleetCards.map((card: any) => {
+			let vendor = {};
+			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+				const fv = fuelVendorMap.get(card.fuel_id);
+				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, name: name };
+			}
+
+			let asset = null;
+			if (card.asset_id && assetMap.has(card.asset_id)) {
+				const assetObj = assetMap.get(card.asset_id);
+				asset = {
+					id: card.asset_id,
+					register_number: assetObj.register_number || assetObj.vehicle_regno,
+					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
+						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
+						: null,
+					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					purpose: assetObj.purpose || null,
+				};
+			}
+
+			return {
+				id: card.id,
+				card_no: card.card_no,
+				vendor,
+				asset,
 				vehicle_id: card.vehicle_id,
-				vehicle_regno: assetObj.vehicle_regno,
-				costcenter: assetObj.cc_id && costcenterMap.has(assetObj.cc_id)
-					? { id: assetObj.cc_id, name: costcenterMap.get(assetObj.cc_id).name }
-					: null,
-				fuel_type: assetObj.vfuel_type,
-				purpose: assetObj.purpose || null,
+				reg_date: card.reg_date,
+				remarks: card.remarks,
+				pin_no: card.pin,
+				status: card.status,
+				expiry: card.expiry_date
 			};
-		}
+		});
 
-		return {
-			id: card.id,
-			fuel,
-			asset,
-			card_no: card.card_no,
-			reg_date: card.reg_date,
-			remarks: card.remarks,
-			pin_no: card.pin,
-			status: card.status,
-			expiry: card.expiry_date
-		};
-	});
-
-	res.json({ status: 'success', message: 'Fleet cards retrieved successfully', data });
+		res.json({ status: 'success', message: 'Fleet cards retrieved successfully', data });
+	} catch (err: any) {
+		logger.error(err);
+		res.status(500).json({ status: 'error', message: err.message || 'Failed to retrieve fleet cards' });
+	}
 };
 export const getFleetCardById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
+	if (!Number.isFinite(id)) {
+		return res.status(400).json({ status: 'error', message: 'Invalid fleet card id' });
+	}
 	const fleetCard = await billingModel.getFleetCardById(id);
 	if (!fleetCard) {
 		return res.status(404).json({ status: 'error', message: 'Fleet card not found' });
 	}
 
-	const assets = await billingModel.getTempVehicleRecords();
-	const fuelIssuers = await billingModel.getFuelIssuer() as any[];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const costcenters = await assetsModel.getCostcenters() as any[];
 
-	const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
-	const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
+	const assetMap = new Map();
+	for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
-	let fuel = {};
-	if (fleetCard.fuel_id && fuelIssuerMap.has(fleetCard.fuel_id)) {
-		const fi = fuelIssuerMap.get(fleetCard.fuel_id);
-		fuel = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
+	let vendor = {};
+	if (fleetCard.fuel_id && fuelVendorMap.has(fleetCard.fuel_id)) {
+		const fv = fuelVendorMap.get(fleetCard.fuel_id);
+		const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+		vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
 	}
 
-	const asset = fleetCard.vehicle_id && assetMap.has(fleetCard.vehicle_id)
+	const asset = fleetCard.asset_id && assetMap.has(fleetCard.asset_id)
 		? {
-			vehicle_id: fleetCard.vehicle_id,
-			vehicle_regno: assetMap.get(fleetCard.vehicle_id).vehicle_regno,
-			fuel_type: assetMap.get(fleetCard.vehicle_id).vfuel_type,
-			purpose: assetMap.get(fleetCard.vehicle_id).purpose || null
+			id: fleetCard.asset_id,
+			register_number: assetMap.get(fleetCard.asset_id).register_number || assetMap.get(fleetCard.asset_id).vehicle_regno,
+			costcenter: assetMap.get(fleetCard.asset_id).costcenter_id && costcenterMap.has(assetMap.get(fleetCard.asset_id).costcenter_id)
+					? { id: assetMap.get(fleetCard.asset_id).costcenter_id, name: costcenterMap.get(assetMap.get(fleetCard.asset_id).costcenter_id).name }
+					: null,
+			fuel_type: assetMap.get(fleetCard.asset_id).fuel_type || assetMap.get(fleetCard.asset_id).vfuel_type,
+			purpose: assetMap.get(fleetCard.asset_id).purpose || null
 		}
 		: null;
 
 	const data = {
 		id: fleetCard.id,
-		fuel,
-		asset,
-		vehicle_id: fleetCard.vehicle_id,
 		card_no: fleetCard.card_no,
+		vendor,
+		asset,
 		reg_date: fleetCard.reg_date,
 		remarks: fleetCard.remarks,
 		pin_no: fleetCard.pin,
@@ -939,6 +1183,55 @@ export const getFleetCardById = async (req: Request, res: Response) => {
 	};
 
 	res.json({ status: 'success', message: 'Fleet card retrieved successfully', data });
+};
+
+export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
+	const assetId = Number(req.params.asset_id);
+	if (!assetId || isNaN(assetId)) {
+		return res.status(400).json({ status: 'error', message: 'Invalid asset_id' });
+	}
+	const fleetCards = await billingModel.getFleetCardsByAssetId(assetId);
+	const asset = await assetsModel.getAssetById(assetId) as any || null;
+	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const costcenters = await assetsModel.getCostcenters() as any[];
+
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+	// Build asset summary
+	const assetSummary = asset ? {
+		id: asset.id,
+		register_number: asset.register_number || asset.vehicle_regno || null,
+		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id).name }
+			: null,
+		fuel_type: asset.fuel_type || asset.vfuel_type || null,
+		purpose: asset.purpose || null,
+	} : null;
+
+	// Map each fleet card into a card summary
+	const cards = fleetCards.map((card: any) => {
+		let vendor = {};
+		if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+			const fv = fuelVendorMap.get(card.fuel_id);
+			const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+			vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
+		}
+
+		return {
+			id: card.id,
+			card_no: card.card_no,
+			vendor,
+			reg_date: card.reg_date,
+			remarks: card.remarks,
+			pin_no: card.pin,
+			status: card.status,
+			expiry: card.expiry_date
+		};
+	});
+
+	const data = [ { asset: assetSummary, cards } ];
+	res.json({ status: 'success', message: 'Fleet cards for asset retrieved successfully', data });
 };
 export const createFleetCard = async (req: Request, res: Response) => {
 	try {
@@ -973,53 +1266,109 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 		return res.status(400).json({ status: 'error', message: 'fuel_id is required' });
 	}
 
-	const assets = await billingModel.getTempVehicleRecords() as any[];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const fleetCards = await billingModel.getFleetCards();
-	const fuelIssuers = await billingModel.getFuelIssuer() as any[];
-	const fuelIssuerMap = new Map(fuelIssuers.map((fi: any) => [fi.fuel_id, fi]));
+	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
 
 	const data = fleetCards
 		.filter((card: any) => card.fuel_id === fuel_id)
 		.map((card: any) => {
 			let asset = null;
-			if (card.vehicle_id && assetMap.has(card.vehicle_id)) {
-				const a = assetMap.get(card.vehicle_id);
+			if (card.asset_id && assetMap.has(card.asset_id)) {
+				const a = assetMap.get(card.asset_id);
 				asset = {
-					vehicle_id: a.vehicle_id,
-					vehicle_regno: a.vehicle_regno,
-					vfuel_type: a.vfuel_type,
-					costcenter: a.cc_id && costcenterMap.has(a.cc_id)
-						? costcenterMap.get(a.cc_id)
+					id: a.asset_id,
+					old_id: a.vehicle_id,
+					register_number: a.register_number,
+					fuel_type: a.fuel_type,
+					costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+						? costcenterMap.get(a.costcenter_id)
 						: null,
 					purpose: a.purpose || null
 				};
 			}
 
-			let issuer = {};
-			if (card.fuel_id && fuelIssuerMap.has(card.fuel_id)) {
-				const fi = fuelIssuerMap.get(card.fuel_id);
-				issuer = { fuel_id: fi.fuel_id, fuel_issuer: fi.f_issuer };
+			let vendor = {};
+			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+				const fv = fuelVendorMap.get(card.fuel_id);
+				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
 			}
 
 			return {
 				id: card.id,
 				card_no: card.card_no,
-				issuer,
-				reg_date: card.reg_date,
-				category: card.category,
-				remarks: card.remarks,
-				pin_no: card.pin,
+				vendor,
+				//reg_date: card.reg_date,
+				//category: card.category,
+				//remarks: card.remarks,
+				//pin_no: card.pin,
 				status: card.status,
-				expiry: card.expiry_date,
+				//expiry: card.expiry_date,
 				asset
 			};
 		});
 
-	res.json({ status: 'success', message: 'Fleet cards by issuer retrieved successfully', data });
+	res.json({ status: 'success', message: 'Fleet cards by fuel vendor retrieved successfully', data });
 };
+
+	// Return all assets populated with their assigned fleet cards (uses fleet_asset join table)
+	export const getFleetCardsByAssets = async (req: Request, res: Response) => {
+		const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+		const links = await billingModel.getFleetAssetLinks();
+		const cards = await billingModel.getFleetCards();
+
+		const assetMap = new Map();
+		for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+		const cardMap = new Map(cards.map((c: any) => [c.id, c]));
+
+		// group cards by asset id
+		const grouped = new Map<number, any[]>();
+		for (const l of links) {
+			const aid = Number(l.asset_id);
+			const cid = Number(l.card_id);
+			if (!Number.isFinite(aid) || !Number.isFinite(cid)) continue;
+			if (!grouped.has(aid)) grouped.set(aid, []);
+			const c = cardMap.get(cid);
+			if (c) {
+				const arr = grouped.get(aid) as any[];
+				arr.push(c);
+			}
+		}
+
+		const costcenters = await assetsModel.getCostcenters() as any[];
+		const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
+		const data = Array.from(grouped.keys()).map((aid: number) => {
+			const a = assetMap.get(aid);
+			const assetSummary = a ? {
+				id: a.id,
+				register_number: a.register_number || a.vehicle_regno || null,
+				costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+				fuel_type: a.fuel_type || a.vfuel_type || null,
+				purpose: a.purpose || null
+			} : null;
+
+			const cardsForAsset = (grouped.get(aid) || []).map((card: any) => ({
+				id: card.id,
+				card_no: card.card_no,
+				vehicle_id: card.vehicle_id,
+				reg_date: card.reg_date,
+				remarks: card.remarks,
+				pin_no: card.pin,
+				status: card.status,
+				expiry: card.expiry_date
+			}));
+
+			return { asset: assetSummary, cards: cardsForAsset };
+		});
+
+		res.json({ status: 'success', message: 'Assets with fleet cards retrieved successfully', data });
+	};
 /* =================== SERVICE OPTION TABLE ========================== */
 
 export const getServiceOptions = async (req: Request, res: Response) => {
@@ -1055,7 +1404,9 @@ export const updateServiceOption = async (req: Request, res: Response) => {
 
 /* ============== TEMP VEHICLE RECORDS =============== */
 export const getTempVehicleRecords = async (req: Request, res: Response) => {
-	const records = await billingModel.getTempVehicleRecords();
+	// Use assetsModel.getAssets() as the canonical source for vehicle records
+	const recordsRaw = await assetsModel.getAssets();
+	const records = Array.isArray(recordsRaw) ? recordsRaw : [];
 	// Fetch costcenters, employees, brands, models, categories, departments, and fleet cards lookup
 	const [costcentersRaw, employeesRaw, brandsRaw, modelsRaw, categoriesRaw, departmentsRaw, fleetCardsRaw] = await Promise.all([
 		assetsModel.getCostcenters(),
@@ -1084,8 +1435,8 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 
 	// Enrich each record with costcenter, owner, brand, model, category, department, and fleetcard object
 	const enriched = records.map((rec: any) => {
-		const costcenterObj = rec.cc_id && ccMap.has(rec.cc_id)
-			? ccMap.get(rec.cc_id)
+		const costcenterObj = rec.costcenter_id && ccMap.has(rec.costcenter_id)
+			? ccMap.get(rec.costcenter_id)
 			: null;
 		const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
 
@@ -1119,10 +1470,15 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 			: null;
 		const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
 
-		// Remove cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id from response, add costcenter, owner, brand, model, category, department, fleetcard
-		const { cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id, ...rest } = rec;
-		return {
+		// Map legacy and new asset fields to canonical fields used by the frontend
+		const rest = { ...rec } as any;
+		const mapped = {
 			...rest,
+			asset_id: rest.asset_id || rest.vehicle_id || rest.id || null,
+			register_number: rest.register_number || rest.vehicle_regno || null,
+			transmission: rest.transmission || rest.vtrans_type || null,
+			fuel_type: rest.fuel_type || rest.vfuel_type || null,
+			purchase_date: rest.purchase_date || rest.v_dop || null,
 			costcenter,
 			owner,
 			brand,
@@ -1131,6 +1487,13 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 			department,
 			fleetcard
 		};
+		// Remove legacy id fields to avoid duplication in response
+		delete mapped.vehicle_id;
+		delete mapped.vehicle_regno;
+		delete mapped.vtrans_type;
+		delete mapped.vfuel_type;
+		delete mapped.v_dop;
+		return mapped;
 	});
 
 	res.json({ status: 'success', message: 'Temp vehicle records retrieved successfully', data: enriched });

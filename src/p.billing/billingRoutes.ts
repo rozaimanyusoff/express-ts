@@ -23,6 +23,8 @@ router.get('/mtn', asyncHandler(billingController.getVehicleMaintenance));
 router.post('/vehicle', asyncHandler(billingController.createVehicleMaintenance));
 router.put('/vehicle/:id', asyncHandler(billingController.updateVehicleMaintenance));
 router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMaintenance));
+// Maintenance lookup by asset id
+router.get('/mtn/vehicle/:asset_id', asyncHandler(billingController.getVehicleMaintenanceByVehicle));
 
 /* =================== WORKSHOP ======================= */
 router.get('/workshops', asyncHandler(billingController.getWorkshops));
@@ -31,27 +33,30 @@ router.post('/workshops', asyncHandler(billingController.createWorkshop));
 router.put('/workshops/:id', asyncHandler(billingController.updateWorkshop));
 router.delete('/workshops/:id', asyncHandler(billingController.deleteWorkshop));
 
-/* =================== FUEL ISSUER ======================== */
+/* =================== FUEL VENDOR ======================== */
 
-router.get('/fuel/issuer', asyncHandler(billingController.getFuelIssuers)); // /api/bills/fuel/issuer
-router.get('/fuel/issuer/:id', asyncHandler(billingController.getFuelIssuerById));
-router.post('/fuel/issuer', asyncHandler(billingController.createFuelIssuer));
-router.put('/fuel/issuer/:id', asyncHandler(billingController.updateFuelIssuer));
+router.get('/fuel/vendor', asyncHandler(billingController.getFuelVendors)); // /api/bills/fuel/issuer
+router.get('/fuel/vendor/:id', asyncHandler(billingController.getFuelVendorById));
+router.post('/fuel/vendor', asyncHandler(billingController.createFuelVendor));
+router.put('/fuel/vendor/:id', asyncHandler(billingController.updateFuelVendor));
 
 /* =================== FUEL BILLING ======================== */
 
 router.get('/fuel/summary/vehicle', asyncHandler(billingController.getFuelBillingVehicleSummary)); // /api/bills/fuel/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
 router.get('/fuel/summary/costcenter', asyncHandler(billingController.getFuelBillingCostcenterSummary)); /* /api/bills/fuel/summary/costcenter?from=2024-01-01&to=2024-12-31 */
 router.get('/fuel/:id', asyncHandler(billingController.getFuelBillingById));
+router.get('/fuel/vehicle/:asset_id', asyncHandler(billingController.getFuelConsumptionByVehicle));
 router.get('/fuel', asyncHandler(billingController.getFuelBillings));
 router.post('/fuel', asyncHandler(billingController.createFuelBilling));
 router.put('/fuel/:id', asyncHandler(billingController.updateFuelBilling));
 
 /* =================== FLEET CARD TABLE ========================== */
-
+router.get('/fleet/asset/:asset_id', asyncHandler(billingController.getFleetCardsByAssetId));
+router.get('/fleet/asset', asyncHandler(billingController.getFleetCardsByAssets));
 router.get('/fleet', asyncHandler(billingController.getFleetCards)); // /api/bills/fleet/card
 router.get('/fleet/:id', asyncHandler(billingController.getFleetCardById));
 router.get('/fleet/:id/issuer', asyncHandler(billingController.getFleetCardByIssuer)); // /api/bills/fleet/:id/issuer - obtain data by issuer [Petronas, Shell, etc.]
+
 router.post('/fleet', asyncHandler(billingController.createFleetCard));
 router.put('/fleet/:id', asyncHandler(billingController.updateFleetCard));
 router.put('/fleet/:id/billing', asyncHandler(billingController.updateFleetCardFromBilling)); // update fleet card from billing
