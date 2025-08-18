@@ -615,10 +615,14 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
+  if (typeof manager === 'number' && !isNaN(manager)) {
+    conditions.push('manager_id = ?');
+    params.push(manager);
+  }
   if (Array.isArray(type_ids) && type_ids.length > 0) {
     conditions.push(`type_id IN (${type_ids.map(() => '?').join(',')})`);
     params.push(...type_ids);

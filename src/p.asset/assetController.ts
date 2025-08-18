@@ -14,9 +14,15 @@ export const getAssets = async (req: Request, res: Response) => {
   const typeIdParam = req.query.type;
   const statusParam = req.query.status;
   const classificationParam = req.query.classification;
+  const managerParam = req.query.manager;
   let typeIds: number[] | undefined = undefined;
   let status: string | undefined = undefined;
   let classification: string | undefined = undefined;
+  let manager: number | undefined = undefined;
+  if (typeof managerParam === 'string' && managerParam !== '') {
+    manager = Number(managerParam);
+    //if (isNaN(manager)) manager = undefined;
+  }
   if (typeof typeIdParam === 'string' && typeIdParam !== '' && typeIdParam !== 'all') {
     // Support comma-separated type IDs
     typeIds = typeIdParam.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
@@ -70,10 +76,14 @@ export const getAssets = async (req: Request, res: Response) => {
       id: asset.id,
       classification: asset.classification,
       record_status: asset.record_status,
+      purpose: asset.purpose,
+      condition_status: asset.condition_status,
       asset_code: asset.asset_code,
       register_number: asset.register_number,
       purchase_date: asset.purchase_date,
       purchase_year: asset.purchase_year,
+      fuel_type: asset.fuel_type,
+      transmission: asset.transmission,
       //unit_price: asset.unit_price,
       //depreciation_length: asset.depreciation_length,
       costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
@@ -104,6 +114,12 @@ export const getAssets = async (req: Request, res: Response) => {
         ? {
             id: asset.brand_id,
             name: brandMap.get(asset.brand_id)?.name || null
+          }
+        : null,
+      models: asset.model_id && modelMap.has(asset.model_id)
+        ? {
+            id: asset.model_id,
+            name: modelMap.get(asset.model_id)?.name || null
           }
         : null,
       owner: asset.ramco_id && employeeMap.has(asset.ramco_id)
