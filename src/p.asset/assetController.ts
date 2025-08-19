@@ -15,10 +15,12 @@ export const getAssets = async (req: Request, res: Response) => {
   const statusParam = req.query.status;
   const classificationParam = req.query.classification;
   const managerParam = req.query.manager;
+  const registerNumberParam = req.query.register;
   let typeIds: number[] | undefined = undefined;
   let status: string | undefined = undefined;
   let classification: string | undefined = undefined;
   let manager: number | undefined = undefined;
+  let registerNumber: string | undefined = undefined;
   if (typeof managerParam === 'string' && managerParam !== '') {
     manager = Number(managerParam);
     //if (isNaN(manager)) manager = undefined;
@@ -34,6 +36,10 @@ export const getAssets = async (req: Request, res: Response) => {
   if (typeof statusParam === 'string' && statusParam !== '') {
     status = statusParam;
   }
+  if (typeof registerNumberParam === 'string' && registerNumberParam !== '') {
+    registerNumber = registerNumberParam;
+  }
+
   // Fetch all assets and related data
   const assetsRaw = await assetModel.getAssets(typeIds, classification, status);
   const typesRaw = await assetModel.getTypes();

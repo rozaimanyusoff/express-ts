@@ -6,8 +6,8 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 const dbBillings = 'billings';
 const dbAssets = 'assets';
 const dbApps = 'applications';
-const vehicleMaintenanceTable = `${dbBillings}.tbl_inv`;
-const vehicleMaintenancePartsTable = `${dbBillings}.tbl_inv_part`;
+const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
+const vehicleMtnBillingPartTable = `${dbBillings}.tbl_inv_part`;
 const workshopTable = `${dbBillings}.costws`;
 const fuelBillingTable = `${dbBillings}.fuel_stmt`;
 const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
@@ -15,13 +15,17 @@ const fuelVendorTable = `${dbBillings}.fuel_vendor`;
 const fleetCardTable = `${dbBillings}.fleet2`;
 const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
 const fleetAssetJoinTable = `${dbBillings}.fleet_asset`;
-const serviceOptionsTable = `${dbApps}.svctype`;
-const tempVehicleRecordTable = `${dbAssets}.vehicle`;
-const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
 const utilitiesTable = `${dbBillings}.tbl_util`;
 const billingAccountTable = `${dbBillings}.costbill`;
 
-/* =========== VEHICLE MAINTENANCE PARENT TABLE =========== */
+const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
+const serviceOptionsTable = `${dbApps}.svctype`;
+
+const tempVehicleRecordTable = `${dbAssets}.vehicle`;
+const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
+
+
+/* =========== VEHICLE MAINTENANCE BILLING PARENT TABLE =========== */
 
 export interface VehicleMaintenance {
   inv_id: number;
@@ -40,20 +44,20 @@ export interface VehicleMaintenance {
   running_no: number;
 }
 
-export const getVehicleMaintenance = async (): Promise<VehicleMaintenance[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMaintenanceTable}`);
+export const getVehicleMtnBillings = async (): Promise<VehicleMaintenance[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} ORDER BY inv_id DESC`);
   return rows as VehicleMaintenance[];
 };
 
-export const getVehicleMaintenanceById = async (id: number): Promise<VehicleMaintenance | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMaintenanceTable} WHERE inv_id = ?`, [id]);
+export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaintenance | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_id = ?`, [id]);
   const VehicleMaintenance = (rows as VehicleMaintenance[])[0];
   return VehicleMaintenance || null;
 };
 
-export const createVehicleMaintenance = async (data: Partial<VehicleMaintenance>): Promise<number> => {
+export const createVehicleMtnBilling = async (data: Partial<VehicleMaintenance>): Promise<number> => {
   const [result] = await pool2.query(
-    `INSERT INTO ${vehicleMaintenanceTable} (
+    `INSERT INTO ${vehicleMtnBillingTable} (
       inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo, inv_total, inv_stat, inv_remarks, running_no
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ data.inv_no, data.inv_date, data.svc_order, data.vehicle_id, data.costcenter_id, data.location_id, data.ws_id, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.running_no ]
@@ -61,49 +65,49 @@ export const createVehicleMaintenance = async (data: Partial<VehicleMaintenance>
   return (result as ResultSetHeader).insertId;
 };
 
-export const updateVehicleMaintenance = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
+export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
   await pool2.query(
-    `UPDATE ${vehicleMaintenanceTable} SET inv_no = ?, inv_date = ?, svc_order = ?, vehicle_id = ?, costcenter_id = ?, location_id = ?, ws_id = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, running_no = ? WHERE inv_id = ?`,
+    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_order = ?, vehicle_id = ?, costcenter_id = ?, location_id = ?, ws_id = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, running_no = ? WHERE inv_id = ?`,
     [ data.inv_no, data.inv_date, data.svc_order, data.vehicle_id, data.costcenter_id, data.location_id, data.ws_id, data.svc_date,
       data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.running_no,id ]
   );
 };
 
-export const deleteVehicleMaintenance = async (id: number): Promise<void> => {
-  await pool2.query(`DELETE FROM ${vehicleMaintenanceTable} WHERE id = ?`, [id]);
+export const deleteVehicleMtnBilling = async (id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${vehicleMtnBillingTable} WHERE id = ?`, [id]);
 };
 
-/* =========== VEHICLE MAINTENANCE PARTS TABLE ============= */
-
-export const getVehicleMaintenanceParts = async (maintenanceId: number): Promise<VehicleMaintenance[]> => {
+/* =========== VEHICLE MAINTENANCE BILLING PARTS TABLE ============= */
+// Obtain vehicle maintenance parts by maintenance ID
+export const getVehicleMtnBillingParts = async (maintenanceId: number): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMaintenancePartsTable} WHERE inv_id = ?`,
+    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
     [maintenanceId]
   );
   return rows as VehicleMaintenance[];
 };
 
-export const getVehicleMaintenancePartById = async (id: number): Promise<VehicleMaintenance | null> => {
+export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleMaintenance | null> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMaintenancePartsTable} WHERE inv_id = ?`,
+    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
     [id]
   );
   const part = (rows as VehicleMaintenance[])[0];
   return part || null;
 };
 
-export const getVehicleMaintenanceByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
+export const getVehicleMtnBillingByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMaintenanceTable} WHERE inv_date BETWEEN ? AND ? ORDER BY inv_date DESC`,
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date BETWEEN ? AND ? ORDER BY inv_date DESC`,
     [from, to]
   );
   return rows as VehicleMaintenance[];
 };
 
-export const getVehicleMaintenanceByVehicleId = async (vehicleId: number): Promise<VehicleMaintenance[]> => {
+export const getVehicleMtnBillingByAssetId = async (assetId: number): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMaintenanceTable} WHERE asset_id = ? ORDER BY inv_date DESC, inv_id DESC`,
-    [vehicleId]
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE asset_id = ? ORDER BY inv_date DESC, inv_id DESC`,
+    [assetId]
   );
   return rows as VehicleMaintenance[];
 };

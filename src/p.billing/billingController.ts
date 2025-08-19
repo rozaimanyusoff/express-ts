@@ -9,8 +9,8 @@ import logger from '../utils/logger';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
-export const getVehicleMaintenance = async (req: Request, res: Response) => {
-	const vehicleMtn = await billingModel.getVehicleMaintenance();
+export const getVehicleMtnBillings = async (req: Request, res: Response) => {
+	const vehicleMtn = await billingModel.getVehicleMtnBillings();
 	const workshops = await billingModel.getWorkshops() as any[];
 	const assets = await assetsModel.getAssets() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
@@ -54,57 +54,57 @@ export const getVehicleMaintenance = async (req: Request, res: Response) => {
 		inv_remarks: b.inv_remarks,
 		running_no: b.running_no
 	}));
-	res.json({ status: 'success', message: 'Billings retrieved successfully', data: filtered });
+	res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data: filtered });
 };
 
-export const getVehicleMaintenanceById = async (req: Request, res: Response) => {
-	const billing = await billingModel.getVehicleMaintenanceById(Number(req.params.id));
+export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
+	const billing = await billingModel.getVehicleMtnBillingById(Number(req.params.id));
 	if (!billing) {
 		return res.status(404).json({ status: 'error', message: 'Billing not found' });
 	}
 	// Use inv_id if available, otherwise fallback to id
 	const invoiceId = billing.inv_id;
-	const parts = await billingModel.getVehicleMaintenanceParts(invoiceId);
-	res.json({ status: 'success', message: 'Billing retrieved successfully', data: { ...billing, parts } });
+	const parts = await billingModel.getVehicleMtnBillingParts(invoiceId);
+	res.json({ status: 'success', message: 'Vehicle maintenance billing retrieved successfully', data: { ...billing, parts } });
 };
 
-export const createVehicleMaintenance = async (req: Request, res: Response) => {
+export const createVehicleMtnBilling = async (req: Request, res: Response) => {
 	const {
 		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
-	const insertId = await billingModel.createVehicleMaintenance({
+	const insertId = await billingModel.createVehicleMtnBilling({
 		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
-	res.status(201).json({ status: 'success', message: 'Billing created successfully', id: insertId });
+	res.status(201).json({ status: 'success', message: 'Vehicle maintenance billing created successfully', id: insertId });
 };
-
-export const updateVehicleMaintenance = async (req: Request, res: Response) => {
+// This function might be unused due to no manual entry for vehicle maintenance invoicing process except updating
+export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const {
 		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	} = req.body;
-	await billingModel.updateVehicleMaintenance(id, {
+	await billingModel.updateVehicleMtnBilling(id, {
 		inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo,
 		inv_total, inv_stat, inv_remarks, running_no
 	});
-	res.json({ status: 'success', message: 'Billing updated successfully' });
+	res.json({ status: 'success', message: 'Vehicle maintenance billing updated successfully' });
 };
 
-export const deleteVehicleMaintenance = async (req: Request, res: Response) => {
+export const deleteVehicleMtnBilling = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
-	await billingModel.deleteVehicleMaintenance(id);
+	await billingModel.deleteVehicleMtnBilling(id);
 	res.json({ status: 'success', message: 'Billing deleted successfully' });
 };
 
-export const getVehicleMaintenanceByDate = async (req: Request, res: Response) => {
+export const getVehicleMtnBillingByDate = async (req: Request, res: Response) => {
 	const { from, to } = req.query;
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
-	const vehicleMtn = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
+	const vehicleMtn = await billingModel.getVehicleMtnBillingByDate(from as string, to as string);
 	// Use assetModel.getAssets() instead of billingModel.getTempVehicleRecords() (DB schema changed)
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
@@ -156,7 +156,7 @@ export const getVehicleMaintenanceByDate = async (req: Request, res: Response) =
 };
 
 //Purposely to export maintenance consumption report data to Excel
-export const getMaintenanceByVehicleSummary = async (req: Request, res: Response) => {
+export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Response) => {
 	const { from, to, cc } = req.query;
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
@@ -202,7 +202,7 @@ export const getMaintenanceByVehicleSummary = async (req: Request, res: Response
 	}
 
 	// Get all vehicle maintenance records in date range
-	const maintenanceRecords = await billingModel.getVehicleMaintenanceByDate(from as string, to as string);
+	const maintenanceRecords = await billingModel.getVehicleMtnBillingByDate(from as string, to as string);
 	// Group by vehicle_id
 	const summary: Record<string, any> = {};
 	for (const maintenance of maintenanceRecords) {
@@ -557,18 +557,18 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 };
 
 // Get maintenance records and summary for a specific vehicle (asset_id)
-export const getVehicleMaintenanceByVehicle = async (req: Request, res: Response) => {
-	const vehicleId = Number(req.params.asset_id || req.params.id);
-	if (!vehicleId || isNaN(vehicleId)) {
+export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) => {
+	const assetId = Number(req.params.asset_id || req.params.id);
+	if (!assetId || isNaN(assetId)) {
 		return res.status(400).json({ status: 'error', message: 'Invalid vehicle id' });
 	}
 
-	const rows = await billingModel.getVehicleMaintenanceByVehicleId(vehicleId);
+	const rows = await billingModel.getVehicleMtnBillingByAssetId(assetId);
 
 	// Try to resolve register_number from assetModel
 	let registerNumber: string | null = null;
 	try {
-		const asset = await assetsModel.getAssetById(vehicleId as number);
+		const asset = await assetsModel.getAssetById(assetId as number);
 		if (asset && asset.register_number) registerNumber = asset.register_number;
 	} catch (err) {
 		// ignore
@@ -582,23 +582,24 @@ export const getVehicleMaintenanceByVehicle = async (req: Request, res: Response
 		totalAmount += parseFloat(r.inv_total || '0');
 		return {
 			inv_id: r.inv_id,
+			req_id: r.svc_order,
 			inv_no: r.inv_no,
 			inv_date: r.inv_date,
-			svc_order: r.svc_order,
 			svc_date: r.svc_date,
-			svc_odo: r.svc_odo,
+			odometer: r.svc_odo,
 			inv_total: r.inv_total,
 			inv_stat: r.inv_stat,
 			inv_remarks: r.inv_remarks
 		};
 	});
 
+	const regNoForMsg = registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null);
 	res.json({
 		status: 'success',
-		message: `Vehicle maintenance for vehicle ${vehicleId} retrieved successfully`,
+		message: `Vehicle maintenance for vehicle by asset ID: ${assetId}${regNoForMsg ? ' (' + regNoForMsg + ')' : ''} retrieved successfully`,
 		data: {
-			vehicle_id: vehicleId,
-			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null),
+			id: assetId,
+			register_number: regNoForMsg,
 			total_maintenance: totalMaintenance,
 			total_amount: totalAmount.toFixed(2),
 			records

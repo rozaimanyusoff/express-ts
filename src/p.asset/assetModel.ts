@@ -615,7 +615,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -637,6 +637,10 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (typeof status === 'string' && status !== '') {
     conditions.push('record_status = ?');
     params.push(status);
+  }
+  if (typeof registerNumber === 'string' && registerNumber !== '') {
+    conditions.push('register_number = ?');
+    params.push(registerNumber);
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');

@@ -13,18 +13,18 @@ router.post('/temp-vehicle', asyncHandler(billingController.createTempVehicleRec
 router.put('/temp-vehicle/:id', asyncHandler(billingController.updateTempVehicleRecord));
 router.delete('/temp-vehicle/:id', asyncHandler(billingController.deleteTempVehicleRecord));
 
-/* ================== VEHICLE MAINTENANCE ================== */
+/* ================== VEHICLE MAINTENANCE BILLINGS ================== */
 
-router.get('/mtn/summary/vehicle', asyncHandler(billingController.getMaintenanceByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
-router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMaintenanceByDate)); /* /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 */
-router.get('/mtn/:id', asyncHandler(billingController.getVehicleMaintenanceById));
-router.get('/mtn', asyncHandler(billingController.getVehicleMaintenance));
+router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnBillingByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id} -- EXCEL GENERATED REPORT
+router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
+router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
+router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
 
-router.post('/vehicle', asyncHandler(billingController.createVehicleMaintenance));
-router.put('/vehicle/:id', asyncHandler(billingController.updateVehicleMaintenance));
-router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMaintenance));
+//router.post('/vehicle', asyncHandler(billingController.createVehicleMtnBilling)); //UNUSED
+router.put('/mtn/vehicle/:id', asyncHandler(billingController.updateVehicleMtnBilling));
+//router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMtnBilling)); //NO DATA DELETE ALLOWED
 // Maintenance lookup by asset id
-router.get('/mtn/vehicle/:asset_id', asyncHandler(billingController.getVehicleMaintenanceByVehicle));
+router.get('/mtn/vehicle/:asset_id', asyncHandler(billingController.getVehicleMaintenanceByAsset));
 
 /* =================== WORKSHOP ======================= */
 router.get('/workshops', asyncHandler(billingController.getWorkshops));

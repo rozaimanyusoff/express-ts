@@ -6,27 +6,27 @@ import asyncHandler from '../utils/asyncHandler';
 const router = Router();
 
 // ========== MAINTENANCE RECORDS CRUD ==========
-router.get('/vehicle/record/:vehicle_id', asyncHandler(maintenanceController.getMaintenanceRecordsByVehicle)); // Get maintenance records by vehicle ID
-router.get('/vehicle/:id', asyncHandler(maintenanceController.getMaintenanceRecordById));
-router.get('/vehicle', asyncHandler(maintenanceController.getMaintenanceRecords)); // ?status={pending|verified|recommended|approved}
-router.post('/vehicle', asyncHandler(maintenanceController.createMaintenanceRecord));
-router.put('/vehicle/:id', asyncHandler(maintenanceController.updateMaintenanceRecord));
-router.delete('/vehicle/:id', asyncHandler(maintenanceController.deleteMaintenanceRecord));
+router.get('/request/record/:asset_id', asyncHandler(maintenanceController.getVehicleMtnRequestByAssetId)); // Get maintenance records by vehicle ID including invoice details
+router.get('/request/:id', asyncHandler(maintenanceController.getVehicleMtnRequestById));
+router.get('/request', asyncHandler(maintenanceController.getVehicleMtnRequests)); // ?status={pending|verified|recommended|approved}
+router.post('/request', asyncHandler(maintenanceController.createVehicleMtnRequest));
+router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
+router.delete('/request/:id', asyncHandler(maintenanceController.deleteVehicleMtnRequest));
 
 // ========== MAINTENANCE TYPES CRUD ==========
-router.get('/types', asyncHandler(maintenanceController.getMaintenanceTypes));
-router.get('/types/:id', asyncHandler(maintenanceController.getMaintenanceTypeById));
-router.post('/types', asyncHandler(maintenanceController.createMaintenanceType));
-router.put('/types/:id', asyncHandler(maintenanceController.updateMaintenanceType));
-router.delete('/types/:id', asyncHandler(maintenanceController.deleteMaintenanceType));
+router.get('/types', asyncHandler(maintenanceController.getServiceTypes));
+router.get('/types/:id', asyncHandler(maintenanceController.getServiceTypeById));
+router.post('/types', asyncHandler(maintenanceController.createServiceType));
+router.put('/types/:id', asyncHandler(maintenanceController.updateServiceType));
+router.delete('/types/:id', asyncHandler(maintenanceController.deleteServiceType));
 
 /* ========== ADDITIONAL MAINTENANCE ROUTES ========== */
 
 // Force invoice creation for approved maintenance record
-router.post('/vehicle/:requestId/forceinvoice', asyncHandler(maintenanceController.forceInvoiceMaintenanceRecord));
+router.post('/request/:requestId/forceinvoice', asyncHandler(maintenanceController.pushVehicleMtnToBilling));
 
 // Resend portal link to requester
-router.post('/vehicle/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
+router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
 
 /* ========== ADD MORE ROUTES HERE ========== */
 
