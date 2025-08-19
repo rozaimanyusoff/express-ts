@@ -17,6 +17,7 @@ const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
 const fleetAssetJoinTable = `${dbBillings}.fleet_asset`;
 const utilitiesTable = `${dbBillings}.tbl_util`;
 const billingAccountTable = `${dbBillings}.costbill`;
+const beneficiaryTable = `${dbBillings}.costbfcy`;
 
 const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
 const serviceOptionsTable = `${dbApps}.svctype`;
@@ -640,12 +641,10 @@ export const deleteUtilityBill = async (util_id: number): Promise<void> => {
 
 // =================== BILLING ACCOUNT TABLE CRUD ===================
 export interface BillingAccount {
-  bfcy_id: number;
   bill_ac: string;
+  prepared_by: string;
   bill_product: string;
   bill_desc: string;
-  cc_id: number;
-  loc_id: number;
   bill_cont_start: string;
   bill_cont_end: string;
   bill_depo: string;
@@ -653,19 +652,18 @@ export interface BillingAccount {
   bill_stat: string;
   bill_consumable: string;
 }
-
-export const getBillingAccounts = async (): Promise<BillingAccount[]> => {
+export const getBillingAccounts = async (): Promise<any[]> => {
   const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} ORDER BY bfcy_id DESC`);
-  return rows as BillingAccount[];
+  return rows as any[];
 };
 
-export const getBillingAccountById = async (bfcy_id: number): Promise<BillingAccount | null> => {
+export const getBillingAccountById = async (bfcy_id: number): Promise<any | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
-  const account = (rows as BillingAccount[])[0];
+  const account = (rows as any[])[0];
   return account || null;
 };
 
-export const createBillingAccount = async (data: Partial<BillingAccount>): Promise<number> => {
+export const createBillingAccount = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
     `INSERT INTO ${billingAccountTable} (
       bill_ac, bill_product, bill_desc, cc_id, loc_id, bill_cont_start, bill_cont_end, bill_depo, bill_mth, bill_stat, bill_consumable
@@ -677,15 +675,84 @@ export const createBillingAccount = async (data: Partial<BillingAccount>): Promi
   return (result as ResultSetHeader).insertId;
 };
 
-export const updateBillingAccount = async (bfcy_id: number, data: Partial<BillingAccount>): Promise<void> => {
+export const updateBillingAccount = async (bfcy_id: number, data: any): Promise<void> => {
   await pool2.query(
-    `UPDATE ${billingAccountTable} SET bill_ac = ?, bill_product = ?, bill_desc = ?, cc_id = ?, loc_id = ?, bill_cont_start = ?, bill_cont_end = ?, bill_depo = ?, bill_mth = ?, bill_stat = ?, bill_consumable = ? WHERE bfcy_id = ?`,
+    `UPDATE ${billingAccountTable} SET bill_ac = ?, prepared_by = ?, bill_product = ?, bill_desc = ?, cc_id = ?, loc_id = ?, bill_cont_start = ?, bill_cont_end = ?, bill_depo = ?, bill_mth = ?, bill_stat = ?, bill_consumable = ? WHERE bfcy_id = ?`,
     [
-      data.bill_ac, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable, bfcy_id
+      data.bill_ac, data.prepared_by, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable, bfcy_id
     ]
   );
 };
 
 export const deleteBillingAccount = async (bfcy_id: number): Promise<void> => {
   await pool2.query(`DELETE FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
+};
+
+/* =================== BENEFICIARY (BILLING PROVIDERS) TABLE =================== */
+
+export interface Beneficiary {
+  bfcy_id: number;
+  name?: string;
+  provider?: string;
+  logo?: string;
+  [key: string]: any;
+}
+
+export const getBeneficiaries = async (services?: string | string[]): Promise<any[]> => {
+  // services can be undefined, a single string, or an array of strings.
+  // Map to bfcy_cat filtering: support comma-separated values in query string.
+  if (!services) {
+    const [rows] = await pool2.query(`SELECT * FROM ${beneficiaryTable} ORDER BY bfcy_id DESC`);
+    return rows as any[];
+  }
+
+  // Normalize services to an array of trimmed strings
+  const svcArray = Array.isArray(services)
+    ? services.reduce<string[]>((acc, s) => acc.concat(String(s).split(',').map(v => v.trim()).filter(Boolean)), [])
+    : String(services).split(',').map(v => v.trim()).filter(Boolean);
+
+  if (svcArray.length === 0) {
+    const [rows] = await pool2.query(`SELECT * FROM ${beneficiaryTable} ORDER BY bfcy_id DESC`);
+    return rows as any[];
+  }
+
+  // Build placeholders and params for IN clause
+  const placeholders = svcArray.map(() => '?').join(',');
+  const sql = `SELECT * FROM ${beneficiaryTable} WHERE bfcy_cat IN (${placeholders}) ORDER BY bfcy_id DESC`;
+  const [rows] = await pool2.query(sql, svcArray);
+  return rows as any[];
+};
+
+export const getBeneficiaryById = async (id: number): Promise<any | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${beneficiaryTable} WHERE bfcy_id = ?`, [id]);
+  const ben = (rows as any[])[0];
+  return ben || null;
+};
+
+export const createBeneficiary = async (data: any): Promise<number> => {
+  // Prevent duplicate beneficiary by name + category
+  if (data.bfcy_name && data.bfcy_cat) {
+    const [existing] = await pool2.query(`SELECT bfcy_id FROM ${beneficiaryTable} WHERE bfcy_name = ? AND bfcy_cat = ? LIMIT 1`, [data.bfcy_name, data.bfcy_cat]);
+    if (Array.isArray(existing) && (existing as any[]).length > 0) {
+      throw new Error('duplicate_beneficiary');
+    }
+  }
+  // Use INSERT ... SET to allow flexible fields matching the table schema
+  const [result] = await pool2.query(`INSERT INTO ${beneficiaryTable} SET ?`, [data]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateBeneficiary = async (id: number, data: any): Promise<void> => {
+  // If name and category are being set/changed, check for duplicates (exclude current id)
+  if (data.bfcy_name && data.bfcy_cat) {
+    const [existing] = await pool2.query(`SELECT bfcy_id FROM ${beneficiaryTable} WHERE bfcy_name = ? AND bfcy_cat = ? AND bfcy_id != ? LIMIT 1`, [data.bfcy_name, data.bfcy_cat, id]);
+    if (Array.isArray(existing) && (existing as any[]).length > 0) {
+      throw new Error('duplicate_beneficiary');
+    }
+  }
+  await pool2.query(`UPDATE ${beneficiaryTable} SET ? WHERE bfcy_id = ?`, [data, id]);
+};
+
+export const deleteBeneficiary = async (id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${beneficiaryTable} WHERE bfcy_id = ?`, [id]);
 };

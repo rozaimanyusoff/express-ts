@@ -1965,14 +1965,58 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 export const getBillingAccounts = async (req: Request, res: Response) => {
 	const accounts = await billingModel.getBillingAccounts();
 	const baseUrl = process.env.BACKEND_URL || '';
-	
-	// Convert relative logo paths to full URLs
-	const accountsWithFullUrls = accounts.map((account: any) => ({
-		...account,
-		logo: account.logo ? `${baseUrl.replace(/\/$/, '')}${account.logo}` : account.logo
-	}));
-	
-	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: accountsWithFullUrls });
+
+	// fetch beneficiaries map
+	const beneficiaries = await billingModel.getBeneficiaries(undefined);
+	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.bfcy_id), b]));
+
+	// fetch costcenters and districts (locations)
+	const [costcentersRaw, districtsRaw] = await Promise.all([
+		assetsModel.getCostcenters(),
+		assetsModel.getDistricts()
+	]);
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+
+	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+
+	const enriched = accounts.map((account: any) => {
+		const obj: any = { ...account };
+		// attach beneficiary object when bfcy_id present
+		const bfcyId = Number(obj.bfcy_id);
+		if (bfcyId && benMap.has(bfcyId)) {
+			const b = benMap.get(bfcyId);
+			const rawLogo = b.bfcy_logo || null;
+			const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
+			obj.beneficiary = { bfcy_id: b.bfcy_id, bfcy_name: b.bfcy_name, logo };
+		} else {
+			obj.beneficiary = null;
+		}
+
+		// attach resolved costcenter (cc_id) and location (loc_id)
+		const ccId = Number(obj.cc_id);
+		obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
+
+		const locId = Number(obj.loc_id);
+		if (locId && districtMap.has(locId)) {
+			const d = districtMap.get(locId);
+			// district may have code or name
+			const locName = d.name || d.code || null;
+			obj.location = { id: locId, name: locName };
+		} else {
+			obj.location = null;
+		}
+
+		// remove raw numeric id fields from response
+		delete obj.bfcy_id;
+		delete obj.cc_id;
+		delete obj.loc_id;
+
+		return obj;
+	});
+
+	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: enriched });
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
@@ -1981,7 +2025,50 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	if (!account) {
 		return res.status(404).json({ error: 'Billing account not found' });
 	}
-	res.json({ status: 'success', message: 'Billing account retrieved successfully', data: account });
+	const baseUrl = process.env.BACKEND_URL || '';
+
+	// fetch beneficiaries, costcenters, and districts to resolve ids
+	const [beneficiaries, costcentersRaw, districtsRaw] = await Promise.all([
+		billingModel.getBeneficiaries(undefined),
+		assetsModel.getCostcenters(),
+		assetsModel.getDistricts()
+	]);
+	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.bfcy_id), b]));
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+
+	const obj: any = { ...account };
+	const bfcyId = Number(obj.bfcy_id);
+	if (bfcyId && benMap.has(bfcyId)) {
+		const b = benMap.get(bfcyId);
+		const rawLogo = b.bfcy_logo || null;
+		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
+		obj.beneficiary = { bfcy_id: b.bfcy_id, bfcy_name: b.bfcy_name, logo };
+	} else {
+		obj.beneficiary = null;
+	}
+
+	// resolve costcenter and location
+	const ccId = Number(obj.cc_id);
+	obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
+
+	const locId = Number(obj.loc_id);
+	if (locId && districtMap.has(locId)) {
+		const d = districtMap.get(locId);
+		const locName = d.name || d.code || null;
+		obj.location = { id: locId, name: locName };
+	} else {
+		obj.location = null;
+	}
+
+	// remove raw numeric id fields from response
+	delete obj.bfcy_id;
+	delete obj.cc_id;
+	delete obj.loc_id;
+
+	res.json({ status: 'success', message: 'Billing account retrieved successfully', data: obj });
 };
 
 export const createBillingAccount = async (req: Request, res: Response) => {
@@ -2001,4 +2088,113 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 	const bfcy_id = Number(req.params.id);
 	await billingModel.deleteBillingAccount(bfcy_id);
 	res.json({ status: 'success', message: 'Billing account deleted successfully' });
+};
+
+// =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
+export const getBeneficiaries = async (req: Request, res: Response) => {
+	// Optional query param: ?services=svc1,svc2 or ?services=svc
+	const servicesQuery = req.query.services;
+	// Pass through as string or string[] to model; model will normalize
+	const beneficiaries = await billingModel.getBeneficiaries(servicesQuery as any);
+	const baseUrl = process.env.BACKEND_URL || '';
+	// fetch employees to resolve prepared_by
+	const employeesRaw = await assetsModel.getEmployees();
+	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
+	const enriched = (beneficiaries || []).map((b: any) => {
+		// bfcy_logo stores vendor logo path (images/vendor_logo/...), bfcy_pic is person-in-charge picture
+		const rawLogo = b.bfcy_logo || null;
+		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : rawLogo;
+		const obj: any = { ...b };
+		if (obj.bfcy_logo) delete obj.bfcy_logo;
+		obj.logo = logo;
+		// resolve prepared_by to { ramco_id, full_name } when possible
+		const prepRaw = obj.prepared_by ?? null;
+		if (prepRaw) {
+			const key = String(prepRaw);
+			if (empMap.has(key)) {
+				const e = empMap.get(key);
+				obj.prepared_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			} else {
+				obj.prepared_by = { ramco_id: prepRaw };
+			}
+		} else {
+			obj.prepared_by = null;
+		}
+		return obj;
+	});
+	res.json({ status: 'success', message: 'Beneficiaries retrieved successfully', data: enriched });
+};
+
+export const getBeneficiaryById = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	const ben = await billingModel.getBeneficiaryById(id);
+	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+	const baseUrl = process.env.BACKEND_URL || '';
+		const rawLogo = ben.bfcy_logo || ben.logo || ben.bfcy_pic || null;
+		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : rawLogo;
+		const resp: any = { ...ben };
+		if (resp.bfcy_logo) delete resp.bfcy_logo;
+		resp.logo = logo;
+		// resolve prepared_by using employees lookup
+		const employeesRaw = await assetsModel.getEmployees();
+		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+		const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
+		const prepRaw = resp.prepared_by ?? null;
+		if (prepRaw) {
+			const key = String(prepRaw);
+			if (empMap.has(key)) {
+				const e = empMap.get(key);
+				resp.prepared_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			} else {
+				resp.prepared_by = { ramco_id: prepRaw };
+			}
+		} else {
+			resp.prepared_by = null;
+		}
+		res.json({ status: 'success', message: 'Beneficiary retrieved successfully', data: resp });
+};
+
+export const createBeneficiary = async (req: Request, res: Response) => {
+	const payload = req.body || {};
+	// Optional file upload handling for creation: bfcy_logo stores vendor logo under uploads/images/vendor_logo
+	if ((req as any).file && (req as any).file.filename) {
+		payload.bfcy_logo = `uploads/images/vendor_logo/${(req as any).file.filename}`;
+	}
+	try {
+		const id = await billingModel.createBeneficiary(payload);
+		res.status(201).json({ status: 'success', message: 'Beneficiary created successfully', id });
+	} catch (err: any) {
+		if (err && String(err.message) === 'duplicate_beneficiary') {
+			return res.status(409).json({ status: 'error', message: 'Beneficiary with same name and category already exists' });
+		}
+		throw err;
+	}
+};
+
+export const updateBeneficiary = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	const payload = req.body || {};
+	// Optional bfcy_logo file upload for update
+	if ((req as any).file && (req as any).file.filename) {
+		// Save vendor logo path relative to uploads folder into bfcy_logo
+		payload.bfcy_logo = `uploads/images/vendor_logo/${(req as any).file.filename}`;
+	}
+	// Remove any 'logo' key to avoid unknown column errors when using SET ?
+	if (payload.logo) delete payload.logo;
+	try {
+		await billingModel.updateBeneficiary(id, payload);
+		res.json({ status: 'success', message: 'Beneficiary updated successfully' });
+	} catch (err: any) {
+		if (err && String(err.message) === 'duplicate_beneficiary') {
+			return res.status(409).json({ status: 'error', message: 'Beneficiary with same name and category already exists' });
+		}
+		throw err;
+	}
+};
+
+export const deleteBeneficiary = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	await billingModel.deleteBeneficiary(id);
+	res.json({ status: 'success', message: 'Beneficiary deleted successfully' });
 };
