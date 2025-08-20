@@ -2181,9 +2181,9 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 
 export const createBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
-	// Optional file upload handling for creation: bfcy_logo stores vendor logo under uploads/images/vendor_logo
+	// Optional file upload handling for creation: bfcy_logo stores vendor logo under uploads/images/logo
 	if ((req as any).file && (req as any).file.filename) {
-		payload.bfcy_logo = `uploads/images/vendor_logo/${(req as any).file.filename}`;
+		payload.bfcy_logo = `uploads/images/logo/${(req as any).file.filename}`;
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
@@ -2201,8 +2201,8 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Optional bfcy_logo file upload for update
 	if ((req as any).file && (req as any).file.filename) {
-		// Save vendor logo path relative to uploads folder into bfcy_logo
-		payload.bfcy_logo = `uploads/images/vendor_logo/${(req as any).file.filename}`;
+	// Save vendor logo path relative to uploads folder into bfcy_logo
+	payload.bfcy_logo = `uploads/images/logo/${(req as any).file.filename}`;
 	}
 	// Remove any 'logo' key to avoid unknown column errors when using SET ?
 	if (payload.logo) delete payload.logo;
