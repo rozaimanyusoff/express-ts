@@ -2073,20 +2073,44 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 
 export const createBillingAccount = async (req: Request, res: Response) => {
 	const payload = req.body;
+
+	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
+	if (payload.bill_cont_start) {
+		const d = dayjs(payload.bill_cont_start);
+		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_start date' });
+		payload.bill_cont_start = d.format('YYYY-MM-DD');
+	}
+	if (payload.bill_cont_end) {
+		const d2 = dayjs(payload.bill_cont_end);
+		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_end date' });
+		payload.bill_cont_end = d2.format('YYYY-MM-DD');
+	}
 	const id = await billingModel.createBillingAccount(payload);
 	res.status(201).json({ status: 'success', message: 'Billing account created successfully', id });
 };
 
 export const updateBillingAccount = async (req: Request, res: Response) => {
-	const bfcy_id = Number(req.params.id);
+	const bill_id = Number(req.params.id);
 	const payload = req.body;
-	await billingModel.updateBillingAccount(bfcy_id, payload);
+
+	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
+	if (payload.bill_cont_start) {
+		const d = dayjs(payload.bill_cont_start);
+		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_start date' });
+		payload.bill_cont_start = d.format('YYYY-MM-DD');
+	}
+	if (payload.bill_cont_end) {
+		const d2 = dayjs(payload.bill_cont_end);
+		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_end date' });
+		payload.bill_cont_end = d2.format('YYYY-MM-DD');
+	}
+	await billingModel.updateBillingAccount(bill_id, payload);
 	res.json({ status: 'success', message: 'Billing account updated successfully' });
 };
 
 export const deleteBillingAccount = async (req: Request, res: Response) => {
-	const bfcy_id = Number(req.params.id);
-	await billingModel.deleteBillingAccount(bfcy_id);
+	const bill_id = Number(req.params.id);
+	await billingModel.deleteBillingAccount(bill_id);
 	res.json({ status: 'success', message: 'Billing account deleted successfully' });
 };
 

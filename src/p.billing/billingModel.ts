@@ -16,7 +16,7 @@ const fleetCardTable = `${dbBillings}.fleet2`;
 const fleetCardHistoryTable = `${dbBillings}.fleet_history`;
 const fleetAssetJoinTable = `${dbBillings}.fleet_asset`;
 const utilitiesTable = `${dbBillings}.tbl_util`;
-const billingAccountTable = `${dbBillings}.costbill`;
+const billingAccountTable = `${dbBillings}.costbill2`;
 const beneficiaryTable = `${dbBillings}.costbfcy`;
 
 const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
@@ -652,6 +652,27 @@ export interface BillingAccount {
   bill_stat: string;
   bill_consumable: string;
 }
+// Helper: normalize various date inputs to MySQL DATE string (YYYY-MM-DD)
+const normalizeDateForMySQL = (val: any): string | null => {
+  if (val === undefined || val === null) return null;
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (typeof val === 'string') {
+    // If ISO datetime provided like '2000-11-29T00:00:00.000Z', strip to date part
+    const tIndex = val.indexOf('T');
+    if (tIndex > 0) return val.slice(0, tIndex);
+    // If value already looks like YYYY-MM-DD or other date-like string, return as-is
+    return val;
+  }
+  // Fallback: coerce to string and attempt to extract date part
+  try {
+    const s = String(val);
+    const t = s.indexOf('T');
+    if (t > 0) return s.slice(0, t);
+    return s;
+  } catch (e) {
+    return null;
+  }
+};
 export const getBillingAccounts = async (): Promise<any[]> => {
   const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} ORDER BY bfcy_id DESC`);
   return rows as any[];
@@ -664,28 +685,52 @@ export const getBillingAccountById = async (bfcy_id: number): Promise<any | null
 };
 
 export const createBillingAccount = async (data: any): Promise<number> => {
+  // Prevent duplicate billing account by bill_ac + service + cc_id + loc_id
+  if (data.bill_ac && data.service !== undefined && data.cc_id !== undefined && data.loc_id !== undefined) {
+    const [existingRows] = await pool2.query(
+      `SELECT bfcy_id FROM ${billingAccountTable} WHERE bill_ac = ? AND service = ? AND cc_id = ? AND loc_id = ? LIMIT 1`,
+      [data.bill_ac, data.service, data.cc_id, data.loc_id]
+    );
+    if (Array.isArray(existingRows) && (existingRows as any[]).length > 0) {
+      throw new Error('duplicate_billing_account');
+    }
+  }
   const [result] = await pool2.query(
     `INSERT INTO ${billingAccountTable} (
-      bill_ac, bill_product, bill_desc, cc_id, loc_id, bill_cont_start, bill_cont_end, bill_depo, bill_mth, bill_stat, bill_consumable
+      bill_ac, service, bill_desc, cc_id, loc_id, bill_cont_start, bill_cont_end, bill_depo, bill_mth, bill_stat, bill_consumable
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      data.bill_ac, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable
+  data.bill_ac, data.bill_desc, data.cc_id, data.loc_id,
+  normalizeDateForMySQL(data.bill_cont_start), normalizeDateForMySQL(data.bill_cont_end),
+  data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable
     ]
   );
   return (result as ResultSetHeader).insertId;
 };
 
-export const updateBillingAccount = async (bfcy_id: number, data: any): Promise<void> => {
+export const updateBillingAccount = async (bill_id: number, data: any): Promise<void> => {
+  // Prevent duplicate billing account when updating: same bill_ac+service+cc_id+loc_id owned by another bfcy_id
+  if (data.bill_ac && data.service !== undefined && data.cc_id !== undefined && data.loc_id !== undefined) {
+    const [existingRows] = await pool2.query(
+      `SELECT bfcy_id FROM ${billingAccountTable} WHERE bill_ac = ? AND service = ? AND cc_id = ? AND loc_id = ? AND bill_id != ? LIMIT 1`,
+      [data.bill_ac, data.service, data.cc_id, data.loc_id, bill_id]
+    );
+    if (Array.isArray(existingRows) && (existingRows as any[]).length > 0) {
+      throw new Error('duplicate_billing_account');
+    }
+  }
   await pool2.query(
-    `UPDATE ${billingAccountTable} SET bill_ac = ?, prepared_by = ?, bill_product = ?, bill_desc = ?, cc_id = ?, loc_id = ?, bill_cont_start = ?, bill_cont_end = ?, bill_depo = ?, bill_mth = ?, bill_stat = ?, bill_consumable = ? WHERE bfcy_id = ?`,
+    `UPDATE ${billingAccountTable} SET bill_ac = ?, service = ?, bill_desc = ?, cc_id = ?, loc_id = ?, bill_cont_start = ?, bill_cont_end = ?, bill_depo = ?, bill_mth = ?, bill_stat = ?, bill_consumable = ? WHERE bill_id = ?`,
     [
-      data.bill_ac, data.prepared_by, data.bill_product, data.bill_desc, data.cc_id, data.loc_id, data.bill_cont_start, data.bill_cont_end, data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable, bfcy_id
+  data.bill_ac, data.service, data.bill_desc, data.cc_id, data.loc_id,
+  normalizeDateForMySQL(data.bill_cont_start), normalizeDateForMySQL(data.bill_cont_end),
+  data.bill_depo, data.bill_mth, data.bill_stat, data.bill_consumable, bill_id
     ]
   );
 };
 
-export const deleteBillingAccount = async (bfcy_id: number): Promise<void> => {
-  await pool2.query(`DELETE FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
+export const deleteBillingAccount = async (bill_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${billingAccountTable} WHERE bill_id = ?`, [bill_id]);
 };
 
 /* =================== BENEFICIARY (BILLING PROVIDERS) TABLE =================== */
