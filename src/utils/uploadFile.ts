@@ -12,13 +12,15 @@ export default function createUpload(opts: Options = {}) {
   // subfolder is relative to the project `uploads` directory. If not provided, default to 'images'.
   // This allows callers to place files anywhere under /uploads (for example 'vendor_logo' or 'models').
   const subfolder = opts.subfolder || 'images';
+  // Base upload directory can be overridden by env var UPLOAD_BASE_PATH (useful in production)
+  const baseUploadPath = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
   const maxSize = opts.maxSize ?? 2 * 1024 * 1024; // default 2MB
   const allowedMimeTypes = opts.allowedMimeTypes || ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
   const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-      // write directly under <project-root>/uploads/<subfolder>
-      const dir = path.join(process.cwd(), 'uploads', subfolder);
+  // write under <baseUploadPath>/<subfolder>
+  const dir = path.join(baseUploadPath, subfolder);
       if (!fs.existsSync(dir)) {
         // In production don't create folders automatically unless explicitly allowed
         const allowCreate = process.env.ALLOW_UPLOAD_DIR_CREATION === 'true' || process.env.NODE_ENV !== 'production';
