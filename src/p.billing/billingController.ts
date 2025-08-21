@@ -1255,6 +1255,16 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 // Normalize an absolute or arbitrary saved file path into a relative DB-friendly path
 // under 'uploads/...'. Removes configured UPLOAD_BASE_PATH, strips mount points
 // like 'mnt/winshare', and ensures the returned path starts with 'uploads/'.
+// Helper to produce a public URL from a stored path. Mirrors logic used when returning
+// logos: strips mount segments and ensures path is under 'uploads/'.
+function publicUrl(rawPath?: string | null): string | null {
+	if (!rawPath) return null;
+	const baseUrl = process.env.BACKEND_URL || '';
+	let normalized = String(rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
+	normalized = normalized.replace(/(^|\/)mnt\/winshare\/?/ig, '');
+	if (!normalized.startsWith('uploads/')) normalized = `uploads/${normalized.replace(/^\/+/, '')}`;
+	return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
+}
 function normalizeStoredPath(filePath?: string | null): string | null {
 	if (!filePath) return null;
 	let p = String(filePath);
@@ -1631,6 +1641,13 @@ export const getUtilityBills = async (req: Request, res: Response) => {
   const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
   const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
+	// Load beneficiaries and build lookup maps for enrichment
+	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+	const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+	// Map by name and by id for flexible matching
+	const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
+
   // Filter by costcenter if provided
   if (costcenter) {
 	bills = bills.filter((bill: any) => String(bill.cc_id) === String(costcenter));
@@ -1654,26 +1671,53 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		let account = null;
 		if (bill.bill_id && accountMap.has(bill.bill_id)) {
 			const acc = accountMap.get(bill.bill_id);
-			account = {
-				bill_id: acc.bill_id,
-				bill_ac: acc.bill_ac,
-				provider: acc.provider,
-				service: acc.service,
-				desc: acc.bill_desc
-			};
+				// attempt to enrich beneficiary using beneficiaries list
+				let benObj: any = null;
+				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
+				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+				if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
+				account = {
+					bill_id: acc.bill_id,
+					bill_ac: acc.bill_ac,
+					beneficiary: benObj ? {
+						id: benObj.bfcy_id ?? benObj.id,
+						name: benObj.bfcy_name || benObj.name,
+						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+						prepared_by: benObj.prepared_by ? (typeof benObj.prepared_by === 'object' ? benObj.prepared_by : { ramco_id: benObj.prepared_by }) : null
+					} : acc.provider,
+					service: acc.service,
+					desc: acc.bill_desc
+				};
 		}
-		// Build costcenter object
-		let costcenter = null;
-		if (bill.cc_id && ccMap.has(bill.cc_id)) {
-			const cc = ccMap.get(bill.cc_id) as any;
-			costcenter = { id: cc.id, name: cc.name };
-		}
+			// Build costcenter object. Prefer account-level costcenter if present.
+			let costcenter = null;
+			const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
+			const ccLookupId = acctCcId ?? bill.cc_id;
+			if (ccLookupId && ccMap.has(ccLookupId)) {
+				const cc = ccMap.get(ccLookupId) as any;
+				costcenter = { id: cc.id, name: cc.name };
+			}
 		// Only include required fields
-		return {
-			util_id: bill.util_id,
-			account,
-			costcenter,
-			loc_id: bill.loc_id,
+			// Build location object. Prefer account-level location if present.
+			let location = null;
+			const acctLocId = account && (account as any).location ? (account as any).location.id : null;
+			const locLookupId = acctLocId ?? bill.loc_id;
+			if (locLookupId && ccMap.has(locLookupId)) {
+				const d = ccMap.get(locLookupId) as any;
+				location = { id: d.id, name: d.name };
+			}
+
+			// Ensure account object contains costcenter & location for callers that expect them there
+			if (account) {
+				(account as any).costcenter = costcenter;
+				(account as any).location = location;
+			}
+
+			return {
+				util_id: bill.util_id,
+				account,
+				//costcenter,
+				//location,
 			ubill_date: bill.ubill_date,
 			ubill_no: bill.ubill_no,
 			ubill_ref: bill.ubill_ref ?? null,
@@ -1701,7 +1745,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		final = filtered.filter((item: any) => item.account && item.account.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase()));
 	}
 
-	res.json({ status: 'success', data: final });
+	res.json({ status: 'success', message: 'Utility bills retrieved successfully', data: final });
 };
 
 export const getUtilityBillById = async (req: Request, res: Response) => {
@@ -1710,7 +1754,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	if (!bill) {
 		return res.status(404).json({ status: 'error', message: 'Utility bill not found' });
 	}
-	// Enrich with account and costcenter like getUtilityBills
+	// Enrich with account, costcenter, location and beneficiary like getUtilityBills
 	const [accounts, costcentersRaw] = await Promise.all([
 		billingModel.getBillingAccounts(),
 		assetsModel.getCostcenters()
@@ -1720,27 +1764,56 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
 	let account = null;
+	// fetch beneficiaries for enrichment
+	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+	const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+	const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
+	const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
 	if (bill.bill_id && accountMap.has(bill.bill_id)) {
 		const acc = accountMap.get(bill.bill_id);
+		// attempt to resolve beneficiary by provider name or bfcy_id
+		let benObj: any = null;
+		const providerName = acc.provider ? String(acc.provider).toLowerCase() : (acc.provider ? String(acc.provider).toLowerCase() : null);
+		if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+		if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
 		account = {
-			bill_id: acc.bfcy_id,
+			bill_id: acc.bill_id,
 			bill_ac: acc.bill_ac,
-			provider: acc.bill_product,
-			service: acc.bill_desc,
+			beneficiary: benObj ? {
+				id: benObj.bfcy_id ?? benObj.id,
+				name: benObj.bfcy_name || benObj.name,
+				logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+				prepared_by: benObj.prepared_by ? (typeof benObj.prepared_by === 'object' ? benObj.prepared_by : { ramco_id: benObj.prepared_by }) : null
+			} : acc.provider,
+			service: acc.service,
 			desc: acc.bill_desc
 		};
 	}
 	let costcenter = null;
-	if (bill.cc_id && ccMap.has(bill.cc_id)) {
-		const cc = ccMap.get(bill.cc_id) as any;
+	const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
+	const ccLookupId = acctCcId ?? bill.cc_id;
+	if (ccLookupId && ccMap.has(ccLookupId)) {
+		const cc = ccMap.get(ccLookupId) as any;
 		costcenter = { id: cc.id, name: cc.name };
+	}
+
+	// Build location (prefer account-level)
+	let location = null;
+	const acctLocId = account && (account as any).location ? (account as any).location.id : null;
+	const locLookupId = acctLocId ?? bill.loc_id;
+	if (locLookupId && ccMap.has(locLookupId)) {
+		const d = ccMap.get(locLookupId) as any;
+		location = { id: d.id, name: d.name };
+	}
+	// ensure account contains costcenter & location
+	if (account) {
+		(account as any).costcenter = costcenter;
+		(account as any).location = location;
 	}
 
 	const filtered = {
 		util_id: (bill as any).util_id,
 		account,
-		costcenter,
-		loc_id: bill.loc_id,
 		ubill_date: bill.ubill_date,
 		ubill_no: bill.ubill_no,
 		ubill_rent: bill.ubill_rent,
@@ -1754,7 +1827,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 		ubill_payref: bill.ubill_payref,
 		ubill_paystat: bill.ubill_paystat
 	};
-	res.json({ status: 'success', data: filtered });
+	res.json({ status: 'success', message: 'Utility bill retrieved successfully', data: filtered });
 };
 
 export const createUtilityBill = async (req: Request, res: Response) => {
@@ -2048,8 +2121,8 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
-	const bfcy_id = Number(req.params.id);
-	const account = await billingModel.getBillingAccountById(bfcy_id);
+	const bill_id = Number(req.params.id);
+	const account = await billingModel.getBillingAccountById(bill_id);
 	if (!account) {
 		return res.status(404).json({ error: 'Billing account not found' });
 	}

@@ -678,8 +678,8 @@ export const getBillingAccounts = async (): Promise<any[]> => {
   return rows as any[];
 };
 
-export const getBillingAccountById = async (bfcy_id: number): Promise<any | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} WHERE bfcy_id = ?`, [bfcy_id]);
+export const getBillingAccountById = async (bill_id: number): Promise<any | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${billingAccountTable} WHERE bill_id = ?`, [bill_id]);
   const account = (rows as any[])[0];
   return account || null;
 };
