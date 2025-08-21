@@ -7,6 +7,21 @@ import { stat } from 'fs';
 import { register } from 'module';
 import logger from '../utils/logger';
 
+// Helper to build a public URL for stored files.
+// - strips a leading '/mnt/winshare' if present
+// - ensures the returned URL uses BACKEND_URL (or a leading slash if BACKEND_URL is empty)
+function publicUrl(rawPath?: string | null): string | null {
+	if (!rawPath) return rawPath as any;
+	const baseUrl = process.env.BACKEND_URL || '';
+	// remove leading slashes
+	const normalized = String(rawPath).replace(/^\/+/, '');
+	// strip the problematic network mount prefix if present
+	const stripped = normalized.replace(/^mnt\/winshare\/?/i, '');
+	// ensure path lives under uploads/
+	const finalPath = stripped.startsWith('uploads/') ? stripped : `uploads/${stripped}`;
+	return `${baseUrl.replace(/\/$/, '')}/${finalPath.replace(/^\/+/, '')}`;
+}
+
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
@@ -362,8 +377,7 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 					if (fv) {
 						// New schema: { id, name, logo, image2 }
 						const name = fv.name;
-						const baseUrl = process.env.BACKEND_URL || '';
-						const logo = fv.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fv.logo).replace(/^\//, '')}` : fv.logo;
+						const logo = fv.logo ? publicUrl(fv.logo) : fv.logo;
 						vendor = { id: bill.stmt_issuer, name, logo };
 					}
 				}
@@ -411,9 +425,9 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		if (fuelBilling.stmt_issuer) {
 			const fv = await billingModel.getFuelVendorById(fuelBilling.stmt_issuer);
 			if (fv) {
-				const name = fv.name;
-				const logo = fv.logo ? `${process.env.BACKEND_URL}/${fv.logo}` : null;
-				fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
+						const name = fv.name;
+						const logo = fv.logo ? publicUrl(fv.logo) : null;
+						fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
 			}
 		}
 
@@ -969,8 +983,8 @@ export const getFuelVendors = async (req: Request, res: Response) => {
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorsWithUrls = (fuelVendors || []).map((v: any) => ({
 		...v,
-		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo,
-		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2
+		logo: v.logo ? publicUrl(v.logo) : v.logo,
+		image2: v.image2 ? publicUrl(v.image2) : v.image2
 	}));
 	res.json({ status: 'success', message: 'Fuel vendors retrieved successfully', data: vendorsWithUrls });
 };
@@ -984,8 +998,8 @@ export const getFuelVendorById = async (req: Request, res: Response) => {
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorWithUrl = {
 		...fuelVendor,
-		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo,
-		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2
+		logo: fuelVendor.logo ? publicUrl(fuelVendor.logo) : fuelVendor.logo,
+		image2: fuelVendor.image2 ? publicUrl(fuelVendor.image2) : fuelVendor.image2
 	};
 	res.json({ status: 'success', message: 'Fuel vendor retrieved successfully', data: vendorWithUrl });
 };
