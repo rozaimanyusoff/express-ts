@@ -2128,7 +2128,15 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 	const enriched = (beneficiaries || []).map((b: any) => {
 		// bfcy_logo stores vendor logo path (images/vendor_logo/...), bfcy_pic is person-in-charge picture
 		const rawLogo = b.bfcy_logo || null;
-		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : rawLogo;
+		let logo = rawLogo;
+		if (rawLogo) {
+			const normalized = String(rawLogo).replace(/^\/+/, '');
+			if (normalized.startsWith('uploads/')) {
+				logo = `${baseUrl.replace(/\/$/, '')}/${normalized}`;
+			} else {
+				logo = `${baseUrl.replace(/\/$/, '')}/uploads/${normalized}`;
+			}
+		}
 		const obj: any = { ...b };
 		if (obj.bfcy_logo) delete obj.bfcy_logo;
 		obj.logo = logo;
@@ -2156,7 +2164,15 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
 	const baseUrl = process.env.BACKEND_URL || '';
 		const rawLogo = ben.bfcy_logo || ben.logo || ben.bfcy_pic || null;
-		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : rawLogo;
+		let logo = rawLogo;
+		if (rawLogo) {
+			const normalized = String(rawLogo).replace(/^\/+/, '');
+			if (normalized.startsWith('uploads/')) {
+				logo = `${baseUrl.replace(/\/$/, '')}/${normalized}`;
+			} else {
+				logo = `${baseUrl.replace(/\/$/, '')}/uploads/${normalized}`;
+			}
+		}
 		const resp: any = { ...ben };
 		if (resp.bfcy_logo) delete resp.bfcy_logo;
 		resp.logo = logo;
