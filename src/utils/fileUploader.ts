@@ -36,17 +36,33 @@ const ALLOWED_MIME_TYPES = [
 export const createUploader = (subfolder: string) => {
 	const storage = multer.diskStorage({
 		destination: (req: Request, file: Express.Multer.File, cb) => {
-			// Use environment variable for base path, with a fallback to a local 'uploads' directory
-			const uploadBasePath = process.env.UPLOAD_BASE_PATH || path.join(__dirname, '..', '..', 'uploads');
+			// Prefer an environment-configured base path, but fall back to a local 'uploads' folder
+			const envBase = process.env.UPLOAD_BASE_PATH;
+			const defaultLocalBase = path.join(process.cwd(), 'uploads');
+			let uploadBasePath = envBase || path.join(__dirname, '..', '..', 'uploads');
+
 			const destinationPath = path.join(uploadBasePath, subfolder);
 
-			// Create the destination directory if it doesn't exist
+			// Try to create the requested destination. If it fails (for example on systems
+			// where the configured base path like "/mnt" doesn't exist), fall back to a
+			// local uploads directory so the server remains usable.
 			fs.mkdir(destinationPath, { recursive: true }, (err) => {
-				if (err) {
-					logger.error(`Failed to create upload directory: ${destinationPath}`, err);
+				if (!err) {
+					return cb(null, destinationPath);
+				}
+				// Log the failure and attempt a safe fallback
+				logger.warn(`Failed to create upload directory: ${destinationPath} - ${err.message}. Falling back to local uploads directory.`);
+				let fallback: string | null = null;
+				try {
+					fallback = path.join(defaultLocalBase, subfolder);
+					fs.mkdirSync(fallback, { recursive: true });
+					return cb(null, fallback);
+				} catch (e) {
+					const fallbackErr = e as Error;
+					logger.error(`Failed to create fallback upload directory: ${fallback} - ${fallbackErr.message}`);
+					// If fallback also fails, return the original error to the multer callback
 					return cb(err, destinationPath);
 				}
-				cb(null, destinationPath);
 			});
 		},
 		filename: (req: Request, file: Express.Multer.File, cb) => {

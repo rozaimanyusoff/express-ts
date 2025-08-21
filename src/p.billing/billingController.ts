@@ -2201,7 +2201,7 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Optional bfcy_logo file upload for update
 	if (req.file) {
-		// Save vendor logo path relative to UPLOAD_BASE_PATH/images/logo
+		// Save vendor logo path relative to UPLOAD_BASE_PATH/uploads/images/logo
 		payload.bfcy_logo = req.file.path;
 	}
 	// Remove any 'logo' key to avoid unknown column errors when using SET ?

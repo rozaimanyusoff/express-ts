@@ -712,7 +712,7 @@ export const updateBillingAccount = async (bill_id: number, data: any): Promise<
   // Prevent duplicate billing account when updating: same bill_ac+service+cc_id+loc_id owned by another bfcy_id
   if (data.bill_ac && data.service !== undefined && data.cc_id !== undefined && data.loc_id !== undefined) {
     const [existingRows] = await pool2.query(
-      `SELECT bfcy_id FROM ${billingAccountTable} WHERE bill_ac = ? AND service = ? AND cc_id = ? AND loc_id = ? AND bill_id != ? LIMIT 1`,
+      `SELECT * FROM ${billingAccountTable} WHERE bill_ac = ? AND service = ? AND cc_id = ? AND loc_id = ? AND bill_id != ? LIMIT 1`,
       [data.bill_ac, data.service, data.cc_id, data.loc_id, bill_id]
     );
     if (Array.isArray(existingRows) && (existingRows as any[]).length > 0) {
@@ -790,7 +790,7 @@ export const createBeneficiary = async (data: any): Promise<number> => {
 export const updateBeneficiary = async (id: number, data: any): Promise<void> => {
   // If name and category are being set/changed, check for duplicates (exclude current id)
   if (data.bfcy_name && data.bfcy_cat) {
-    const [existing] = await pool2.query(`SELECT bfcy_id FROM ${beneficiaryTable} WHERE bfcy_name = ? AND bfcy_cat = ? AND bfcy_id != ? LIMIT 1`, [data.bfcy_name, data.bfcy_cat, id]);
+    const [existing] = await pool2.query(`SELECT * FROM ${beneficiaryTable} WHERE bfcy_name = ? AND bfcy_cat = ? AND bfcy_id != ? LIMIT 1`, [data.bfcy_name, data.bfcy_cat, id]);
     if (Array.isArray(existing) && (existing as any[]).length > 0) {
       throw new Error('duplicate_beneficiary');
     }
