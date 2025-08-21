@@ -7,21 +7,6 @@ import { stat } from 'fs';
 import { register } from 'module';
 import logger from '../utils/logger';
 
-// Helper to build a public URL for stored files.
-// - strips a leading '/mnt/winshare' if present
-// - ensures the returned URL uses BACKEND_URL (or a leading slash if BACKEND_URL is empty)
-function publicUrl(rawPath?: string | null): string | null {
-	if (!rawPath) return rawPath as any;
-	const baseUrl = process.env.BACKEND_URL || '';
-	// remove leading slashes
-	const normalized = String(rawPath).replace(/^\/+/, '');
-	// strip the problematic network mount prefix if present
-	const stripped = normalized.replace(/^mnt\/winshare\/?/i, '');
-	// ensure path lives under uploads/
-	const finalPath = stripped.startsWith('uploads/') ? stripped : `uploads/${stripped}`;
-	return `${baseUrl.replace(/\/$/, '')}/${finalPath.replace(/^\/+/, '')}`;
-}
-
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
@@ -377,7 +362,8 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 					if (fv) {
 						// New schema: { id, name, logo, image2 }
 						const name = fv.name;
-						const logo = fv.logo ? publicUrl(fv.logo) : fv.logo;
+						const baseUrl = process.env.BACKEND_URL || '';
+						const logo = fv.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fv.logo).replace(/^\//, '')}` : fv.logo;
 						vendor = { id: bill.stmt_issuer, name, logo };
 					}
 				}
@@ -425,9 +411,9 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		if (fuelBilling.stmt_issuer) {
 			const fv = await billingModel.getFuelVendorById(fuelBilling.stmt_issuer);
 			if (fv) {
-						const name = fv.name;
-						const logo = fv.logo ? publicUrl(fv.logo) : null;
-						fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
+				const name = fv.name;
+				const logo = fv.logo ? `${process.env.BACKEND_URL}/${fv.logo}` : null;
+				fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
 			}
 		}
 
@@ -983,8 +969,8 @@ export const getFuelVendors = async (req: Request, res: Response) => {
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorsWithUrls = (fuelVendors || []).map((v: any) => ({
 		...v,
-		logo: v.logo ? publicUrl(v.logo) : v.logo,
-		image2: v.image2 ? publicUrl(v.image2) : v.image2
+		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo,
+		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2
 	}));
 	res.json({ status: 'success', message: 'Fuel vendors retrieved successfully', data: vendorsWithUrls });
 };
@@ -998,8 +984,8 @@ export const getFuelVendorById = async (req: Request, res: Response) => {
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorWithUrl = {
 		...fuelVendor,
-		logo: fuelVendor.logo ? publicUrl(fuelVendor.logo) : fuelVendor.logo,
-		image2: fuelVendor.image2 ? publicUrl(fuelVendor.image2) : fuelVendor.image2
+		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo,
+		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2
 	};
 	res.json({ status: 'success', message: 'Fuel vendor retrieved successfully', data: vendorWithUrl });
 };
@@ -1264,6 +1250,34 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 	} catch (error) {
 		res.status(500).json({ status: 'error', message: 'Failed to update fleet card', error });
 	}
+}
+
+// Normalize an absolute or arbitrary saved file path into a relative DB-friendly path
+// under 'uploads/...'. Removes configured UPLOAD_BASE_PATH, strips mount points
+// like 'mnt/winshare', and ensures the returned path starts with 'uploads/'.
+function normalizeStoredPath(filePath?: string | null): string | null {
+	if (!filePath) return null;
+	let p = String(filePath);
+	// normalize separators
+	p = p.replace(/\\/g, '/');
+	// remove configured upload base if present
+	const base = process.env.UPLOAD_BASE_PATH;
+	if (base) {
+		const nb = String(base).replace(/\\/g, '/').replace(/\/+$/, '');
+		if (p.startsWith(nb)) {
+			p = p.slice(nb.length);
+		}
+	}
+	// strip any mnt/winshare segments anywhere
+	p = p.replace(/(^|\/)mnt\/winshare\/?/ig, '');
+	// remove leading slashes
+	p = p.replace(/^\/+/, '');
+	// if uploads/ exists inside, slice to it
+	const idx = p.indexOf('uploads/');
+	if (idx >= 0) p = p.slice(idx);
+	// ensure it starts with uploads/
+	if (!p.startsWith('uploads/')) p = `uploads/${p}`;
+	return p;
 }
 // Instantly update fleet card from billing
 export const updateFleetCardFromBilling = async (req: Request, res: Response) => {
@@ -2213,7 +2227,7 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Optional file upload handling for creation: store uploaded file under UPLOAD_BASE_PATH/images/logo/<filename>
 	if (req.file) {
-		payload.bfcy_logo = req.file.path;
+		payload.bfcy_logo = normalizeStoredPath(req.file.path);
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
@@ -2231,8 +2245,8 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Optional bfcy_logo file upload for update
 	if (req.file) {
-		// Save vendor logo path relative to UPLOAD_BASE_PATH/uploads/images/logo
-		payload.bfcy_logo = req.file.path;
+		// Save vendor logo path normalized to a relative 'uploads/...' path
+		payload.bfcy_logo = normalizeStoredPath(req.file.path);
 	}
 	// Remove any 'logo' key to avoid unknown column errors when using SET ?
 	if (payload.logo) delete payload.logo;
