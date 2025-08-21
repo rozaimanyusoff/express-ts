@@ -79,7 +79,8 @@ router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBilling
 // =================== BENEFICIARY (BILLING PROVIDERS) ROUTES ===================
 router.get('/util/beneficiaries/:id', asyncHandler(billingController.getBeneficiaryById));
 router.get('/util/beneficiaries', asyncHandler(billingController.getBeneficiaries));
-const vendorUploader = getUploader('logo', { maxSize: 3 * 1024 * 1024 });
+// store vendor logos under /uploads/vendor_logo by default
+const vendorUploader = getUploader('vendor_logo', { maxSize: 3 * 1024 * 1024 });
 router.post('/util/beneficiaries', vendorUploader.single('bfcy_logo'), validateUploadedFile(), asyncHandler(billingController.createBeneficiary));
 router.put('/util/beneficiaries/:id', vendorUploader.single('bfcy_logo'), validateUploadedFile(), asyncHandler(billingController.updateBeneficiary));
 router.delete('/util/beneficiaries/:id', asyncHandler(billingController.deleteBeneficiary));

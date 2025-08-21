@@ -9,15 +9,24 @@ type Options = {
 };
 
 export default function createUpload(opts: Options = {}) {
-  const subfolder = opts.subfolder || 'uploads';
+  // subfolder is relative to the project `uploads` directory. If not provided, default to 'images'.
+  // This allows callers to place files anywhere under /uploads (for example 'vendor_logo' or 'models').
+  const subfolder = opts.subfolder || 'images';
   const maxSize = opts.maxSize ?? 2 * 1024 * 1024; // default 2MB
   const allowedMimeTypes = opts.allowedMimeTypes || ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
   const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-      const dir = path.join(process.cwd(), 'uploads', 'images', subfolder);
+      // write directly under <project-root>/uploads/<subfolder>
+      const dir = path.join(process.cwd(), 'uploads', subfolder);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+        // In production don't create folders automatically unless explicitly allowed
+        const allowCreate = process.env.ALLOW_UPLOAD_DIR_CREATION === 'true' || process.env.NODE_ENV !== 'production';
+        if (allowCreate) {
+          fs.mkdirSync(dir, { recursive: true });
+        } else {
+          return cb(new Error(`Upload directory missing: ${dir}`), '');
+        }
       }
       cb(null, dir);
     },
@@ -95,8 +104,19 @@ export function validateUploadedFile(options?: { allowedMimeTypes?: string[] }) 
       }
 
       // compare detected mime with reported mimetype
-      const reported = file.mimetype;
-      if (!allowed.includes(finalDetected) || !allowed.includes(reported) || finalDetected !== reported) {
+      let reported = file.mimetype;
+      // normalize common alias
+      if (reported === 'image/jpg') reported = 'image/jpeg';
+
+      const isAllowedDetected = allowed.includes(finalDetected);
+      const isAllowedReported = allowed.includes(reported);
+
+      // Accept when detected and reported are exact match and allowed,
+      // or when both are images (finalDetected and reported start with image/)
+      // to handle user agents that report slightly different image subtype aliases.
+      const bothImages = finalDetected.startsWith('image/') && reported.startsWith('image/');
+
+      if (!isAllowedDetected || !isAllowedReported || !(finalDetected === reported || bothImages)) {
         try { fs.unlinkSync(filepath); } catch (e) { /* ignore */ }
         return next(new Error('File type mismatch or not allowed'));
       }
