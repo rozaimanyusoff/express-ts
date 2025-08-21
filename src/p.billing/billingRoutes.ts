@@ -2,11 +2,12 @@
 // src/p.billing/billingRoutes.ts
 import { Router } from 'express';
 import * as billingController from './billingController';
-import uploadModelImage from '../utils/uploadModelImage';
-import { getUploader, validateUploadedFile } from '../utils/fileUploader';
 import asyncHandler from '../utils/asyncHandler';
+import { createUploader } from '../utils/fileUploader';
 
 const router = Router();
+
+const logoUploader = createUploader('images/logo');
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 router.get('/temp-vehicle', asyncHandler(billingController.getTempVehicleRecords));
@@ -80,9 +81,8 @@ router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBilling
 router.get('/util/beneficiaries/:id', asyncHandler(billingController.getBeneficiaryById));
 router.get('/util/beneficiaries', asyncHandler(billingController.getBeneficiaries));
 // store vendor logos under /uploads/vendor_logo by default
-const vendorUploader = getUploader('vendor_logo', { maxSize: 3 * 1024 * 1024 });
-router.post('/util/beneficiaries', vendorUploader.single('bfcy_logo'), validateUploadedFile(), asyncHandler(billingController.createBeneficiary));
-router.put('/util/beneficiaries/:id', vendorUploader.single('bfcy_logo'), validateUploadedFile(), asyncHandler(billingController.updateBeneficiary));
+router.post('/util/beneficiaries', logoUploader.single('bfcy_logo'), asyncHandler(billingController.createBeneficiary));
+router.put('/util/beneficiaries/:id', logoUploader.single('bfcy_logo'), asyncHandler(billingController.updateBeneficiary));
 router.delete('/util/beneficiaries/:id', asyncHandler(billingController.deleteBeneficiary));
 
 // =================== UTILITIES TABLE ROUTES ===================

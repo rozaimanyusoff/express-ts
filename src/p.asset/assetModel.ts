@@ -2,7 +2,6 @@ import {pool, pool2} from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import fs from 'fs';
 import path from 'path';
-import { handleImageUpload } from '../utils/fileUpload';
 import { get } from "axios";
 
 // Database and table declarations for easy swapping/testing
@@ -46,10 +45,9 @@ const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd()
 // TYPES CRUD
 export const createType = async (data: any) => {
   const { code, name, description, image, ramco_id } = data;
-  const storedImage = await handleImageUpload(image, 'types', 'type', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${typeTable} (code, name, description, image, manager) VALUES (?, ?, ?, ?, ?)` ,
-    [code, name, description, storedImage, ramco_id]
+    [code, name, description, image, ramco_id]
   );
   return result;
 };
@@ -66,10 +64,9 @@ export const getTypeById = async (id: number) => {
 
 export const updateType = async (id: number, data: any) => {
   const { code, name, description, image, ramco_id } = data;
-  const storedImage = await handleImageUpload(image, 'types', 'type', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
-    [code, name, description, storedImage, ramco_id, id]
+    [code, name, description, image, ramco_id, id]
   );
   return result;
 };
@@ -83,10 +80,9 @@ export const deleteType = async (id: number) => {
 
 export const createCategory = async (data: any) => {
   const { name, code, image, type_code } = data;
-  const storedImage = await handleImageUpload(image, 'category', 'category', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${categoryTable} (name, code, image, type_code) VALUES (?, ?, ?, ?)` ,
-    [name, code, storedImage, type_code]
+    [name, code, image, type_code]
   );
   return result;
 };
@@ -103,10 +99,9 @@ export const getCategoryById = async (id: number) => {
 
 export const updateCategory = async (id: number, data: any) => {
   const { name, code, image, type_code } = data;
-  const storedImage = await handleImageUpload(image, 'category', 'category', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${categoryTable} SET name = ?, code = ?, image = ?, type_code = ? WHERE id = ?`,
-    [name, code, storedImage, type_code, id]
+    [name, code, image, type_code, id]
   );
   return result;
 };
@@ -120,11 +115,10 @@ export const deleteCategory = async (id: number) => {
 
 export const createBrand = async (data: any) => {
   const { name, code, logo, type_code, category_codes } = data;
-  const image = await handleImageUpload(logo, 'brands', 'brand', UPLOAD_BASE_PATH);
   // Use type_code as type_code in DB
   const [result] = await pool.query(
     `INSERT INTO ${brandTable} (name, code, image${type_code ? ', type_code' : ''}) VALUES (?, ?, ?${type_code ? ', ?' : ''})`,
-    type_code ? [name, code, image, type_code] : [name, code, image]
+    type_code ? [name, code, logo, type_code] : [name, code, logo]
   );
   // Handle brand-category associations if category_codes is array
   if (Array.isArray(category_codes) && category_codes.length > 0) {
@@ -150,10 +144,9 @@ export const getBrandById = async (id: number) => {
 
 export const updateBrand = async (id: number, data: any) => {
   const { name, code, logo, type_code, category_codes } = data;
-  const image = await handleImageUpload(logo, 'brands', 'brand', UPLOAD_BASE_PATH);
   // Only update type_code if type_code is present
   let sql = `UPDATE ${brandTable} SET name = ?, code = ?, image = ?`;
-  let params: any[] = [name, code, image];
+  let params: any[] = [name, code, logo];
   if (type_code) {
     sql += ', type_code = ?';
     params.push(type_code);
@@ -197,10 +190,9 @@ export const createModel = async (data: any) => {
   if (Array.isArray(dupRows) && dupRows.length > 0) {
     throw new Error('Model with the same name and type already exists');
   }
-  const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_id, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, storedImage, brand_code, category_code, type_code, item_code, specification, generation, status]
+    [name, image, brand_code, category_code, type_code, item_code, specification, generation, status]
   );
   return result;
 };
@@ -217,10 +209,9 @@ export const getModelById = async (id: number) => {
 
 export const updateModel = async (id: number, data: any) => {
   const { name, image, brand_code, category_code, type_code, item_code, specification, generation, status } = data;
-  const storedImage = await handleImageUpload(image, 'models', 'model', UPLOAD_BASE_PATH);
   const [result] = await pool.query(
     `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_id = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
-    [name, storedImage, brand_code, category_code, type_code, item_code, specification, generation, status, id]
+    [name, image, brand_code, category_code, type_code, item_code, specification, generation, status, id]
   );
   return result;
 };

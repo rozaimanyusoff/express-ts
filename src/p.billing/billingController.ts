@@ -1351,7 +1351,7 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 				register_number: a.register_number || a.vehicle_regno || null,
 				costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
 				fuel_type: a.fuel_type || a.vfuel_type || null,
-				purpose: a.purpose || null
+				purpose: a.purpose || null,
 			} : null;
 
 			const cardsForAsset = (grouped.get(aid) || []).map((card: any) => ({
@@ -1838,7 +1838,7 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 	summary[ccName]._yearMap[year].expenses += amount;
 	// Month grouping
 	if (!summary[ccName]._yearMap[year]._monthMap[month]) {
-	  summary[ccName]._yearMap[year]._monthMap[month] = { expenses: 0, _serviceMap: {} };
+	  summary[ccName]._yearMap[year]._monthMap[month] = { expenses: 0, fuel: [] };
 	}
 	summary[ccName]._yearMap[year]._monthMap[month].expenses += amount;
 	// Service grouping within month
@@ -2181,9 +2181,9 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 
 export const createBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
-	// Optional file upload handling for creation: store uploaded file under UPLOAD_BASE_PATH/upload_test/<filename>
-	if ((req as any).file && (req as any).file.filename) {
-		payload.bfcy_logo = `upload_test/${(req as any).file.filename}`;
+	// Optional file upload handling for creation: store uploaded file under UPLOAD_BASE_PATH/images/logo/<filename>
+	if (req.file) {
+		payload.bfcy_logo = req.file.path;
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
@@ -2200,9 +2200,9 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const payload = req.body || {};
 	// Optional bfcy_logo file upload for update
-	if ((req as any).file && (req as any).file.filename) {
-	// Save vendor logo path relative to UPLOAD_BASE_PATH/upload_test
-	payload.bfcy_logo = `upload_test/${(req as any).file.filename}`;
+	if (req.file) {
+		// Save vendor logo path relative to UPLOAD_BASE_PATH/images/logo
+		payload.bfcy_logo = req.file.path;
 	}
 	// Remove any 'logo' key to avoid unknown column errors when using SET ?
 	if (payload.logo) delete payload.logo;

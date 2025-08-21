@@ -2,7 +2,6 @@
 import {pool} from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import path from 'path';
-import { handleImageUpload } from '../utils/fileUpload';
 
 // Table names
 const db = 'assetdata';
@@ -66,10 +65,7 @@ export const getPurchaseRequestDetails = async (request_id: number): Promise<Pur
 
 export const createPurchaseRequest = async (data: Partial<PurchaseRequest> & { request_upload_base64?: string }): Promise<number> => {
     let request_upload_filename = '';
-    if (data.request_upload_base64 && typeof data.request_upload_base64 === 'string' && data.request_upload_base64.startsWith('data:')) {
-        const basePath = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
-        request_upload_filename = await handleImageUpload(data.request_upload_base64, 'purchase', 'purchase', basePath);
-    } else if (data.request_upload) {
+    if (data.request_upload) {
         request_upload_filename = data.request_upload;
     }
     const [result] = await pool.query(
