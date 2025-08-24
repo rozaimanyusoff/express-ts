@@ -8,11 +8,12 @@ const router = Router();
 // ========== MAINTENANCE RECORDS CRUD ==========
 router.get('/request/record/:asset_id', asyncHandler(maintenanceController.getVehicleMtnRequestByAssetId)); // Get maintenance records by vehicle ID including invoice details
 router.get('/request/:id', asyncHandler(maintenanceController.getVehicleMtnRequestById));
+
 router.get('/request', asyncHandler(maintenanceController.getVehicleMtnRequests)); // ?status={pending|verified|recommended|approved}
 router.post('/request', asyncHandler(maintenanceController.createVehicleMtnRequest));
 router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
 router.delete('/request/:id', asyncHandler(maintenanceController.deleteVehicleMtnRequest));
-
+router.put('/request/:id/authorize', asyncHandler(maintenanceController.authorizeVehicleMtnRequest));
 // ========== MAINTENANCE TYPES CRUD ==========
 router.get('/types', asyncHandler(maintenanceController.getServiceTypes));
 router.get('/types/:id', asyncHandler(maintenanceController.getServiceTypeById));
@@ -27,6 +28,8 @@ router.post('/request/:requestId/forceinvoice', asyncHandler(maintenanceControll
 
 // Resend portal link to requester
 router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
+
+// legacy recommend/approve routes removed; use PUT /request/:id/authorize?action={recommend|approve}
 
 /* ========== ADD MORE ROUTES HERE ========== */
 

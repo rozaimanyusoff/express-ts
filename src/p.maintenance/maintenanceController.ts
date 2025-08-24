@@ -2,9 +2,11 @@
 import { Request, Response } from 'express';
 import * as maintenanceModel from './maintenanceModel';
 import * as assetModel from '../p.asset/assetModel';
+import * as userModel from '../p.user/userModel';
 import * as billingModel from '../p.billing/billingModel';
 import * as crypto from 'crypto';
 import * as mailer from '../utils/mailer';
+import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceRequest';
 
 /* ============== MAINTENANCE RECORDS MANAGEMENT =============== */
 
@@ -109,6 +111,116 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		});
 	}
 };
+
+// Helper: fetch raw record from model and resolve nested lookups into a consistent shape
+async function resolveVehicleMtnRecord(id: number) {
+	const record = await maintenanceModel.getVehicleMtnRequestById(Number(id));
+	if (!record) return null;
+
+	// Fetch all lookup data in parallel
+	const [assetsRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, locationsRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
+		assetModel.getAssets(),
+		assetModel.getCategories(),
+		assetModel.getBrands(),
+		assetModel.getModels(),
+		assetModel.getCostcenters(),
+		assetModel.getLocations(),
+		billingModel.getWorkshops(),
+		assetModel.getEmployees(),
+		maintenanceModel.getServiceTypes()
+	]);
+
+	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
+	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
+	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
+	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+	const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
+	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+	const svcTypes = Array.isArray(svcTypeRaw) ? svcTypeRaw : [];
+
+	const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+	const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
+	const brandMap = new Map(brands.map((brand: any) => [brand.id, brand]));
+	const modelMap = new Map(models.map((m: any) => [m.id, m]));
+	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const locationMap = new Map(locations.map((loc: any) => [loc.id, loc]));
+	const wsMap = new Map(workshops.map((ws: any) => [ws.ws_id, ws]));
+	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+	const svcTypeMap = new Map(svcTypes.map((svc: any) => [svc.svcTypeId, svc]));
+
+	const svcTypeIds = (record as any).svc_opt ? (record as any).svc_opt.split(',').map((id: string) => parseInt(id.trim())) : [];
+	const svcTypeArray = svcTypeIds
+		.filter((id: number) => svcTypeMap.has(id))
+		.map((id: number) => {
+			const svcType = svcTypeMap.get(id);
+			return {
+				id: svcType.svcTypeId,
+				name: svcType.svcType
+			};
+		});
+
+	const resolvedRecord = {
+		req_id: (record as any).req_id,
+		req_date: (record as any).req_date,
+		svc_type: svcTypeArray,
+		req_comment: (record as any).req_comment,
+		upload_date: (record as any).upload_date,
+		verification_date: (record as any).verification_date,
+		recommendation_date: (record as any).recommendation_date,
+		approval_date: (record as any).approval_date,
+		form_upload_date: (record as any).form_upload_date,
+		emailStat: (record as any).emailStat,
+		inv_status: (record as any).inv_status,
+		status: (record as any).status,
+		asset: assetMap.has((record as any).asset_id) ? (() => {
+			const a = assetMap.get((record as any).asset_id) as any;
+			return {
+				id: (record as any).asset_id,
+				register_number: a?.register_number,
+				classification: a?.classification,
+				record_status: a?.record_status,
+				purchase_date: a?.purchase_date,
+				age_years: (() => {
+					if (!a?.purchase_date) return null;
+					const pd = new Date(a.purchase_date);
+					if (Number.isNaN(pd.getTime())) return null;
+					const diffMs = Date.now() - pd.getTime();
+					const years = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
+					return years;
+				})(),
+				category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id) as any)?.name } : null,
+				brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
+				model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
+				costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
+				location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
+			};
+		})() : null,
+		requester: employeeMap.has((record as any).ramco_id) ? {
+			ramco_id: (record as any).ramco_id,
+			name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
+			email: (employeeMap.get((record as any).ramco_id) as any)?.email,
+			contact: (employeeMap.get((record as any).ramco_id) as any)?.contact
+		} : null,
+		recommendation_by: employeeMap.has((record as any).recommendation) ? {
+			ramco_id: (record as any).recommendation,
+			name: (employeeMap.get((record as any).recommendation) as any)?.full_name,
+			email: (employeeMap.get((record as any).recommendation) as any)?.email
+		} : null,
+		approval_by: employeeMap.has((record as any).approval) ? {
+			ramco_id: (record as any).approval,
+			name: (employeeMap.get((record as any).approval) as any)?.full_name,
+			email: (employeeMap.get((record as any).approval) as any)?.email
+		} : null,
+		workshop: wsMap.has((record as any).ws_id) ? {
+			id: (record as any).ws_id,
+			name: (wsMap.get((record as any).ws_id) as any)?.ws_name
+		} : null
+	};
+
+	return resolvedRecord;
+}
 
 export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 	try {
@@ -249,6 +361,180 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 		const recordData = req.body;
 		const result = await maintenanceModel.createVehicleMtnRequest(recordData);
 
+		// Try to resolve the created record id
+		let createdId: number | undefined;
+		if (result && typeof result === 'object') {
+			// common shapes: { req_id: number } or { insertId: number } or the full record
+			if ((result as any).req_id) createdId = Number((result as any).req_id);
+			else if ((result as any).insertId) createdId = Number((result as any).insertId);
+			else if ((result as any).id) createdId = Number((result as any).id);
+		}
+
+		// Attempt to fetch full resolved record to include in email
+		let fullRecord: any = null;
+		if (createdId) {
+			fullRecord = await resolveVehicleMtnRecord(createdId);
+		} else if (result && typeof result === 'object' && (result as any).req_id) {
+			fullRecord = await resolveVehicleMtnRecord(Number((result as any).req_id));
+		} else {
+			// fallback: try to fetch by any req_id present in the submitted payload
+			if ((recordData as any).req_id) {
+				fullRecord = await resolveVehicleMtnRecord(Number((recordData as any).req_id));
+			}
+		}
+
+		// Build and send notification email to requester if we have the resolved record
+		try {
+			if (fullRecord) {
+				const rec = fullRecord as any;
+				// allow test override via query, body or env (same precedence as resendMaintenancePortalLink)
+				const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+				const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+
+				// debug: log resolved record and chosen recipient
+				console.log('createVehicleMtnRequest: resolved record for email:', JSON.stringify(rec && typeof rec === 'object' ? (rec) : 'null'));
+				const emailSubject = `Vehicle Maintenance Request Submitted - Service Order: ${rec.req_id}`;
+				// format date as dd/m/yyyy
+				let formattedDate = '';
+				if (rec.req_date) {
+					const d = new Date(rec.req_date);
+					if (!Number.isNaN(d.getTime())) formattedDate = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+				}
+
+				// build applicant string with ramco id and contact
+				const applicantName = rec.requester?.name || rec.requester?.full_name || '';
+				const applicantDetails: string[] = [];
+				if (rec.requester?.ramco_id) applicantDetails.push(String(rec.requester.ramco_id));
+				if (rec.requester?.contact) applicantDetails.push(String(rec.requester.contact));
+				const applicant = applicantName + (applicantDetails.length ? ` (${applicantDetails.join(' • ')})` : '');
+
+				// compute annual summary for all years from billings and request counts for the asset
+				let annualSummary: Array<{ year: number; amount: number; requests: number }> = [];
+				let recentRequests: Array<any> = [];
+				try {
+					if (rec.asset && rec.asset.id) {
+						// get all billings and all requests for this asset
+						const [allBillingsRaw, allRequestsRaw] = await Promise.all([
+							billingModel.getVehicleMtnBillings(),
+							maintenanceModel.getVehicleMtnRequestByAssetId(rec.asset.id)
+						]);
+						const billingArray = Array.isArray(allBillingsRaw) ? allBillingsRaw : (allBillingsRaw ? [allBillingsRaw] : []);
+						const requestArray = Array.isArray(allRequestsRaw) ? allRequestsRaw : (allRequestsRaw ? [allRequestsRaw] : []);
+
+						// group billings by year where billing references this asset
+						const billingByYear = new Map<number, number>();
+						billingArray.forEach((b: any) => {
+							const assetMatch = (b.asset_id !== undefined && b.asset_id !== null && Number(b.asset_id) === Number(rec.asset.id)) || (b.vehicle_id !== undefined && b.vehicle_id !== null && Number(b.vehicle_id) === Number(rec.asset.id));
+							if (!assetMatch) return;
+							const invDate = b.inv_date ? new Date(b.inv_date) : null;
+							const year = invDate && !Number.isNaN(invDate.getTime()) ? invDate.getFullYear() : null;
+							if (year) {
+								billingByYear.set(year, (billingByYear.get(year) || 0) + (Number(b.inv_total) || 0));
+							}
+						});
+
+						// group requests by year for this asset
+						const requestsByYear = new Map<number, number>();
+						requestArray.forEach((r: any) => {
+							if (Number(r.asset_id) !== Number(rec.asset.id)) return;
+							const rd = r.req_date ? new Date(r.req_date) : null;
+							const year = rd && !Number.isNaN(rd.getTime()) ? rd.getFullYear() : null;
+							if (year) requestsByYear.set(year, (requestsByYear.get(year) || 0) + 1);
+						});
+
+						// union years
+						const years = new Set<number>([...billingByYear.keys(), ...requestsByYear.keys()]);
+						const yearList = Array.from(years).sort((a, b) => b - a);
+						// filter out unreasonable years and limit to last 5 years
+						const currentYear = new Date().getFullYear();
+						const validYears = yearList.filter(y => Number.isFinite(y) && y >= 2000 && y <= currentYear).slice(0, 5);
+						annualSummary = validYears.map(y => ({ year: y, amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0 }));
+					}
+				} catch (e) {
+					console.warn('Failed to compute annualSummary', e);
+				}
+
+				// compute recent requests for this asset (exclude current request)
+				try {
+					if (rec.asset && rec.asset.id) {
+						// fetch svc types for mapping ids -> names
+						const svcTypesRaw = await maintenanceModel.getServiceTypes();
+						const svcTypeMap = new Map((Array.isArray(svcTypesRaw) ? svcTypesRaw : []).map((s: any) => [s.svcTypeId || s.id || s.id, s]));
+
+						// fetch workshops for mapping ws_id -> ws_name
+						const workshopsRaw = await billingModel.getWorkshops();
+						const wsMapLocal = new Map((Array.isArray(workshopsRaw) ? workshopsRaw : []).map((w: any) => [w.ws_id || w.id || String(w.ws_id), w]));
+
+						const rrRaw = await maintenanceModel.getVehicleMtnRequestByAssetId(rec.asset.id);
+						const rr = Array.isArray(rrRaw) ? rrRaw : (rrRaw ? [rrRaw] : []);
+						const others = (rr as any[]).filter((r: any) => Number(r.req_id) !== Number(rec.req_id));
+						// map to display-friendly rows and sort by original date desc
+						recentRequests = others
+							.map((r: any) => {
+								const rd = r.req_date ? new Date(r.req_date) : null;
+								const dateFormatted = rd && !Number.isNaN(rd.getTime()) ? `${rd.getDate()}/${rd.getMonth() + 1}/${rd.getFullYear()}` : (r.req_date || '');
+								// resolve svc_opt ids to names
+								const svcIds = r.svc_opt ? String(r.svc_opt).split(',').map((id: string) => parseInt(id.trim())).filter((n: number) => Number.isFinite(n)) : [];
+								const svcNames = svcIds.map((id: number) => {
+									const s = svcTypeMap.get(id) || svcTypeMap.get(String(id));
+									return s ? (s.svcType || s.name || String(id)) : String(id);
+								}).join(', ');
+								// robust status fallback (different model shapes)
+								const statusVal = r.status || r.req_status || r.request_status || r.inv_status || r.state || r.status_name || '';
+								// resolve workshop: prefer r.ws_name or r.workshop, fallback to workshop map via ws_id
+								let workshopName = '';
+								if (r.ws_name) workshopName = r.ws_name;
+								else if (r.workshop) workshopName = r.workshop;
+								else if (r.ws_id && wsMapLocal && wsMapLocal.has(r.ws_id)) workshopName = (wsMapLocal.get(r.ws_id) as any)?.ws_name || '';
+								return {
+									req_id: r.req_id,
+									date: dateFormatted,
+									dateRaw: rd && !Number.isNaN(rd.getTime()) ? rd.getTime() : 0,
+									requestType: svcNames || (r.svc_opt || ''),
+									status: statusVal,
+									comment: r.req_comment || '',
+									workshop: workshopName
+								};
+							})
+							.sort((a: any, b: any) => (b.dateRaw || 0) - (a.dateRaw || 0))
+							.slice(0, 5)
+							.map(({ dateRaw, ...rest }: any) => rest);
+					}
+				} catch (e) {
+					console.warn('Failed to compute recentRequests', e);
+				}
+
+				const emailBody = vehicleMaintenanceEmail({
+					requestNo: rec.req_id,
+					date: formattedDate || rec.req_date,
+					applicant,
+					deptLocation: rec.asset && rec.asset.costcenter ? `${rec.asset.costcenter.name}${rec.asset.location ? ' / ' + rec.asset.location.name : ''}` : '',
+					vehicleInfo: rec.asset ? ( `${rec.asset.register_number || ''} ${(rec.asset.brand && rec.asset.brand.name) || ''} ${(rec.asset.model && rec.asset.model.name) || ''}`.trim() + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : '') ) : '',
+					requestType: Array.isArray(rec.svc_type) ? rec.svc_type.map((s: any) => s.name).join(', ') : '',
+					recentRequests,
+					annualSummary,
+					footerName: 'ADMS (v4)'
+				});
+
+				let recipientEmail = (rec.requester && (rec.requester.email || rec.requester.contact)) || (recordData && (recordData.email || recordData.contact)) || null;
+				// apply test override if present
+				if (localTestEmail) {
+					recipientEmail = localTestEmail;
+				}
+
+				console.log('createVehicleMtnRequest: sending email to:', recipientEmail, 'testMode=', !!localTestEmail);
+
+				if (recipientEmail) {
+					await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+				} else {
+					console.warn('createVehicleMtnRequest: no recipientEmail resolved; skipping mail send');
+				}
+			}
+		} catch (mailErr) {
+			// do not fail the request creation if email fails; log and continue
+			console.error('Failed to send maintenance notification email', mailErr);
+		}
+
 		res.status(201).json({
 			status: 'success',
 			message: 'Maintenance record created successfully',
@@ -263,17 +549,135 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 	}
 };
 
+/* TEST EMAIL FOR CREATE VEHICLE MAINTENANCE REQUEST
+
+curl -X POST 'http://localhost:3030/api/mtn/request' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "req_id": 11178,
+    "ramco_id": "000317",
+    "asset_id": 115,
+    "svc_opt": "1,6,4,16",
+    "req_comment": "Test request - please ignore",
+    "email": "rozaiman@ranhill.com.my",
+    "name": "Rozaiman",
+    "contact": "0100000000",
+    "testEmail": "rozaiman@ranhill.com.my",
+    "testName": "Rozaiman"
+  }'
+*/
+
 export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
-		const recordData = req.body;
-		const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), recordData);
+	// Pass request body directly to model for update. Model will use data.{bodyField} mapping.
+	const data = req.body || {};
+	const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
 
-		res.json({
-			status: 'success',
-			message: 'Maintenance record updated successfully',
-			data: result
-		});
+	// If this update includes verification_stat = 1, notify recommender to review/recommend
+	try {
+		const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
+		if (verificationFlag) {
+			// fetch fresh record to get recommender ramco_id
+			const record = await maintenanceModel.getVehicleMtnRequestById(Number(id));
+			if (record && (record as any).recommendation) {
+				// resolve recommender from employees list
+				const employeesRaw = await assetModel.getEmployees();
+				const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+				const recommender: any = employees.find((e: any) => String(e.ramco_id) === String((record as any).recommendation));
+
+				if (recommender) {
+					// TEST EMAIL OVERRIDE precedence: query/body then env
+					const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+					const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+					const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+					const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+
+					// find authorized person from approval levels (module = 'maintenance')
+					let authorizerInfo: { ramco_id?: string; name?: string | null; email?: string | null } | null = null;
+					try {
+						const approvalLevelsRaw = await userModel.getApprovalLevels();
+						const approvalLevels = Array.isArray(approvalLevelsRaw) ? approvalLevelsRaw as any[] : [];
+						const maintenanceLevels = approvalLevels.filter(l => String(l.module_name).toLowerCase() === 'maintenance');
+						if (maintenanceLevels.length > 0) {
+							// Prefer level_order === 2 if present
+							let authLevel = maintenanceLevels.find((l: any) => Number(l.level_order) === 2) || null;
+							if (!authLevel) {
+								// fallback: choose the highest level_order
+								authLevel = maintenanceLevels.reduce((a: any, b: any) => (Number(a.level_order) >= Number(b.level_order) ? a : b));
+							}
+							// support if approval level contains nested employee info
+							const authRamco = authLevel?.ramco_id || (authLevel?.employee && authLevel.employee.ramco_id) || null;
+							if (authRamco) {
+								const authorizer = employees.find((e: any) => String(e.ramco_id) === String(authRamco));
+								if (authorizer) {
+									authorizerInfo = { ramco_id: authorizer.ramco_id, name: authorizer.full_name || authorizer.fullname || authorizer.name || null, email: authorizer.email || authorizer.contact || null };
+								}
+							}
+						}
+					} catch (authErr) {
+						console.warn('Failed to resolve authorizer info from approval levels', authErr);
+					}
+
+					// build encrypted credential for recommender
+					const credData = {
+						ramco_id: recommender.ramco_id,
+						contact: recommender.email || recommender.phone || recommender.contact || '',
+						req_id: Number(id)
+					} as any;
+					const secretKey = process.env.ENCRYPTION_KEY || 'default_secret_key';
+					const algorithm = 'aes-256-cbc';
+					const key = crypto.createHash('sha256').update(secretKey).digest();
+					const iv = crypto.randomBytes(16);
+					const cipher = crypto.createCipheriv(algorithm, key, iv);
+					let encrypted = cipher.update(JSON.stringify(credData), 'utf8', 'hex');
+					encrypted += cipher.final('hex');
+					const encryptedData = iv.toString('hex') + ':' + encrypted;
+
+					const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+					const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${id}?_cred=${encodeURIComponent(encryptedData)}`;
+
+					const emailSubject = `Maintenance Request Verified — Recommendation Required (Service Order: ${id})`;
+					const recipientName = localTestName || recommender.full_name || recommender.fullname || recommender.name || '';
+					const authorizerHtml = authorizerInfo ? `<p>Authorized person: ${authorizerInfo.name || ''} ${authorizerInfo.email ? '(' + authorizerInfo.email + ')' : ''}</p>` : '';
+					const emailBody = `
+						<h3>Maintenance Request Requires Your Recommendation</h3>
+						<p>Dear ${recipientName},</p>
+						<p>The maintenance request (Request ID: ${id}) has been verified and requires your recommendation.</p>
+						${authorizerHtml}
+						<p>Please review the request and submit your recommendation via the maintenance portal:</p>
+						<p><a href="${portalUrl}" target="_blank">Open Maintenance Portal</a></p>
+						<p>Thank you.</p>
+						<br>
+						<p>Best regards,<br/>Maintenance Team</p>
+					`;
+
+					const recipientEmail = localTestEmail || recommender.email || recommender.contact || null;
+					if (recipientEmail) {
+						console.log('updateVehicleMtnRequest: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
+						try {
+							await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+							console.log('updateVehicleMtnRequest: mail sent to', recipientEmail);
+						} catch (mailErr) {
+							console.error('updateVehicleMtnRequest: mailer error sending to', recipientEmail, mailErr);
+						}
+					} else {
+						console.warn('updateVehicleMtnRequest: recommender found but no email/contact available for', recommender);
+					}
+				} else {
+					console.warn('updateVehicleMtnRequest: recommender ramco_id not found in employees list', (record as any).recommendation);
+				}
+			}
+		}
+	} catch (emailErr) {
+		console.error('Failed to send recommender notification email', emailErr);
+	}
+
+	res.json({
+		status: 'success',
+		message: 'Maintenance record updated successfully',
+		data: result
+	});
 	} catch (error) {
 		res.status(500).json({
 			status: 'error',
@@ -437,13 +841,169 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 	}
 };
 
+// ...recommendVehicleMtnRequest removed; use authorizeVehicleMtnRequest instead
+
+// Approver endpoint: update approval fields and notify requester
+// ...approveVehicleMtnRequest removed; use authorizeVehicleMtnRequest instead
+
+// Unified authorize endpoint. Use query param ?action=recommend or ?action=approve
+export const authorizeVehicleMtnRequest = async (req: Request, res: Response) => {
+	try {
+		const requestId = Number(req.params.id || req.params.reqId);
+		if (!Number.isFinite(requestId) || requestId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid request id' });
+
+		const action = (req.query.action as string) || (req.body && req.body.action) || '';
+		if (!action || !['recommend', 'approve'].includes(action)) {
+			return res.status(400).json({ status: 'error', message: 'Invalid action. Use ?action=recommend or ?action=approve' });
+		}
+
+		// get approval_status from body
+		const { approval_status } = req.body || {};
+		if (approval_status === undefined || approval_status === null) {
+			return res.status(400).json({ status: 'error', message: 'Missing approval_status in request body' });
+		}
+
+		// resolve approval level by action
+		const desiredLevelOrder = action === 'recommend' ? 2 : 3;
+		const approvalLevelsRaw = await userModel.getApprovalLevels();
+		const approvalLevels = Array.isArray(approvalLevelsRaw) ? approvalLevelsRaw as any[] : [];
+		const maintenanceLevels = approvalLevels.filter(l => String(l.module_name).toLowerCase() === 'maintenance');
+
+		// prefer exact level_order match; fallback to highest
+		let authLevel = maintenanceLevels.find((l: any) => Number(l.level_order) === desiredLevelOrder) || null;
+		if (!authLevel && maintenanceLevels.length > 0) {
+			authLevel = maintenanceLevels.reduce((a: any, b: any) => (Number(a.level_order) >= Number(b.level_order) ? a : b));
+		}
+
+		const ramcoResolved = authLevel?.ramco_id || (authLevel?.employee && authLevel.employee.ramco_id) || null;
+		if (!ramcoResolved) {
+			return res.status(404).json({ status: 'error', message: `No approval level found for action ${action}` });
+		}
+
+		// perform DB update via model
+		try {
+			if (action === 'recommend') {
+				await maintenanceModel.recommendVehicleMtnRequest(requestId, ramcoResolved, Number(approval_status));
+			} else {
+				await maintenanceModel.approveVehicleMtnRequest(requestId, ramcoResolved, Number(approval_status));
+			}
+		} catch (updErr) {
+			console.warn('authorizeVehicleMtnRequest: DB update failed', updErr);
+			// continue to notify regardless
+		}
+
+		// fetch fresh record to notify
+		const record = await maintenanceModel.getVehicleMtnRequestById(requestId);
+		if (!record) return res.status(404).json({ status: 'error', message: 'Maintenance record not found' });
+
+		const employeesRaw = await assetModel.getEmployees();
+		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+
+		// common test override
+		const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+		const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+		const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+		const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+
+		const secretKey = process.env.ENCRYPTION_KEY || 'default_secret_key';
+		const algorithm = 'aes-256-cbc';
+		const key = crypto.createHash('sha256').update(secretKey).digest();
+
+		if (action === 'recommend') {
+			// find approver at level_order = 3 to notify
+			const approverLevel = maintenanceLevels.find((l: any) => Number(l.level_order) === 3) || null;
+			const approverRamco = approverLevel?.ramco_id || (approverLevel?.employee && approverLevel.employee.ramco_id) || ramcoResolved;
+			const approver = approverRamco ? employees.find((e: any) => String(e.ramco_id) === String(approverRamco)) : null;
+
+			const target = approver || { ramco_id: approverRamco || null, full_name: (approverLevel && approverLevel.level_name) || null, email: localTestEmail };
+
+			const credData = { ramco_id: target.ramco_id, contact: target.email || target.phone || target.contact || '', req_id: requestId } as any;
+			const iv = crypto.randomBytes(16);
+			const cipher = crypto.createCipheriv(algorithm, key, iv);
+			let encrypted = cipher.update(JSON.stringify(credData), 'utf8', 'hex');
+			encrypted += cipher.final('hex');
+			const encryptedData = iv.toString('hex') + ':' + encrypted;
+			const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+			const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${requestId}?_cred=${encodeURIComponent(encryptedData)}`;
+
+			const emailSubject = `Maintenance Request Approval Required — Service Order: ${requestId}`;
+			const recipientName = localTestName || target.full_name || '';
+			const emailBody = `
+				<h3>Maintenance Request Requires Your Approval</h3>
+				<p>Dear ${recipientName},</p>
+				<p>The maintenance request (Request ID: ${requestId}) has been recommended and now requires your approval.</p>
+				<p>Please review and approve via the portal:</p>
+				<p><a href="${portalUrl}" target="_blank">Open Maintenance Portal</a></p>
+				<p>Thank you.</p>
+				<br>
+				<p>Best regards,<br/>Maintenance Team</p>
+			`;
+
+			const recipientEmail = localTestEmail || target.email || null;
+			console.log('authorizeVehicleMtnRequest (recommend): sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
+			try {
+				if (recipientEmail) await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+				console.log('authorizeVehicleMtnRequest (recommend): mail sent to', recipientEmail);
+			} catch (mailErr) {
+				console.error('authorizeVehicleMtnRequest (recommend): mailer error', mailErr);
+			}
+
+			return res.json({ status: 'success', message: 'Recommendation processed and approver notified', data: { requestId, sentTo: recipientEmail, testMode: !!localTestEmail } });
+		}
+
+		// action === 'approve'
+		// notify requester about approval outcome
+		const requester = employees.find((e: any) => String(e.ramco_id) === String((record as any).ramco_id));
+		const targetUser = requester || { ramco_id: (record as any).ramco_id, full_name: null, email: localTestEmail };
+		const credData = { ramco_id: targetUser.ramco_id, contact: targetUser.email || targetUser.phone || targetUser.contact || '', req_id: requestId } as any;
+		const iv2 = crypto.randomBytes(16);
+		const cipher2 = crypto.createCipheriv(algorithm, key, iv2);
+		let encrypted2 = cipher2.update(JSON.stringify(credData), 'utf8', 'hex');
+		encrypted2 += cipher2.final('hex');
+		const encryptedData2 = iv2.toString('hex') + ':' + encrypted2;
+		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+		const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${requestId}?_cred=${encodeURIComponent(encryptedData2)}`;
+
+		const approved = Number(approval_status) === 1;
+		const emailSubject = approved ? `Maintenance Request Approved — Service Order: ${requestId}` : `Maintenance Request ${Number(approval_status) === 0 ? 'Rejected' : 'Updated'} — Service Order: ${requestId}`;
+		const recipientName = localTestName || targetUser.full_name || '';
+		const emailBody = `
+			<h3>Maintenance Request ${approved ? 'Approved' : 'Updated'}</h3>
+			<p>Dear ${recipientName},</p>
+			<p>Your maintenance request (Request ID: ${requestId}) has been ${approved ? 'approved' : (Number(approval_status) === 0 ? 'rejected' : 'updated')} by the approver.</p>
+			<p>You can view the request details on the portal:</p>
+			<p><a href="${portalUrl}" target="_blank">Open Maintenance Portal</a></p>
+			<p>Thank you.</p>
+			<br>
+			<p>Best regards,<br/>Maintenance Team</p>
+		`;
+
+		const recipientEmail = localTestEmail || targetUser.email || (requester && (requester.email || requester.contact)) || null;
+		console.log('authorizeVehicleMtnRequest (approve): sending mail to requester', { to: recipientEmail, subject: emailSubject, portalUrl });
+		try {
+			if (recipientEmail) await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+			console.log('authorizeVehicleMtnRequest (approve): mail sent to', recipientEmail);
+		} catch (mailErr) {
+			console.error('authorizeVehicleMtnRequest (approve): mailer error sending to', recipientEmail, mailErr);
+		}
+
+		return res.json({ status: 'success', message: 'Approval processed and requester notified', data: { requestId, sentTo: recipientEmail, testMode: !!localTestEmail } });
+	} catch (error) {
+		console.error('authorizeVehicleMtnRequest error', error);
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error' });
+	}
+};
+
 export const resendMaintenancePortalLink = async (req: Request, res: Response) => {
 	try {
 		const { requestId } = req.params;
 
-		// TEST EMAIL CONSTANTS - Replace with your email for testing
-		const TEST_EMAIL = 'rozaimanyusoff@gmail.com'; // Replace with your test email
-		const TEST_NAME = 'Rozaiman'; // Replace with your test name
+	// TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
+	// Usage for testing:
+	// - manual POST: include { testEmail, testName } in body
+	// - quick override: set environment vars TEST_EMAIL and/or TEST_NAME
+	const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+	const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
 
 		// Get maintenance record details
 		const record = await maintenanceModel.getVehicleMtnRequestById(Number(requestId));
@@ -472,7 +1032,8 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 		// Create encrypted credential
 		const credData = {
 			ramco_id: (requester as any).ramco_id,
-			contact: (requester as any).email || (requester as any).phone || ''
+			contact: (requester as any).email || (requester as any).phone || '',
+			req_id: Number(requestId)
 		};
 
 		const secretKey = process.env.ENCRYPTION_KEY || 'default_secret_key';
@@ -485,28 +1046,38 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 		encrypted += cipher.final('hex');
 		const encryptedData = iv.toString('hex') + ':' + encrypted;
 
-		// Build portal URL
+		// Vehicle maintenance portal URL that includes encrypted credentials. Send/resend to requestor for approved requests.
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 		const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${requestId}?_cred=${encodeURIComponent(encryptedData)}`;
 
-		// Send email to requester (or test email)
+		// Send email to requester (or test email). We need similar design & layout as /utils/emailTemplates/vehicleMaintenance.ts
 		const emailSubject = 'Vehicle Maintenance Request Portal Access';
-		const emailBody = `
-      <h3>Maintenance Request Portal Access</h3>
-      <p>Dear ${TEST_NAME || (requester as any).full_name || (requester as any).name},</p>
-      <p>You can access your maintenance request portal using the link below:</p>
-      <p><a href="${portalUrl}" target="_blank">Access Maintenance Portal</a></p>
-      <p>Request ID: ${requestId}</p>
-      <p>Original Requester: ${(requester as any).full_name || (requester as any).name} (${(requester as any).ramco_id})</p>
-      <p>If you have any questions, please contact our maintenance team.</p>
-      <br>
-      <p>Best regards,<br>Maintenance Team</p>
-    `;
+				// resolve possible per-request test override
+				const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+				const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
 
-		// Use test email or actual requester email
-		const recipientEmail = TEST_EMAIL || (requester as any).email;
+				const emailBody = `
+			<h3>Maintenance Request Portal Access</h3>
+			<p>Dear ${localTestName || (requester as any).full_name || (requester as any).name},</p>
+			<p>You can access your maintenance request portal using the link below:</p>
+			<p><a href="${portalUrl}" target="_blank">Access Maintenance Portal</a></p>
+			<p>Request ID: ${requestId}</p>
+			<p>Original Requester: ${(requester as any).full_name || (requester as any).name} (${(requester as any).ramco_id})</p>
+			<p>If you have any questions, please contact our maintenance team.</p>
+			<br>
+			<p>Best regards,<br>Maintenance Team</p>
+		`;
 
-		await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+				// Use test email (local override or global env) or actual requester email
+				const recipientEmail = localTestEmail || (requester as any).email;
+
+		console.log('resendMaintenancePortalLink: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
+		try {
+			await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+			console.log('resendMaintenancePortalLink: mail sent to', recipientEmail);
+		} catch (mailErr) {
+			console.error('resendMaintenancePortalLink: mailer error sending to', recipientEmail, mailErr);
+		}
 
 		res.json({
 			status: 'success',
@@ -515,7 +1086,7 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 				requestId: Number(requestId),
 				sentTo: recipientEmail,
 				portalUrl,
-				testMode: !!TEST_EMAIL
+				testMode: !!localTestEmail
 			}
 		});
 	} catch (error) {

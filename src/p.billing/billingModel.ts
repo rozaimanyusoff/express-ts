@@ -3,7 +3,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
@@ -591,7 +591,7 @@ export interface UtilityBill {
   ubill_color: string;
   ubill_gtotal: string;
   ubill_paystat: string;
-  ubill_payref: string;
+  ubill_ref: string;
 }
 
 export const getUtilityBills = async (): Promise<UtilityBill[]> => {
@@ -608,19 +608,24 @@ export const getUtilityBillById = async (util_id: number): Promise<UtilityBill |
 export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<number> => {
   // Check for duplicate ubill_no and ubill_date
   const [existingRows] = await pool2.query(
-    `SELECT util_id FROM ${utilitiesTable} WHERE bill_id = ?, ubill_no = ? AND ubill_date = ? LIMIT 1`,
+    `SELECT util_id FROM ${utilitiesTable} WHERE bill_id = ? AND ubill_no = ? AND ubill_date = ? LIMIT 1`,
     [data.bill_id, data.ubill_no, data.ubill_date]
   );
   if (Array.isArray(existingRows) && existingRows.length > 0) {
-    throw new Error('Utility bill with this bill number and date already exists.');
+    const err: any = new Error('Utility bill with this bill number and date already exists.');
+    err.status = 400; // client error
+    err.isPublic = true; // safe to expose message
+    throw err;
   }
+  // Sanitize ubill_ref: accept only non-empty strings, otherwise null
+  const ubillRef: string | null = (typeof data.ubill_ref === 'string' && data.ubill_ref.trim() !== '') ? data.ubill_ref : null;
 
   const [result] = await pool2.query(
     `INSERT INTO ${utilitiesTable} (
-      bill_id, loc_id, cc_id, ubill_date, ubill_no, ubill_stotal, ubill_tax, ubill_disc, ubill_round, ubill_rent, ubill_bw, ubill_color, ubill_gtotal, ubill_paystat, ubill_payref
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      bill_id, cc_id, loc_id, ubill_bw, ubill_color, ubill_date, ubill_disc, ubill_gtotal, ubill_no, ubill_ref, ubill_paystat, ubill_rent, ubill_round, ubill_stotal, ubill_tax
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      data.bill_id, data.loc_id, data.cc_id, data.ubill_date, data.ubill_no, data.ubill_stotal, data.ubill_tax, data.ubill_disc, data.ubill_round, data.ubill_rent, data.ubill_bw, data.ubill_color, data.ubill_gtotal, data.ubill_paystat, data.ubill_payref
+      data.bill_id, data.cc_id, data.loc_id, data.ubill_bw, data.ubill_color, data.ubill_date, data.ubill_disc, data.ubill_gtotal, data.ubill_no, ubillRef, data.ubill_paystat, data.ubill_rent, data.ubill_round, data.ubill_stotal, data.ubill_tax
     ]
   );
   return (result as ResultSetHeader).insertId;
@@ -628,10 +633,18 @@ export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<num
 
 export const updateUtilityBill = async (util_id: number, data: Partial<UtilityBill>): Promise<void> => {
   await pool2.query(
-    `UPDATE ${utilitiesTable} SET loc_id = ?, cc_id = ?, ubill_date = ?, ubill_no = ?, ubill_stotal = ?, ubill_tax = ?, ubill_disc = ?, ubill_round = ?, ubill_rent = ?, ubill_bw = ?, ubill_color = ?, ubill_gtotal = ?, ubill_paystat = ?, ubill_payref = ? WHERE util_id = ?`,
+    `UPDATE ${utilitiesTable} SET loc_id = ?, cc_id = ?, ubill_date = ?, ubill_no = ?, ubill_stotal = ?, ubill_tax = ?, ubill_disc = ?, ubill_round = ?, ubill_rent = ?, ubill_bw = ?, ubill_color = ?, ubill_gtotal = ?, ubill_paystat = ?, ubill_ref = ? WHERE util_id = ?`,
     [
-      data.bill_id, data.loc_id, data.cc_id, data.ubill_date, data.ubill_no, data.ubill_stotal, data.ubill_tax, data.ubill_disc, data.ubill_round, data.ubill_rent, data.ubill_bw, data.ubill_color, data.ubill_gtotal, data.ubill_paystat, data.ubill_payref, util_id
+      data.bill_id, data.loc_id, data.cc_id, data.ubill_date, data.ubill_no, data.ubill_stotal, data.ubill_tax, data.ubill_disc, data.ubill_round, data.ubill_rent, data.ubill_bw, data.ubill_color, data.ubill_gtotal, data.ubill_paystat, data.ubill_ref, util_id
     ]
+  );
+};
+
+// Set the stored file reference (ubill_ref) for a utility bill
+export const setUtilityBillRef = async (util_id: number, ubill_ref: string): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${utilitiesTable} SET ubill_ref = ? WHERE util_id = ?`,
+    [ubill_ref, util_id]
   );
 };
 

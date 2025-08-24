@@ -8,6 +8,7 @@ import { createUploader } from '../utils/fileUploader';
 const router = Router();
 
 const logoUploader = createUploader('images/logo');
+const utilUploader = createUploader('billings/utilities');
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 router.get('/temp-vehicle', asyncHandler(billingController.getTempVehicleRecords));
@@ -91,7 +92,8 @@ router.get('/util/summary/costcenter', asyncHandler(billingController.getUtility
 router.get('/util/summary/service', asyncHandler(billingController.getUtilityBillingServiceSummary)); // /api/bills/util/summary/service?costcenter=ID&from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
 router.get('/util', asyncHandler(billingController.getUtilityBills));
-router.post('/util', asyncHandler(billingController.createUtilityBill));
+// Accept file under either 'ubill_ref' (preferred) or 'ubill_file' (legacy)
+router.post('/util', utilUploader.fields([{ name: 'ubill_ref', maxCount: 1 }, { name: 'ubill_file', maxCount: 1 }]), asyncHandler(billingController.createUtilityBill));
 router.put('/util/:id', asyncHandler(billingController.updateUtilityBill));
 router.delete('/util/:id', asyncHandler(billingController.deleteUtilityBill));
 

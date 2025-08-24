@@ -95,21 +95,44 @@ export const getVehicleMtnRequestById = async (id: number) => {
 	return record;
 };
 
-export const createVehicleMtnRequest = async (recordData: any) => {
-	// Placeholder - implement when database structure is provided
-	const [result] = await pool2.query('SELECT 1 as placeholder');
-	return result;
+// Create a new vehicle maintenance request from user application form
+export const createVehicleMtnRequest = async (data: any) => {
+	const [result] = await pool2.query(`
+		INSERT INTO ${vehicleMaintenanceTable} (req_date, ramco_id, costcenter_id, location_id, ctc_m, vehicle_id, register_number, entry_code, asset_id, odo_start, odo_end, req_comment, svc_opt
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+		[data.req_date, data.ramco_id, data.costcenter_id, data.location_id, data.ctc_m, data.vehicle_id, data.register_number, data.entry_code, data.asset_id, data.odo_start, data.odo_end, data.req_comment, data.svc_opt]
+	);
+	return (result as ResultSetHeader).insertId;
 };
 
-export const updateVehicleMtnRequest = async (id: number, recordData: any) => {
-	// Placeholder - implement when database structure is provided
-	const [result] = await pool2.query('SELECT 1 as placeholder WHERE 1 = ?', [id]);
+// Coordinator updates the vehicle maintenance request
+export const updateVehicleMtnRequest = async (id: number, data: any) => {
+	const [result] = await pool2.query(
+		`UPDATE ${vehicleMaintenanceTable} SET verification_comment=?, verification_stat=?, verification_date=?, rejection_comment=?, ws_id=?, major_opt=?, major_svc_comment=? WHERE req_id = ?`, 
+		[data.coordinator_comment, data.service_confirmation, data.verification_date, data.rejection_comment, data.workshop_id, data.major_service_options, data.major_service_comment, id]
+	);
 	return result;
 };
 
 export const deleteVehicleMtnRequest = async (id: number) => {
 	// Placeholder - implement when database structure is provided
 	const [result] = await pool.query('SELECT 1 as placeholder WHERE 1 = ?', [id]);
+	return result;
+};
+
+//Recommended
+export const recommendVehicleMtnRequest = async (id: number, ramco_id: string | number, stat: number) => {
+	// Placeholder - implement when database structure is provided
+	const [result] = await pool2.query(`
+		UPDATE ${vehicleMaintenanceTable} SET recommendation = ?, recommendation_stat = ?, recommendation_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
+	return result;
+};
+
+//Approve
+export const approveVehicleMtnRequest = async (id: number, ramco_id: string | number, stat: number) => {
+	// Placeholder - implement when database structure is provided
+	const [result] = await pool2.query(`
+		UPDATE ${vehicleMaintenanceTable} SET approval = ?, approval_stat = ?, approval_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
 	return result;
 };
 

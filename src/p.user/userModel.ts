@@ -14,6 +14,7 @@ export const usersTable = 'users';
 export const userGroupsTable = 'user_groups';
 export const userProfileTable = 'user_profile';
 export const userTasksTable = 'user_tasks';
+export const approvalLevelsTable = 'approval_levels';
 
 // Define the interface
 export interface Users {
@@ -466,3 +467,46 @@ export async function updateUserTask(userId: number, taskId: number, updates: { 
     );
     return result;
 }
+
+/* ======= APPROVAL LEVELS CRUD =======
+id INT AUTO_INCREMENT PRIMARY KEY,
+    module_name VARCHAR(100) NOT NULL,        -- e.g., 'billing', 'purchase_order'
+    level_order INT NOT NULL,                 -- sequence (1=lowest, N=highest)
+    ramco_id VARCHAR(50) NOT NULL,          -- short code, e.g., 'PREP', 'VER', 'APP'
+    level_name VARCHAR(100) NOT NULL,         -- descriptive name, e.g., 'Prepare'
+    description TEXT NULL,                    -- optional: explanation of role
+    is_active TINYINT(1) DEFAULT 1,           -- allow enabling/disabling
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+*/
+export const createApprovalLevel = async (data: any): Promise<number> => {
+    const [result] = await pool.query(`
+        INSERT INTO ${approvalLevelsTable} (module_name, level_order, ramco_id, level_name, description, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`, 
+        [data.module_name, data.level_order, data.employee_ramco_id, data.level_name, data.description, data.is_active]
+    );
+    return (result as ResultSetHeader).insertId;
+};
+
+export const getApprovalLevels = async () => {
+    const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable}`);
+    return rows;
+};
+
+export const getApprovalLevelById = async (id: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable} WHERE id = ?`, [id]) as [any[], any];
+    return rows[0] || null;
+};
+
+export const updateApprovalLevel = async (id: number, data: any): Promise<void> => {
+    const [result] = await pool.query(`
+        UPDATE ${approvalLevelsTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, updated_at = NOW()
+        WHERE id = ?`, 
+        [data.module_name, data.level_order, data.employee_ramco_id, data.level_name, data.description, data.is_active, id]
+    );
+};
+
+export const deleteApprovalLevel = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${approvalLevelsTable} WHERE id = ?`, [id]);
+    return result;
+};

@@ -9,6 +9,7 @@ import * as roleModel from '../p.role/roleModel';
 import * as groupModel from '../p.group/groupModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
 import * as logModel from '../p.admin/logModel';
+import * as assetModel from '../p.asset/assetModel';
 
 dotenv.config({ path: '.env.local' });
 
@@ -464,3 +465,95 @@ function timeAgo(date: Date, now: Date) {
     if (diff < 86400) return `${Math.floor(diff / 3600)} hrs ago`;
     return `${Math.floor(diff / 86400)} days ago`;
 }
+
+/* ======== APPROVAL LEVELS ======== */
+export const getApprovalLevels = async (_req: Request, res: Response): Promise<Response> => {
+    try {
+    const levels = (await userModel.getApprovalLevels()) as any[];
+
+    // Enrich ramco_id -> employee object { ramco_id, full_name }
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+
+    const enriched = (levels || []).map((lvl: any) => {
+      const emp = empMap.get(String(lvl.ramco_id)) || null;
+      const employee = emp ? { ramco_id: emp.ramco_id, full_name: emp.full_name || emp.fullname || emp.name || null } : null;
+      const copy = { ...lvl };
+      delete (copy as any).ramco_id;
+      (copy as any).employee = employee;
+      return copy;
+    });
+
+    return res.status(200).json({ status: 'success', message: 'Approval levels retrieved successfully', data: enriched });
+    } catch (error: any) {
+        console.error('Error getting approval levels:', error);
+        return res.status(500).json({ message: 'Error getting approval levels', error: error.message });
+    }
+};
+
+export const getApprovalLevelById = async (req: Request, res: Response): Promise<Response> => {
+  const levelId = Number(req.params.id);
+  if (!levelId) {
+    return res.status(400).json({ status: 'error', message: 'Missing or invalid levelId' });
+  }
+  try {
+  const level = await userModel.getApprovalLevelById(levelId);
+    if (!level) {
+      return res.status(404).json({ status: 'error', message: 'Approval level not found' });
+    }
+
+  // Enrich ramco_id -> employee
+  const employeesRaw = await assetModel.getEmployees();
+  const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+  const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+  const emp = empMap.get(String(level.ramco_id)) || null;
+  const employee = emp ? { ramco_id: emp.ramco_id, full_name: emp.full_name || emp.fullname || emp.name || null } : null;
+  const copy = { ...level };
+  delete (copy as any).ramco_id;
+  (copy as any).employee = employee;
+
+  return res.status(200).json({ status: 'success', data: copy });
+  } catch (error) {
+    console.error('Error getting approval level by ID:', error);
+    return res.status(500).json({ status: 'error', message: 'Error getting approval level', error: (error as any).message });
+  }
+};
+
+export const createApprovalLevel = async (req: Request, res: Response) => {
+  const data = req.body;
+  try {
+    const result = await userModel.createApprovalLevel(data);
+    return res.status(201).json({ status: 'success', message: 'Approval level created successfully', data: result });
+  } catch (error) {
+    console.error('Error creating approval level:', error);
+    return res.status(500).json({ status: 'error', message: 'Error creating approval level', error: (error as any).message });
+  }
+};
+
+export const updateApprovalLevel = async (req: Request, res: Response) => {
+  const levelId = Number(req.params.id);
+  const data = req.body;
+
+  try {
+    await userModel.updateApprovalLevel(levelId, data);
+    return res.status(200).json({ status: 'success', message: 'Approval level updated successfully' });
+  } catch (error) {
+    console.error('Error updating approval level:', error);
+    return res.status(500).json({ status: 'error', message: 'Error updating approval level', error: (error as any).message });
+  }
+};
+
+export const deleteApprovalLevel = async (req: Request, res: Response) => {
+  const levelId = Number(req.params.id);
+  if (!levelId) {
+    return res.status(400).json({ status: 'error', message: 'Missing or invalid levelId' });
+  }
+  try {
+    await userModel.deleteApprovalLevel(levelId);
+    return res.status(200).json({ status: 'success', message: 'Approval level deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting approval level:', error);
+    return res.status(500).json({ status: 'error', message: 'Error deleting approval level', error: (error as any).message });
+  }
+};

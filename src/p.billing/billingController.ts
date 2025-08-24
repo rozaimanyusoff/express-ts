@@ -6,6 +6,9 @@ import dayjs from 'dayjs';
 import { stat } from 'fs';
 import { register } from 'module';
 import logger from '../utils/logger';
+import path from 'path';
+import fs from 'fs';
+import { setUtilityBillRef } from './billingModel';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
@@ -1637,9 +1640,13 @@ export const getUtilityBills = async (req: Request, res: Response) => {
   let bills = await billingModel.getUtilityBills();
   const accounts = await billingModel.getBillingAccounts();
   const costcentersRaw = await assetsModel.getCostcenters();
+  const locationsRaw = await assetsModel.getLocations();
   const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+  const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
   const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
-  const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
 
 	// Load beneficiaries and build lookup maps for enrichment
 	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
@@ -1702,8 +1709,8 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 			let location = null;
 			const acctLocId = account && (account as any).location ? (account as any).location.id : null;
 			const locLookupId = acctLocId ?? bill.loc_id;
-			if (locLookupId && ccMap.has(locLookupId)) {
-				const d = ccMap.get(locLookupId) as any;
+			if (locLookupId && locMap.has(locLookupId)) {
+				const d = locMap.get(locLookupId) as any;
 				location = { id: d.id, name: d.name };
 			}
 
@@ -1721,6 +1728,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 			ubill_date: bill.ubill_date,
 			ubill_no: bill.ubill_no,
 			ubill_ref: bill.ubill_ref ?? null,
+			ubill_url: publicUrl(bill.ubill_ref ?? null),
 			ubill_submit: bill.ubill_submit ?? null,
 			ubill_rent: bill.ubill_rent,
 			ubill_color: bill.ubill_color,
@@ -1755,13 +1763,16 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 		return res.status(404).json({ status: 'error', message: 'Utility bill not found' });
 	}
 	// Enrich with account, costcenter, location and beneficiary like getUtilityBills
-	const [accounts, costcentersRaw] = await Promise.all([
+	const [accounts, costcentersRaw, locationsRaw] = await Promise.all([
 		billingModel.getBillingAccounts(),
-		assetsModel.getCostcenters()
+		assetsModel.getCostcenters(),
+		assetsModel.getLocations()
 	]);
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const locMap = new Map(locations.map((l: any) => [l.id, l]));
 
 	let account = null;
 	// fetch beneficiaries for enrichment
@@ -1801,8 +1812,8 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	let location = null;
 	const acctLocId = account && (account as any).location ? (account as any).location.id : null;
 	const locLookupId = acctLocId ?? bill.loc_id;
-	if (locLookupId && ccMap.has(locLookupId)) {
-		const d = ccMap.get(locLookupId) as any;
+	if (locLookupId && locMap.has(locLookupId)) {
+		const d = locMap.get(locLookupId) as any;
 		location = { id: d.id, name: d.name };
 	}
 	// ensure account contains costcenter & location
@@ -1824,16 +1835,52 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 		ubill_round: bill.ubill_round,
 		ubill_gtotal: bill.ubill_gtotal,
 		ubill_disc: bill.ubill_disc,
-		ubill_payref: bill.ubill_payref,
+		ubill_ref: bill.ubill_ref,
 		ubill_paystat: bill.ubill_paystat
 	};
 	res.json({ status: 'success', message: 'Utility bill retrieved successfully', data: filtered });
 };
 
 export const createUtilityBill = async (req: Request, res: Response) => {
-	const payload = req.body;
-	const id = await billingModel.createUtilityBill(payload);
-	res.status(201).json({ status: 'success', message: 'Utility bill created', id });
+		const payload = req.body || {};
+			// Multer may populate req.file (single) or req.files (fields). Prefer files.ubill_ref, then files.ubill_file, then req.file
+			let file = (req as any).file as Express.Multer.File | undefined;
+			const files = (req as any).files as { [key: string]: Express.Multer.File[] } | undefined;
+			if (!file && files) {
+				if (files.ubill_ref && files.ubill_ref.length > 0) file = files.ubill_ref[0];
+				else if (files.ubill_file && files.ubill_file.length > 0) file = files.ubill_file[0];
+			}
+
+		// First, create DB record (without ubill_ref)
+		const id = await billingModel.createUtilityBill(payload);
+
+		let finalRef: string | null = null;
+		if (file) {
+			try {
+				const uploadDir = path.dirname(file.path);
+				const ext = path.extname(file.originalname) || path.extname(file.path) || '';
+				const timestamp = Date.now();
+				const finalName = `ubill-${id}-${timestamp}${ext}`;
+				const finalPath = path.join(uploadDir, finalName);
+
+				// Rename/move the temp uploaded file to include insertId
+				await fs.promises.rename(file.path, finalPath);
+
+				// Normalize to a stable relative path (uploads/...) so `ubill_ref` is a retrievable static path
+				const storedRef = normalizeStoredPath(finalPath);
+				finalRef = storedRef;
+				// Update DB ubill_ref if normalization produced a valid path
+				if (finalRef) {
+					await setUtilityBillRef(id, finalRef);
+				}
+			} catch (err) {
+				logger.error('Error handling uploaded utility bill file', err);
+				// Don't fail the whole request; respond with created id but note file error
+				return res.status(201).json({ status: 'success', message: 'Utility bill created, but file save failed', id, fileError: String(err) });
+			}
+		}
+
+		res.status(201).json({ status: 'success', message: 'Utility bill created', id, ubill_ref: finalRef, ubill_url: publicUrl(finalRef) });
 };
 
 export const updateUtilityBill = async (req: Request, res: Response) => {
