@@ -1690,7 +1690,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 						id: benObj.bfcy_id ?? benObj.id,
 						name: benObj.bfcy_name || benObj.name,
 						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
-						prepared_by: benObj.prepared_by ? (typeof benObj.prepared_by === 'object' ? benObj.prepared_by : { ramco_id: benObj.prepared_by }) : null
+						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null
 					} : acc.provider,
 					service: acc.service,
 					desc: acc.bill_desc
@@ -1794,7 +1794,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 				id: benObj.bfcy_id ?? benObj.id,
 				name: benObj.bfcy_name || benObj.name,
 				logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
-				prepared_by: benObj.prepared_by ? (typeof benObj.prepared_by === 'object' ? benObj.prepared_by : { ramco_id: benObj.prepared_by }) : null
+				entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null
 			} : acc.provider,
 			service: acc.service,
 			desc: acc.bill_desc
@@ -2262,6 +2262,110 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: 'Billing account deleted successfully' });
 };
 
+	// POST variant: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
+	export const postUtilityBillsByIds = async (req: Request, res: Response) => {
+		const bodyIds = req.body?.util_id ?? req.body?.ids ?? req.body?.idsList;
+		let ids: number[] = [];
+		if (Array.isArray(bodyIds)) {
+			ids = bodyIds.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n));
+		} else if (typeof bodyIds === 'string') {
+			ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
+		} else if (typeof bodyIds === 'number') {
+			ids = [Number(bodyIds)];
+		}
+
+		if (ids.length === 0) {
+			return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+		}
+
+		// Fetch bills and enrichment lookups (accounts, costcenters, locations, beneficiaries)
+		const bills = await billingModel.getUtilityBillsByIds(ids);
+		const accounts = await billingModel.getBillingAccounts();
+		const costcentersRaw = await assetsModel.getCostcenters();
+		const locationsRaw = await assetsModel.getLocations();
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+		const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
+		const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+		const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+		const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
+
+		const data = bills.map((bill: any) => {
+			let account = null;
+			if (bill.bill_id && accountMap.has(bill.bill_id)) {
+				const acc = accountMap.get(bill.bill_id);
+				let benObj: any = null;
+				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
+				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+				if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
+				account = {
+					bill_id: acc.bill_id,
+					bill_ac: acc.bill_ac,
+					beneficiary: benObj ? {
+						id: benObj.bfcy_id ?? benObj.id,
+						name: benObj.bfcy_name || benObj.name,
+						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
+						entry_position: benObj.entry_position || null,
+					} : acc.provider,
+					service: acc.service,
+					desc: acc.bill_desc
+				};
+			}
+
+			let costcenter = null;
+			const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
+			const ccLookupId = acctCcId ?? bill.cc_id;
+			if (ccLookupId && ccMap.has(ccLookupId)) {
+				const cc = ccMap.get(ccLookupId) as any;
+				costcenter = { id: cc.id, name: cc.name };
+			}
+
+			let location = null;
+			const acctLocId = account && (account as any).location ? (account as any).location.id : null;
+			const locLookupId = acctLocId ?? bill.loc_id;
+			if (locLookupId && locMap.has(locLookupId)) {
+				const d = locMap.get(locLookupId) as any;
+				location = { id: d.id, name: d.name };
+			}
+
+			if (account) {
+				(account as any).costcenter = costcenter;
+				(account as any).location = location;
+			}
+
+			return {
+				util_id: bill.util_id,
+				account,
+				ubill_date: bill.ubill_date,
+				ubill_no: bill.ubill_no,
+				ubill_ref: bill.ubill_ref ?? null,
+				ubill_url: publicUrl(bill.ubill_ref ?? null),
+				ubill_submit: bill.ubill_submit ?? null,
+				ubill_rent: bill.ubill_rent,
+				ubill_color: bill.ubill_color,
+				ubill_bw: bill.ubill_bw,
+				ubill_stotal: bill.ubill_stotal,
+				ubill_taxrate: bill.ubill_taxrate,
+				ubill_tax: bill.ubill_tax,
+				ubill_round: bill.ubill_round,
+				ubill_deduct: bill.ubill_deduct,
+				ubill_gtotal: bill.ubill_gtotal,
+				ubill_count: bill.ubill_count,
+				ubill_disc: bill.ubill_disc,
+				ubill_usage: bill.ubill_usage,
+				ubill_payref: bill.ubill_payref,
+				ubill_paystat: bill.ubill_paystat
+			};
+		});
+
+		res.json({ status: 'success', message: `${data.length} utility bill(s) retrieved`, data });
+	};
+
 // =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
 export const getBeneficiaries = async (req: Request, res: Response) => {
 	// Optional query param: ?services=svc1,svc2 or ?services=svc
@@ -2269,7 +2373,7 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 	// Pass through as string or string[] to model; model will normalize
 	const beneficiaries = await billingModel.getBeneficiaries(servicesQuery as any);
 	const baseUrl = process.env.BACKEND_URL || '';
-	// fetch employees to resolve prepared_by
+	// fetch employees to resolve entry_by
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
@@ -2288,18 +2392,18 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 		const obj: any = { ...b };
 		if (obj.bfcy_logo) delete obj.bfcy_logo;
 		obj.logo = logo;
-		// resolve prepared_by to { ramco_id, full_name } when possible
-		const prepRaw = obj.prepared_by ?? null;
+		// resolve entry_by to { ramco_id, full_name } when possible
+		const prepRaw = obj.entry_by ?? null;
 		if (prepRaw) {
 			const key = String(prepRaw);
 			if (empMap.has(key)) {
 				const e = empMap.get(key);
-				obj.prepared_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+				obj.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
 			} else {
-				obj.prepared_by = { ramco_id: prepRaw };
+				obj.entry_by = { ramco_id: prepRaw };
 			}
 		} else {
-			obj.prepared_by = null;
+			obj.entry_by = null;
 		}
 		return obj;
 	});
@@ -2324,21 +2428,21 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 		const resp: any = { ...ben };
 		if (resp.bfcy_logo) delete resp.bfcy_logo;
 		resp.logo = logo;
-		// resolve prepared_by using employees lookup
+		// resolve entry_by using employees lookup
 		const employeesRaw = await assetsModel.getEmployees();
 		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 		const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
-		const prepRaw = resp.prepared_by ?? null;
+		const prepRaw = resp.entry_by ?? null;
 		if (prepRaw) {
 			const key = String(prepRaw);
 			if (empMap.has(key)) {
 				const e = empMap.get(key);
-				resp.prepared_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+				resp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
 			} else {
-				resp.prepared_by = { ramco_id: prepRaw };
+				resp.entry_by = { ramco_id: prepRaw };
 			}
 		} else {
-			resp.prepared_by = null;
+			resp.entry_by = null;
 		}
 		res.json({ status: 'success', message: 'Beneficiary retrieved successfully', data: resp });
 };

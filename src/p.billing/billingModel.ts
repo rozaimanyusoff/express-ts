@@ -599,6 +599,17 @@ export const getUtilityBills = async (): Promise<UtilityBill[]> => {
   return rows as UtilityBill[];
 };
 
+export const getUtilityBillsByIds = async (ids: number[]): Promise<UtilityBill[]> => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  // sanitize ids to numbers and filter invalid
+  const cleanIds = ids.map((i: any) => Number(i)).filter((n: number) => Number.isFinite(n));
+  if (cleanIds.length === 0) return [];
+  const placeholders = cleanIds.map(() => '?').join(',');
+  const sql = `SELECT * FROM ${utilitiesTable} WHERE util_id IN (${placeholders}) ORDER BY util_id DESC`;
+  const [rows] = await pool2.query(sql, cleanIds);
+  return rows as UtilityBill[];
+};
+
 export const getUtilityBillById = async (util_id: number): Promise<UtilityBill | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${utilitiesTable} WHERE util_id = ?`, [util_id]);
   const bill = (rows as UtilityBill[])[0];
