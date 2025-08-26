@@ -119,11 +119,11 @@ router.get('/by-hod', asyncHandler(assetController.getAssetsByHOD));
 
 
 // ASSET TRANSFER REQUESTS
-router.get('/transfer-requests', asyncHandler(assetController.getAssetTransferRequests));
-router.get('/transfer-requests/:id', asyncHandler(assetController.getAssetTransferRequestById));
-router.post('/transfer-requests', asyncHandler(assetController.createAssetTransfer));
-router.put('/transfer-requests/:id', asyncHandler(assetController.updateAssetTransfer));
-router.delete('/transfer-requests/:id', asyncHandler(assetController.deleteAssetTransfer));
+router.get('/transfers', asyncHandler(assetController.getAssetTransferRequests));
+router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferRequestById));
+router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
+router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
+router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));
 
 // ASSET TRANSFER APPROVAL (for supervisor approve/reject buttons)
 router.post('/transfer-requests/:id/approval', asyncHandler(assetController.updateAssetTransferApprovalStatusById));
@@ -138,6 +138,13 @@ router.get('/transfer-checklist/:id', asyncHandler(assetController.getTransferCh
 router.post('/transfer-checklist', asyncHandler(assetController.createTransferChecklist));
 router.put('/transfer-checklist/:id', asyncHandler(assetController.updateTransferChecklist));
 router.delete('/transfer-checklist/:id', asyncHandler(assetController.deleteTransferChecklist));
+
+// ASSET MANAGERS
+router.get('/managers', asyncHandler(assetController.getAssetManagers));
+router.get('/managers/:id', asyncHandler(assetController.getAssetManagerById));
+router.post('/managers', asyncHandler(assetController.createAssetManager));
+router.put('/managers/:id', asyncHandler(assetController.updateAssetManager));
+router.delete('/managers/:id', asyncHandler(assetController.deleteAssetManager));
 
 
 // ASSETS

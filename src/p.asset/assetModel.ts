@@ -8,6 +8,7 @@ import { get } from "axios";
 const db = 'assets';
 const companyDb = 'companies';
 const assetTable = `${db}.assetdata`;
+const assetManagerTable = `${db}.asset_managers`;
 const assetUserTable = `${db}.asset_history`;
 const brandTable = `${db}.brands`;
 const brandCategoryTable = `${db}.brand_category`;
@@ -492,12 +493,53 @@ export const createEmployee = async (data: any) => {
   return result;
 };
 
-export const getEmployees = async (status?: string) => {
+export const getEmployees = async (status?: string, cc?: string[] , dept?: string[] , loc?: string[] , supervisor?: string[], ramco?: string[], pos?: string[]) => {
   let query = `SELECT * FROM ${employeeTable}`;
   const params: any[] = [];
+  const conditions: string[] = [];
   if (status) {
-    query += ' WHERE employment_status = ?';
+    conditions.push('employment_status = ?');
     params.push(status);
+  }
+  // cost center filter (assuming column name costcenter_id)
+  if (Array.isArray(cc) && cc.length > 0) {
+    const ph = cc.map(() => '?').join(',');
+    conditions.push(`costcenter_id IN (${ph})`);
+    params.push(...cc);
+  }
+  // department filter
+  if (Array.isArray(dept) && dept.length > 0) {
+    const ph = dept.map(() => '?').join(',');
+    conditions.push(`department_id IN (${ph})`);
+    params.push(...dept);
+  }
+  // location filter
+  if (Array.isArray(loc) && loc.length > 0) {
+    const ph = loc.map(() => '?').join(',');
+    conditions.push(`location_id IN (${ph})`);
+    params.push(...loc);
+  }
+  // supervisor filter (match supervisor_id column to ramco_id(s))
+  if (Array.isArray(supervisor) && supervisor.length > 0) {
+    const ph = supervisor.map(() => '?').join(',');
+    conditions.push(`supervisor_id IN (${ph})`);
+    params.push(...supervisor);
+  }
+  // ramco filter (match ramco_id column)
+  if (Array.isArray(ramco) && ramco.length > 0) {
+    const ph = ramco.map(() => '?').join(',');
+    conditions.push(`ramco_id IN (${ph})`);
+    params.push(...ramco);
+  }
+  // position filter (position_id)
+  if (Array.isArray(pos) && pos.length > 0) {
+    const ph = pos.map(() => '?').join(',');
+    conditions.push(`position_id IN (${ph})`);
+    params.push(...pos);
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
   }
   const [rows] = await pool.query(query, params);
   return rows;
@@ -606,7 +648,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -624,7 +666,7 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (typeof classification === 'string' && classification !== '') {
     conditions.push('classification = ?');
     params.push(classification);
-  } 
+  }
   if (typeof status === 'string' && status !== '') {
     conditions.push('record_status = ?');
     params.push(status);
@@ -632,6 +674,24 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (typeof registerNumber === 'string' && registerNumber !== '') {
     conditions.push('register_number = ?');
     params.push(registerNumber);
+  }
+  // owner may be a single ramco_id or array/comma-separated list; match either current asset.ramco_id
+  if (owner !== undefined && owner !== null && owner !== '') {
+    // normalize owner to string array (accept single value, comma-separated, array, or number)
+    let ownerIds: string[] = [];
+    if (Array.isArray(owner)) {
+      ownerIds = owner.map((o: any) => String(o).trim());
+    } else if (typeof owner === 'string') {
+      ownerIds = owner.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (typeof owner === 'number') {
+      ownerIds = [String(owner)];
+    }
+    if (ownerIds.length > 0) {
+      const placeholders = ownerIds.map(() => '?').join(',');
+      // Only match current asset ramco_id (no asset_history involvement)
+      conditions.push(`${assetTable}.ramco_id IN (${placeholders})`);
+      params.push(...ownerIds);
+    }
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
@@ -1101,133 +1161,36 @@ export const deleteTransferChecklist = async (id: number) => {
   return result;
 };
 
-export default {
-  createType,
-  getTypes,
-  getTypeById,
-  updateType,
-  deleteType,
-  createCategory,
-  getCategories,
-  getCategoryById,
-  updateCategory,
-  deleteCategory,
-  createBrand,
-  getBrands,
-  getBrandById,
-  updateBrand,
-  deleteBrand,
-  createModel,
-  getModels,
-  getModelById,
-  getModelsByBrand,
-  updateModel,
-  deleteModel,
-  createDepartment,
-  getDepartments,
-  getDepartmentById,
-  updateDepartment,
-  deleteDepartment,
-  createPosition,
-  getPositions,
-  getPositionById,
-  updatePosition,
-  deletePosition,
-  createLocation,
-  getLocations,
-  getLocationById,
-  updateLocation,
-  deleteLocation,
-  createDistrict,
-  getDistricts,
-  getDistrictById,
-  updateDistrict,
-  deleteDistrict,
-  createZone,
-  getZones,
-  getZoneById,
-  updateZone,
-  deleteZone,
-  createSite,
-  getSites,
-  getSiteById,
-  updateSite,
-  deleteSite,
-  getSitesBatch,
-  getSitesCount,
-  addDistrictToZone,
-  removeDistrictFromZone,
-  getDistrictsByZone,
-  getZonesByDistrict,
-  createEmployee,
-  getEmployees,
-  getEmployeeById,
-  updateEmployee,
-  deleteUser,
-  createVendor,
-  getVendors,
-  getVendorById,
-  updateVendor,
-  deleteVendor,
-  createProcurement,
-  getProcurements,
-  getProcurementById,
-  updateProcurement,
-  deleteProcurement,
-  createAsset,
-  getAssets,
-  getAssetById,
-  getAssetByCode,
-  updateAsset,
-  deleteAsset,
-  createAssetOwnership,
-  getAssetOwnerships,
-  getAssetOwnershipById,
-  updateAssetOwnership,
-  deleteAssetOwnership,
-  createSection,
-  getSections,
-  getSectionById,
-  updateSection,
-  deleteSection,
-  createCostcenter,
-  getCostcenters,
-  getCostcenterById,
-  updateCostcenter,
-  deleteCostcenter,
-  createModule,
-  getModules,
-  getModuleById,
-  updateModule,
-  deleteModule,
-  getAllZoneDistricts,
-  removeAllZonesFromDistrict,
-  removeAllDistrictsFromZone,
-  getTypeByCode,
-  getCategoryByCode,
-  getBrandByCode,
-  addBrandCategory,
-  removeBrandCategory,
-  getCategoriesByBrand,
-  getCategoriesByBrandId,
-  getBrandsByCategory,
-  getBrandsByCategoryId,
-  getSoftwares,
-  getSoftwareById,
-  createSoftware,
-  updateSoftware,
-  deleteSoftware,
-  getComputerSpecsForAsset,
-  getInstalledSoftwareForAsset,
-  getVehicleSpecsForAsset,
-  searchEmployeesAutocomplete,
-  createAssetTransferRequest,
-  createAssetTransferDetail,
-  getAssetTransferRequestsWithDetails,
-  generateNextRequestNo,
-  getTransferChecklists,
-  getTransferChecklistById,
-  createTransferChecklist,
-  updateTransferChecklist,
-  deleteTransferChecklist,
+/* ======= ASSET MANAGERS ======= */
+export const getAssetManagers = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable}`);
+  return rows;
 };
+
+export const getAssetManagerById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+export const getAssetManagerByRamcoId = async (ramco_id: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE ramco_id = ?`, [ramco_id]);
+  return (rows as RowDataPacket[])[0];
+};
+export const createAssetManager = async (data: any) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${assetManagerTable} (ramco_id, manager_id, created_at)
+     VALUES (?, ?, NOW())`,
+    [data.ramco_id, data.manager_id, data.created_at, data.is_active ? 1 : 0]
+  );
+  return result;
+};
+export const updateAssetManager = async (id: number, data: any) => {
+  const [result] = await pool.query(
+    `UPDATE ${assetManagerTable} SET ramco_id = ?, manager_id = ?, is_active = ?, updated_at = NOW() WHERE id = ?`,
+    [data.ramco_id, data.manager_id, data.is_active ? 1 : 0, id]
+  );
+  return result;
+};
+export const deleteAssetManager = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetManagerTable} WHERE id = ?`, [id]);
+  return result;
+}
