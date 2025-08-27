@@ -7,9 +7,9 @@ import { get } from "axios";
 // Database and table declarations for easy swapping/testing
 const db = 'assets';
 const companyDb = 'companies';
-const assetTable = `${db}.assetdata`;
+const assetTable = `${db}.assetdata_test`;
 const assetManagerTable = `${db}.asset_managers`;
-const assetUserTable = `${db}.asset_history`;
+const assetHistoryTable = `${db}.asset_history_test`;
 const brandTable = `${db}.brands`;
 const brandCategoryTable = `${db}.brand_category`;
 const categoryTable = `${db}.categories`;
@@ -88,8 +88,31 @@ export const createCategory = async (data: any) => {
   return result;
 };
 
-export const getCategories = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${categoryTable}`);
+export const getCategories = async (manager?: string | number | string[]) => {
+  // Normalize manager input into a deduplicated array of string ids
+  let managerIds: string[] = [];
+  if (manager !== undefined && manager !== null && manager !== '') {
+    if (Array.isArray(manager)) {
+      managerIds = manager.map(m => String(m).trim()).filter(Boolean);
+    } else if (typeof manager === 'string') {
+      managerIds = manager.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      managerIds = [String(manager)];
+    }
+  }
+
+  // If no manager filter provided, return all categories
+  if (managerIds.length === 0) {
+    const [rows] = await pool.query(`SELECT * FROM ${categoryTable} ORDER BY name`);
+    return rows;
+  }
+
+  // Filter directly on the categories table by manager_id (no JOINs)
+  // Deduplicate managerIds to avoid redundant placeholders
+  managerIds = Array.from(new Set(managerIds));
+  const placeholders = managerIds.map(() => '?').join(',');
+  const sql = `SELECT * FROM ${categoryTable} WHERE manager_id IN (${placeholders}) ORDER BY name`;
+  const [rows] = await pool.query(sql, managerIds);
   return rows;
 };
 
@@ -727,11 +750,41 @@ export const createAsset = async (data: any) => {
 };
 
 export const updateAsset = async (id: number, data: any) => {
-  // Build update query dynamically from data keys
-  const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
-  const values = Object.values(data);
-  const sql = `UPDATE ${assetTable} SET ${fields} WHERE id = ?`;
-  const [result] = await pool.query(sql, [...values, id]);
+  const [result] = await pool.query(
+    `UPDATE ${assetTable} SET brand_id = ?, category_id = ?, classification = ?, costcenter_id = ?, department_id = ?, entry_code = ?, fuel_type = ?, location_id = ?, model_id = ?, purchase_date = ?, purpose = ?, ramco_id = ?, record_status = ?, transmission = ?, type_id = ? WHERE id = ?`,
+    [ data.brand_id, data.category_id, data.classification, data.costcenter_id, data.department_id, data.entry_code, data.fuel_type, data.location_id, data.model_id, data.purchase_date, data.purpose, data.ramco_id, data.record_status, data.transmission, data.type_id, id ]
+  );
+
+  // insert into asset_history on successful update
+  try {
+    const resAny: any = result as any;
+    if (resAny && resAny.affectedRows && resAny.affectedRows > 0) {
+      const asset = await getAssetById(id);
+      if (asset) {
+        await pool.query(
+          `INSERT INTO ${assetHistoryTable} (asset_id, entry_code, register_number, vehicle_id, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            data.entry_code ?? null,
+            asset.register_number ?? null,
+            asset.vehicle_id ?? null,
+            asset.type_id ?? null,
+            asset.costcenter_id ?? null,
+            asset.department_id ?? null,
+            asset.location_id ?? null,
+            asset.ramco_id ?? null,
+            data.effective_date ?? new Date()
+          ]
+        );
+      }
+    }
+  } catch (err) {
+    // do not fail the update if history insertion fails; log and continue
+    // eslint-disable-next-line no-console
+    console.error('Failed to insert asset history for asset', id, err);
+  }
+
   return result;
 };
 
@@ -744,33 +797,33 @@ export const deleteAsset = async (id: number) => {
 export const createAssetOwnership = async (data: any) => {
   const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${assetUserTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)` ,
+    `INSERT INTO ${assetHistoryTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)` ,
     [asset_code, ramco_id, effective_date]
   );
   return result;
 };
 
 export const getAssetOwnerships = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetUserTable}`);
+  const [rows] = await pool.query(`SELECT * FROM ${assetHistoryTable}`);
   return rows;
 };
 
 export const getAssetOwnershipById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetUserTable} id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assetHistoryTable} id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
 export const updateAssetOwnership = async (id: number, data: any) => {
   const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `UPDATE ${assetUserTable} SET asset_code = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
+    `UPDATE ${assetHistoryTable} SET asset_code = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
     [asset_code, ramco_id, effective_date, id]
   );
   return result;
 };
 
 export const deleteAssetOwnership = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${assetUserTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${assetHistoryTable} WHERE id = ?`, [id]);
   return result;
 };
 

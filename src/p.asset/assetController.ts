@@ -86,6 +86,7 @@ export const getAssets = async (req: Request, res: Response) => {
 
 		return {
 			id: asset.id,
+			entry_code: asset.entry_code,
 			classification: asset.classification,
 			record_status: asset.record_status,
 			purpose: asset.purpose,
@@ -241,6 +242,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 
 	const assetWithNested = {
 		id: asset.id,
+		entry_code: asset.entry_code,
 		classification: asset.classification,
 		status: asset.record_status,
 		condition: asset.condition_status,
@@ -290,8 +292,8 @@ export const createAsset = async (req: Request, res: Response) => {
 
 export const updateAsset = async (req: Request, res: Response) => {
 	const { id } = req.params;
-	const assetData = req.body;
-	const result = await assetModel.updateAsset(Number(id), assetData);
+	const data = req.body;
+	const result = await assetModel.updateAsset(Number(id), data);
 	res.json({
 		status: 'success',
 		message: 'Asset updated successfully',
@@ -414,7 +416,8 @@ export const getCategories = async (req: Request, res: Response) => {
 		const ids = (req.query.type as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
 		typeIds = ids;
 	}
-	let rowsRaw = await assetModel.getCategories();
+	const managerParam = req.query.manager;
+	let rowsRaw = await assetModel.getCategories(managerParam as any);
 	let rows: any[] = Array.isArray(rowsRaw) ? rowsRaw : [];
 	if (typeIds.length > 0) {
 		rows = rows.filter((c: any) => typeIds.includes(c.type_id));

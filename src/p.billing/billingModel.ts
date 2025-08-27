@@ -22,7 +22,7 @@ const beneficiaryTable = `${dbBillings}.costbfcy`;
 const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
 const serviceOptionsTable = `${dbApps}.svctype`;
 
-const tempVehicleRecordTable = `${dbAssets}.vehicle`;
+const tempVehicleRecordTable = `${dbAssets}.assetdata`;
 const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
 
 
