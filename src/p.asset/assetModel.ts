@@ -7,9 +7,9 @@ import { get } from "axios";
 // Database and table declarations for easy swapping/testing
 const db = 'assets';
 const companyDb = 'companies';
-const assetTable = `${db}.assetdata_test`;
+const assetTable = `${db}.assetdata`;
 const assetManagerTable = `${db}.asset_managers`;
-const assetHistoryTable = `${db}.asset_history_test`;
+const assetHistoryTable = `${db}.asset_history`;
 const brandTable = `${db}.brands`;
 const brandCategoryTable = `${db}.brand_category`;
 const categoryTable = `${db}.categories`;
