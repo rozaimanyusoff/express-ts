@@ -134,7 +134,7 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
             }
             return {
                 id: b.id,
-                bfcy_id: b.bfcy_id,
+                bfcy_id: b.id ?? b.bfcy_id,
                 account: accountObj,
                 subscriber: subscriberObj,
                 bill_date: b.bill_date,
@@ -185,9 +185,9 @@ export const getTelcoBillings = async (req: Request, res: Response, next: NextFu
                     provider: acc.provider || null,
                 };
             }
-            return {
-                id: b.id,
-                bfcy_id: b.bfcy_id,
+        return {
+            id: b.id,
+            bfcy_id: b.id ?? b.bfcy_id,
                 account: accountObj,
                 bill_date: b.bill_date,
                 bill_no: b.bill_no,
@@ -310,7 +310,7 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
         }
         const formatted = {
             id: billing.id,
-            bfcy_id: billing.bfcy_id,
+            bfcy_id: billing.id ?? billing.bfcy_id,
             account: accountObj,
             bill_date: billing.bill_date,
             bill_no: billing.bill_no,

@@ -1652,8 +1652,8 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
 	const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
 	// Map by name and by id for flexible matching
-	const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
-		const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
+	const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
 
   // Filter by costcenter if provided
   if (costcenter) {
@@ -1682,15 +1682,19 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 				let benObj: any = null;
 				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
 				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
-				if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
+				if (!benObj) {
+					const accBenId = acc.id ?? acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+					if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
+				}
 				account = {
 					bill_id: acc.bill_id,
-					bill_ac: acc.bill_ac,
+					account: acc.account,
 					beneficiary: benObj ? {
-						id: benObj.bfcy_id ?? benObj.id,
-						name: benObj.bfcy_name || benObj.name,
+						id: benObj.id ?? benObj.bfcy_id,
+						name: benObj.bfcy_name ?? benObj.name,
 						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
-						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null
+						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
+						entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
 					} : acc.provider,
 					service: acc.service,
 					desc: acc.bill_desc
@@ -1778,23 +1782,27 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	// fetch beneficiaries for enrichment
 	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
 	const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
-	const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
-	const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
+	const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+	const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
 	if (bill.bill_id && accountMap.has(bill.bill_id)) {
 		const acc = accountMap.get(bill.bill_id);
 		// attempt to resolve beneficiary by provider name or bfcy_id
 		let benObj: any = null;
 		const providerName = acc.provider ? String(acc.provider).toLowerCase() : (acc.provider ? String(acc.provider).toLowerCase() : null);
 		if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
-		if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
+		if (!benObj) {
+			const accBenId = acc.id ?? acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+			if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
+		}
 		account = {
 			bill_id: acc.bill_id,
-			bill_ac: acc.bill_ac,
+			account: acc.account,
 			beneficiary: benObj ? {
-				id: benObj.bfcy_id ?? benObj.id,
-				name: benObj.bfcy_name || benObj.name,
+				id: benObj.id ?? benObj.bfcy_id,
+				name: benObj.bfcy_name ?? benObj.name,
 				logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
-				entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null
+				entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
+				entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
 			} : acc.provider,
 			service: acc.service,
 			desc: acc.bill_desc
@@ -2114,9 +2122,9 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 	const accounts = await billingModel.getBillingAccounts();
 	const baseUrl = process.env.BACKEND_URL || '';
 
-	// fetch beneficiaries map
+	// fetch beneficiaries map (support old schema bfcy_* or new schema id/name)
 	const beneficiaries = await billingModel.getBeneficiaries(undefined);
-	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.bfcy_id), b]));
+	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.id ?? b.bfcy_id), b]));
 
 	// fetch costcenters and districts (locations)
 	const [costcentersRaw, districtsRaw] = await Promise.all([
@@ -2131,33 +2139,39 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 
 	const enriched = accounts.map((account: any) => {
 		const obj: any = { ...account };
-		// attach beneficiary object when bfcy_id present
-		const bfcyId = Number(obj.bfcy_id);
+		// attach beneficiary object when bfcy_id or beneficiary_id present
+		const bfcyId = Number(obj.bfcy_id ?? obj.beneficiary_id);
 		if (bfcyId && benMap.has(bfcyId)) {
 			const b = benMap.get(bfcyId);
-			const rawLogo = b.bfcy_logo || null;
+			// support multiple schema shapes for logo and name
+			const rawLogo = b.bfcy_logo ?? b.logo ?? b.file_reference ?? null;
 			const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
-			obj.beneficiary = { bfcy_id: b.bfcy_id, bfcy_name: b.bfcy_name, logo };
+			const name = b.bfcy_name ?? b.bfcy_title ?? b.name ?? null;
+			obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), name, logo };
 		} else {
 			obj.beneficiary = null;
 		}
 
-		// attach resolved costcenter (cc_id) and location (loc_id)
-		const ccId = Number(obj.cc_id);
+		// attach resolved costcenter (cc_id or costcenter_id) and location (loc_id or location_id)
+		const ccId = Number(obj.cc_id ?? obj.costcenter_id);
 		obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
 
-		const locId = Number(obj.loc_id);
+		const locId = Number(obj.loc_id ?? obj.location_id);
 		if (locId && districtMap.has(locId)) {
 			const d = districtMap.get(locId);
-			// district may have code or name
 			const locName = d.name || d.code || null;
 			obj.location = { id: locId, name: locName };
 		} else {
 			obj.location = null;
 		}
 
-		// remove raw numeric id fields from response
+		// remove raw numeric id fields from response (support both old and new names)
 		delete obj.bfcy_id;
+		delete obj.beneficiary_id;
+		delete obj.cc_id;
+		delete obj.costcenter_id;
+		delete obj.loc_id;
+		delete obj.location_id;
 		delete obj.cc_id;
 		delete obj.loc_id;
 
@@ -2181,28 +2195,29 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts()
 	]);
-	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.bfcy_id), b]));
+	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.id ?? b.bfcy_id), b]));
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
 
 	const obj: any = { ...account };
-	const bfcyId = Number(obj.bfcy_id);
+	const bfcyId = Number(obj.bfcy_id ?? obj.beneficiary_id);
 	if (bfcyId && benMap.has(bfcyId)) {
 		const b = benMap.get(bfcyId);
-		const rawLogo = b.bfcy_logo || null;
+		const rawLogo = b.bfcy_logo ?? b.logo ?? b.file_reference ?? null;
 		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
-		obj.beneficiary = { bfcy_id: b.bfcy_id, bfcy_name: b.bfcy_name, logo };
+		const name = b.bfcy_name ?? b.bfcy_title ?? b.name ?? null;
+	obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), name, logo };
 	} else {
 		obj.beneficiary = null;
 	}
 
-	// resolve costcenter and location
-	const ccId = Number(obj.cc_id);
+	// resolve costcenter and location (support old/new field names)
+	const ccId = Number(obj.cc_id ?? obj.costcenter_id);
 	obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
 
-	const locId = Number(obj.loc_id);
+	const locId = Number(obj.loc_id ?? obj.location_id);
 	if (locId && districtMap.has(locId)) {
 		const d = districtMap.get(locId);
 		const locName = d.name || d.code || null;
@@ -2211,10 +2226,13 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 		obj.location = null;
 	}
 
-	// remove raw numeric id fields from response
+	// remove raw numeric id fields from response (support both names)
 	delete obj.bfcy_id;
+	delete obj.beneficiary_id;
 	delete obj.cc_id;
+	delete obj.costcenter_id;
 	delete obj.loc_id;
+	delete obj.location_id;
 
 	res.json({ status: 'success', message: 'Billing account retrieved successfully', data: obj });
 };
@@ -2291,8 +2309,8 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 
 		const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
 		const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
-		const benByName = new Map(beneficiaries.map((b: any) => [String(b.bfcy_name).toLowerCase(), b]));
-		const benById = new Map(beneficiaries.map((b: any) => [String((b.bfcy_id ?? b.id) || b.bfcy_id), b]));
+		const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
 
 		const data = bills.map((bill: any) => {
 			let account = null;
@@ -2301,13 +2319,16 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 				let benObj: any = null;
 				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
 				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
-				if (!benObj && acc.bfcy_id && benById.has(String(acc.bfcy_id))) benObj = benById.get(String(acc.bfcy_id));
+				if (!benObj) {
+					const accBenId = acc.id ?? acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+					if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
+				}
 				account = {
 					bill_id: acc.bill_id,
 					bill_ac: acc.bill_ac,
 					beneficiary: benObj ? {
-						id: benObj.bfcy_id ?? benObj.id,
-						name: benObj.bfcy_name || benObj.name,
+						id: benObj.id ?? benObj.bfcy_id,
+						name: benObj.bfcy_name ?? benObj.name,
 						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
 						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
 						entry_position: benObj.entry_position || null,
