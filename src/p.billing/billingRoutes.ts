@@ -92,7 +92,7 @@ router.get('/util/summary/costcenter', asyncHandler(billingController.getUtility
 router.get('/util/summary/service', asyncHandler(billingController.getUtilityBillingServiceSummary)); // /api/bills/util/summary/service?costcenter=ID&from=YYYY-MM-DD&to=YYYY-MM-DD
 // fetch select utility bills by array of util_id values: /api/bills/util/by-ids?util_id[]=1&util_id[]=2 or /api/bills/util/by-ids?ids=1,2
 //router.get('/util/by-ids', asyncHandler(billingController.getUtilityBillsByIds));
-router.post('/util/by-ids', asyncHandler(billingController.postUtilityBillsByIds));
+router.post('/util/by-ids/:beneficiaryId', asyncHandler(billingController.postUtilityBillsByIds));
 router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
 router.get('/util', asyncHandler(billingController.getUtilityBills));
 // Accept file under either 'ubill_ref' (preferred) or 'ubill_file' (legacy)

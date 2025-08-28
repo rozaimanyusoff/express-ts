@@ -2307,111 +2307,126 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 };
 
 	// POST variant: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
-	export const postUtilityBillsByIds = async (req: Request, res: Response) => {
-		const bodyIds = req.body?.util_id ?? req.body?.ids ?? req.body?.idsList;
-		let ids: number[] = [];
-		if (Array.isArray(bodyIds)) {
-			ids = bodyIds.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n));
-		} else if (typeof bodyIds === 'string') {
-			ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
-		} else if (typeof bodyIds === 'number') {
-			ids = [Number(bodyIds)];
-		}
+		export const postUtilityBillsByIds = async (req: Request, res: Response) => {
+			// beneficiaryId from route params
+			const beneficiaryId = Number(req.params.beneficiaryId ?? req.params.beneficiary_id ?? req.params.beneficiaryId);
+			if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid beneficiary id in path' });
 
-		if (ids.length === 0) {
-			return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
-		}
+			// fetch beneficiary record and enrich
+			const ben = await billingModel.getBeneficiaryById(beneficiaryId);
+			if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+			const baseUrl = process.env.BACKEND_URL || '';
+			const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
+			let logo = rawLogo;
+			if (rawLogo) {
+				const normalized = String(rawLogo).replace(/^\/+/, '');
+				if (normalized.startsWith('uploads/')) logo = `${baseUrl.replace(/\/$/, '')}/${normalized}`;
+				else logo = `${baseUrl.replace(/\/$/, '')}/uploads/${normalized}`;
+			}
+			// resolve entry_by name if possible
+			const employeesRaw = await assetsModel.getEmployees();
+			const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+			const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
+			let beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+			if (ben.entry_by) {
+				const k = String(ben.entry_by);
+				if (empMap.has(k)) {
+					const e = empMap.get(k);
+					beneficiaryResp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+				} else {
+					beneficiaryResp.entry_by = { ramco_id: ben.entry_by };
+				}
+			}
 
-		// Fetch bills and enrichment lookups (accounts, costcenters, locations, beneficiaries)
-		const bills = await billingModel.getUtilityBillsByIds(ids);
-		const accounts = await billingModel.getBillingAccounts();
-		const costcentersRaw = await assetsModel.getCostcenters();
-		const locationsRaw = await assetsModel.getLocations();
-		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
-		const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
-		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
-		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+			// parse provided ids in request body
+			const bodyIds = req.body?.util_id ?? req.body?.ids ?? req.body?.idsList;
+			let ids: number[] = [];
+			if (Array.isArray(bodyIds)) ids = bodyIds.map((v: any) => Number(v)).filter(n => Number.isFinite(n));
+			else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
+			else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
 
-		const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
-		const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
-		const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
-		const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
+			if (ids.length === 0) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
 
-		const data = bills.map((bill: any) => {
-			let account = null;
-			if (bill.bill_id && accountMap.has(bill.bill_id)) {
+			// Fetch bills for provided ids and enrichment lookups
+			const bills = await billingModel.getUtilityBillsByIds(ids);
+			const accounts = await billingModel.getBillingAccounts();
+			const costcentersRaw = await assetsModel.getCostcenters();
+			const locationsRaw = await assetsModel.getLocations();
+			const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+			const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+			const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+			const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+			const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
+			// beneficiaries lookup to resolve account->beneficiary mapping
+			const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+			const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+			const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+			const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
+
+			// Build result: only include bills whose account resolves to the requested beneficiary
+			const data = bills.map((bill: any) => {
+				if (!bill.bill_id) return null;
 				const acc = accountMap.get(bill.bill_id);
+				if (!acc) return null;
+				// attempt to resolve beneficiary for this account
 				let benObj: any = null;
 				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
 				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
 				if (!benObj) {
-					const accBenId = acc.id ?? acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+					const accBenId = acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
 					if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
 				}
-				account = {
-					bill_id: acc.bill_id,
-					bill_ac: acc.bill_ac,
-					beneficiary: benObj ? {
-						id: benObj.id ?? benObj.bfcy_id,
-						name: benObj.bfcy_name ?? benObj.name,
-						logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
-						entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
-						entry_position: benObj.entry_position || null,
-					} : acc.provider,
-					service: acc.service,
-					desc: acc.bill_desc
+				if (!benObj) return null; // account has no resolved beneficiary
+				const benIdResolved = Number(benObj.id ?? benObj.bfcy_id ?? benObj.bfcyId ?? benObj.id);
+				if (benIdResolved !== beneficiaryId) return null; // not the beneficiary we want
+
+				// build account object (without embedding beneficiary; top-level beneficiary included separately)
+				let costcenter = null;
+				const ccLookupId = acc.cc_id ?? acc.costcenter_id ?? bill.cc_id;
+				if (ccLookupId && ccMap.has(ccLookupId)) {
+					const cc = ccMap.get(ccLookupId) as any;
+					costcenter = { id: cc.id, name: cc.name };
+				}
+				let location = null;
+				const locLookupId = acc.loc_id ?? acc.location_id ?? bill.loc_id;
+				if (locLookupId && locMap.has(locLookupId)) {
+					const d = locMap.get(locLookupId) as any;
+					location = { id: d.id, name: d.name };
+				}
+
+				return {
+					util_id: bill.util_id,
+					account: {
+						bill_id: acc.bill_id,
+						account_no: acc.account,
+						costcenter,
+						location
+					},
+					ubill_date: bill.ubill_date,
+					ubill_no: bill.ubill_no,
+					ubill_ref: bill.ubill_ref ?? null,
+					ubill_url: publicUrl(bill.ubill_ref ?? null),
+					ubill_submit: bill.ubill_submit ?? null,
+					ubill_rent: bill.ubill_rent,
+					ubill_color: bill.ubill_color,
+					ubill_bw: bill.ubill_bw,
+					ubill_stotal: bill.ubill_stotal,
+					ubill_taxrate: bill.ubill_taxrate,
+					ubill_tax: bill.ubill_tax,
+					ubill_round: bill.ubill_round,
+					ubill_deduct: bill.ubill_deduct,
+					ubill_gtotal: bill.ubill_gtotal,
+					ubill_count: bill.ubill_count,
+					ubill_disc: bill.ubill_disc,
+					ubill_usage: bill.ubill_usage,
+					ubill_payref: bill.ubill_payref,
+					ubill_paystat: bill.ubill_paystat
 				};
-			}
+			}).filter(Boolean) as any[];
 
-			let costcenter = null;
-			const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
-			const ccLookupId = acctCcId ?? bill.cc_id;
-			if (ccLookupId && ccMap.has(ccLookupId)) {
-				const cc = ccMap.get(ccLookupId) as any;
-				costcenter = { id: cc.id, name: cc.name };
-			}
-
-			let location = null;
-			const acctLocId = account && (account as any).location ? (account as any).location.id : null;
-			const locLookupId = acctLocId ?? bill.loc_id;
-			if (locLookupId && locMap.has(locLookupId)) {
-				const d = locMap.get(locLookupId) as any;
-				location = { id: d.id, name: d.name };
-			}
-
-			if (account) {
-				(account as any).costcenter = costcenter;
-				(account as any).location = location;
-			}
-
-			return {
-				util_id: bill.util_id,
-				account,
-				ubill_date: bill.ubill_date,
-				ubill_no: bill.ubill_no,
-				ubill_ref: bill.ubill_ref ?? null,
-				ubill_url: publicUrl(bill.ubill_ref ?? null),
-				ubill_submit: bill.ubill_submit ?? null,
-				ubill_rent: bill.ubill_rent,
-				ubill_color: bill.ubill_color,
-				ubill_bw: bill.ubill_bw,
-				ubill_stotal: bill.ubill_stotal,
-				ubill_taxrate: bill.ubill_taxrate,
-				ubill_tax: bill.ubill_tax,
-				ubill_round: bill.ubill_round,
-				ubill_deduct: bill.ubill_deduct,
-				ubill_gtotal: bill.ubill_gtotal,
-				ubill_count: bill.ubill_count,
-				ubill_disc: bill.ubill_disc,
-				ubill_usage: bill.ubill_usage,
-				ubill_payref: bill.ubill_payref,
-				ubill_paystat: bill.ubill_paystat
-			};
-		});
-
-		res.json({ status: 'success', message: `${data.length} utility bill(s) retrieved`, data });
-	};
+			res.json({ status: 'success', message: `${data.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data });
+		};
 
 // =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
 export const getBeneficiaries = async (req: Request, res: Response) => {
