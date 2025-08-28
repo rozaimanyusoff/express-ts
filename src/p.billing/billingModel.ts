@@ -3,7 +3,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
@@ -223,8 +223,8 @@ export const getFuelVehicleAmountById = async (id: number): Promise<any | null> 
 
 export const createFuelVehicleAmount = async (data: any): Promise<number> => {
   const [result] = await pool2.query(
-    `INSERT INTO ${fuelVehicleAmountTable} (stmt_id, stmt_date, card_id, vehicle_id, costcenter_id, purpose, start_odo, end_odo, total_km, total_litre, effct, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.stmt_id, data.stmt_date, data.card_id, data.vehicle_id, data.costcenter_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount ]
+    `INSERT INTO ${fuelVehicleAmountTable} (stmt_id, stmt_date, card_id, asset_id, vehicle_id, entry_code, cc_id, loc_id, purpose, start_odo, end_odo, total_km, total_litre, effct, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [ data.stmt_id, data.stmt_date, data.card_id, data.asset_id, data.vehicle_id, data.entry_code, data.costcenter_id, data.location_id, data.category, data.start_odo, data.end_odo, data.total_km, data.total_litre, data.efficiency, data.amount ]
   );
   return (result as ResultSetHeader).insertId;
 };

@@ -381,14 +381,14 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 
 export const getFuelBillingById = async (req: Request, res: Response) => {
 	// Fetch all lookup data
-	const [costcentersRaw, districtsRaw, tempVehicleRecordsRaw] = await Promise.all([
+	const [costcentersRaw, districtsRaw, assetsRaw] = await Promise.all([
 		assetsModel.getCostcenters(),
 		assetsModel.getDistricts(),
 		assetsModel.getAssets()
 	]);
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
-	const assets = Array.isArray(tempVehicleRecordsRaw) ? tempVehicleRecordsRaw : [];
+	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
@@ -434,7 +434,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		if (d.asset_id && assetMap.has(d.asset_id)) {
 			const assetData = assetMap.get(d.asset_id) as any;
 			asset = {
-				id: assetData.asset_id,
+				id: assetData.id,
 				register_number: assetData.register_number,
 				fuel_type: assetData.fuel_type,
 				costcenter: assetData.costcenter_id && ccMap.has(assetData.costcenter_id)
@@ -637,9 +637,12 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 			stmt_total_km,
 			details: Array.isArray(details) ? details.map((d: any) => ({
 				vehicle_id: d.vehicle_id,
+				asset_id: d.asset_id,
+				entry_code: d.entry_code || null, // entry_code is not used currently
 				stmt_date: d.stmt_date,
 				card_id: d.card_id,
 				costcenter_id: d.costcenter_id,
+				location_id: d.location_id || null, // location_id is not used currently
 				category: d.category,
 				start_odo: d.start_odo,
 				end_odo: d.end_odo,
@@ -661,7 +664,10 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 					stmt_date: detail.stmt_date,
 					card_id: detail.card_id,
 					vehicle_id: detail.vehicle_id,
+					asset_id: detail.asset_id,
+					entry_code: detail.entry_code,
 					costcenter_id: detail.costcenter_id,
+					location_id: detail.location_id,
 					category: detail.category,
 					start_odo: detail.start_odo,
 					end_odo: detail.end_odo,
@@ -710,6 +716,8 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 						stmt_date: detail.stmt_date,
 						card_id: detail.card_id,
 						vehicle_id: detail.vehicle_id,
+						asset_id: detail.asset_id,
+						entry_code: detail.entry_code || null,
 						costcenter_id: detail.costcenter_id,
 						category: detail.category,
 						start_odo: detail.start_odo,
@@ -726,6 +734,8 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 						stmt_date: detail.stmt_date,
 						card_id: detail.card_id,
 						vehicle_id: detail.vehicle_id,
+						asset_id: detail.asset_id,
+						entry_code: detail.entry_code || null,
 						costcenter_id: detail.costcenter_id,
 						category: detail.category,
 						start_odo: detail.start_odo,
@@ -1029,6 +1039,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
 			const fuelVendors = await billingModel.getFuelVendor() as any[];
 			const costcenters = await assetsModel.getCostcenters() as any[];
+			const locations = await assetsModel.getLocations() as any[];
 
 			const assetMap = new Map();
 			for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
@@ -1049,10 +1060,18 @@ export const getFleetCards = async (req: Request, res: Response) => {
 					const assetObj = assetMap.get(card.asset_id);
 					asset = {
 						id: card.asset_id,
+						vehicle_id: assetObj.vehicle_id || null,
+						entry_code: assetObj.entry_code || null,
 						register_number: assetObj.register_number || assetObj.vehicle_regno,
 						costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 							: null,
+						locations: (() => {
+							const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
+							if (!locId) return null;
+							const found = locations.find((loc: any) => loc.id === locId);
+							return found ? { id: locId, code: found.code } : null;
+						})(),
 						fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
 						purpose: assetObj.purpose || null,
 					};
@@ -1084,6 +1103,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 		const fleetCards = await billingModel.getFleetCards();
 	const fuelVendors = await billingModel.getFuelVendor() as any[];
 		const costcenters = await assetsModel.getCostcenters() as any[];
+		const locations = await assetsModel.getLocations() as any[];
 
 		// assetModel.getAssets() returns assets keyed by id; create map for id and asset_id for compatibility
 		const assetMap = new Map();
@@ -1112,6 +1132,12 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
 					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					locations: (() => {
+						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
+						if (!locId) return null;
+						const found = locations.find((loc: any) => loc.id === locId);
+						return found ? { id: locId, code: found.code } : null;
+					})(),
 					purpose: assetObj.purpose || null,
 				};
 			}
