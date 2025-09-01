@@ -1,4 +1,7 @@
 import { Request, Response } from 'express';
+import path from 'path';
+import * as assetModel from '../p.asset/assetModel';
+import { promises as fsPromises } from 'fs';
 import * as purchaseModel from './purchaseModel';
 import { PurchaseRecord } from './purchaseModel';
 
@@ -30,11 +33,37 @@ export const getPurchases = async (req: Request, res: Response) => {
       purchases = await purchaseModel.getPurchases();
     }
 
-    // Calculate derived status for each purchase
-    const enrichedPurchases = purchases.map(purchase => ({
-      ...purchase,
-      status: calculatePurchaseStatus(purchase)
-    }));
+    // Fetch costcenters, types, suppliers, employees and brands to enrich purchase records
+    const [typesRaw, costcentersRaw, suppliersRaw, employeesRaw, brandsRaw] = await Promise.all([
+      assetModel.getTypes(),
+      assetModel.getCostcenters(),
+      purchaseModel.getSuppliers(),
+      assetModel.getEmployees(),
+      assetModel.getBrands()
+    ]);
+    const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+    const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+  const typeMap = new Map(types.map((t: any) => [t.id, t]));
+  const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
+  const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+  const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+
+    // Calculate derived status for each purchase, add upload_url and resolve costcenter/type
+    const enrichedPurchases = purchases.map(purchase => {
+      // remove raw costcenter and type_id from response
+      const { costcenter, costcenter_id, type_id, supplier, supplier_id, brand_id, ramco_id, ...rest } = purchase as any;
+      return {
+        ...rest,
+        status: calculatePurchaseStatus(purchase),
+        upload_url: publicUrl(purchase.upload_path),
+        costcenter: purchase.costcenter_id && ccMap.has(purchase.costcenter_id) ? { id: purchase.costcenter_id, name: ccMap.get(purchase.costcenter_id)?.name || null } : null,
+        type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
+        supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
+        brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
+        requestor: purchase.ramco_id && employeeMap.has(purchase.ramco_id) ? { ramco_id: purchase.ramco_id, full_name: (employeeMap.get(purchase.ramco_id) as any)?.full_name || null } : null
+      };
+    });
 
     res.json({
       status: 'success',
@@ -64,10 +93,34 @@ export const getPurchaseById = async (req: Request, res: Response) => {
       });
     }
 
-    // Add derived status
+    // Fetch costcenters and types to enrich the single purchase response
+    const [typesRaw, costcentersRaw, suppliersRaw, employeesRaw, brandsRaw] = await Promise.all([
+      assetModel.getTypes(),
+      assetModel.getCostcenters(),
+      purchaseModel.getSuppliers(),
+      assetModel.getEmployees(),
+      assetModel.getBrands()
+    ]);
+    const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+    const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+    const typeMap = new Map(types.map((t: any) => [t.id, t]));
+    const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+  const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
+  const employeesArr = Array.isArray(employeesRaw) ? employeesRaw : [];
+  const employeeMap = new Map(employeesArr.map((e: any) => [e.ramco_id, e]));
+  const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+
+    // Add derived status, upload_url, and resolved costcenter/type
+    const { costcenter, costcenter_id, type_id, supplier, supplier_id, brand_id, ramco_id, ...rest } = purchase as any;
     const enrichedPurchase = {
-      ...purchase,
-      status: calculatePurchaseStatus(purchase)
+      ...rest,
+      status: calculatePurchaseStatus(purchase),
+      upload_url: publicUrl(purchase.upload_path),
+      costcenter_detail: purchase.costcenter_id && ccMap.has(purchase.costcenter_id) ? { id: purchase.costcenter_id, name: ccMap.get(purchase.costcenter_id)?.name || null } : null,
+      type_detail: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
+      supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
+      brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
+      requestor: purchase.ramco_id && employeeMap.has(purchase.ramco_id) ? { ramco_id: purchase.ramco_id, full_name: (employeeMap.get(purchase.ramco_id) as any)?.full_name || null } : null
     };
 
     res.json({
@@ -87,10 +140,12 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 // CREATE PURCHASE
 export const createPurchase = async (req: Request, res: Response) => {
   try {
-    const purchaseData: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'> = {
+  const purchaseData: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'> = {
       request_type: req.body.request_type,
       costcenter: req.body.costcenter,
+      costcenter_id: req.body.costcenter_id,
       pic: req.body.pic,
+      ramco_id: req.body.ramco_id,
       item_type: req.body.item_type,
       items: req.body.items,
       supplier: req.body.supplier,
@@ -110,12 +165,50 @@ export const createPurchase = async (req: Request, res: Response) => {
       grn_no: req.body.grn_no
     };
 
+    // If a file was uploaded by multer, normalize and include the stored path
+    if ((req as any).file && (req as any).file.path) {
+      // store the relative DB-friendly path
+      (purchaseData as any).upload_path = normalizeStoredPath((req as any).file.path);
+    }
+
     // Auto-calculate total_price if not provided
     if (!purchaseData.total_price && purchaseData.qty && purchaseData.unit_price) {
       purchaseData.total_price = purchaseData.qty * purchaseData.unit_price;
     }
 
+    // Insert first to obtain ID (two-step upload flow)
     const insertId = await purchaseModel.createPurchase(purchaseData);
+
+    // If a file was uploaded by multer, move it to the canonical storage and update the record
+    if ((req as any).file && (req as any).file.path) {
+      const tempPath: string = (req as any).file.path;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = path.extname(originalName) || path.extname(tempPath) || '';
+      const filename = `purchase-${insertId}-${Date.now()}${ext}`;
+
+      // Destination directory: prefer UPLOAD_BASE_PATH if configured, else project-local 'upload/purchases'
+      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
+      const destDir = process.env.UPLOAD_BASE_PATH ? path.join(base, 'upload', 'purchases') : path.join(process.cwd(), 'upload', 'purchases');
+
+      try {
+        await fsPromises.mkdir(destDir, { recursive: true });
+        const destPath = path.join(destDir, filename);
+        await fsPromises.rename(tempPath, destPath);
+
+        // Persist DB-friendly stored path
+        const storedPath = `upload/purchases/${filename}`;
+        await purchaseModel.updatePurchase(insertId, { upload_path: storedPath });
+      } catch (moveErr) {
+        // If moving the file fails, attempt to clean up the inserted DB record to avoid orphan
+        try {
+          await purchaseModel.deletePurchase(insertId);
+        } catch (delErr) {
+          // ignore deletion errors but log to console
+          console.error('Failed to delete purchase after file move error', delErr);
+        }
+        throw moveErr;
+      }
+    }
 
     res.status(201).json({
       status: 'success',
@@ -145,11 +238,13 @@ export const updatePurchase = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     
     // Build update data from request body
-    const updateData: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>> = {};
-    
+  const updateData: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>> = {};
+
     if (req.body.request_type !== undefined) updateData.request_type = req.body.request_type;
     if (req.body.costcenter !== undefined) updateData.costcenter = req.body.costcenter;
+    if (req.body.costcenter_id !== undefined) updateData.costcenter_id = req.body.costcenter_id;
     if (req.body.pic !== undefined) updateData.pic = req.body.pic;
+    if (req.body.ramco_id !== undefined) updateData.ramco_id = req.body.ramco_id;
     if (req.body.item_type !== undefined) updateData.item_type = req.body.item_type;
     if (req.body.items !== undefined) updateData.items = req.body.items;
     if (req.body.supplier !== undefined) updateData.supplier = req.body.supplier;
@@ -167,6 +262,36 @@ export const updatePurchase = async (req: Request, res: Response) => {
     if (req.body.inv_no !== undefined) updateData.inv_no = req.body.inv_no;
     if (req.body.grn_date !== undefined) updateData.grn_date = req.body.grn_date;
     if (req.body.grn_no !== undefined) updateData.grn_no = req.body.grn_no;
+
+    // If a file was uploaded, perform move/rename into canonical storage and update DB
+    if ((req as any).file && (req as any).file.path) {
+      const tempPath: string = (req as any).file.path;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = path.extname(originalName) || path.extname(tempPath) || '';
+      const filename = `purchase-${id}-${Date.now()}${ext}`;
+
+      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
+      const destDir = process.env.UPLOAD_BASE_PATH ? path.join(base, 'upload', 'purchases') : path.join(process.cwd(), 'upload', 'purchases');
+
+      await fsPromises.mkdir(destDir, { recursive: true });
+      const destPath = path.join(destDir, filename);
+      await fsPromises.rename(tempPath, destPath);
+
+      // Attempt to remove previous file if existed
+      try {
+        const existing = await purchaseModel.getPurchaseById(id);
+        if (existing && existing.upload_path) {
+          const prevFilename = path.basename(existing.upload_path);
+          const prevFull = path.join(process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd(), 'upload', 'purchases', prevFilename);
+          // ignore errors when deleting previous file
+          await fsPromises.unlink(prevFull).catch(() => {});
+        }
+      } catch (err) {
+        // ignore errors
+      }
+
+      updateData.upload_path = `upload/purchases/${filename}`;
+    }
 
     // Auto-calculate total_price if qty or unit_price is updated
     if ((updateData.qty !== undefined || updateData.unit_price !== undefined) && updateData.total_price === undefined) {
@@ -298,10 +423,143 @@ export const getPurchaseSummary = async (req: Request, res: Response) => {
 
 // HELPER FUNCTION: Calculate purchase status based on process completion
 const calculatePurchaseStatus = (purchase: PurchaseRecord): string => {
-  if (purchase.grn_no) return 'completed';
+  // Completed only when a release has been made (non-empty released_to and valid released_at)
+  const hasReleasedTo = purchase.released_to !== undefined && purchase.released_to !== null && String(purchase.released_to).trim() !== '';
+  const releasedAt = purchase.released_at ?? null;
+  const releasedAtInvalid = !releasedAt || String(releasedAt) === '0000-00-00' || String(releasedAt) === '0000-00-00 00:00:00';
+  if (hasReleasedTo && !releasedAtInvalid) return 'completed';
+
+  // If GRN exists but release hasn't happened yet, consider it delivered
+  if (purchase.grn_no) return 'delivered';
+
+  // Invoiced after INV present
   if (purchase.inv_no) return 'invoiced';
+
+  // Delivered if DO present (fallback)
   if (purchase.do_no) return 'delivered';
+
   if (purchase.po_no) return 'ordered';
   if (purchase.pr_no) return 'requested';
   return 'draft';
+};
+
+// Helpers: publicUrl and normalizeStoredPath (same behavior as billingController helpers)
+function publicUrl(rawPath?: string | null): string | null {
+  if (!rawPath) return null;
+  const baseUrl = process.env.BACKEND_URL || '';
+  // Ensure we produce BACKEND_URL/upload/purchases/<filename>
+  const filename = path.basename(String(rawPath).replace(/\\/g, '/'));
+  const normalized = `upload/purchases/${filename}`;
+  return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
+}
+function normalizeStoredPath(filePath?: string | null): string | null {
+  if (!filePath) return null;
+  // Normalize to a canonical storage path: upload/purchases/<filename>
+  const filename = path.basename(String(filePath).replace(/\\/g, '/'));
+  return `upload/purchases/${filename}`;
+}
+
+/* ======= SUPPLIER QUERIES ======= */
+export const getSuppliers = async (req: Request, res: Response) => {
+  try {
+    const suppliers = await purchaseModel.getSuppliers();
+    res.json({
+      status: 'success',
+      message: 'Suppliers retrieved successfully',
+      data: suppliers
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Failed to retrieve suppliers',
+      data: null
+    });
+  }
+};
+
+export const getSupplierById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const supplier = await purchaseModel.getSupplierById(Number(id));
+    if (!supplier) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Supplier not found',
+        data: null
+      });
+    }
+    res.json({
+      status: 'success',
+      message: 'Supplier retrieved successfully',
+      data: supplier
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Failed to retrieve supplier',
+      data: null
+    });
+  }
+};
+
+export const createSupplier = async (req: Request, res: Response) => {
+  try {
+    const supplierData = req.body;
+    const newSupplierId = await purchaseModel.createSupplier(supplierData);
+    res.status(201).json({
+      status: 'success',
+      message: 'Supplier created successfully',
+      data: { id: newSupplierId }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Failed to create supplier',
+      data: null
+    });
+  }
+};
+
+export const updateSupplier = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const supplierData = req.body;
+    await purchaseModel.updateSupplier(Number(id), supplierData);
+    res.json({
+      status: 'success',
+      message: 'Supplier updated successfully',
+      data: null
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Failed to update supplier',
+      data: null
+    });
+  }
+};
+
+export const deleteSupplier = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await purchaseModel.deleteSupplier(Number(id));
+    if (!deleted) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Supplier not found',
+        data: null
+      });
+    }
+    res.json({
+      status: 'success',
+      message: 'Supplier deleted successfully',
+      data: null
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Failed to delete supplier',
+      data: null
+    });
+  }
 };

@@ -1,18 +1,25 @@
+import e from 'express';
 import { pool } from '../utils/db';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 // Database table name
 const dbName = 'purchases'; // Replace with your actual database name
 const purchaseTable = `${dbName}.purchase_data`;
+const supplierTable = `${dbName}.purchase_supplier`;
 
 export interface PurchaseRecord {
   id?: number;
   request_type: string;
   costcenter: string;
+  costcenter_id?: number;
   pic?: string;
+  ramco_id: string;
   item_type?: string;
+  type_id?: number;
   items: string;
   supplier?: string;
+  supplier_id?: number;
+  brand_id?: number;
   brand?: string;
   qty: number;
   unit_price: number;
@@ -27,13 +34,16 @@ export interface PurchaseRecord {
   inv_no?: string;
   grn_date?: string;
   grn_no?: string;
+  upload_path?: string;
+  released_to?: string;
+  released_at?: string;
   created_at?: string;
   updated_at?: string;
 }
 
 // GET ALL PURCHASES
 export const getPurchases = async (): Promise<PurchaseRecord[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseTable} ORDER BY id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseTable} ORDER BY pr_date DESC`);
   return rows as PurchaseRecord[];
 };
 
@@ -58,12 +68,11 @@ export const createPurchase = async (data: Omit<PurchaseRecord, 'id' | 'created_
   }
 
   const {
-    request_type,
-    costcenter,
-    pic,
-    item_type,
+    costcenter_id,
+    ramco_id,
+    type_id,
     items,
-    supplier,
+    supplier_id,
     brand,
     qty,
     unit_price,
@@ -77,19 +86,20 @@ export const createPurchase = async (data: Omit<PurchaseRecord, 'id' | 'created_
     inv_date,
     inv_no,
     grn_date,
-    grn_no
+    grn_no,
+    upload_path
   } = data;
 
   const [result] = await pool.query(
     `INSERT INTO ${purchaseTable} (
-      request_type, costcenter, pic, item_type, items, supplier, brand, qty, 
+      costcenter_id, ramco_id, type_id, items, supplier_id, brand, qty, 
       unit_price, total_price, pr_date, pr_no, po_date, po_no, do_date, do_no, 
-      inv_date, inv_no, grn_date, grn_no, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      inv_date, inv_no, grn_date, grn_no, upload_path, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
     [
-      request_type, costcenter, pic, item_type, items, supplier, brand, qty,
+      costcenter_id, ramco_id, type_id, items, supplier_id, brand, qty,
       unit_price, total_price, pr_date, pr_no, po_date, po_no, do_date, do_no,
-      inv_date, inv_no, grn_date, grn_no
+      inv_date, inv_no, grn_date, grn_no, upload_path
     ]
   );
 
@@ -101,16 +111,7 @@ export const updatePurchase = async (
   id: number, 
   data: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<void> => {
-  // Check for duplicate pr_no if being updated
-  if (data.pr_no) {
-    const [existingRows] = await pool.query(
-      `SELECT id FROM ${purchaseTable} WHERE pr_no = ? AND id != ?`,
-      [data.pr_no, id]
-    );
-    if (Array.isArray(existingRows) && existingRows.length > 0) {
-      throw new Error(`Purchase record with PR number '${data.pr_no}' already exists`);
-    }
-  }
+  // Duplicate PR number check intentionally skipped on update (per request)
 
   const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
   const values = Object.values(data);
@@ -158,14 +159,19 @@ export const getPurchasesByStatus = async (status: string): Promise<PurchaseReco
       whereClause = 'po_no IS NOT NULL AND do_no IS NULL';
       break;
     case 'delivered':
-      whereClause = 'do_no IS NOT NULL AND inv_no IS NULL';
+      // Consider a purchase delivered when GRN is present but it hasn't been released yet
+      // (released_to empty or released_at missing/zero-date). Also keep existing DO/INV rule as fallback.
+      whereClause = "(grn_no IS NOT NULL AND (released_to IS NULL OR TRIM(released_to) = '' OR released_at IS NULL OR released_at IN ('0000-00-00', '0000-00-00 00:00:00'))) OR (do_no IS NOT NULL AND inv_no IS NOT NULL)";
       break;
-    case 'invoiced':
-      whereClause = 'inv_no IS NOT NULL AND grn_no IS NULL';
+    case 'released':
+      // require grn_no present and released_to not null/empty
+      whereClause = "grn_no IS NOT NULL AND released_to IS NOT NULL AND TRIM(released_to) <> ''";
       break;
-    case 'completed':
-      whereClause = 'grn_no IS NOT NULL';
-      break;
+  case 'completed':
+      // ensure released_to is present and not an empty string, and released_at is a real timestamp
+      // guard against MySQL zero-dates like '0000-00-00' or '0000-00-00 00:00:00'
+  whereClause = "released_to IS NOT NULL AND TRIM(released_to) <> '' AND released_at IS NOT NULL AND released_at NOT IN ('0000-00-00', '0000-00-00 00:00:00')";
+  break;
     default:
       whereClause = '1=1'; // Return all if status not recognized
   }
@@ -234,4 +240,42 @@ export const getPurchaseSummary = async (startDate?: string, endDate?: string) =
   );
   
   return (rows as any[])[0];
+};
+
+/* ======= SUPPLIER QUERIES ======= */
+export interface Supplier {
+  id: number;
+  name: string;
+  contact_name: string;
+  contact_no: string;
+}
+
+export const getSuppliers = async (): Promise<Supplier[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${supplierTable} ORDER BY id DESC`);
+  return rows as Supplier[];
+};
+
+export const getSupplierById = async (id: number): Promise<Supplier | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${supplierTable} WHERE id = ?`, [id]);
+  return (rows as Supplier[])[0] || null;
+};
+
+export const getSupplierByName = async (name: string): Promise<Supplier | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${supplierTable} WHERE name = ?`, [name]);
+  return (rows as Supplier[])[0] || null;
+};
+
+export const createSupplier = async (data: Omit<Supplier, 'id'>): Promise<number> => {
+  const [result] = await pool.query(`INSERT INTO ${supplierTable} SET ?`, [data]);
+  return (result as any).insertId;
+};
+
+export const updateSupplier = async (id: number, data: Partial<Omit<Supplier, 'id'>>): Promise<boolean> => {
+  const [result] = await pool.query(`UPDATE ${supplierTable} SET ? WHERE id = ?`, [data, id]);
+  return (result as any).affectedRows > 0;
+};
+
+export const deleteSupplier = async (id: number): Promise<boolean> => {
+  const [result] = await pool.query(`DELETE FROM ${supplierTable} WHERE id = ?`, [id]);
+  return (result as any).affectedRows > 0;
 };
