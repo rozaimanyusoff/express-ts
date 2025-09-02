@@ -9,7 +9,7 @@ export const renderSummonNotification = (opts: {
 }) => {
   const { driverName, smn_id, summon_no, summon_dt, summon_loc, summon_amt, summon_agency } = opts;
   const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
-  const portalLink = smn_id ? `${base}/compliance/summons/portal/${smn_id}` : null;
+  const portalLink = smn_id ? `${base}/compliance/summon/portal/${smn_id}` : null;
 
   return `
   <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color: #222; background:#f6f8fb; padding:20px;">

@@ -49,7 +49,7 @@ const safeMove = async (src: string, dest: string) => {
 function normalizeStoredPath(filePath?: string | null): string | null {
   if (!filePath) return null;
   const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `uploads/compliance/summon/${filename}`;
+  return `compliance/summon/${filename}`;
 }
 
 export const getSummons = async (req: Request, res: Response) => {
@@ -231,11 +231,11 @@ export const createSummon = async (req: Request, res: Response) => {
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
   const filename = `summon-${id}-${Date.now()}${ext}`;
   const base = await getUploadBase();
-  const destDir = path.join(base, 'uploads', 'compliance', 'summon');
+  const destDir = path.join(base, 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
       await safeMove(tempPath, destPath);
-      const storedRel = path.posix.join('uploads', 'compliance', 'summon', filename);
+      const storedRel = path.posix.join('compliance', 'summon', filename);
       await summonModel.updateSummon(id, { summon_upl: storedRel });
     }
 
@@ -312,17 +312,54 @@ export const updateSummon = async (req: Request, res: Response) => {
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
       const filename = `summon-${id}-${Date.now()}${ext}`;
   const base2 = await getUploadBase();
-  const destDir = path.join(base2, 'uploads', 'compliance', 'summon');
+  const destDir = path.join(base2, 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
       await safeMove(tempPath, destPath);
-      const stored = path.posix.join('uploads', 'compliance', 'summon', filename);
+      const stored = path.posix.join('compliance', 'summon', filename);
       await summonModel.updateSummon(id, { summon_upl: stored });
     }
 
     res.json({ status: 'success', message: 'Updated' });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to update summon', data: null });
+  }
+};
+
+// POST /api/compliance/summon/:id/payment
+export const uploadSummonPayment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+
+    const existing = await summonModel.getSummonById(id);
+    if (!existing) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+
+    const payload: any = {};
+    if (req.body && req.body.receipt_date !== undefined) payload.receipt_date = req.body.receipt_date ? String(req.body.receipt_date).trim() : null;
+
+    if ((req as any).file && (req as any).file.path) {
+      const tempPath: string = (req as any).file.path;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+
+      const filename = `summon-receipt-${id}-${Date.now()}${ext}`;
+      const base = await getUploadBase();
+      const destDir = path.join(base, 'compliance', 'summon');
+      await fsPromises.mkdir(destDir, { recursive: true });
+      const destPath = path.join(destDir, filename);
+      await safeMove(tempPath, destPath);
+      const storedRel = path.posix.join('compliance', 'summon', filename);
+      payload.summon_receipt = storedRel;
+    }
+
+    if (Object.keys(payload).length === 0) return res.status(400).json({ status: 'error', message: 'No data provided' });
+
+    await summonModel.updateSummon(id, payload);
+    res.json({ status: 'success', message: 'Payment receipt uploaded', data: { id } });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to upload payment receipt', data: null });
   }
 };
 
