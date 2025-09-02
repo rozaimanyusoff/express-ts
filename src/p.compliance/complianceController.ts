@@ -1,28 +1,58 @@
 import { Request, Response } from 'express';
 import * as summonModel from './complianceModel';
 import * as assetModel from '../p.asset/assetModel';
+import { sendMail } from '../utils/mailer';
+import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 
-// List summons
+// Determine upload base path safely:
+// Priority: UPLOAD_BASE_PATH (only if inside project), existing 'uploads' directory (legacy), else ensure 'upload' directory in project
+const getUploadBase = async (): Promise<string> => {
+  const envBase = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : '';
+  const projectRoot = process.cwd();
+  try {
+    if (envBase && path.resolve(envBase).startsWith(projectRoot)) return envBase;
+  } catch (e) {
+    // ignore
+  }
+
+  const legacy = path.join(projectRoot, 'uploads');
+  try {
+    const stat = await fsPromises.stat(legacy).catch(() => null);
+    if (stat && stat.isDirectory()) return legacy;
+  } catch (e) {
+    // ignore
+  }
+
+  const fallback = path.join(projectRoot, 'upload');
+  await fsPromises.mkdir(fallback, { recursive: true }).catch(() => {});
+  return fallback;
+};
+
+// Helper to normalize a temp file path into stored relative path
+function normalizeStoredPath(filePath?: string | null): string | null {
+  if (!filePath) return null;
+  const filename = path.basename(String(filePath).replace(/\\/g, '/'));
+  return `upload/summons/${filename}`;
+}
+
 export const getSummons = async (req: Request, res: Response) => {
   try {
     const rows = await summonModel.getSummons();
-    // map attachment to public URL if present
     const base = (process.env.BACKEND_URL || '').replace(/\/$/, '');
-    // fetch lookup data to enrich responses
+
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
-      // assetModel.getAssets may be heavy; use it anyway as caller requested
       assetModel.getAssets(),
       assetModel.getCostcenters(),
       assetModel.getLocations(),
       assetModel.getEmployees()
     ]);
 
-    const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
-    const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
-    const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
-    const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
 
     const assetMap = new Map();
     for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
@@ -30,24 +60,23 @@ export const getSummons = async (req: Request, res: Response) => {
     const locationMap = new Map(locations.map((l: any) => [l.id, l]));
     const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
-  const data = rows.map((r: any) => {
+    const makeUrl = (val: any) => {
+      if (!val) return null;
+      const s = String(val).trim();
+      if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s.replace(/^\/+/, '');
+      return `${base}/${s.replace(/^\/+/, '')}`;
+    };
+
+    const data = (rows || []).map((r: any) => {
       const rawUpl = r.summon_upl || null;
       const rawReceipt = r.summon_receipt || null;
-      const makeUrl = (val: any) => {
-        if (!val) return null;
-        const s = String(val).trim();
-        if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s.replace(/^\/+/, '');
-        return `${base}/${s.replace(/^\/+/, '')}`;
-      };
       const summon_upl = makeUrl(rawUpl);
       const summon_receipt = makeUrl(rawReceipt);
       const attachment_url = summon_upl || summon_receipt || null;
 
-      // asset enrichment
       let asset = null;
       if (r.asset_id && assetMap.has(r.asset_id)) {
         const a = assetMap.get(r.asset_id);
-        // resolve owner ramco id from possible fields on asset
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
         const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
         asset = {
@@ -64,15 +93,15 @@ export const getSummons = async (req: Request, res: Response) => {
         };
       }
 
-      // employee enrichment
       const employee = r.ramco_id && employeeMap.has(r.ramco_id) ? (() => {
         const e = employeeMap.get(r.ramco_id);
         return { ramco_id: r.ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
       })() : null;
 
-  const { reg_no, f_name, v_email, ...rest } = r as any;
-  return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+      const { reg_no, f_name, v_email, ...rest } = r as any;
+      return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
     });
+
     res.json({ status: 'success', message: 'Summons retrieved', data });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch summons', data: null });
@@ -82,94 +111,149 @@ export const getSummons = async (req: Request, res: Response) => {
 export const getSummonById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const row = await summonModel.getSummonById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
-  const base = (process.env.BACKEND_URL || '').replace(/\/$/, '');
-  const assetsRaw = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() as any[] : [];
-  const costcentersRaw = await assetModel.getCostcenters();
-  const locationsRaw = await assetModel.getLocations();
-  const employeesRaw = await assetModel.getEmployees();
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
 
-  const assetMap = new Map();
-  for (const a of assetsRaw) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
-  const costcenterMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((c: any) => [c.id, c]));
-  const locationMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [l.id, l]));
-  const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+    const rows = await summonModel.getSummonById(id);
+    if (!rows) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+    const r = Array.isArray(rows) ? rows[0] : rows;
 
-  const makeUrl = (val: any) => {
-    if (!val) return null;
-    const s = String(val).trim();
-    if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s.replace(/^\/+/, '');
-    return `${base}/${s.replace(/^\/+/, '')}`;
-  };
-  const summon_upl = makeUrl((row as any).summon_upl || null);
-  const summon_receipt = makeUrl((row as any).summon_receipt || null);
-  const attachment_url = summon_upl || summon_receipt || null;
+    const base = (process.env.BACKEND_URL || '').replace(/\/$/, '');
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
 
-  let asset = null;
-  if ((row as any).asset_id && assetMap.has((row as any).asset_id)) {
-    const a = assetMap.get((row as any).asset_id);
-    const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-    const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
-    asset = {
-      id: (row as any).asset_id,
-      register_number: a.register_number || a.vehicle_regno || null,
-      costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
-      location: (() => {
-        const locId = a.location_id ?? a.location?.id ?? null;
-        if (!locId) return null;
-        const found = locationMap.get(locId);
-        return found ? { id: locId, code: found.code || found.name || null } : null;
-      })(),
-      owner
+    const assetMap = new Map();
+    for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+    const rawUpl = r.summon_upl || null;
+    const rawReceipt = r.summon_receipt || null;
+    const makeUrl = (val: any) => {
+      if (!val) return null;
+      const s = String(val).trim();
+      if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s.replace(/^\/+/, '');
+      return `${base}/${s.replace(/^\/+/, '')}`;
     };
-  }
+    const summon_upl = makeUrl(rawUpl);
+    const summon_receipt = makeUrl(rawReceipt);
+    const attachment_url = summon_upl || summon_receipt || null;
 
-  const employee = (row as any).ramco_id && employeeMap.has((row as any).ramco_id) ? (() => {
-    const e = employeeMap.get((row as any).ramco_id);
-    return { ramco_id: (row as any).ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
-  })() : null;
+    let asset = null;
+    if (r.asset_id && assetMap.has(r.asset_id)) {
+      const a = assetMap.get(r.asset_id);
+      const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+      asset = {
+        id: r.asset_id,
+        register_number: a.register_number || a.vehicle_regno || null,
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+        location: (() => {
+          const locId = a.location_id ?? a.location?.id ?? null;
+          if (!locId) return null;
+          const found = locationMap.get(locId);
+          return found ? { id: locId, code: found.code || found.name || null } : null;
+        })(),
+        owner
+      };
+    }
 
-  const { reg_no, f_name, v_email, ...restRow } = row as any;
-  const data = { ...restRow, summon_upl, summon_receipt, attachment_url, asset, employee };
+    const employee = r.ramco_id && employeeMap.has(r.ramco_id) ? (() => {
+      const e = employeeMap.get(r.ramco_id);
+      return { ramco_id: r.ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
+    })() : null;
+
+    const { reg_no, f_name, v_email, ...rest } = r as any;
+    const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+
     res.json({ status: 'success', message: 'Summon retrieved', data });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch summon', data: null });
   }
 };
 
-// Create summon (supports optional single file attachment under 'attachment')
 export const createSummon = async (req: Request, res: Response) => {
   try {
-    // Accept flexible fields from body matching the summon schema
-    const payload: any = { ...req.body };
-    if (!payload.summon_dt) payload.summon_dt = new Date().toISOString();
+    const body: any = { ...req.body };
+    const payload: any = {};
 
-    // if multer stored a temp file, persist path now into `summon_upl`
+    if (body.registration_no !== undefined) payload.asset_id = Number(body.registration_no) || body.registration_no;
+    if (body.asset_id !== undefined) payload.asset_id = Number(body.asset_id) || body.asset_id;
+    if (body.assigned_driver !== undefined) payload.ramco_id = String(body.assigned_driver).trim();
+    if (body.ramco_id !== undefined && !payload.ramco_id) payload.ramco_id = String(body.ramco_id).trim();
+    if (body.summon_no !== undefined) payload.summon_no = String(body.summon_no).trim();
+    if (body.summon_loc !== undefined) payload.summon_loc = String(body.summon_loc).trim();
+    if (body.summon_agency !== undefined) payload.summon_agency = String(body.summon_agency).trim();
+    if (body.type_of_summon !== undefined) payload.type_of_summon = String(body.type_of_summon).trim();
+    if (body.summon_amt !== undefined) payload.summon_amt = Number(body.summon_amt) || 0;
+
+  // summon_dt is not set from the payload here; keep summon_date and summon_time as separate fields
+
+    if (body.myeg_date !== undefined) payload.myeg_date = body.myeg_date ? String(body.myeg_date).trim() : null;
+
     if ((req as any).file && (req as any).file.path) {
-      const normalized = normalizeStoredPath((req as any).file.path);
+      const tempPath: string = (req as any).file.path;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+      const normalized = normalizeStoredPath(tempPath);
       if (normalized) payload.summon_upl = normalized as string;
     }
 
     const id = await summonModel.createSummon(payload);
 
-    // If a file was uploaded, move to canonical location including id
     if ((req as any).file && (req as any).file.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
-      const filename = `summon-${id}-${Date.now()}${ext}`;
-      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
-      const destDir = path.join(base, 'upload', 'summons');
+  const filename = `summon-${id}-${Date.now()}${ext}`;
+  const base = await getUploadBase();
+  const destDir = path.join(base, 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
       await fsPromises.rename(tempPath, destPath);
-  const stored = `upload/summons/${filename}`;
-  // store canonical filename into summon_upl column
-  await summonModel.updateSummon(id, { summon_upl: stored });
+      const stored = `upload/summons/${filename}`;
+  const storedRel = `upload/compliance/summon/${filename}`;
+  await summonModel.updateSummon(id, { summon_upl: storedRel });
     }
 
-    res.status(201).json({ status: 'success', message: 'Summon created', data: { id } });
+    // After creation, try to resolve driver email by ramco_id and send notification
+    (async () => {
+      try {
+        const created = await summonModel.getSummonById(id);
+  const ramco = created?.ramco_id || null;
+        if (ramco) {
+          const emp = await assetModel.getEmployeeByRamco(String(ramco));
+          const toEmail = emp?.email || created?.v_email || null;
+          if (toEmail) {
+            const html = renderSummonNotification({
+              driverName: emp?.full_name || emp?.name || null,
+              smn_id: created?.smn_id || id,
+              summon_no: created?.summon_no || null,
+              summon_dt: created?.summon_dt || null,
+              summon_loc: created?.summon_loc || null,
+              summon_amt: created?.summon_amt || null,
+              summon_agency: created?.summon_agency || null,
+            });
+            await sendMail(toEmail, `Summon notification #${created?.smn_id || id}`, html).catch(() => {});
+            // mark emailStat = 1
+            await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        // non-blocking
+      }
+    })();
+
+    res.status(201).json({ status: 'success', message: 'Summon created', data: { id, smn_id: id } });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to create summon', data: null });
   }
@@ -178,33 +262,51 @@ export const createSummon = async (req: Request, res: Response) => {
 export const updateSummon = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-  // accept flexible update fields
-  const update: any = { ...req.body };
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+
+    const body: any = { ...req.body };
+    const payload: any = {};
+
+    if (body.registration_no !== undefined) payload.asset_id = Number(body.registration_no) || body.registration_no;
+    if (body.asset_id !== undefined) payload.asset_id = Number(body.asset_id) || body.asset_id;
+    if (body.assigned_driver !== undefined) payload.ramco_id = String(body.assigned_driver).trim();
+    if (body.ramco_id !== undefined && !payload.ramco_id) payload.ramco_id = String(body.ramco_id).trim();
+    if (body.summon_no !== undefined) payload.summon_no = String(body.summon_no).trim();
+    if (body.summon_loc !== undefined) payload.summon_loc = String(body.summon_loc).trim();
+    if (body.summon_agency !== undefined) payload.summon_agency = String(body.summon_agency).trim();
+    if (body.type_of_summon !== undefined) payload.type_of_summon = String(body.type_of_summon).trim();
+    if (body.summon_amt !== undefined) payload.summon_amt = Number(body.summon_amt) || 0;
+
+  // summon_dt is not set on update; keep summon_date and summon_time as separate fields
+
+    if (body.myeg_date !== undefined) payload.myeg_date = body.myeg_date ? String(body.myeg_date).trim() : null;
+
+    if ((req as any).file && (req as any).file.path) {
+      const tempPath: string = (req as any).file.path;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+      const normalized = normalizeStoredPath(tempPath);
+      if (normalized) payload.summon_upl = normalized as string;
+    }
+
+    await summonModel.updateSummon(id, payload);
 
     if ((req as any).file && (req as any).file.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
       const filename = `summon-${id}-${Date.now()}${ext}`;
-      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
-      const destDir = path.join(base, 'upload', 'summons');
+  const base2 = await getUploadBase();
+  const destDir = path.join(base2, 'summons');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
       await fsPromises.rename(tempPath, destPath);
-      // remove previous file if exists (check multiple possible columns)
-      try {
-        const existing = await summonModel.getSummonById(id);
-        const prevFile = (existing as any)?.summon_upl || (existing as any)?.summon_receipt || (existing as any)?.attachment_path || null;
-        if (prevFile) {
-          const prev = path.join(process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd(), 'upload', 'summons', path.basename(String(prevFile)));
-          await fsPromises.unlink(prev).catch(() => {});
-        }
-      } catch (e) {}
-      update.summon_upl = `upload/summons/${filename}`;
+      const stored = `upload/summons/${filename}`;
+      await summonModel.updateSummon(id, { summon_upl: stored });
     }
 
-    await summonModel.updateSummon(id, update);
-    res.json({ status: 'success', message: 'Summon updated', data: null });
+    res.json({ status: 'success', message: 'Updated' });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to update summon', data: null });
   }
@@ -216,7 +318,8 @@ export const deleteSummon = async (req: Request, res: Response) => {
     const existing = await summonModel.getSummonById(id);
     const prevFile = (existing as any)?.summon_upl || (existing as any)?.summon_receipt || (existing as any)?.attachment_path || null;
     if (prevFile) {
-      const full = path.join(process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd(), 'upload', 'summons', path.basename(String(prevFile)));
+  const base3 = await getUploadBase();
+  const full = path.join(base3, 'summons', path.basename(String(prevFile)));
       await fsPromises.unlink(full).catch(() => {});
     }
     await summonModel.deleteSummon(id);
@@ -229,9 +332,3 @@ export const deleteSummon = async (req: Request, res: Response) => {
     }
   }
 };
-
-function normalizeStoredPath(filePath?: string | null): string | null {
-  if (!filePath) return null;
-  const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `upload/summons/${filename}`;
-}

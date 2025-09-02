@@ -2,7 +2,7 @@ import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
 const dbName = 'assets';
-const summonTable = `${dbName}.summon`;
+const summonTable = `${dbName}.summon_test`;
 
 export interface SummonRecord {
   smn_id?: number;
@@ -48,17 +48,83 @@ export const getSummonById = async (id: number): Promise<SummonRecord | null> =>
 };
 
 export const createSummon = async (data: Omit<SummonRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
-  // Use INSERT ... SET ? to allow flexible fields matching the summons table schema
-  const insertObj: any = { ...data, summon_dt: data.summon_dt || new Date().toISOString() };
+  // Helper to format JS Date/ISO into MySQL DATETIME: 'YYYY-MM-DD HH:mm:ss'
+  const formatToMySQLDatetime = (input?: any): string | null => {
+    if (!input) return null;
+    const d = (input instanceof Date) ? input : new Date(String(input));
+    if (isNaN(d.getTime())) return null;
+    const YYYY = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
+  };
+
+  const fromParts = (dateStr?: string | null, timeStr?: string | null) => {
+    if (!dateStr) return null;
+    const datePart = String(dateStr).trim();
+    const timePart = timeStr ? String(timeStr).trim() : '00:00:00';
+    // assume datePart is already YYYY-MM-DD and timePart HH:mm:ss
+    // validate by trying to build a Date
+    const combined = `${datePart}T${timePart}`;
+    const d = new Date(combined);
+    if (isNaN(d.getTime())) return null;
+    return formatToMySQLDatetime(d);
+  };
+
+  // Determine summon_dt: prefer explicit summon_date + summon_time, then provided summon_dt, otherwise now
+  let summonDtFormatted: string | null = null;
+  if (data.summon_date) {
+    summonDtFormatted = fromParts(data.summon_date, data.summon_time || null) || formatToMySQLDatetime(new Date());
+  } else if (data.summon_dt) {
+    summonDtFormatted = formatToMySQLDatetime(data.summon_dt) || formatToMySQLDatetime(new Date());
+  } else {
+    summonDtFormatted = formatToMySQLDatetime(new Date());
+  }
+
+  const insertObj: any = { ...data };
+  if (summonDtFormatted) insertObj.summon_dt = summonDtFormatted;
   const [result] = await pool2.query(`INSERT INTO ${summonTable} SET ?`, [insertObj]);
   return (result as ResultSetHeader).insertId;
 };
 
 export const updateSummon = async (id: number, data: Partial<Omit<SummonRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
+  // Ensure summon_dt (if provided or computable from summon_date + summon_time) is in MySQL DATETIME format
+  const formatToMySQLDatetime = (input?: any): string | null => {
+    if (!input) return null;
+    const d = (input instanceof Date) ? input : new Date(String(input));
+    if (isNaN(d.getTime())) return null;
+    const YYYY = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
+  };
+
+  const fromParts = (dateStr?: string | null, timeStr?: string | null) => {
+    if (!dateStr) return null;
+    const datePart = String(dateStr).trim();
+    const timePart = timeStr ? String(timeStr).trim() : '00:00:00';
+    const combined = `${datePart}T${timePart}`;
+    const d = new Date(combined);
+    if (isNaN(d.getTime())) return null;
+    return formatToMySQLDatetime(d);
+  };
+
+  if ('summon_date' in data && (data as any).summon_date) {
+    (data as any).summon_dt = fromParts((data as any).summon_date, (data as any).summon_time) || formatToMySQLDatetime(new Date());
+  } else if ('summon_dt' in data && (data as any).summon_dt) {
+    (data as any).summon_dt = formatToMySQLDatetime((data as any).summon_dt) || undefined;
+  }
+
   const fields = Object.keys(data).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(data);
+  const values = Object.values(data).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${summonTable} SET ${fields}, updated_at = NOW() WHERE smn_id = ?`, [...values, id]);
+    await pool2.query(`UPDATE ${summonTable} SET ${fields} WHERE smn_id = ?`, [...values, id]);
   }
 };
 
