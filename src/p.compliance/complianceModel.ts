@@ -2,7 +2,7 @@ import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
 const dbName = 'assets';
-const summonTable = `${dbName}.summon_test`;
+const summonTable = `${dbName}.summon`;
 
 export interface SummonRecord {
   smn_id?: number;
