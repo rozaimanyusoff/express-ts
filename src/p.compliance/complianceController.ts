@@ -6,15 +6,14 @@ import { renderSummonNotification } from '../utils/emailTemplates/summonNotifica
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 
-// Determine upload base path safely:
-// Priority: UPLOAD_BASE_PATH (only if inside project), existing 'uploads' directory (legacy), else ensure 'upload' directory in project
+// Determine upload base path.
+// Priority: UPLOAD_BASE_PATH (if set), existing 'uploads' directory (legacy), else ensure 'upload' directory in project
 const getUploadBase = async (): Promise<string> => {
   const envBase = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : '';
   const projectRoot = process.cwd();
-  try {
-    if (envBase && path.resolve(envBase).startsWith(projectRoot)) return envBase;
-  } catch (e) {
-    // ignore
+  if (envBase) {
+    // use env value as-is when provided (user requested uploads be placed under UPLOAD_BASE_PATH/uploads/...)
+    return envBase;
   }
 
   const legacy = path.join(projectRoot, 'uploads');
@@ -30,11 +29,27 @@ const getUploadBase = async (): Promise<string> => {
   return fallback;
 };
 
+// Safe move helper: try rename, fall back to copy+unlink when crossing devices (EXDEV)
+const safeMove = async (src: string, dest: string) => {
+  try {
+    await fsPromises.rename(src, dest);
+    return;
+  } catch (err: any) {
+    if (err && err.code === 'EXDEV') {
+      // cross-device, copy + unlink
+      await fsPromises.copyFile(src, dest);
+      await fsPromises.unlink(src).catch(() => {});
+      return;
+    }
+    throw err;
+  }
+};
+
 // Helper to normalize a temp file path into stored relative path
 function normalizeStoredPath(filePath?: string | null): string | null {
   if (!filePath) return null;
   const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `upload/summons/${filename}`;
+  return `uploads/compliance/summon/${filename}`;
 }
 
 export const getSummons = async (req: Request, res: Response) => {
@@ -216,13 +231,12 @@ export const createSummon = async (req: Request, res: Response) => {
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
   const filename = `summon-${id}-${Date.now()}${ext}`;
   const base = await getUploadBase();
-  const destDir = path.join(base, 'compliance', 'summon');
+  const destDir = path.join(base, 'uploads', 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
-      await fsPromises.rename(tempPath, destPath);
-      const stored = `upload/summons/${filename}`;
-  const storedRel = `upload/compliance/summon/${filename}`;
-  await summonModel.updateSummon(id, { summon_upl: storedRel });
+      await safeMove(tempPath, destPath);
+      const storedRel = path.posix.join('uploads', 'compliance', 'summon', filename);
+      await summonModel.updateSummon(id, { summon_upl: storedRel });
     }
 
     // After creation, try to resolve driver email by ramco_id and send notification
@@ -298,11 +312,11 @@ export const updateSummon = async (req: Request, res: Response) => {
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
       const filename = `summon-${id}-${Date.now()}${ext}`;
   const base2 = await getUploadBase();
-  const destDir = path.join(base2, 'summons');
+  const destDir = path.join(base2, 'uploads', 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
-      await fsPromises.rename(tempPath, destPath);
-      const stored = `upload/summons/${filename}`;
+      await safeMove(tempPath, destPath);
+      const stored = path.posix.join('uploads', 'compliance', 'summon', filename);
       await summonModel.updateSummon(id, { summon_upl: stored });
     }
 
@@ -319,7 +333,8 @@ export const deleteSummon = async (req: Request, res: Response) => {
     const prevFile = (existing as any)?.summon_upl || (existing as any)?.summon_receipt || (existing as any)?.attachment_path || null;
     if (prevFile) {
   const base3 = await getUploadBase();
-  const full = path.join(base3, 'summons', path.basename(String(prevFile)));
+  const rel = String(prevFile).replace(/^\/+/, '');
+  const full = path.join(base3, rel);
       await fsPromises.unlink(full).catch(() => {});
     }
     await summonModel.deleteSummon(id);
