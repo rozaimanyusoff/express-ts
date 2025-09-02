@@ -9,12 +9,15 @@ import fs from 'fs';
 const { hash, compare } = bcrypt;
 
 // DB and table variables for easier maintenance
-export const DB_NAME = process.env.DB_NAME || 'auth';
-export const usersTable = 'users';
-export const userGroupsTable = 'user_groups';
-export const userProfileTable = 'user_profile';
-export const userTasksTable = 'user_tasks';
-export const approvalLevelsTable = 'approval_levels';
+const DB_NAME = process.env.DB_NAME || 'auth';
+const usersTable = 'users';
+const userGroupsTable = 'user_groups';
+const userProfileTable = 'user_profile';
+const userTasksTable = 'user_tasks';
+const approvalLevelsTable = 'approval_levels';
+const moduleTable = 'modules';
+const moduleMembersTable = 'module_members';
+const permissionTable = 'permissions';
 
 // Define the interface
 export interface Users {
@@ -510,3 +513,126 @@ export const deleteApprovalLevel = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${approvalLevelsTable} WHERE id = ?`, [id]);
     return result;
 };
+
+
+/* ===== MODULES ======= */
+export interface Module {
+    id: number;
+    name: string;
+    description: string;
+    created_at: Date;
+    updated_at: Date;
+}
+
+export const getAllModules = async (): Promise<Module[]> => {
+    const [rows] = await pool.query(`SELECT * FROM ${moduleTable}`);
+    return rows as Module[];
+};
+
+export const getModuleById = async (id: number): Promise<Module | null> => {
+    const [rows]: any[] = await pool.query(`SELECT * FROM ${moduleTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? (rows[0] as Module) : null;
+};
+
+export const createModule = async (name: string, description: string): Promise<number> => {
+    const [result] = await pool.query(`
+        INSERT INTO ${moduleTable} (name, description, created_at, updated_at)
+        VALUES (?, ?, NOW(), NOW())`,
+        [name, description]
+    );
+    return (result as ResultSetHeader).insertId;
+};
+
+export const updateModule = async (id: number, name: string, description: string): Promise<void> => {
+    await pool.query(`
+        UPDATE ${moduleTable} SET name = ?, description = ?, updated_at = NOW()
+        WHERE id = ?`,
+        [name, description, id]
+    );
+};
+
+export const deleteModule = async (id: number): Promise<void> => {
+    await pool.query(`DELETE FROM ${moduleTable} WHERE id = ?`, [id]);
+};
+
+// MODULE MEMBERS CRUD
+export interface ModuleMember {
+    id: number;
+    ramco_id: string;
+    module_id: number;
+    permission_id: number;
+}
+
+export const getModuleMembers = async (): Promise<ModuleMember[]> => {
+    const [rows] = await pool.query(`SELECT * FROM ${moduleMembersTable}`);
+    return rows as ModuleMember[];
+};
+
+export const getModuleMembersByModule = async (moduleId: number): Promise<ModuleMember[]> => {
+    const [rows] = await pool.query(`SELECT * FROM ${moduleMembersTable} WHERE module_id = ?`, [moduleId]);
+    return rows as ModuleMember[];
+};
+
+export const getModuleMembersByRamco = async (ramcoId: string): Promise<ModuleMember[]> => {
+    const [rows] = await pool.query(`SELECT * FROM ${moduleMembersTable} WHERE ramco_id = ?`, [ramcoId]);
+    return rows as ModuleMember[];
+};
+
+export const addModuleMember = async (ramco_id: string, module_id: number, permission_id: number): Promise<number> => {
+    const [result] = await pool.query(`INSERT INTO ${moduleMembersTable} (ramco_id, module_id, permission_id) VALUES (?, ?, ?)`, [ramco_id, module_id, permission_id]);
+    return (result as ResultSetHeader).insertId;
+};
+
+export const updateModuleMember = async (id: number, data: Partial<ModuleMember>) => {
+    const { ramco_id, module_id, permission_id } = data as any;
+    const [result] = await pool.query(`UPDATE ${moduleMembersTable} SET ramco_id = ?, module_id = ?, permission_id = ? WHERE id = ?`, [ramco_id, module_id, permission_id, id]);
+    return result;
+};
+
+export const deleteModuleMember = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${moduleMembersTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+// PERMISSIONS
+export interface Permission {
+    id: number;
+    name: string;
+    description?: string | null;
+}
+
+export const getPermissions = async (): Promise<Permission[]> => {
+    const [rows] = await pool.query(`SELECT * FROM ${permissionTable} ORDER BY id`);
+    return rows as Permission[];
+};
+
+export const getPermissionsByIds = async (ids: number[]): Promise<Permission[]> => {
+    if (!ids || ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await pool.query(`SELECT * FROM ${permissionTable} WHERE id IN (${placeholders})`, ids);
+    return rows as Permission[];
+};
+
+export const getPermissionById = async (id: number): Promise<Permission | null> => {
+    const [rows]: any[] = await pool.query(`SELECT * FROM ${permissionTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] as Permission : null;
+};
+
+export const createPermission = async (data: { code: string; name: string; description?: string | null; category?: string | null; is_active?: number }): Promise<number> => {
+    const { code, name, description = null, category = null, is_active = 1 } = data;
+    const [result] = await pool.query(`INSERT INTO ${permissionTable} (code, name, description, category, is_active) VALUES (?, ?, ?, ?, ?)`, [code, name, description, category, is_active]);
+    return (result as ResultSetHeader).insertId;
+};
+
+export const updatePermission = async (id: number, data: Partial<{ code: string; name: string; description?: string | null; category?: string | null; is_active?: number }>) => {
+    const { code, name, description = null, category = null, is_active = 1 } = data as any;
+    const [result] = await pool.query(`UPDATE ${permissionTable} SET code = ?, name = ?, description = ?, category = ?, is_active = ? WHERE id = ?`, [code, name, description, category, is_active, id]);
+    return result;
+};
+
+export const deletePermission = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${permissionTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+

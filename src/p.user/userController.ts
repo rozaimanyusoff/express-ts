@@ -520,6 +520,221 @@ export const getApprovalLevelById = async (req: Request, res: Response): Promise
   }
 };
 
+/* ===== MODULES (via userModel) ===== */
+export const getModules = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const modules = await userModel.getAllModules();
+    return res.status(200).json({ status: 'success', message: 'Modules retrieved', data: modules });
+  } catch (error: any) {
+    logger.error('Error fetching modules', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch modules' });
+  }
+};
+
+export const getModuleById = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    const moduleRow = await userModel.getModuleById(id);
+    // Build members with permissions grouped per ramco_id
+    const members = await userModel.getModuleMembersByModule(id);
+    // Fetch all permissions and build id->perm map
+    const allPerms = await userModel.getPermissions();
+    const permMap = new Map(allPerms.map(p => [p.id, p]));
+
+    // group by ramco_id
+    const grouped = new Map<string, any>();
+    for (const m of members) {
+      const ram = String(m.ramco_id);
+      const perm = permMap.get(Number(m.permission_id));
+      if (!grouped.has(ram)) grouped.set(ram, { ramco_id: ram, permissions: [] as any[] });
+      if (perm) grouped.get(ram).permissions.push(perm);
+    }
+
+    const result = [
+      {
+        module: moduleRow ? moduleRow.name : null,
+        members: Array.from(grouped.values()),
+      }
+    ];
+    return res.status(200).json({ status: 'success', message: 'Permissions data retrieved successfully', data: result });
+  } catch (error: any) {
+    logger.error('Error fetching module', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch module' });
+  }
+};
+
+export const createModule = async (req: Request, res: Response): Promise<Response> => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ status: 'error', message: 'Name required' });
+  try {
+    const insertId = await userModel.createModule(name, description || null);
+    return res.status(201).json({ status: 'success', message: 'Module created', data: { id: insertId } });
+  } catch (error: any) {
+    logger.error('Error creating module', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to create module' });
+  }
+};
+
+export const updateModule = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  const { name, description } = req.body;
+  if (!id || !name) return res.status(400).json({ status: 'error', message: 'Invalid input' });
+  try {
+    await userModel.updateModule(id, name, description || null);
+    return res.status(200).json({ status: 'success', message: 'Module updated' });
+  } catch (error: any) {
+    logger.error('Error updating module', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to update module' });
+  }
+};
+
+export const deleteModule = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    await userModel.deleteModule(id);
+    return res.status(200).json({ status: 'success', message: 'Module deleted' });
+  } catch (error: any) {
+    logger.error('Error deleting module', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to delete module' });
+  }
+};
+
+// ===== MODULE MEMBERS =====
+export const getAllModuleMembers = async (_req: Request, res: Response): Promise<Response> => {
+  try {
+    const rows = await userModel.getModuleMembers();
+    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+  } catch (error: any) {
+    logger.error('Error fetching module members', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members' });
+  }
+};
+
+export const getModuleMembersByModule = async (req: Request, res: Response): Promise<Response> => {
+  const moduleId = Number(req.params.id);
+  if (!moduleId) return res.status(400).json({ status: 'error', message: 'Invalid module id' });
+  try {
+    const rows = await userModel.getModuleMembersByModule(moduleId);
+    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+  } catch (error: any) {
+    logger.error('Error fetching module members by module', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members by module' });
+  }
+};
+
+export const getModuleMembersByRamco = async (req: Request, res: Response): Promise<Response> => {
+  const ramco = String(req.params.ramco_id || req.query.ramco_id || '');
+  if (!ramco) return res.status(400).json({ status: 'error', message: 'Invalid ramco_id' });
+  try {
+    const rows = await userModel.getModuleMembersByRamco(ramco);
+    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+  } catch (error: any) {
+    logger.error('Error fetching module members by ramco', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members by ramco' });
+  }
+};
+
+export const postModuleMember = async (req: Request, res: Response): Promise<Response> => {
+  const moduleId = Number(req.params.id || req.body.module_id);
+  const { ramco_id, permission_id } = req.body;
+  if (!moduleId || !ramco_id) return res.status(400).json({ status: 'error', message: 'module_id and ramco_id required' });
+  try {
+    const insertId = await userModel.addModuleMember(ramco_id, moduleId, Number(permission_id || 0));
+    return res.status(201).json({ status: 'success', message: 'Module member added', data: { id: insertId } });
+  } catch (error: any) {
+    logger.error('Error adding module member', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to add module member' });
+  }
+};
+
+export const putModuleMember = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  const { ramco_id, module_id, permission_id } = req.body;
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    await userModel.updateModuleMember(id, { ramco_id, module_id: module_id ? Number(module_id) : undefined, permission_id });
+    return res.status(200).json({ status: 'success', message: 'Module member updated' });
+  } catch (error: any) {
+    logger.error('Error updating module member', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to update module member' });
+  }
+};
+
+export const deleteModuleMemberHandler = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    await userModel.deleteModuleMember(id);
+    return res.status(200).json({ status: 'success', message: 'Module member deleted' });
+  } catch (error: any) {
+    logger.error('Error deleting module member', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to delete module member' });
+  }
+};
+
+// ===== PERMISSIONS CRUD =====
+export const getPermissionsHandler = async (_req: Request, res: Response): Promise<Response> => {
+  try {
+    const rows = await userModel.getPermissions();
+    return res.status(200).json({ status: 'success', message: 'Permissions retrieved', data: rows });
+  } catch (error: any) {
+    logger.error('Error fetching permissions', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch permissions' });
+  }
+};
+
+export const getPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    const p = await userModel.getPermissionById(id);
+    if (!p) return res.status(404).json({ status: 'error', message: 'Permission not found' });
+    return res.status(200).json({ status: 'success', data: p });
+  } catch (error: any) {
+    logger.error('Error fetching permission', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to fetch permission' });
+  }
+};
+
+export const postPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
+  const { code, name, description, category, is_active } = req.body;
+  if (!code || !name) return res.status(400).json({ status: 'error', message: 'code and name required' });
+  try {
+    const id = await userModel.createPermission({ code, name, description, category, is_active });
+    return res.status(201).json({ status: 'success', message: 'Permission created', data: { id } });
+  } catch (error: any) {
+    logger.error('Error creating permission', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to create permission' });
+  }
+};
+
+export const putPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  const data = req.body;
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    await userModel.updatePermission(id, data);
+    return res.status(200).json({ status: 'success', message: 'Permission updated' });
+  } catch (error: any) {
+    logger.error('Error updating permission', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to update permission' });
+  }
+};
+
+export const deletePermissionHandler = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  try {
+    await userModel.deletePermission(id);
+    return res.status(200).json({ status: 'success', message: 'Permission deleted' });
+  } catch (error: any) {
+    logger.error('Error deleting permission', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to delete permission' });
+  }
+};
+
 export const createApprovalLevel = async (req: Request, res: Response) => {
   const data = req.body;
   try {

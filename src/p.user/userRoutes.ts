@@ -29,4 +29,26 @@ router.post("/approvals", asyncHandler(userController.createApprovalLevel));
 router.put("/approvals/:id", asyncHandler(userController.updateApprovalLevel));
 router.delete("/approvals/:id", asyncHandler(userController.deleteApprovalLevel));
 
+// MODULES
+router.get('/modules', asyncHandler(userController.getModules));
+router.get('/modules/:id', asyncHandler(userController.getModuleById));
+router.post('/modules', asyncHandler(userController.createModule));
+router.put('/modules/:id', asyncHandler(userController.updateModule));
+router.delete('/modules/:id', asyncHandler(userController.deleteModule));
+
+// MODULE MEMBERS
+router.get('/modules/members', asyncHandler(userController.getAllModuleMembers)); // all members
+router.get('/modules/:id/members', asyncHandler(userController.getModuleMembersByModule)); // members by module id
+router.get('/modules/members/:ramco_id', asyncHandler(userController.getModuleMembersByRamco)); // members by ramco
+router.post('/modules/:id/members', asyncHandler(userController.postModuleMember)); // add member to module
+router.put('/modules/members/:id', asyncHandler(userController.putModuleMember));
+router.delete('/modules/members/:id', asyncHandler(userController.deleteModuleMemberHandler));
+
+// PERMISSIONS
+router.get('/permissions', asyncHandler(userController.getPermissionsHandler));
+router.get('/permissions/:id', asyncHandler(userController.getPermissionHandler));
+router.post('/permissions', asyncHandler(userController.postPermissionHandler));
+router.put('/permissions/:id', asyncHandler(userController.putPermissionHandler));
+router.delete('/permissions/:id', asyncHandler(userController.deletePermissionHandler));
+
 export default router;
