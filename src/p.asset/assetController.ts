@@ -17,12 +17,14 @@ export const getAssets = async (req: Request, res: Response) => {
 	const managerParam = req.query.manager;
 	const ownerParam = req.query.owner;
 	const registerNumberParam = req.query.register;
+	const brandParam = req.query.brand; // ?brand={brandId}
 	let typeIds: number[] | undefined = undefined;
 	let status: string | undefined = undefined;
 	let classification: string | undefined = undefined;
 	let manager: number | undefined = undefined;
 	let owner: string | undefined = undefined;
 	let registerNumber: string | undefined = undefined;
+	let brandId: number | undefined = undefined;
 	if (typeof managerParam === 'string' && managerParam !== '') {
 		manager = Number(managerParam);
 		//if (isNaN(manager)) manager = undefined;
@@ -45,9 +47,13 @@ export const getAssets = async (req: Request, res: Response) => {
 	if (typeof registerNumberParam === 'string' && registerNumberParam !== '') {
 		registerNumber = registerNumberParam;
 	}
+	if (typeof brandParam === 'string' && brandParam !== '' && brandParam !== 'all') {
+ 		const n = Number(brandParam);
+ 		if (!isNaN(n)) brandId = n;
+ 	}
 
 	// Fetch all assets and related data
-	const assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner);
+	const assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId);
 	const typesRaw = await assetModel.getTypes();
 	const categoriesRaw = await assetModel.getCategories();
 	const brandsRaw = await assetModel.getBrands();
@@ -2992,4 +2998,3 @@ export const deleteAssetManager = async (req: Request, res: Response) => {
 	}
 	res.json({ status: 'success', message: 'Asset manager deleted successfully' });
 }
-

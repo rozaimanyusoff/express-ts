@@ -671,7 +671,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -715,6 +715,10 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
       conditions.push(`${assetTable}.ramco_id IN (${placeholders})`);
       params.push(...ownerIds);
     }
+  }
+  if (typeof brandId === 'number' && !isNaN(brandId)) {
+    conditions.push('brand_id = ?');
+    params.push(brandId);
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');

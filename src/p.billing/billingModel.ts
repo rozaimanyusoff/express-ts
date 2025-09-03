@@ -610,6 +610,25 @@ export const getUtilityBillsByIds = async (ids: number[]): Promise<UtilityBill[]
   return rows as UtilityBill[];
 };
 
+// Get previous N utility bills for an account (bill_id), excluding a specific util_id (current bill)
+export const getPreviousUtilityBillsForAccount = async (
+  bill_id: number,
+  excludeUtilId?: number,
+  limit: number = 5
+): Promise<Array<Pick<UtilityBill, 'ubill_no' | 'ubill_date' | 'ubill_gtotal'>>> => {
+  if (!Number.isFinite(bill_id) || bill_id <= 0) return [];
+  const params: any[] = [bill_id];
+  let where = 'bill_id = ?';
+  if (Number.isFinite(excludeUtilId)) {
+    where += ' AND util_id <> ?';
+    params.push(Number(excludeUtilId));
+  }
+  params.push(limit);
+  const sql = `SELECT ubill_no, ubill_date, ubill_gtotal FROM ${utilitiesTable} WHERE ${where} ORDER BY ubill_date DESC, util_id DESC LIMIT ?`;
+  const [rows] = await pool2.query(sql, params);
+  return rows as Array<Pick<UtilityBill, 'ubill_no' | 'ubill_date' | 'ubill_gtotal'>>;
+};
+
 export const getUtilityBillById = async (util_id: number): Promise<UtilityBill | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${utilitiesTable} WHERE util_id = ?`, [util_id]);
   const bill = (rows as UtilityBill[])[0];
