@@ -5,6 +5,9 @@ import { promises as fsPromises } from 'fs';
 import * as purchaseModel from './purchaseModel';
 import { PurchaseRecord } from './purchaseModel';
 
+// Keep purchase subfolder consistent across uploader, DB, and public URL
+const PURCHASE_SUBDIR = 'purchases/docs';
+
 // GET ALL PURCHASES
 export const getPurchases = async (req: Request, res: Response) => {
   try {
@@ -165,10 +168,10 @@ export const createPurchase = async (req: Request, res: Response) => {
       grn_no: req.body.grn_no
     };
 
-    // If a file was uploaded by multer, normalize and include the stored path
+    // If a file was uploaded by multer, store the DB-friendly path using our subdir
     if ((req as any).file && (req as any).file.path) {
-      // store the relative DB-friendly path
-      (purchaseData as any).upload_path = normalizeStoredPath((req as any).file.path);
+      const filename = path.basename((req as any).file.path);
+      (purchaseData as any).upload_path = `upload/${PURCHASE_SUBDIR}/${filename}`;
     }
 
     // Auto-calculate total_price if not provided
@@ -179,36 +182,7 @@ export const createPurchase = async (req: Request, res: Response) => {
     // Insert first to obtain ID (two-step upload flow)
     const insertId = await purchaseModel.createPurchase(purchaseData);
 
-    // If a file was uploaded by multer, move it to the canonical storage and update the record
-    if ((req as any).file && (req as any).file.path) {
-      const tempPath: string = (req as any).file.path;
-      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
-      const ext = path.extname(originalName) || path.extname(tempPath) || '';
-      const filename = `purchase-${insertId}-${Date.now()}${ext}`;
-
-      // Destination directory: prefer UPLOAD_BASE_PATH if configured, else project-local 'upload/purchases'
-      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
-      const destDir = process.env.UPLOAD_BASE_PATH ? path.join(base, 'upload', 'purchases') : path.join(process.cwd(), 'upload', 'purchases');
-
-      try {
-        await fsPromises.mkdir(destDir, { recursive: true });
-        const destPath = path.join(destDir, filename);
-        await fsPromises.rename(tempPath, destPath);
-
-        // Persist DB-friendly stored path
-        const storedPath = `upload/purchases/${filename}`;
-        await purchaseModel.updatePurchase(insertId, { upload_path: storedPath });
-      } catch (moveErr) {
-        // If moving the file fails, attempt to clean up the inserted DB record to avoid orphan
-        try {
-          await purchaseModel.deletePurchase(insertId);
-        } catch (delErr) {
-          // ignore deletion errors but log to console
-          console.error('Failed to delete purchase after file move error', delErr);
-        }
-        throw moveErr;
-      }
-    }
+    // No further file move needed: multer already placed the file in the correct directory
 
     res.status(201).json({
       status: 'success',
@@ -265,32 +239,20 @@ export const updatePurchase = async (req: Request, res: Response) => {
 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
     if ((req as any).file && (req as any).file.path) {
-      const tempPath: string = (req as any).file.path;
-      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
-      const ext = path.extname(originalName) || path.extname(tempPath) || '';
-      const filename = `purchase-${id}-${Date.now()}${ext}`;
-
-      const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd();
-      const destDir = process.env.UPLOAD_BASE_PATH ? path.join(base, 'upload', 'purchases') : path.join(process.cwd(), 'upload', 'purchases');
-
-      await fsPromises.mkdir(destDir, { recursive: true });
-      const destPath = path.join(destDir, filename);
-      await fsPromises.rename(tempPath, destPath);
-
+      const filename = path.basename((req as any).file.path);
       // Attempt to remove previous file if existed
       try {
         const existing = await purchaseModel.getPurchaseById(id);
         if (existing && existing.upload_path) {
           const prevFilename = path.basename(existing.upload_path);
-          const prevFull = path.join(process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : process.cwd(), 'upload', 'purchases', prevFilename);
-          // ignore errors when deleting previous file
+          const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+          const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
           await fsPromises.unlink(prevFull).catch(() => {});
         }
-      } catch (err) {
+      } catch {
         // ignore errors
       }
-
-      updateData.upload_path = `upload/purchases/${filename}`;
+      updateData.upload_path = `upload/${PURCHASE_SUBDIR}/${filename}`;
     }
 
     // Auto-calculate total_price if qty or unit_price is updated
@@ -449,14 +411,14 @@ function publicUrl(rawPath?: string | null): string | null {
   const baseUrl = process.env.BACKEND_URL || '';
   // Ensure we produce BACKEND_URL/upload/purchases/<filename>
   const filename = path.basename(String(rawPath).replace(/\\/g, '/'));
-  const normalized = `upload/purchases/${filename}`;
+  const normalized = `upload/${PURCHASE_SUBDIR}/${filename}`;
   return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
 }
 function normalizeStoredPath(filePath?: string | null): string | null {
   if (!filePath) return null;
   // Normalize to a canonical storage path: upload/purchases/<filename>
   const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `upload/purchases/${filename}`;
+  return `upload/${PURCHASE_SUBDIR}/${filename}`;
 }
 
 /* ======= SUPPLIER QUERIES ======= */

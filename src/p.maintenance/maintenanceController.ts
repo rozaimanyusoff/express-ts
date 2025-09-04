@@ -10,6 +10,225 @@ import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceR
 
 /* ============== MAINTENANCE RECORDS MANAGEMENT =============== */
 
+/* ================== FLEET INSURANCE + ROADTAX ================== */
+
+// Helper to normalize asset IDs from various keys
+function normalizeAssetIds(input: any): number[] {
+    const body = input || {};
+    let ids: any = body.assets_ids ?? body.asset_ids ?? body.assets ?? body.assetIds ?? [];
+    if (typeof ids === 'string') {
+        ids = ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+    if (!Array.isArray(ids)) ids = [];
+    return ids.map((n: any) => Number(n)).filter((n: any) => Number.isFinite(n));
+}
+
+export const createFleetInsurance = async (req: Request, res: Response) => {
+    try {
+        const body = req.body || {};
+        const payload = {
+            assets_ids: normalizeAssetIds(body),
+            insurance: {
+                insurer: body.insurance?.insurer,
+                policy_no: body.insurance?.policy_no,
+                coverage_start: body.insurance?.coverage_start,
+                coverage_end: body.insurance?.coverage_end,
+                premium_amount: body.insurance?.premium_amount ?? null,
+                coverage_details: body.insurance?.coverage_details ?? null,
+                updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
+            }
+        } as any;
+
+        if (!payload.insurance?.insurer || !payload.insurance?.policy_no) {
+            return res.status(400).json({ status: 'error', message: 'insurer and policy_no are required', data: null });
+        }
+
+        const id = await maintenanceModel.createFleetInsuranceWithAssets(payload);
+
+        // Build response shape
+        const record = await maintenanceModel.getFleetInsuranceById(id);
+        if (!record) {
+            return res.status(500).json({ status: 'error', message: 'Failed to fetch created insurance', data: null });
+        }
+
+        // Enrich assets: get asset details for category/register_number
+        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+        const [assetsRaw, categoriesRaw] = await Promise.all([
+            assetModel.getAssetsByIds(assetIds),
+            assetModel.getCategories(),
+        ]);
+        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+
+        const response = {
+            id: record.insurance.id,
+            insurer: record.insurance.insurer,
+            policy_no: record.insurance.policy_no,
+            coverage_start: record.insurance.coverage_start,
+            coverage_end: record.insurance.coverage_end,
+            premium_amount: record.insurance.premium_amount ?? null,
+            coverage_details: record.insurance.coverage_details ?? null,
+            created_at: record.insurance.created_at,
+            updated_at: record.insurance.updated_at,
+            assets: (record.assets || []).map((rt: any) => {
+                const a = assetMap.get(Number(rt.asset_id));
+                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+                return {
+                    id: Number(rt.asset_id),
+                    register_number: a?.register_number ?? rt.register_number ?? null,
+                    category: category?.name ?? null,
+                    roadtax_expiry: rt.roadtax_expiry ?? null,
+                    roadtax_amount: rt.roadtax_amount ?? null,
+                };
+            })
+        };
+
+        return res.status(201).json({
+            status: 'success',
+            message: 'Insurance details added successfully.',
+            data: response,
+        });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+    }
+};
+
+export const updateFleetInsurance = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const body = req.body || {};
+        const payload = {
+            assets_ids: normalizeAssetIds(body),
+            insurance: {
+                insurer: body.insurance?.insurer,
+                policy_no: body.insurance?.policy_no,
+                coverage_start: body.insurance?.coverage_start,
+                coverage_end: body.insurance?.coverage_end,
+                premium_amount: body.insurance?.premium_amount ?? null,
+                coverage_details: body.insurance?.coverage_details ?? null,
+                updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
+            }
+        } as any;
+
+        await maintenanceModel.updateFleetInsuranceWithAssets(Number(id), payload);
+        const record = await maintenanceModel.getFleetInsuranceById(Number(id));
+        if (!record) {
+            return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
+        }
+
+        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+        const [assetsRaw, categoriesRaw] = await Promise.all([
+            assetModel.getAssetsByIds(assetIds),
+            assetModel.getCategories(),
+        ]);
+        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+
+        const response = {
+            id: record.insurance.id,
+            insurer: record.insurance.insurer,
+            policy_no: record.insurance.policy_no,
+            coverage_start: record.insurance.coverage_start,
+            coverage_end: record.insurance.coverage_end,
+            premium_amount: record.insurance.premium_amount ?? null,
+            coverage_details: record.insurance.coverage_details ?? null,
+            created_at: record.insurance.created_at,
+            updated_at: record.insurance.updated_at,
+            assets: (record.assets || []).map((rt: any) => {
+                const a = assetMap.get(Number(rt.asset_id));
+                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+                return {
+                    id: Number(rt.asset_id),
+                    register_number: a?.register_number ?? rt.register_number ?? null,
+                    category: category?.name ?? null,
+                    roadtax_expiry: rt.roadtax_expiry ?? null,
+                    roadtax_amount: rt.roadtax_amount ?? null,
+                };
+            })
+        };
+
+        return res.json({ status: 'success', message: 'Insurance details updated successfully.', data: response });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+    }
+};
+
+export const getFleetInsuranceById = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const record = await maintenanceModel.getFleetInsuranceById(Number(id));
+        if (!record) {
+            return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
+        }
+
+        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+        const [assetsRaw, categoriesRaw] = await Promise.all([
+            assetModel.getAssetsByIds(assetIds),
+            assetModel.getCategories(),
+        ]);
+        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+
+        const response = {
+            id: record.insurance.id,
+            insurer: record.insurance.insurer,
+            policy_no: record.insurance.policy_no,
+            coverage_start: record.insurance.coverage_start,
+            coverage_end: record.insurance.coverage_end,
+            premium_amount: record.insurance.premium_amount ?? null,
+            coverage_details: record.insurance.coverage_details ?? null,
+            created_at: record.insurance.created_at,
+            updated_at: record.insurance.updated_at,
+            assets: (record.assets || []).map((rt: any) => {
+                const a = assetMap.get(Number(rt.asset_id));
+                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+                return {
+                    id: Number(rt.asset_id),
+                    register_number: a?.register_number ?? rt.register_number ?? null,
+                    category: category?.name ?? null,
+                    roadtax_expiry: rt.roadtax_expiry ?? null,
+                    roadtax_amount: rt.roadtax_amount ?? null,
+                };
+            })
+        };
+
+        return res.json({ status: 'success', message: 'Insurance details retrieved successfully.', data: response });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+    }
+};
+
+export const listFleetInsurances = async (req: Request, res: Response) => {
+    try {
+        const rows = await maintenanceModel.listFleetInsurances();
+        const counts = await maintenanceModel.getRoadtaxCountsByInsurer();
+        const countMap = new Map((Array.isArray(counts) ? counts : []).map((r: any) => [Number(r.insurer_id), Number(r.assets_count) || 0]));
+
+        const data = (Array.isArray(rows) ? rows : []).map((r: any) => ({
+            id: r.id,
+            insurer: r.insurer,
+            policy_no: r.policy_no,
+            coverage_start: r.coverage_start,
+            coverage_end: r.coverage_end,
+            premium_amount: r.premium_amount ?? null,
+            coverage_details: r.coverage_details ?? null,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            assets_count: countMap.get(Number(r.id)) || 0,
+        }));
+
+        return res.json({ status: 'success', message: 'Insurance list retrieved successfully.', data });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+    }
+};
+
 export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 	try {
 		// Support ?status={status} param (optional) - values: pending, verified, recommended, approved
