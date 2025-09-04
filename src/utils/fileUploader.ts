@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { Request, Response, NextFunction } from 'express';
 import logger from './logger';
+import { getUploadBaseSync } from './uploadUtil';
 
 // Define allowed mime types for broad compatibility
 const ALLOWED_MIME_TYPES = [
@@ -33,41 +34,23 @@ const ALLOWED_MIME_TYPES = [
  * @param subfolder - The subfolder within the base upload directory to store files.
  * @returns A multer instance configured for the specified subfolder.
  */
+// subfolder is the module_directory to store files under (e.g., 'purchases/docs')
 export const createUploader = (subfolder: string) => {
 	const storage = multer.diskStorage({
 		destination: (req: Request, file: Express.Multer.File, cb) => {
-			// Prefer an environment-configured base path, but fall back to a local 'uploads' folder
-			const envBase = process.env.UPLOAD_BASE_PATH;
-			const defaultLocalBase = path.join(process.cwd(), 'uploads');
-			let uploadBasePath = envBase || path.join(__dirname, '..', '..', 'uploads');
-
-			const destinationPath = path.join(uploadBasePath, subfolder);
-
-			// Try to create the requested destination. If it fails (for example on systems
-			// where the configured base path like "/mnt" doesn't exist), fall back to a
-			// local uploads directory so the server remains usable.
+			const base = getUploadBaseSync();
+			const destinationPath = path.join(base, subfolder);
 			fs.mkdir(destinationPath, { recursive: true }, (err) => {
-				if (!err) {
-					return cb(null, destinationPath);
-				}
-				// Log the failure and attempt a safe fallback
-				logger.warn(`Failed to create upload directory: ${destinationPath} - ${err.message}. Falling back to local uploads directory.`);
-				let fallback: string | null = null;
-				try {
-					fallback = path.join(defaultLocalBase, subfolder);
-					fs.mkdirSync(fallback, { recursive: true });
-					return cb(null, fallback);
-				} catch (e) {
-					const fallbackErr = e as Error;
-					logger.error(`Failed to create fallback upload directory: ${fallback} - ${fallbackErr.message}`);
-					// If fallback also fails, return the original error to the multer callback
+				if (err) {
+					logger.error(`Failed to ensure upload directory: ${destinationPath} - ${err.message}`);
 					return cb(err, destinationPath);
 				}
+				return cb(null, destinationPath);
 			});
 		},
 		filename: (req: Request, file: Express.Multer.File, cb) => {
 			// Generate a unique filename to prevent overwrites
-			const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+			const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
 			const extension = path.extname(file.originalname);
 			const finalFilename = `${file.fieldname}-${uniqueSuffix}${extension}`;
 			cb(null, finalFilename);

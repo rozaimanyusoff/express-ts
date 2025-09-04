@@ -5,45 +5,8 @@ import { sendMail } from '../utils/mailer';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
+import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
 
-// Determine upload base path.
-// Priority: UPLOAD_BASE_PATH (if set), existing 'uploads' directory (legacy), else ensure 'upload' directory in project
-const getUploadBase = async (): Promise<string> => {
-  const envBase = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : '';
-  const projectRoot = process.cwd();
-  if (envBase) {
-    // use env value as-is when provided (user requested uploads be placed under UPLOAD_BASE_PATH/uploads/...)
-    return envBase;
-  }
-
-  const legacy = path.join(projectRoot, 'uploads');
-  try {
-    const stat = await fsPromises.stat(legacy).catch(() => null);
-    if (stat && stat.isDirectory()) return legacy;
-  } catch (e) {
-    // ignore
-  }
-
-  const fallback = path.join(projectRoot, 'upload');
-  await fsPromises.mkdir(fallback, { recursive: true }).catch(() => {});
-  return fallback;
-};
-
-// Safe move helper: try rename, fall back to copy+unlink when crossing devices (EXDEV)
-const safeMove = async (src: string, dest: string) => {
-  try {
-    await fsPromises.rename(src, dest);
-    return;
-  } catch (err: any) {
-    if (err && err.code === 'EXDEV') {
-      // cross-device, copy + unlink
-      await fsPromises.copyFile(src, dest);
-      await fsPromises.unlink(src).catch(() => {});
-      return;
-    }
-    throw err;
-  }
-};
 
 // Helper to normalize a temp file path into stored relative path
 function normalizeStoredPath(filePath?: string | null): string | null {
@@ -85,8 +48,8 @@ export const getSummons = async (req: Request, res: Response) => {
     const data = (rows || []).map((r: any) => {
       const rawUpl = r.summon_upl || null;
       const rawReceipt = r.summon_receipt || null;
-      const summon_upl = makeUrl(rawUpl);
-      const summon_receipt = makeUrl(rawReceipt);
+      const summon_upl = toPublicUrl(rawUpl);
+      const summon_receipt = toPublicUrl(rawReceipt);
       const attachment_url = summon_upl || summon_receipt || null;
 
       let asset = null;

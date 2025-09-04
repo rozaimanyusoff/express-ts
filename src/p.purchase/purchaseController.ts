@@ -5,8 +5,9 @@ import { promises as fsPromises } from 'fs';
 import * as purchaseModel from './purchaseModel';
 import { PurchaseRecord } from './purchaseModel';
 
-// Keep purchase subfolder consistent across uploader, DB, and public URL
-const PURCHASE_SUBDIR = 'purchases/docs';
+// module_directory for this module's uploads
+const PURCHASE_SUBDIR = 'purchases';
+import { buildStoragePath, safeMove, toDbPath, toPublicUrl } from '../utils/uploadUtil';
 
 // GET ALL PURCHASES
 export const getPurchases = async (req: Request, res: Response) => {
@@ -168,11 +169,7 @@ export const createPurchase = async (req: Request, res: Response) => {
       grn_no: req.body.grn_no
     };
 
-    // If a file was uploaded by multer, store the DB-friendly path using our subdir
-    if ((req as any).file && (req as any).file.path) {
-      const filename = path.basename((req as any).file.path);
-      (purchaseData as any).upload_path = `upload/${PURCHASE_SUBDIR}/${filename}`;
-    }
+    // If a file was uploaded by multer, we'll rename it after insert to include the module id
 
     // Auto-calculate total_price if not provided
     if (!purchaseData.total_price && purchaseData.qty && purchaseData.unit_price) {
@@ -182,7 +179,18 @@ export const createPurchase = async (req: Request, res: Response) => {
     // Insert first to obtain ID (two-step upload flow)
     const insertId = await purchaseModel.createPurchase(purchaseData);
 
-    // No further file move needed: multer already placed the file in the correct directory
+    // If a file was uploaded, rename and update stored path to include module id
+    if ((req as any).file && (req as any).file.path) {
+      const tempPath = (req as any).file.path as string;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+      const filename = `purchase-${insertId}-${Date.now()}${ext}`;
+      const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+      const destDir = path.dirname(destPath);
+      await fsPromises.mkdir(destDir, { recursive: true }).catch(() => {});
+      await safeMove(tempPath, destPath);
+      await purchaseModel.updatePurchase(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+    }
 
     res.status(201).json({
       status: 'success',
@@ -239,7 +247,10 @@ export const updatePurchase = async (req: Request, res: Response) => {
 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
     if ((req as any).file && (req as any).file.path) {
-      const filename = path.basename((req as any).file.path);
+      const tempPath = (req as any).file.path as string;
+      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
+      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+      const filename = `purchase-${id}-${Date.now()}${ext}`;
       // Attempt to remove previous file if existed
       try {
         const existing = await purchaseModel.getPurchaseById(id);
@@ -252,7 +263,9 @@ export const updatePurchase = async (req: Request, res: Response) => {
       } catch {
         // ignore errors
       }
-      updateData.upload_path = `upload/${PURCHASE_SUBDIR}/${filename}`;
+      const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+      await safeMove(tempPath, destPath);
+      updateData.upload_path = toDbPath(PURCHASE_SUBDIR, filename);
     }
 
     // Auto-calculate total_price if qty or unit_price is updated
@@ -407,18 +420,12 @@ const calculatePurchaseStatus = (purchase: PurchaseRecord): string => {
 
 // Helpers: publicUrl and normalizeStoredPath (same behavior as billingController helpers)
 function publicUrl(rawPath?: string | null): string | null {
-  if (!rawPath) return null;
-  const baseUrl = process.env.BACKEND_URL || '';
-  // Ensure we produce BACKEND_URL/upload/purchases/<filename>
-  const filename = path.basename(String(rawPath).replace(/\\/g, '/'));
-  const normalized = `upload/${PURCHASE_SUBDIR}/${filename}`;
-  return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
+  return toPublicUrl(rawPath || null);
 }
 function normalizeStoredPath(filePath?: string | null): string | null {
   if (!filePath) return null;
-  // Normalize to a canonical storage path: upload/purchases/<filename>
   const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `upload/${PURCHASE_SUBDIR}/${filename}`;
+  return toDbPath(PURCHASE_SUBDIR, filename);
 }
 
 /* ======= SUPPLIER QUERIES ======= */

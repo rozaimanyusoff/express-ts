@@ -6,7 +6,8 @@ import { createUploader } from '../utils/fileUploader';
 const router = Router();
 
 /* ====== SUMMONS ====== */
-const uploader = createUploader('summons');
+// Use canonical module_directory for summons uploads
+const uploader = createUploader('compliance/summon');
 router.get('/summon/:id', asyncHandler(summonController.getSummonById));
 router.get('/summon', asyncHandler(summonController.getSummons));
 router.post('/summon', uploader.single('summon_upl'), asyncHandler(summonController.createSummon));

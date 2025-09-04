@@ -112,12 +112,6 @@ router.post('/softwares', asyncHandler(assetController.createSoftware));
 router.put('/softwares/:id', asyncHandler(assetController.updateSoftware));
 router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
 
-// BY EMPLOYEE, SUPERVISOR, HOD
-router.get('/by-employee', asyncHandler(assetController.getAssetsByEmployee));
-router.get('/by-supervisor', asyncHandler(assetController.getAssetsBySupervisor));
-router.get('/by-hod', asyncHandler(assetController.getAssetsByHOD));
-
-
 // ASSET TRANSFER REQUESTS
 router.get('/transfers', asyncHandler(assetController.getAssetTransferRequests));
 router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferRequestById));
@@ -146,15 +140,6 @@ router.post('/managers', asyncHandler(assetController.createAssetManager));
 router.put('/managers/:id', asyncHandler(assetController.updateAssetManager));
 router.delete('/managers/:id', asyncHandler(assetController.deleteAssetManager));
 
-
-// ASSETS
-router.get('/', asyncHandler(assetController.getAssets));
-router.get('/:id', asyncHandler(assetController.getAssetById));
-
-router.post('/', asyncHandler(assetController.createAsset));
-router.put('/:id', asyncHandler(assetController.updateAsset));
-router.delete('/:id', asyncHandler(assetController.deleteAsset));
-
 // BRAND-CATEGORY RELATIONSHIP
 router.post('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.assignCategoryToBrand));
 router.delete('/brands/:brand_code/categories/:category_code', asyncHandler(assetController.unassignCategoryFromBrand));
@@ -164,7 +149,15 @@ router.get('/categories/:category_code/brands', asyncHandler(assetController.get
 // Get all brand-category associations (for frontend mapping)
 router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
 
+// BY EMPLOYEE, SUPERVISOR, HOD (deprecated; use unified /api/assets with query params)
 
+// ASSETS
+router.get('/', asyncHandler(assetController.getAssets));
+router.get('/:id', asyncHandler(assetController.getAssetById));
+
+router.post('/', asyncHandler(assetController.createAsset));
+router.put('/:id', asyncHandler(assetController.updateAsset));
+router.delete('/:id', asyncHandler(assetController.deleteAsset));
 
 
 export default router;
