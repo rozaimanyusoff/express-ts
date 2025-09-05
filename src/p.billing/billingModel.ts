@@ -410,22 +410,27 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   );
 };
 
-// Instantly update fleet card info from fuel billings -- payload data: asset_id, card_id, card_no, costcenter_id, & purpose
+// Instantly update fleet card info from fuel billings
+// Payload: { card_id, asset_id, costcenter_id, purpose, stmt_id, card_no }
+// Mappings:
+// - billings.fleet2: set asset_id, purpose, card_no by id = card_id
+// - billings.fuel_stmt_detail: set asset_id, cc_id, purpose for rows matching (stmt_id, card_id)
 export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
-  if (!data.asset_id || !data.card_id || !data.card_no || !data.costcenter_id || !data.purpose) {
-    throw new Error('Missing required fields for fleet card update');
+  const { card_id, asset_id, costcenter_id, purpose, stmt_id, card_no } = data || {};
+  if (!card_id || !asset_id || !purpose || !stmt_id || !card_no || !costcenter_id) {
+    throw new Error('Missing required fields for fleet card update from billing');
   }
 
-  // Update the fleet card details
+  // Update the fleet card (fleet2)
   await pool2.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, card_no = ?, costcenter_id = ?, purpose = ? WHERE id = ?`,
-    [ data.asset_id, data.card_no, data.costcenter_id, data.purpose, data.card_id ]
+    `UPDATE ${fleetCardTable} SET asset_id = ?, purpose = ?, card_no = ? WHERE id = ?`,
+    [asset_id, purpose, card_no, card_id]
   );
 
-  // Update the temp vehicle record table
-  await pool.query(
-    `UPDATE assets.assetdata SET card_id = ?, purpose = ?, cc_id = ? WHERE id = ?`,
-    [ data.card_id, data.purpose, data.costcenter_id, data.asset_id ]
+  // Update matching fuel statement detail rows (fuel_stmt_detail)
+  await pool2.query(
+    `UPDATE ${fuelVehicleAmountTable} SET asset_id = ?, cc_id = ?, purpose = ? WHERE stmt_id = ? AND card_id = ?`,
+    [asset_id, costcenter_id, purpose, stmt_id, card_id]
   );
 }
 

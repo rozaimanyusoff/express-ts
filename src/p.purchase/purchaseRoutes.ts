@@ -3,7 +3,7 @@ import * as purchaseController from './purchaseController';
 import { createUploader } from '../utils/fileUploader';
 import asyncHandler from '../utils/asyncHandler';
 // module_directory for purchases uploads
-const purchaseUploader = createUploader('purchases/docs');
+const purchaseUploader = createUploader('purchases');
 
 const router = Router();
 

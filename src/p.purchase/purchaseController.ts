@@ -151,9 +151,12 @@ export const createPurchase = async (req: Request, res: Response) => {
       pic: req.body.pic,
       ramco_id: req.body.ramco_id,
       item_type: req.body.item_type,
+      type_id: req.body.type_id ? Number(req.body.type_id) : undefined,
       items: req.body.items,
       supplier: req.body.supplier,
+      supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
       brand: req.body.brand,
+      brand_id: req.body.brand_id ? Number(req.body.brand_id) : undefined,
       qty: Number(req.body.qty),
       unit_price: Number(req.body.unit_price),
       total_price: Number(req.body.total_price),
@@ -228,9 +231,12 @@ export const updatePurchase = async (req: Request, res: Response) => {
     if (req.body.pic !== undefined) updateData.pic = req.body.pic;
     if (req.body.ramco_id !== undefined) updateData.ramco_id = req.body.ramco_id;
     if (req.body.item_type !== undefined) updateData.item_type = req.body.item_type;
+    if (req.body.type_id !== undefined) updateData.type_id = Number(req.body.type_id);
     if (req.body.items !== undefined) updateData.items = req.body.items;
     if (req.body.supplier !== undefined) updateData.supplier = req.body.supplier;
+    if (req.body.supplier_id !== undefined) updateData.supplier_id = Number(req.body.supplier_id);
     if (req.body.brand !== undefined) updateData.brand = req.body.brand;
+    if (req.body.brand_id !== undefined) updateData.brand_id = Number(req.body.brand_id);
     if (req.body.qty !== undefined) updateData.qty = Number(req.body.qty);
     if (req.body.unit_price !== undefined) updateData.unit_price = Number(req.body.unit_price);
     if (req.body.total_price !== undefined) updateData.total_price = Number(req.body.total_price);

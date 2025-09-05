@@ -63,7 +63,7 @@ router.get('/fleet/:id/issuer', asyncHandler(billingController.getFleetCardByIss
 
 router.post('/fleet', asyncHandler(billingController.createFleetCard));
 router.put('/fleet/:id', asyncHandler(billingController.updateFleetCard));
-router.put('/fleet/:id/billing', asyncHandler(billingController.updateFleetCardFromBilling)); // update fleet card from billing
+router.put('/fleet/:id/billing', asyncHandler(billingController.updateFleetCardFromBilling)); // update fleet card details from billing
 
 /* =================== SERVICE OPTION TABLE ========================== */
 router.get('/service/options', asyncHandler(billingController.getServiceOptions)); // /api/bills/service/options
