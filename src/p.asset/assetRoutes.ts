@@ -156,6 +156,8 @@ router.get('/', asyncHandler(assetController.getAssets));
 router.get('/:id', asyncHandler(assetController.getAssetById));
 
 router.post('/', asyncHandler(assetController.createAsset));
+// Batch register purchased assets into registry table (purchases.purchase_asset_registry)
+router.post('/register-batch', asyncHandler(assetController.registerAssetsBatch));
 router.put('/:id', asyncHandler(assetController.updateAsset));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
 

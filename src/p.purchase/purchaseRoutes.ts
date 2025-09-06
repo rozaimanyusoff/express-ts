@@ -32,6 +32,9 @@ router.get('/summary', asyncHandler(purchaseController.getPurchaseSummary));
 router.post('/', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.createPurchase));
 // BULK IMPORT purchases (for Excel import)
 router.post('/import', asyncHandler(purchaseController.importPurchases));
+// PURCHASE ASSET REGISTRY
+router.post('/registry', asyncHandler(purchaseController.registerPurchaseAssetsBatch));
+router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // ?pr_id=123
 // UPDATE purchase by ID (supports optional file upload under field 'upload_path')
 router.put('/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updatePurchase));
 // DELETE purchase by ID

@@ -1,9 +1,18 @@
 import { Request, Response } from 'express';
 import path from 'path';
 import * as assetModel from '../p.asset/assetModel';
+import * as userModel from '../p.user/userModel';
 import { promises as fsPromises } from 'fs';
 import * as purchaseModel from './purchaseModel';
 import { PurchaseRecord } from './purchaseModel';
+import { sendMail } from '../utils/mailer';
+import { renderPurchaseNotification } from '../utils/emailTemplates/purchaseNotification';
+import { createPurchaseAssetRegistryBatch, getPurchaseAssetRegistryByPrId, markPurchaseHandover, createMasterAssetsFromRegistryBatch } from './purchaseModel';
+import { renderPurchaseRegistryCompleted } from '../utils/emailTemplates/purchaseRegistryCompleted';
+import dayjs from 'dayjs';
+
+// Define procurement admins here (comma-separated RAMCO IDs)
+const PROCUREMENT_ADMINS = 'mraco_id,ramco_id';
 
 // module_directory for this module's uploads
 const PURCHASE_SUBDIR = 'purchases';
@@ -37,6 +46,55 @@ export const getPurchases = async (req: Request, res: Response) => {
       purchases = await purchaseModel.getPurchases();
     }
 
+    // Restrict by asset manager's managed types either via query ?managers=<ramco_id[,..]>
+    // or (fallback) by the logged-in username (assumed to equal employee ramco_id).
+    try {
+      const managersParam = typeof req.query.managers === 'string' ? req.query.managers : undefined;
+      const requestedRamcos = managersParam
+        ? managersParam.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+
+      const managersList = await assetModel.getAssetManagers();
+      const managersArr: any[] = Array.isArray(managersList) ? managersList : [];
+
+      const buildActiveTypesFor = (ramcos: string[]) => new Set(
+        managersArr
+          .filter((m: any) => ramcos.some(r => String(m.ramco_id).toLowerCase() === String(r).toLowerCase()))
+          .filter((m: any) => m.is_active === 1 || m.is_active === '1' || m.is_active === true || m.is_active === null || m.is_active === undefined)
+          .map((m: any) => Number(m.manager_id))
+          .filter((n: number) => !Number.isNaN(n))
+      );
+
+      let activeMgrTypes = new Set<number>();
+      if (requestedRamcos.length > 0) {
+        // Param-driven filtering has priority
+        activeMgrTypes = buildActiveTypesFor(requestedRamcos);
+      } else {
+        // Fallback: filter by the logged-in user's username (ramco)
+        const userId = (req as any).user?.id ? Number((req as any).user.id) : null;
+        let loginUsername: string | null = (req as any).user?.username || null;
+        if (!loginUsername && userId) {
+          const user = await userModel.getUserById(userId);
+          loginUsername = user?.username || null;
+        }
+        if (loginUsername) {
+          activeMgrTypes = buildActiveTypesFor([loginUsername]);
+        }
+      }
+
+      // Only apply filter if there are active types; otherwise leave result unfiltered
+      if (activeMgrTypes.size > 0) {
+        purchases = purchases.filter((p: any) => {
+          const typeId = p?.type_id !== undefined && p?.type_id !== null ? Number(p.type_id) : undefined;
+          const itemTypeStr = p?.item_type ? String(p.item_type) : (typeId !== undefined ? String(typeId) : '');
+          const itemTypeId = !Number.isNaN(Number(itemTypeStr)) ? Number(itemTypeStr) : undefined;
+          return (typeId !== undefined && activeMgrTypes.has(typeId)) || (itemTypeId !== undefined && activeMgrTypes.has(itemTypeId));
+        });
+      }
+    } catch (filterErr) {
+      // Non-blocking: if filtering fails, return unfiltered results
+    }
+
     // Fetch costcenters, types, suppliers, employees and brands to enrich purchase records
     const [typesRaw, costcentersRaw, suppliersRaw, employeesRaw, brandsRaw] = await Promise.all([
       assetModel.getTypes(),
@@ -47,11 +105,11 @@ export const getPurchases = async (req: Request, res: Response) => {
     ]);
     const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
     const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
-  const typeMap = new Map(types.map((t: any) => [t.id, t]));
-  const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-  const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
-  const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
-  const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+    const typeMap = new Map(types.map((t: any) => [t.id, t]));
+    const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
+    const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+    const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
 
     // Calculate derived status for each purchase, add upload_url and resolve costcenter/type
     const enrichedPurchases = purchases.map(purchase => {
@@ -88,7 +146,7 @@ export const getPurchaseById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const purchase = await purchaseModel.getPurchaseById(id);
-    
+
     if (!purchase) {
       return res.status(404).json({
         status: 'error',
@@ -109,10 +167,10 @@ export const getPurchaseById = async (req: Request, res: Response) => {
     const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
     const typeMap = new Map(types.map((t: any) => [t.id, t]));
     const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-  const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
-  const employeesArr = Array.isArray(employeesRaw) ? employeesRaw : [];
-  const employeeMap = new Map(employeesArr.map((e: any) => [e.ramco_id, e]));
-  const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+    const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
+    const employeesArr = Array.isArray(employeesRaw) ? employeesRaw : [];
+    const employeeMap = new Map(employeesArr.map((e: any) => [e.ramco_id, e]));
+    const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
 
     // Add derived status, upload_url, and resolved costcenter/type
     const { costcenter, costcenter_id, type_id, supplier, supplier_id, brand_id, ramco_id, ...rest } = purchase as any;
@@ -144,7 +202,7 @@ export const getPurchaseById = async (req: Request, res: Response) => {
 // CREATE PURCHASE
 export const createPurchase = async (req: Request, res: Response) => {
   try {
-  const purchaseData: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'> = {
+    const purchaseData: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'> = {
       request_type: req.body.request_type,
       costcenter: req.body.costcenter,
       costcenter_id: req.body.costcenter_id,
@@ -190,9 +248,78 @@ export const createPurchase = async (req: Request, res: Response) => {
       const filename = `purchase-${insertId}-${Date.now()}${ext}`;
       const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
       const destDir = path.dirname(destPath);
-      await fsPromises.mkdir(destDir, { recursive: true }).catch(() => {});
+      await fsPromises.mkdir(destDir, { recursive: true }).catch(() => { });
       await safeMove(tempPath, destPath);
       await purchaseModel.updatePurchase(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+    }
+
+    // After creating the purchase, notify relevant asset managers by manager_id match
+    try {
+      // Manager match rule: item_type equals assets.manager_id (fallback to type_id if item_type not numeric)
+      const managerId = (() => {
+        const t = purchaseData.item_type;
+        const numeric = t !== undefined && t !== null && String(t).trim() !== '' ? Number(t) : undefined;
+        if (numeric !== undefined && !Number.isNaN(numeric)) return numeric;
+        return purchaseData.type_id !== undefined ? Number(purchaseData.type_id) : undefined;
+      })();
+
+      if (managerId !== undefined && !Number.isNaN(managerId)) {
+        const [managersRaw, employeesRaw, costcentersRaw, brandsRaw] = await Promise.all([
+          assetModel.getAssetManagers(),
+          assetModel.getEmployees(),
+          assetModel.getCostcenters(),
+          assetModel.getBrands(),
+        ]);
+
+        const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+        const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+        const brands = Array.isArray(brandsRaw) ? brandsRaw as any[] : [];
+        const typesRaw = await assetModel.getTypes();
+        const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+        const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+        const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+        const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+
+        // Filter managers by manager_id and active flag
+        const targetManagers = (Array.isArray(managersRaw) ? managersRaw as any[] : [])
+          .filter((m: any) => Number(m.manager_id) === Number(managerId))
+          .filter((m: any) => m.is_active === 1 || m.is_active === '1' || m.is_active === true);
+
+        // Resolve email recipients from employees by ramco_id
+        const recipients = targetManagers
+          .map((m: any) => empMap.get(m.ramco_id))
+          .filter(Boolean)
+          .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
+          .filter((x: any) => x.email);
+
+        if (recipients.length > 0) {
+          const brandName = purchaseData.brand || (purchaseData.brand_id && brandMap.get(purchaseData.brand_id)?.name) || null;
+          const costcenterName = purchaseData.costcenter || (purchaseData.costcenter_id && ccMap.get(purchaseData.costcenter_id)?.name) || null;
+          const subject = `Purchase Created — PR ${purchaseData.pr_no || insertId} (Handover Preparation Required)`;
+
+          for (const r of recipients) {
+            const html = renderPurchaseNotification({
+              recipientName: r.name,
+              prNo: purchaseData.pr_no || String(insertId),
+              prDate: purchaseData.pr_date || null,
+              requestType: purchaseData.request_type || null,
+              itemType: purchaseData.item_type ? String(purchaseData.item_type) : (purchaseData.type_id ? String(purchaseData.type_id) : null),
+              items: purchaseData.items || null,
+              brand: brandName,
+              costcenterName: costcenterName,
+            });
+            try {
+              await sendMail(r.email, subject, html);
+            } catch (mailErr) {
+              // Non-blocking: log and continue
+              console.error('createPurchase: mail send error to', r.email, mailErr);
+            }
+          }
+        }
+      }
+    } catch (notifyErr) {
+      // Non-blocking: log and continue
+      console.error('createPurchase: notification error', notifyErr);
     }
 
     res.status(201).json({
@@ -221,9 +348,9 @@ export const createPurchase = async (req: Request, res: Response) => {
 export const updatePurchase = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    
+
     // Build update data from request body
-  const updateData: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>> = {};
+    const updateData: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>> = {};
 
     if (req.body.request_type !== undefined) updateData.request_type = req.body.request_type;
     if (req.body.costcenter !== undefined) updateData.costcenter = req.body.costcenter;
@@ -264,7 +391,7 @@ export const updatePurchase = async (req: Request, res: Response) => {
           const prevFilename = path.basename(existing.upload_path);
           const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
           const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
-          await fsPromises.unlink(prevFull).catch(() => {});
+          await fsPromises.unlink(prevFull).catch(() => { });
         }
       } catch {
         // ignore errors
@@ -340,7 +467,7 @@ export const deletePurchase = async (req: Request, res: Response) => {
 export const importPurchases = async (req: Request, res: Response) => {
   try {
     const purchases: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>[] = req.body;
-    
+
     if (!Array.isArray(purchases) || purchases.length === 0) {
       return res.status(400).json({
         status: 'error',
@@ -363,10 +490,10 @@ export const importPurchases = async (req: Request, res: Response) => {
     res.json({
       status: 'success',
       message: `Successfully imported ${insertIds.length} out of ${purchases.length} purchase records`,
-      data: { 
-        imported: insertIds.length, 
+      data: {
+        imported: insertIds.length,
         total: purchases.length,
-        insertIds 
+        insertIds
       }
     });
   } catch (error) {
@@ -382,7 +509,7 @@ export const importPurchases = async (req: Request, res: Response) => {
 export const getPurchaseSummary = async (req: Request, res: Response) => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     const summary = await purchaseModel.getPurchaseSummary(
       startDate as string,
       endDate as string
@@ -404,13 +531,14 @@ export const getPurchaseSummary = async (req: Request, res: Response) => {
 
 // HELPER FUNCTION: Calculate purchase status based on process completion
 const calculatePurchaseStatus = (purchase: PurchaseRecord): string => {
-  // Completed only when a release has been made (non-empty released_to and valid released_at)
-  const hasReleasedTo = purchase.released_to !== undefined && purchase.released_to !== null && String(purchase.released_to).trim() !== '';
-  const releasedAt = purchase.released_at ?? null;
-  const releasedAtInvalid = !releasedAt || String(releasedAt) === '0000-00-00' || String(releasedAt) === '0000-00-00 00:00:00';
-  if (hasReleasedTo && !releasedAtInvalid) return 'completed';
+  // Completed only when a handover has been made (non-empty handover_to and valid handover_at)
+  const handoverTo = (purchase as any).handover_to;
+  const handoverAt = (purchase as any).handover_at;
+  const hasHandoverTo = handoverTo !== undefined && handoverTo !== null && String(handoverTo).trim() !== '';
+  const handoverAtInvalid = !handoverAt || String(handoverAt) === '0000-00-00' || String(handoverAt) === '0000-00-00 00:00:00';
+  if (hasHandoverTo && !handoverAtInvalid) return 'completed';
 
-  // If GRN exists but release hasn't happened yet, consider it delivered
+  // If GRN exists but handover hasn't happened yet, consider it delivered
   if (purchase.grn_no) return 'delivered';
 
   // Invoiced after INV present
@@ -536,5 +664,139 @@ export const deleteSupplier = async (req: Request, res: Response) => {
       message: error instanceof Error ? error.message : 'Failed to delete supplier',
       data: null
     });
+  }
+};
+
+// PURCHASE ASSET REGISTRY — batch insert
+export const registerPurchaseAssetsBatch = async (req: Request, res: Response) => {
+  try {
+    const { pr_id, assets, created_by, updated_by } = req.body || {};
+    const prIdNum = Number(pr_id);
+    if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+    }
+    const ids = await createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
+    // Also create master asset records in assets.assetdata
+    try {
+      await createMasterAssetsFromRegistryBatch(prIdNum, assets);
+    } catch (e) {
+      console.error('registerPurchaseAssetsBatch: create master assets failed', e);
+    }
+
+    // Update purchase handover fields
+    try {
+      const who = (typeof updated_by === 'string' && updated_by) ? updated_by : (typeof created_by === 'string' ? created_by : null);
+      await markPurchaseHandover(prIdNum, who ?? null);
+    } catch (e) {
+      console.error('registerPurchaseAssetsBatch: handover update failed', e);
+    }
+
+    // Notify procurement admins and asset managers
+    try {
+      // Load purchase and lookups
+      const purchase = await purchaseModel.getPurchaseById(prIdNum);
+      if (purchase) {
+        const [employeesRaw, costcentersRaw, brandsRaw, managersRaw, typesRaw] = await Promise.all([
+          assetModel.getEmployees(),
+          assetModel.getCostcenters(),
+          assetModel.getBrands(),
+          assetModel.getAssetManagers(),
+          assetModel.getTypes(),
+        ]);
+        const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+        const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+        const brands = Array.isArray(brandsRaw) ? brandsRaw as any[] : [];
+        const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+        const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+        const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+        const types = Array.isArray(typesRaw) ? (typesRaw as any[]) : [];
+
+        const brandName = purchase.brand || (purchase.brand_id ? brandMap.get(purchase.brand_id)?.name : null) || null;
+        const costcenterName = purchase.costcenter || (purchase.costcenter_id ? ccMap.get(purchase.costcenter_id)?.name : null) || null;
+        const itemTypeStr = purchase.item_type ? String(purchase.item_type) : (purchase.type_id ? String(purchase.type_id) : null);
+        const typeMap = new Map(types.map((t: any) => [Number(t.id), t]));
+        const itemTypeId = purchase.type_id !== undefined && purchase.type_id !== null
+          ? Number(purchase.type_id)
+          : (itemTypeStr && !isNaN(Number(itemTypeStr)) ? Number(itemTypeStr) : undefined);
+        const itemTypeName = (itemTypeId !== undefined && typeMap.has(itemTypeId))
+          ? (typeMap.get(itemTypeId) as any)?.name || String(itemTypeId)
+          : (isNaN(Number(itemTypeStr || '')) ? (itemTypeStr || null) : (itemTypeStr ? String(itemTypeStr) : null));
+        const prDateFormatted = purchase.pr_date ? dayjs(purchase.pr_date).format('D/M/YYYY') : null;
+
+        // Procurement admins: configure via env PROC_ADMIN_RAMCOS (comma-separated ramco_ids) or leave empty
+        const PROCUREMENT_ADMIN_RAMCOS: string[] = (PROCUREMENT_ADMINS || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+        const procurementRecipients = PROCUREMENT_ADMIN_RAMCOS
+          .map((rid: string) => empMap.get(rid))
+          .filter(Boolean)
+          .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
+          .filter((x: any) => x.email);
+        const subjectAdmin = `Assets Registered — PR ${purchase.pr_no || prIdNum}`;
+        for (const r of procurementRecipients) {
+          const html = renderPurchaseRegistryCompleted({
+            recipientName: r.name,
+            prNo: purchase.pr_no || String(prIdNum),
+            prDate: prDateFormatted,
+            itemType: itemTypeName,
+            items: purchase.items || null,
+            brand: brandName,
+            costcenterName,
+            itemCount: Array.isArray(assets) ? assets.length : null,
+            audience: 'procurement',
+          });
+          try { await sendMail(r.email, subjectAdmin, html); } catch {}
+        }
+
+        // Asset managers by manager_id match
+        const managerId = itemTypeStr ? Number(itemTypeStr) : undefined;
+        if (managerId !== undefined && !Number.isNaN(managerId)) {
+          const targetManagers = (Array.isArray(managersRaw) ? managersRaw as any[] : [])
+            .filter((m: any) => Number(m.manager_id) === Number(managerId))
+            .filter((m: any) => m.is_active === 1 || m.is_active === '1' || m.is_active === true);
+          const managerRecipients = targetManagers
+            .map((m: any) => empMap.get(m.ramco_id))
+            .filter(Boolean)
+            .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
+            .filter((x: any) => x.email);
+          const subjectMgr = `Registration Successful — PR ${purchase.pr_no || prIdNum}`;
+          for (const r of managerRecipients) {
+            const html = renderPurchaseRegistryCompleted({
+              recipientName: r.name,
+              prNo: purchase.pr_no || String(prIdNum),
+              prDate: prDateFormatted,
+              itemType: itemTypeName,
+              items: purchase.items || null,
+              brand: brandName,
+              costcenterName,
+              itemCount: Array.isArray(assets) ? assets.length : null,
+              audience: 'manager',
+            });
+            try { await sendMail(r.email, subjectMgr, html); } catch {}
+          }
+        }
+      }
+    } catch (notifyErr) {
+      console.error('registerPurchaseAssetsBatch: notification error', notifyErr);
+    }
+
+    return res.status(201).json({ status: 'success', message: `Registered ${ids.length} assets for PR ${prIdNum}`, data: { pr_id: prIdNum, insertIds: ids } });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets', data: null });
+  }
+};
+
+// PURCHASE ASSET REGISTRY — list by PR id
+export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
+  try {
+    const prIdNum = Number((req.query.pr_id as string) || (req.params as any).pr_id);
+    if (!prIdNum) {
+      return res.status(400).json({ status: 'error', message: 'pr_id is required', data: null });
+    }
+    const rows = await getPurchaseAssetRegistryByPrId(prIdNum);
+    return res.json({ status: 'success', message: 'Purchase asset registry retrieved', data: rows });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve registry', data: null });
   }
 };

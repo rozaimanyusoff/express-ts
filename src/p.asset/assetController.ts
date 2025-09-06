@@ -7,6 +7,7 @@ import { sendMail } from '../utils/mailer';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
 import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
+import * as purchaseModel from '../p.purchase/purchaseModel';
 
 
 export const getAssets = async (req: Request, res: Response) => {
@@ -359,6 +360,28 @@ function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
 	return Array.isArray(arr) && arr.every(e => e && typeof e === 'object' && !Array.isArray(e));
 }
 
+// Register batch of assets into purchase registry table
+export const registerAssetsBatch = async (req: Request, res: Response) => {
+    try {
+        const { pr_id, assets, created_by } = req.body || {};
+        const prIdNum = Number(pr_id);
+        if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
+            return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+        }
+
+        // Basic normalization is handled in model; perform minimal structure check here
+        const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
+
+        return res.status(201).json({
+            status: 'success',
+            message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
+            data: { pr_id: prIdNum, insertIds }
+        });
+    } catch (error) {
+        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
+    }
+}
+
 // TYPES
 export const getTypes = async (req: Request, res: Response) => {
 	const rows = await assetModel.getTypes();
@@ -410,10 +433,10 @@ export const getTypeById = async (req: Request, res: Response) => {
 };
 export const createType = async (req: Request, res: Response) => {
 	try {
-		const { code, name, description, image, manager, ramco_id } = req.body;
+		const { name, description, image, manager, ramco_id } = req.body;
 		// Accept ramco_id from either manager object or direct field
 		const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
-		const result = await assetModel.createType({ code, name, description, image, ramco_id: resolvedRamcoId });
+		const result = await assetModel.createType({ name, description, image, ramco_id: resolvedRamcoId });
 		// Ensure correct type for insertId
 		const typeId = (result as import('mysql2').ResultSetHeader).insertId;
 		// Fetch the created type to return with full image URL
@@ -430,10 +453,10 @@ export const createType = async (req: Request, res: Response) => {
 export const updateType = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { code, name, description, image, manager, ramco_id } = req.body;
+		const { name, description, image, manager, ramco_id } = req.body;
 		// Accept ramco_id from either manager object or direct field
 		const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
-		await assetModel.updateType(id, { code, name, description, image, ramco_id: resolvedRamcoId });
+		await assetModel.updateType(id, { name, description, image, ramco_id: resolvedRamcoId });
 		// Fetch the updated type to return with full image URL
 		const type = await assetModel.getTypeById(id);
 		if (type && type.image) {
@@ -575,14 +598,14 @@ export const getBrands = async (req: Request, res: Response) => {
 		typeMap.set(t.id, { id: t.id, name: t.name });
 	}
 
-	// Build models map by brand_code
-	const modelsMap = new Map<string, any[]>();
+	// Build models map by brand_id
+	const modelsMap = new Map<number, any[]>();
 	for (const model of allModels as any[]) {
-		if (model.brand_code) {
-			if (!modelsMap.has(model.brand_code)) {
-				modelsMap.set(model.brand_code, []);
+		if (model.brand_id) {
+			if (!modelsMap.has(model.brand_id)) {
+				modelsMap.set(model.brand_id, []);
 			}
-			modelsMap.get(model.brand_code)!.push({
+			modelsMap.get(model.brand_id)!.push({
 				id: model.id.toString(),
 				name: model.name
 			});
@@ -623,14 +646,15 @@ export const getBrands = async (req: Request, res: Response) => {
 		}
 
 		// Get models for this brand
-		const modelsForBrand = modelsMap.get(brand.code) || [];
+		const modelsForBrand = modelsMap.get(brand.id) || [];
 
-		data.push({
-			id: brand.id.toString(),
-			name: brand.name,
-			categories: categoriesForBrand,
-			models: modelsForBrand
-		});
+    data.push({
+        id: brand.id.toString(),
+        name: brand.name,
+        type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null,
+        categories: categoriesForBrand,
+        models: modelsForBrand
+    });
 	}
 
 	res.json({

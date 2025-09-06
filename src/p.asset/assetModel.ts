@@ -45,10 +45,10 @@ const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd()
 
 // TYPES CRUD
 export const createType = async (data: any) => {
-  const { code, name, description, image, ramco_id } = data;
+  const { name, description, image, ramco_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (code, name, description, image, manager) VALUES (?, ?, ?, ?, ?)` ,
-    [code, name, description, image, ramco_id]
+    `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)` ,
+    [name, description, image, ramco_id]
   );
   return result;
 };
@@ -64,10 +64,10 @@ export const getTypeById = async (id: number) => {
 };
 
 export const updateType = async (id: number, data: any) => {
-  const { code, name, description, image, ramco_id } = data;
+  const { name, description, image, ramco_id } = data;
   const [result] = await pool.query(
-    `UPDATE ${typeTable} SET code = ?, name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
-    [code, name, description, image, ramco_id, id]
+    `UPDATE ${typeTable} SET name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
+    [name, description, image, ramco_id, id]
   );
   return result;
 };
@@ -80,10 +80,10 @@ export const deleteType = async (id: number) => {
 // CATEGORIES CRUD
 
 export const createCategory = async (data: any) => {
-  const { name, code, image, type_code } = data;
+  const { name, image, type_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${categoryTable} (name, code, image, type_code) VALUES (?, ?, ?, ?)` ,
-    [name, code, image, type_code]
+    `INSERT INTO ${categoryTable} (name, image, type_id) VALUES (?, ?, ?)` ,
+    [name, image, type_id ?? null]
   );
   return result;
 };
@@ -122,11 +122,15 @@ export const getCategoryById = async (id: number) => {
 };
 
 export const updateCategory = async (id: number, data: any) => {
-  const { name, code, image, type_code } = data;
-  const [result] = await pool.query(
-    `UPDATE ${categoryTable} SET name = ?, code = ?, image = ?, type_code = ? WHERE id = ?`,
-    [name, code, image, type_code, id]
-  );
+  const { name, image, type_id } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  const sql = `UPDATE ${categoryTable} SET ${sets.join(', ')} WHERE id = ?`;
+  params.push(id);
+  const [result] = await pool.query(sql, params);
   return result;
 };
 
@@ -138,18 +142,17 @@ export const deleteCategory = async (id: number) => {
 // BRANDS CRUD
 
 export const createBrand = async (data: any) => {
-  const { name, code, logo, type_code, category_codes } = data;
-  // Use type_code as type_code in DB
+  const { name, logo, type_id, category_ids } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${brandTable} (name, code, image${type_code ? ', type_code' : ''}) VALUES (?, ?, ?${type_code ? ', ?' : ''})`,
-    type_code ? [name, code, logo, type_code] : [name, code, logo]
+    `INSERT INTO ${brandTable} (name, image${type_id ? ', type_id' : ''}) VALUES (?, ?${type_id ? ', ?' : ''})`,
+    type_id ? [name, logo, type_id] : [name, logo]
   );
-  // Handle brand-category associations if category_codes is array
-  if (Array.isArray(category_codes) && category_codes.length > 0) {
-    for (const category_code of category_codes) {
+  const insertId = (result as any).insertId as number | undefined;
+  if (insertId && Array.isArray(category_ids) && category_ids.length > 0) {
+    for (const category_id of category_ids) {
       await pool.query(
-        `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
-        [code, category_code]
+        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
+        [insertId, category_id]
       );
     }
   }
@@ -167,34 +170,28 @@ export const getBrandById = async (id: number) => {
 };
 
 export const updateBrand = async (id: number, data: any) => {
-  const { name, code, logo, type_code, category_codes } = data;
-  // Only update type_code if type_code is present
-  let sql = `UPDATE ${brandTable} SET name = ?, code = ?, image = ?`;
-  let params: any[] = [name, code, logo];
-  if (type_code) {
-    sql += ', type_code = ?';
-    params.push(type_code);
+  const { name, logo, type_id, category_ids } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (logo !== undefined) { sets.push('image = ?'); params.push(logo); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  if (sets.length > 0) {
+    const sql = `UPDATE ${brandTable} SET ${sets.join(', ')} WHERE id = ?`;
+    params.push(id);
+    await pool.query(sql, params);
   }
-  sql += ' WHERE id = ?';
-  params.push(id);
-  const [result] = await pool.query(sql, params);
-  // Remove all previous brand-category associations for this brand
-  if (code) {
-    await pool.query(
-      `DELETE FROM ${brandCategoryTable} WHERE brand_code = ?`,
-      [code]
-    );
-    // Add new associations
-    if (Array.isArray(category_codes) && category_codes.length > 0) {
-      for (const category_code of category_codes) {
-        await pool.query(
-          `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
-          [code, category_code]
-        );
-      }
+  // Reset brand-category associations if category_ids provided
+  if (Array.isArray(category_ids)) {
+    await pool.query(`DELETE FROM ${brandCategoryTable} WHERE brand_id = ?`, [id]);
+    for (const category_id of category_ids) {
+      await pool.query(
+        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
+        [id, category_id]
+      );
     }
   }
-  return result;
+  return { ok: true } as any;
 };
 
 export const deleteBrand = async (id: number) => {
@@ -205,18 +202,18 @@ export const deleteBrand = async (id: number) => {
 // MODELS CRUD
 
 export const createModel = async (data: any) => {
-  const { name, image, brand_code, category_code, type_code, model_code, item_code, specification, generation, status } = data;
-  // Check for duplicate by name and type_id (type_code)
+  const { name, image, brand_id, category_id, type_id, specification, generation, status } = data;
+  // Check for duplicate by name and type_id
   const [dupRows] = await pool.query(
     `SELECT id FROM ${modelTable} WHERE name = ? AND type_id = ?`,
-    [name, type_code]
+    [name, type_id]
   );
   if (Array.isArray(dupRows) && dupRows.length > 0) {
     throw new Error('Model with the same name and type already exists');
   }
   const [result] = await pool.query(
-    `INSERT INTO ${modelTable} (name, image, brand_code, category_code, type_id, item_code, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, image, brand_code, category_code, type_code, item_code, specification, generation, status]
+    `INSERT INTO ${modelTable} (name, image, brand_id, category_id, type_id, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, image, brand_id, category_id, type_id, specification, generation, status]
   );
   return result;
 };
@@ -245,8 +242,8 @@ export const deleteModel = async (id: number) => {
   return result;
 };
 
-export const getModelsByBrand = async (brand_code: string) => {
-  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE brand_code = ?`, [brand_code]);
+export const getModelsByBrand = async (brand_id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE brand_id = ?`, [brand_id]);
   return rows;
 };
 
@@ -792,6 +789,21 @@ export const updateAsset = async (id: number, data: any) => {
   return result;
 };
 
+// Get the last entry_code for a given type_id (ordered by numeric suffix)
+export const getLastEntryCodeByType = async (typeId: number): Promise<string | null> => {
+  const prefix = String(typeId);
+  const prefixLen = prefix.length;
+  const [rows] = await pool.query(
+    `SELECT entry_code FROM ${assetTable}
+     WHERE type_id = ? AND entry_code IS NOT NULL AND entry_code LIKE CONCAT(?, '%')
+     ORDER BY CAST(SUBSTRING(entry_code, ? + 1) AS UNSIGNED) DESC, entry_code DESC
+     LIMIT 1`,
+    [typeId, prefix, prefixLen]
+  );
+  const r = (rows as RowDataPacket[])[0];
+  return r ? (r.entry_code as string) : null;
+};
+
 export const deleteAsset = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${assetTable} WHERE id = ?`, [id]);
   return result;
@@ -942,7 +954,7 @@ export const getCategoriesByBrand = async (brand_code: string) => {
 
 export const getCategoriesByBrandId = async (brand_id: number) => {
   const [rows] = await pool.query(
-    `SELECT c.id, c.name, c.code 
+    `SELECT c.id, c.name 
      FROM ${categoryTable} c 
      JOIN ${brandCategoryTable} bc ON c.id = bc.category_id 
      WHERE bc.brand_id = ?`,
@@ -961,7 +973,7 @@ export const getBrandsByCategory = async (category_code: string) => {
 
 export const getBrandsByCategoryId = async (category_id: number) => {
   const [rows] = await pool.query(
-    `SELECT b.id, b.name, b.code 
+    `SELECT b.id, b.name 
      FROM ${brandTable} b 
      JOIN ${brandCategoryTable} bc ON b.id = bc.brand_id 
      WHERE bc.category_id = ?`,

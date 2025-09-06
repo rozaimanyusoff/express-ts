@@ -96,6 +96,42 @@ export const getAllUsers = async (): Promise<Users[]> => {
     }
 };
 
+// Get single user by id (minimal fields)
+export const getUserById = async (userId: number): Promise<Users | null> => {
+    try {
+        const [rows]: any[] = await pool.query(
+            `SELECT id, username, email, contact, user_type, role, status, last_login, last_nav FROM ${usersTable} WHERE id = ? LIMIT 1`,
+            [userId]
+        );
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+        const u = rows[0];
+        return {
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            password: '',
+            created_at: new Date(),
+            activation_code: null,
+            fname: '',
+            contact: u.contact,
+            user_type: u.user_type,
+            last_login: u.last_login ? new Date(u.last_login) : null,
+            last_nav: u.last_nav,
+            last_ip: null,
+            last_host: null,
+            last_os: null,
+            status: u.status,
+            role: u.role,
+            usergroups: null,
+            reset_token: null,
+            activated_at: null,
+        } as Users;
+    } catch (error) {
+        logger.error(`Database error in getUserById: ${error}`);
+        throw error;
+    }
+};
+
 // Validate user by email or contact prior to registration
 export const findUserByEmailOrContact = async (email: string, contact: string): Promise<any[]> => {
     try {
@@ -634,5 +670,4 @@ export const deletePermission = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${permissionTable} WHERE id = ?`, [id]);
     return result;
 };
-
 
