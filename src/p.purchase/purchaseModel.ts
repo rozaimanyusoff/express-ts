@@ -8,6 +8,7 @@ const dbName = 'purchases'; // Replace with your actual database name
 const purchaseTable = `${dbName}.purchase_data`;
 const supplierTable = `${dbName}.purchase_supplier`;
 const purchaseAssetRegistryTable = `${dbName}.purchase_asset_registry`;
+const purchaseRequestItemsTable = `${dbName}.purchase_request_items`;
 // Join table linking purchase_data (pr_id) and purchase_asset_registry (registry_id)
 const purchaseRegistryTable = `${dbName}.purchase_registry`;
 
@@ -46,6 +47,109 @@ export interface PurchaseRecord {
   created_at?: string;
   updated_at?: string;
 }
+
+// PURCHASE REQUEST ITEMS
+export interface PurchaseRequestItemRecord {
+  id?: number;
+  pr_no?: string | null;
+  request_type: string;
+  pr_date: string; // YYYY-MM-DD
+  costcenter_id: number;
+  department_id: number;
+  position_id?: number | null;
+  ramco_id: string;
+  type_id: number;
+  category_id?: number | null;
+  description: string;
+  qty: number;
+  purpose?: string | null;
+  created_at?: string;
+}
+
+// Returns the last PR number (by value) on a given pr_date from purchase_data
+export const getLastPrNoByDate = async (pr_date: string): Promise<string | null> => {
+  try {
+    // Try numeric ordering; fallback to lexical if needed
+    const [rows] = await pool.query(
+      `SELECT pr_no FROM ${purchaseTable} WHERE pr_date = ? AND pr_no IS NOT NULL AND TRIM(pr_no) <> ''
+       ORDER BY (CASE WHEN pr_no REGEXP '^[0-9]+$' THEN 0 ELSE 1 END), CAST(pr_no AS UNSIGNED) DESC, pr_no DESC LIMIT 1`,
+      [pr_date]
+    );
+    const r = (rows as RowDataPacket[])[0];
+    return r ? (r as any).pr_no ?? null : null;
+  } catch {
+    return null;
+  }
+};
+
+// Returns last pr_no along with the latest pr_date found in purchase_data
+export const getLastPrNoByLatestDate = async (): Promise<{ pr_no: string | null; pr_date: string | null }> => {
+  try {
+    const [dateRows] = await pool.query(
+      `SELECT pr_date FROM ${purchaseTable} WHERE pr_date IS NOT NULL ORDER BY pr_date DESC LIMIT 1`
+    );
+    const latestRow = (dateRows as RowDataPacket[])[0] as any;
+    const latestDate: string | null = latestRow ? (latestRow.pr_date as string) : null;
+    if (!latestDate) return { pr_no: null, pr_date: null };
+    const pr_no = await getLastPrNoByDate(latestDate);
+    return { pr_no, pr_date: latestDate };
+  } catch {
+    return { pr_no: null, pr_date: null };
+  }
+};
+
+// Bulk insert purchase request items. Returns insert ids.
+export const createPurchaseRequestItems = async (
+  header: {
+    pr_no?: string | null;
+    request_type: string;
+    pr_date: string;
+    costcenter_id: number;
+    department_id: number;
+    position_id?: number | null;
+    ramco_id: string;
+  },
+  items: Array<{ type_id: number; category_id?: number | null; description: string; qty: number; purpose?: string | null; }>
+): Promise<number[]> => {
+  const ids: number[] = [];
+  for (const it of items) {
+    const rec: Omit<PurchaseRequestItemRecord, 'id' | 'created_at'> = {
+      pr_no: header.pr_no ?? null,
+      request_type: header.request_type,
+      pr_date: header.pr_date,
+      costcenter_id: Number(header.costcenter_id),
+      department_id: Number(header.department_id),
+      position_id: header.position_id !== undefined && header.position_id !== null ? Number(header.position_id) : null,
+      ramco_id: header.ramco_id,
+      type_id: Number(it.type_id),
+      category_id: it.category_id !== undefined && it.category_id !== null ? Number(it.category_id) : null,
+      description: String(it.description || '').trim(),
+      qty: Number(it.qty || 0),
+      purpose: it.purpose !== undefined ? String(it.purpose) : null,
+    };
+    const [result] = await pool.query(
+      `INSERT INTO ${purchaseRequestItemsTable}
+        (pr_no, request_type, pr_date, costcenter_id, department_id, position_id, ramco_id, type_id, category_id, description, qty, purpose, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        rec.pr_no,
+        rec.request_type,
+        rec.pr_date,
+        rec.costcenter_id,
+        rec.department_id,
+        rec.position_id,
+        rec.ramco_id,
+        rec.type_id,
+        rec.category_id,
+        rec.description,
+        rec.qty,
+        rec.purpose,
+      ]
+    );
+    ids.push((result as ResultSetHeader).insertId);
+  }
+  return ids;
+};
 
 // GET ALL PURCHASES
 export const getPurchases = async (): Promise<PurchaseRecord[]> => {

@@ -17,6 +17,7 @@ const PROCUREMENT_ADMINS = 'mraco_id,ramco_id';
 // module_directory for this module's uploads
 const PURCHASE_SUBDIR = 'purchases';
 import { buildStoragePath, safeMove, toDbPath, toPublicUrl } from '../utils/uploadUtil';
+import { createPurchaseRequestItems, getLastPrNoByDate, getLastPrNoByLatestDate, PurchaseRequestItemRecord } from './purchaseModel';
 
 // GET ALL PURCHASES
 export const getPurchases = async (req: Request, res: Response) => {
@@ -577,6 +578,146 @@ export const getSuppliers = async (req: Request, res: Response) => {
       message: error instanceof Error ? error.message : 'Failed to retrieve suppliers',
       data: null
     });
+  }
+};
+
+// CREATE PURCHASE REQUEST ITEMS
+// Body example:
+// {
+//   request_type: "OPEX",
+//   pr_date: "2025-09-07",
+//   costcenter_id: "26",
+//   department_id: "16",
+//   position_id: "2",
+//   ramco_id: "000277",
+//   request_items: [
+//     { type_id: "5", description: "Desktop computer", qty: 1, purpose: "Replacement" },
+//     { type_id: "9", description: "24\" monitor", qty: 2, purpose: "New staff" }
+//   ],
+//   items: "Desktop computer; 24\" monitor",
+//   qty: 3
+// }
+export const createPurchaseRequestItemsHandler = async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const header = {
+      request_type: String(body.request_type || '').trim(),
+      pr_date: String(body.pr_date || '').trim(),
+      costcenter_id: Number(body.costcenter_id),
+      department_id: Number(body.department_id),
+      position_id: body.position_id !== undefined && body.position_id !== null ? Number(body.position_id) : null,
+      ramco_id: String(body.ramco_id || '').trim(),
+    };
+    const itemsRaw = Array.isArray(body.request_items) ? body.request_items : [];
+    type ReqItem = { type_id: number; category_id?: number | null; description: string; qty: number; purpose?: string | null };
+    const items: ReqItem[] = itemsRaw
+      .map((it: any): ReqItem => ({
+        type_id: Number(it.type_id),
+        category_id: it.category_id !== undefined && it.category_id !== null ? Number(it.category_id) : null,
+        description: String(it.description || ''),
+        qty: Number(it.qty || 0),
+        purpose: it.purpose !== undefined ? String(it.purpose) : null,
+      }))
+      .filter((it: ReqItem) => !!it.type_id && !!it.description && it.qty > 0);
+
+    if (!header.request_type || !header.pr_date || !header.costcenter_id || !header.department_id || !header.ramco_id) {
+      return res.status(400).json({ status: 'error', message: 'Missing required fields', data: null });
+    }
+    if (items.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'request_items is required and must be non-empty', data: null });
+    }
+
+    // Determine last PR number using the latest pr_date in purchase_data (not the payload date)
+    const latest = await getLastPrNoByLatestDate();
+    const lastPrNo = latest.pr_no;
+    const baseDate = latest.pr_date || header.pr_date;
+    // Compute next PR number (numeric increment if possible, else start at '1')
+    const nextPrNo = (() => {
+      const n = lastPrNo && /^\d+$/.test(String(lastPrNo)) ? Number(lastPrNo) : null;
+      if (n !== null) return String(n + 1);
+      return '1';
+    })();
+
+    // Store items
+    const insertIds = await createPurchaseRequestItems({ ...header, pr_no: nextPrNo, pr_date: baseDate }, items);
+
+    // Prepare and send notifications to requestor and asset managers
+    try {
+      // Lookups
+      const [employeesRaw, managersRaw, typesRaw, costcentersRaw] = await Promise.all([
+        assetModel.getEmployees(),
+        assetModel.getAssetManagers(),
+        assetModel.getTypes(),
+        assetModel.getCostcenters(),
+      ]);
+      const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+      const empByRamco = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+      const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+      const typeById = new Map(types.map((t: any) => [Number(t.id), t]));
+      const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+      const ccById = new Map(costcenters.map((c: any) => [Number(c.id), c]));
+
+      const typeNums: number[] = items.map((i: ReqItem) => Number(i.type_id)).filter((n: number) => !Number.isNaN(n));
+      const uniqueTypeIds: number[] = Array.from(new Set<number>(typeNums));
+      const itemTypeName = uniqueTypeIds.length === 1
+        ? (typeById.get(uniqueTypeIds[0])?.name || String(uniqueTypeIds[0]))
+        : (uniqueTypeIds.length > 1 ? 'Multiple Types' : null);
+      const costcenterName = ccById.get(Number(header.costcenter_id))?.name || null;
+      const itemsSummary = items.map((i: ReqItem) => `${i.description} (x${i.qty})`).join('; ');
+
+      const subject = `Purchase Request Created — PR ${nextPrNo}`;
+      const htmlFor = (recipientName?: string | null) => renderPurchaseNotification({
+        recipientName: recipientName || null,
+        prNo: nextPrNo,
+        prDate: baseDate,
+        requestType: header.request_type,
+        itemType: itemTypeName,
+        items: itemsSummary,
+        brand: null,
+        costcenterName,
+      });
+
+      // Requestor
+      const requestor = empByRamco.get(String(header.ramco_id));
+      const requestorEmail = requestor?.email || null;
+      const requestorName = requestor?.full_name || requestor?.name || null;
+      if (requestorEmail) {
+        try { await sendMail(requestorEmail, subject, htmlFor(requestorName)); } catch {}
+      }
+
+      // Asset managers for each unique type_id
+      const managersArr: any[] = Array.isArray(managersRaw) ? managersRaw as any[] : [];
+      const managerRamcos = new Set<string>();
+      for (const tid of uniqueTypeIds) {
+        managersArr
+          .filter((m: any) => Number(m.manager_id) === Number(tid))
+          .filter((m: any) => m.is_active === 1 || m.is_active === '1' || m.is_active === true || m.is_active === null || m.is_active === undefined)
+          .forEach((m: any) => managerRamcos.add(String(m.ramco_id)));
+      }
+      for (const rid of managerRamcos) {
+        const mgr = empByRamco.get(rid);
+        const email = mgr?.email || null;
+        const name = mgr?.full_name || mgr?.name || null;
+        if (email) {
+          try { await sendMail(email, subject, htmlFor(name)); } catch {}
+        }
+      }
+    } catch (notifyErr) {
+      // non-blocking
+    }
+
+    return res.status(201).json({
+      status: 'success',
+      message: 'Purchase request items created',
+      data: {
+        insertIds,
+        last_pr_no: lastPrNo,
+        pr_no: nextPrNo,
+        pr_date: baseDate,
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to create request items', data: null });
   }
 };
 
