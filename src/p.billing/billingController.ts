@@ -2283,20 +2283,20 @@ export const createBillingAccount = async (req: Request, res: Response) => {
 
 export const updateBillingAccount = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
-	const payload = req.body;
+	const data = req.body;
 
 	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
-	if (payload.bill_cont_start) {
-		const d = dayjs(payload.bill_cont_start);
+	if (data.bill_cont_start) {
+		const d = dayjs(data.bill_cont_start);
 		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_start date' });
-		payload.bill_cont_start = d.format('YYYY-MM-DD');
+		data.bill_cont_start = d.format('YYYY-MM-DD');
 	}
-	if (payload.bill_cont_end) {
-		const d2 = dayjs(payload.bill_cont_end);
+	if (data.bill_cont_end) {
+		const d2 = dayjs(data.bill_cont_end);
 		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_end date' });
-		payload.bill_cont_end = d2.format('YYYY-MM-DD');
+		data.bill_cont_end = d2.format('YYYY-MM-DD');
 	}
-	await billingModel.updateBillingAccount(bill_id, payload);
+	await billingModel.updateBillingAccount(bill_id, data);
 	res.json({ status: 'success', message: 'Billing account updated successfully' });
 };
 
