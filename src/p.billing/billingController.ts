@@ -2152,16 +2152,16 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 	const beneficiaries = await billingModel.getBeneficiaries(undefined);
 	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.id ?? b.bfcy_id), b]));
 
-	// fetch costcenters and districts (locations)
-	const [costcentersRaw, districtsRaw] = await Promise.all([
+	// fetch costcenters and locations
+	const [costcentersRaw, locationsRaw] = await Promise.all([
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts()
+		assetsModel.getLocations()
 	]);
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 
 	const enriched = accounts.map((account: any) => {
 		const obj: any = { ...account };
@@ -2183,8 +2183,8 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 		obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
 
 		const locId = Number(obj.loc_id ?? obj.location_id);
-		if (locId && districtMap.has(locId)) {
-			const d = districtMap.get(locId);
+		if (locId && locationMap.has(locId)) {
+			const d = locationMap.get(locId);
 			const locName = d.name || d.code || null;
 			obj.location = { id: locId, name: locName };
 		} else {
@@ -2215,17 +2215,17 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	}
 	const baseUrl = process.env.BACKEND_URL || '';
 
-	// fetch beneficiaries, costcenters, and districts to resolve ids
-	const [beneficiaries, costcentersRaw, districtsRaw] = await Promise.all([
+	// fetch beneficiaries, costcenters, and locations to resolve ids
+	const [beneficiaries, costcentersRaw, locationsRaw] = await Promise.all([
 		billingModel.getBeneficiaries(undefined),
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts()
+		assetsModel.getLocations()
 	]);
 	const benMap = new Map((beneficiaries || []).map((b: any) => [Number(b.id ?? b.bfcy_id), b]));
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 
 	const obj: any = { ...account };
 	const bfcyId = Number(obj.bfcy_id ?? obj.beneficiary_id);
@@ -2244,8 +2244,8 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	obj.costcenter = ccId && ccMap.has(ccId) ? { id: ccId, name: ccMap.get(ccId).name } : null;
 
 	const locId = Number(obj.loc_id ?? obj.location_id);
-	if (locId && districtMap.has(locId)) {
-		const d = districtMap.get(locId);
+	if (locId && locationMap.has(locId)) {
+		const d = locationMap.get(locId);
 		const locName = d.name || d.code || null;
 		obj.location = { id: locId, name: locName };
 	} else {
