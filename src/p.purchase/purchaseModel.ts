@@ -562,6 +562,8 @@ export const createMasterAssetsFromRegistryBatch = async (
       if (a.costcenter_id !== undefined && a.costcenter_id !== null) pushCol('costcenter_id', Number(a.costcenter_id));
       if (a.location_id !== undefined && a.location_id !== null) pushCol('location_id', Number(a.location_id));
       if (a.type_id !== undefined && a.type_id !== null) pushCol('type_id', Number(a.type_id));
+  // also store manager_id with same value as type_id when provided
+  if (a.type_id !== undefined && a.type_id !== null) pushCol('manager_id', Number(a.type_id));
       if (entryCode) pushCol('entry_code', entryCode);
 
       // Defaults: include record_status if schema supports it
