@@ -706,17 +706,12 @@ export const getModels = async (req: Request, res: Response) => {
 		brandIds = ids;
 	}
 
-	// Fetch all models, brands, and categories, filter models by type_id and brand_id if provided
-	let modelsRaw = await assetModel.getModels();
+	// Fetch models from DB with optional filters (type and brand)
+	let modelsRaw = await assetModel.getModels(typeId, brandIds.length > 0 ? brandIds : undefined);
 	let models: any[] = Array.isArray(modelsRaw) ? modelsRaw : [];
-	if (typeId !== undefined) {
-		models = models.filter((m: any) => m.type_id === typeId);
-	}
-	if (brandIds.length > 0) {
-		models = models.filter((m: any) => brandIds.includes(m.brand_id));
-	}
 	const brands = await assetModel.getBrands();
 	const categories = await assetModel.getCategories();
+	const types = await assetModel.getTypes();
 
 	// Build lookup maps for brand and category
 	const brandMap = new Map<number, { id: number; name: string }>();
@@ -727,13 +722,23 @@ export const getModels = async (req: Request, res: Response) => {
 	for (const c of categories as any[]) {
 		categoryMap.set(c.id, { id: c.id, name: c.name });
 	}
+	const typeMap = new Map<number, { id: number; name: string }>();
+	for (const t of types as any[]) {
+		typeMap.set(t.id, { id: t.id, name: t.name });
+	}
 
-	// Map models to include all fields plus brand and category objects
-	const data = (models as any[]).map((model) => ({
-		...model,
-		brand: brandMap.get(model.brand_id) || null,
-		category: categoryMap.get(model.category_id) || null
-	}));
+	// Map models to include select fields plus brand, category and type objects
+	const data = (models as any[]).map((model) => {
+		// remove deprecated/changed fields from response (e.g. code) and avoid exposing raw foreign keys
+		const { code, type_id, brand_id, category_id, ...rest } = model as any;
+		return {
+			...rest,
+			// attach type object from type_id
+			type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
+			brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
+			category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+		};
+	});
 
 	res.json({
 		status: 'success',
@@ -743,7 +748,25 @@ export const getModels = async (req: Request, res: Response) => {
 };
 export const getModelById = async (req: Request, res: Response) => {
 	const row = await assetModel.getModelById(Number(req.params.id));
-	res.json(row);
+	if (!row) return res.status(404).json({ status: 'error', message: 'Model not found' });
+	const brands = await assetModel.getBrands();
+	const categories = await assetModel.getCategories();
+	const types = await assetModel.getTypes();
+	const brandMap = new Map<number, { id: number; name: string }>();
+	for (const b of brands as any[]) brandMap.set(b.id, { id: b.id, name: b.name });
+	const categoryMap = new Map<number, { id: number; name: string }>();
+	for (const c of categories as any[]) categoryMap.set(c.id, { id: c.id, name: c.name });
+	const typeMap = new Map<number, { id: number; name: string }>();
+	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
+
+	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const data = {
+		...rest,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
+		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+	};
+	res.json({ status: 'success', message: 'Model retrieved successfully', data });
 };
 export const createModel = async (req: Request, res: Response) => {
 	const data = req.body;
@@ -751,13 +774,30 @@ export const createModel = async (req: Request, res: Response) => {
 		// Construct a web-accessible path.
 		// This assumes the 'uploads' directory is served statically.
 		data.image_url = `/uploads/models/${req.file.filename}`;
+		// keep legacy field name and also provide `image` for model insertion
+		data.image = data.image_url;
 	}
-	const id = await assetModel.createModel(data);
-	res.status(201).json({
-		status: 'success',
-		message: 'Model created successfully',
-		data: { id, ...data },
-	});
+	const result = await assetModel.createModel(data);
+	const insertId = (result as any)?.insertId || (result as any)?.insert_id || null;
+	// Fetch created row and map to response shape
+	const row = insertId ? await assetModel.getModelById(Number(insertId)) : null;
+	const brands = await assetModel.getBrands();
+	const categories = await assetModel.getCategories();
+	const types = await assetModel.getTypes();
+	const brandMap = new Map<number, { id: number; name: string }>();
+	for (const b of brands as any[]) brandMap.set(b.id, { id: b.id, name: b.name });
+	const categoryMap = new Map<number, { id: number; name: string }>();
+	for (const c of categories as any[]) categoryMap.set(c.id, { id: c.id, name: c.name });
+	const typeMap = new Map<number, { id: number; name: string }>();
+	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
+	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const mapped = {
+		...rest,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
+		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+	};
+	res.status(201).json({ status: 'success', message: 'Model created successfully', data: { id: insertId, ...mapped } });
 };
 
 export const updateModel = async (req: Request, res: Response) => {
@@ -765,13 +805,28 @@ export const updateModel = async (req: Request, res: Response) => {
 	const data = req.body;
 	if (req.file) {
 		data.image_url = `/uploads/models/${req.file.filename}`;
+		data.image = data.image_url;
 	}
 	await assetModel.updateModel(Number(id), data);
-	res.json({
-		status: 'success',
-		message: 'Model updated successfully',
-		data: { id, ...data },
-	});
+	// return updated mapped row
+	const row = await assetModel.getModelById(Number(id));
+	const brands = await assetModel.getBrands();
+	const categories = await assetModel.getCategories();
+	const types = await assetModel.getTypes();
+	const brandMap = new Map<number, { id: number; name: string }>();
+	for (const b of brands as any[]) brandMap.set(b.id, { id: b.id, name: b.name });
+	const categoryMap = new Map<number, { id: number; name: string }>();
+	for (const c of categories as any[]) categoryMap.set(c.id, { id: c.id, name: c.name });
+	const typeMap = new Map<number, { id: number; name: string }>();
+	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
+	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const mapped = {
+		...rest,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
+		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+	};
+	res.json({ status: 'success', message: 'Model updated successfully', data: { id: Number(id), ...mapped } });
 };
 export const deleteModel = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteModel(Number(req.params.id));

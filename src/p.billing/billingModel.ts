@@ -99,7 +99,7 @@ export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleM
 
 export const getVehicleMtnBillingByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date BETWEEN ? AND ? ORDER BY inv_date DESC`,
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date BETWEEN ? AND ? AND inv_date IS NOT NULL ORDER BY inv_date DESC`,
     [from, to]
   );
   return rows as VehicleMaintenance[];
@@ -204,10 +204,10 @@ export const getFuelBillingByDate = async (from: string, to: string): Promise<an
 
 /* ===== FUEL BILLING AMOUNT BY VEHICLE ===== */
 
-export const getFuelVehicleAmount = async (fuelId: number): Promise<any[]> => {
+export const getFuelVehicleAmount = async (stmt_id: number): Promise<any[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ? AND amount > 0`,
-    [fuelId]
+    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ? AND amount != '0.00' AND stmt_date IS NOT NULL AND cc_id IS NOT NULL`,
+    [stmt_id]
   );
   return rows as any[];
 };

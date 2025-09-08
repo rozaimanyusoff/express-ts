@@ -218,8 +218,21 @@ export const createModel = async (data: any) => {
   return result;
 };
 
-export const getModels = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${modelTable}`);
+export const getModels = async (typeId?: number, brandIds?: number[]) => {
+  // Build SQL with optional filters
+  const where: string[] = [];
+  const params: any[] = [];
+  if (typeof typeId === 'number') {
+    where.push('type_id = ?');
+    params.push(typeId);
+  }
+  if (Array.isArray(brandIds) && brandIds.length > 0) {
+    const placeholders = brandIds.map(() => '?').join(',');
+    where.push(`brand_id IN (${placeholders})`);
+    params.push(...brandIds);
+  }
+  const sql = `SELECT * FROM ${modelTable}` + (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '');
+  const [rows] = await pool.query(sql, params);
   return rows;
 };
 
@@ -229,11 +242,22 @@ export const getModelById = async (id: number) => {
 };
 
 export const updateModel = async (id: number, data: any) => {
-  const { name, image, brand_code, category_code, type_code, item_code, specification, generation, status } = data;
-  const [result] = await pool.query(
-    `UPDATE ${modelTable} SET name = ?, image = ?, brand_code = ?, category_code = ?, type_id = ?, item_code = ?, specification = ?, generation = ?, status = ? WHERE id = ?`,
-    [name, image, brand_code, category_code, type_code, item_code, specification, generation, status, id]
-  );
+  const { name, image, brand_id, category_id, type_id, item_code, specification, generation, status } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
+  if (brand_id !== undefined) { sets.push('brand_id = ?'); params.push(brand_id); }
+  if (category_id !== undefined) { sets.push('category_id = ?'); params.push(category_id); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  if (item_code !== undefined) { sets.push('item_code = ?'); params.push(item_code); }
+  if (specification !== undefined) { sets.push('specification = ?'); params.push(specification); }
+  if (generation !== undefined) { sets.push('generation = ?'); params.push(generation); }
+  if (status !== undefined) { sets.push('status = ?'); params.push(status); }
+  if (sets.length === 0) return { affectedRows: 0 } as any;
+  params.push(id);
+  const sql = `UPDATE ${modelTable} SET ${sets.join(', ')} WHERE id = ?`;
+  const [result] = await pool.query(sql, params);
   return result;
 };
 
