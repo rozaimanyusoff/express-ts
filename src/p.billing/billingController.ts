@@ -29,34 +29,37 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 	// Only return selected fields with nested structure
-	const filtered = vehicleMtn.map(b => ({
-		inv_id: b.inv_id,
-		inv_no: b.inv_no,
-		inv_date: b.inv_date,
-		svc_order: b.svc_order,
-		asset: assetMap.has(b.vehicle_id) ? {
-			vehicle_id: b.vehicle_id,
-			vehicle_regno: (assetMap.get(b.vehicle_id) as any)?.vehicle_regno
-		} : null,
-		costcenter: ccMap.has(b.costcenter_id) ? {
-			id: b.costcenter_id,
-			name: (ccMap.get(b.costcenter_id) as any)?.name
-		} : null,
-		district: locationMap.has(b.location_id) ? {
-			id: b.location_id,
-			name: (locationMap.get(b.location_id) as any)?.code
-		} : null,
-		workshop: wsMap.has(b.ws_id) ? {
-			id: b.ws_id,
-			name: (wsMap.get(b.ws_id) as any)?.ws_name
-		} : null,
-		svc_date: b.svc_date,
-		svc_odo: b.svc_odo,
-		inv_total: b.inv_total,
-		inv_stat: b.inv_stat,
-		inv_remarks: b.inv_remarks,
-		running_no: b.running_no
-	}));
+	const filtered = vehicleMtn.map(b => {
+		const asset_id = (b as any).asset_id ?? b.vehicle_id;
+		return {
+			inv_id: b.inv_id,
+			inv_no: b.inv_no,
+			inv_date: b.inv_date,
+			svc_order: b.svc_order,
+			asset: assetMap.has(asset_id) ? {
+				vehicle_id: asset_id,
+				vehicle_regno: (assetMap.get(asset_id) as any)?.vehicle_regno
+			} : null,
+			costcenter: ccMap.has(b.costcenter_id) ? {
+				id: b.costcenter_id,
+				name: (ccMap.get(b.costcenter_id) as any)?.name
+			} : null,
+			district: locationMap.has(b.location_id) ? {
+				id: b.location_id,
+				name: (locationMap.get(b.location_id) as any)?.code
+			} : null,
+			workshop: wsMap.has(b.ws_id) ? {
+				id: b.ws_id,
+				name: (wsMap.get(b.ws_id) as any)?.ws_name
+			} : null,
+			svc_date: b.svc_date,
+			svc_odo: b.svc_odo,
+			inv_total: b.inv_total,
+			inv_stat: b.inv_stat,
+			inv_remarks: b.inv_remarks,
+			running_no: b.running_no
+		};
+	});
 	res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data: filtered });
 };
 
@@ -124,37 +127,40 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 	// Only return selected fields with nested structure
-	const filtered = vehicleMtn.map(b => ({
-		inv_id: b.inv_id,
-		inv_no: b.inv_no,
-		inv_date: b.inv_date,
-		svc_order: b.svc_order,
-		asset: assetMap.has(b.vehicle_id) ? {
-			asset_id: b.vehicle_id,
-			register_number: (assetMap.get(b.vehicle_id) as any)?.register_number || (assetMap.get(b.vehicle_id) as any)?.vehicle_regno || null,
-			transmission: (assetMap.get(b.vehicle_id) as any)?.transmission || (assetMap.get(b.vehicle_id) as any)?.vtrans_type || null,
-			fuel_type: (assetMap.get(b.vehicle_id) as any)?.fuel_type || (assetMap.get(b.vehicle_id) as any)?.vfuel_type || null,
-			purchase_date: (assetMap.get(b.vehicle_id) as any)?.purchase_date || (assetMap.get(b.vehicle_id) as any)?.v_dop || null
-		} : null,
-		costcenter: ccMap.has(b.costcenter_id) ? {
-			id: b.costcenter_id,
-			name: (ccMap.get(b.costcenter_id) as any)?.name
-		} : null,
-		district: locationMap.has(b.location_id) ? {
-			id: b.location_id,
-			name: (locationMap.get(b.location_id) as any)?.code
-		} : null,
-		workshop: wsMap.has(b.ws_id) ? {
-			id: b.ws_id,
-			name: (wsMap.get(b.ws_id) as any)?.ws_name
-		} : null,
-		svc_date: b.svc_date,
-		svc_odo: b.svc_odo,
-		inv_total: b.inv_total,
-		inv_stat: b.inv_stat,
-		inv_remarks: b.inv_remarks,
-		running_no: b.running_no
-	}));
+	const filtered = vehicleMtn.map(b => {
+		const asset_id = (b as any).asset_id ?? b.vehicle_id;
+		return {
+			inv_id: b.inv_id,
+			inv_no: b.inv_no,
+			inv_date: b.inv_date,
+			svc_order: b.svc_order,
+			asset: assetMap.has(asset_id) ? {
+				asset_id: asset_id,
+				register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
+				transmission: (assetMap.get(asset_id) as any)?.transmission || (assetMap.get(asset_id) as any)?.vtrans_type || null,
+				fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
+				purchase_date: (assetMap.get(asset_id) as any)?.purchase_date || (assetMap.get(asset_id) as any)?.v_dop || null
+			} : null,
+			costcenter: ccMap.has(b.costcenter_id) ? {
+				id: b.costcenter_id,
+				name: (ccMap.get(b.costcenter_id) as any)?.name
+			} : null,
+			district: locationMap.has(b.location_id) ? {
+				id: b.location_id,
+				name: (locationMap.get(b.location_id) as any)?.code
+			} : null,
+			workshop: wsMap.has(b.ws_id) ? {
+				id: b.ws_id,
+				name: (wsMap.get(b.ws_id) as any)?.ws_name
+			} : null,
+			svc_date: b.svc_date,
+			svc_odo: b.svc_odo,
+			inv_total: b.inv_total,
+			inv_stat: b.inv_stat,
+			inv_remarks: b.inv_remarks,
+			running_no: b.running_no
+		};
+	});
 	res.json({ status: 'success', message: 'Vehicle maintenance by date range retrieved successfully', data: filtered });
 };
 
@@ -206,12 +212,13 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 
 	// Get all vehicle maintenance records in date range
 	const maintenanceRecords = await billingModel.getVehicleMtnBillingByDate(from as string, to as string);
-	// Group by vehicle_id
+	// Group by asset_id
 	const summary: Record<string, any> = {};
 	for (const maintenance of maintenanceRecords) {
 		// If cost center filter is provided, skip if not matching
-		if (costcenterIds.length > 0 && !costcenterIds.includes(maintenance.costcenter_id)) continue;
-		const vehicle_id = maintenance.vehicle_id;
+		const ccId = (maintenance as any).cc_id ?? maintenance.costcenter_id;
+		if (costcenterIds.length > 0 && !costcenterIds.includes(ccId)) continue;
+		const asset_id = (maintenance as any).asset_id ?? maintenance.vehicle_id;
 
 		// Resolve category, brand, and model objects
 		let category = null;
@@ -221,8 +228,8 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		let brandId = null;
 		let modelId = null;
 		let ramcoId = null;
-		if (assetMap.has(vehicle_id)) {
-			const asset = assetMap.get(vehicle_id) as any;
+		if (assetMap.has(asset_id)) {
+			const asset = assetMap.get(asset_id) as any;
 			categoryId = asset.category_id || asset.categoryId || null;
 			brandId = asset.brand_id || asset.brandId || null;
 			modelId = asset.model_id || asset.modelId || null;
@@ -247,12 +254,14 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 			owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
 		}
 
-		if (!summary[vehicle_id]) {
-			const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) as any : null;
-			const ccObj = maintenance.costcenter_id && ccMap.has(maintenance.costcenter_id) ? ccMap.get(maintenance.costcenter_id) : null;
-			const locationObj = maintenance.location_id && locationMap.has(maintenance.location_id) ? locationMap.get(maintenance.location_id) : null;
-			summary[vehicle_id] = {
-				vehicle_id,
+		if (!summary[asset_id]) {
+			const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) as any : null;
+			const ccId = (maintenance as any).cc_id ?? maintenance.costcenter_id;
+			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
+			const locId = (maintenance as any).loc_id ?? maintenance.location_id;
+			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
+			summary[asset_id] = {
+				vehicle_id: asset_id,
 				vehicle: vehicleObj ? (vehicleObj.register_number || vehicleObj.vehicle_regno || null) : null,
 				category,
 				brand,
@@ -262,8 +271,8 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
 				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
-				costcenter: ccObj ? { id: maintenance.costcenter_id, name: ccObj.name } : null,
-				district: locationObj ? { id: maintenance.location_id, code: locationObj.code } : null,
+				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
+				district: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
 				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
 				total_maintenance: 0,
@@ -271,15 +280,15 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 				_yearMap: {} // temp for grouping by year
 			};
 		}
-		summary[vehicle_id].total_maintenance += 1;
-		summary[vehicle_id].total_amount += parseFloat(maintenance.inv_total || '0');
+		summary[asset_id].total_maintenance += 1;
+		summary[asset_id].total_amount += parseFloat(maintenance.inv_total || '0');
 		// Group by year
 		const year = dayjs(maintenance.inv_date).year();
-		if (!summary[vehicle_id]._yearMap[year]) {
-			summary[vehicle_id]._yearMap[year] = { expenses: 0, maintenance: [] };
+		if (!summary[asset_id]._yearMap[year]) {
+			summary[asset_id]._yearMap[year] = { expenses: 0, maintenance: [] };
 		}
-		summary[vehicle_id]._yearMap[year].expenses += parseFloat(maintenance.inv_total || '0');
-		summary[vehicle_id]._yearMap[year].maintenance.push({
+		summary[asset_id]._yearMap[year].expenses += parseFloat(maintenance.inv_total || '0');
+		summary[asset_id]._yearMap[year].maintenance.push({
 			inv_id: maintenance.inv_id,
 			inv_no: maintenance.inv_no,
 			inv_date: maintenance.inv_date,
