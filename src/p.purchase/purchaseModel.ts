@@ -268,7 +268,7 @@ export const getPurchasesByDateRange = async (
 // GET PURCHASES BY STATUS (based on completion of process stages)
 export const getPurchasesByStatus = async (status: string): Promise<PurchaseRecord[]> => {
   let whereClause = '';
-  
+
   switch (status.toLowerCase()) {
     case 'requested':
       whereClause = 'pr_no IS NOT NULL AND po_no IS NULL';
@@ -546,7 +546,7 @@ export const createMasterAssetsFromRegistryBatch = async (
           } else {
             entryCode = `${prefix}0001`;
           }
-        } catch {}
+        } catch { }
       }
       // Build dynamic INSERT with only provided fields; exclude model/model_id and condition
       const cols: string[] = [];
@@ -564,13 +564,10 @@ export const createMasterAssetsFromRegistryBatch = async (
       if (a.type_id !== undefined && a.type_id !== null) pushCol('type_id', Number(a.type_id));
       if (entryCode) pushCol('entry_code', entryCode);
 
-      // Defaults
-      pushCol('status', 'registered');
+      // Defaults: include record_status if schema supports it
       pushCol('record_status', 'active');
-      // include linkage to purchase id on assetdata
+      // include linkage to purchase id on assetdata (pr_id) if present in schema
       pushCol('pr_id', pr_id);
-      // keep procurement_id for compatibility if present in schema
-      pushCol('procurement_id', pr_id);
 
       const sql = `INSERT INTO assets.assetdata (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
       const [result] = await pool.query(sql, vals);
