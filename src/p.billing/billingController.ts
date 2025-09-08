@@ -1918,9 +1918,9 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 };
 
 export const updateUtilityBill = async (req: Request, res: Response) => {
-	const bill_id = Number(req.params.id);
-	const payload = req.body;
-	await billingModel.updateUtilityBill(bill_id, payload);
+	const util_id = Number(req.params.id);
+	const data = req.body;
+	await billingModel.updateUtilityBill(util_id, data);
 	res.json({ status: 'success', message: 'Utility bill updated successfully' });
 };
 
