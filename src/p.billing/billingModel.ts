@@ -195,10 +195,10 @@ export const deleteFuelBilling = async (id: number): Promise<void> => {
 /* ===== FUEL BILLING BY DATE ===== */
 
 export const getFuelBillingByDate = async (from: string, to: string): Promise<any[]> => {
-  const [rows] = await pool2.query(
-  `SELECT * FROM ${fuelBillingTable} WHERE DATE(stmt_date) BETWEEN ? AND ? ORDER BY stmt_date DESC`,
-  [from, to]
-  );
+  // Include fuel statements where the parent stmt_date is in range OR any detail row has stmt_date in range
+  const sql = `
+    SELECT * FROM ${fuelBillingTable} WHERE stmt_date BETWEEN ? AND ?`;
+  const [rows] = await pool2.query(sql, [from, to]);
   return rows as any[];
 };
 
@@ -206,7 +206,7 @@ export const getFuelBillingByDate = async (from: string, to: string): Promise<an
 
 export const getFuelVehicleAmount = async (fuelId: number): Promise<any[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ?`,
+    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ? AND amount > 0`,
     [fuelId]
   );
   return rows as any[];
@@ -219,6 +219,14 @@ export const getFuelVehicleAmountById = async (id: number): Promise<any | null> 
   );
   const amount = (rows as any[])[0];
   return amount || null;
+};
+
+export const getFuelVehicleAmountByDateRange = async (from: string, to: string): Promise<any[]> => {
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${fuelVehicleAmountTable}  WHERE stmt_date BETWEEN ? AND ? AND amount > 0 ORDER BY stmt_date DESC`,
+    [from, to]
+  );
+  return rows as any[];
 };
 
 export const createFuelVehicleAmount = async (data: any): Promise<number> => {

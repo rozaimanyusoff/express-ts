@@ -17,7 +17,7 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 	const workshops = await billingModel.getWorkshops() as any[];
 	const assets = await assetsModel.getAssets() as any[];
 	const costcenters = await assetsModel.getCostcenters() as any[];
-	const districts = await assetsModel.getDistricts() as any[];
+	const locations = await assetsModel.getLocations() as any[];
 	// Build lookup maps for fast access
 	// Build asset map keyed by both id and vehicle_id for compatibility
 	const assetMap = new Map((assets || []).flatMap((asset: any) => {
@@ -26,7 +26,7 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		return entries;
 	}));
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 	// Only return selected fields with nested structure
 	const filtered = vehicleMtn.map(b => ({
@@ -42,9 +42,9 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			id: b.costcenter_id,
 			name: (ccMap.get(b.costcenter_id) as any)?.name
 		} : null,
-		district: districtMap.has(b.location_id) ? {
+		district: locationMap.has(b.location_id) ? {
 			id: b.location_id,
-			name: (districtMap.get(b.location_id) as any)?.code
+			name: (locationMap.get(b.location_id) as any)?.code
 		} : null,
 		workshop: wsMap.has(b.ws_id) ? {
 			id: b.ws_id,
@@ -111,7 +111,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	// Use assetModel.getAssets() instead of billingModel.getTempVehicleRecords() (DB schema changed)
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
-	const districts = await assetsModel.getDistricts() as any[];
+	const locations = await assetsModel.getLocations() as any[];
 	const workshops = await billingModel.getWorkshops() as any[];
 	// Build lookup maps for fast access
 	// Build asset map keyed by id and by asset_id if present to keep compatibility
@@ -121,7 +121,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 		if (a.asset_id) assetMap.set(a.asset_id, a);
 	}
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map((districts || []).map((d: any) => [d.id, d]));
+	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 	// Only return selected fields with nested structure
 	const filtered = vehicleMtn.map(b => ({
@@ -140,9 +140,9 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 			id: b.costcenter_id,
 			name: (ccMap.get(b.costcenter_id) as any)?.name
 		} : null,
-		district: districtMap.has(b.location_id) ? {
+		district: locationMap.has(b.location_id) ? {
 			id: b.location_id,
-			name: (districtMap.get(b.location_id) as any)?.code
+			name: (locationMap.get(b.location_id) as any)?.code
 		} : null,
 		workshop: wsMap.has(b.ws_id) ? {
 			id: b.ws_id,
@@ -165,10 +165,10 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
 	// Fetch all lookup data
-	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
+	const [assetsRaw, costcentersRaw, locationsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
 		assetsModel.getAssets(),
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts(),
+		assetsModel.getLocations(),
 		assetsModel.getCategories(),
 		assetsModel.getBrands(),
 		assetsModel.getModels(),
@@ -176,7 +176,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 	]);
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
@@ -188,7 +188,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		return entries;
 	}));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+	const locationMap = new Map(locations.map((d: any) => [d.id, d]));
 	// Use id as key for categoryMap (since getCategories returns id, not category_id)
 	const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
 	const brandMap = new Map(brands.map((b: any) => [b.id, b]));
@@ -250,7 +250,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		if (!summary[vehicle_id]) {
 			const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) as any : null;
 			const ccObj = maintenance.costcenter_id && ccMap.has(maintenance.costcenter_id) ? ccMap.get(maintenance.costcenter_id) : null;
-			const districtObj = maintenance.location_id && districtMap.has(maintenance.location_id) ? districtMap.get(maintenance.location_id) : null;
+			const locationObj = maintenance.location_id && locationMap.has(maintenance.location_id) ? locationMap.get(maintenance.location_id) : null;
 			summary[vehicle_id] = {
 				vehicle_id,
 				vehicle: vehicleObj ? (vehicleObj.register_number || vehicleObj.vehicle_regno || null) : null,
@@ -263,7 +263,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
 				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
 				costcenter: ccObj ? { id: maintenance.costcenter_id, name: ccObj.name } : null,
-				district: districtObj ? { id: maintenance.location_id, code: districtObj.code } : null,
+				district: locationObj ? { id: maintenance.location_id, code: locationObj.code } : null,
 				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
 				total_maintenance: 0,
@@ -383,15 +383,15 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 	// Fetch all lookup data
 	const [costcentersRaw, districtsRaw, assetsRaw] = await Promise.all([
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts(),
+		assetsModel.getLocations(),
 		assetsModel.getAssets()
 	]);
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const locations = Array.isArray(districtsRaw) ? districtsRaw : [];
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
-	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+	const locationMap = new Map(locations.map((d: any) => [d.id, d]));
 	// Build assetMap keyed by both vehicle_id and id
 	const assetMap = new Map((assets as any[]).flatMap((v: any) => {
 		const entries: any[] = [[v.id, v]];
@@ -641,7 +641,9 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 				entry_code: d.entry_code || null, // entry_code is not used currently
 				stmt_date: d.stmt_date,
 				card_id: d.card_id,
+				cc_id: d.cc_id,
 				costcenter_id: d.costcenter_id,
+				loc_id: d.loc_id,
 				location_id: d.location_id || null, // location_id is not used currently
 				category: d.category,
 				start_odo: d.start_odo,
@@ -764,7 +766,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
 		assetsModel.getAssets(),
 		assetsModel.getCostcenters(),
-		assetsModel.getDistricts(),
+		assetsModel.getLocations(),
 		assetsModel.getCategories(),
 		assetsModel.getBrands(),
 		assetsModel.getModels(),
@@ -772,7 +774,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	]);
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const districts = Array.isArray(districtsRaw) ? districtsRaw : [];
+	const locations = Array.isArray(districtsRaw) ? districtsRaw : [];
 	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
@@ -791,7 +793,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		}
 	}
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
-	const districtMap = new Map(districts.map((d: any) => [d.id, d]));
+	const locationMap = new Map(locations.map((d: any) => [d.id, d]));
 	// Use id as key for categoryMap (since getCategories returns id, not category_id)
 	const categoryMap = new Map(categories.map((cat: any) => [cat.id, cat]));
 	const brandMap = new Map(brands.map((b: any) => [b.id, b]));
@@ -801,14 +803,15 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 
 	// Get all fuel billings in date range
 	const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
-	// Group by vehicle_id
+	// Group by asset_id
 	const summary: Record<string, any> = {};
 	for (const bill of fuelBillings) {
 		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
 		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
 			// If cc filter is provided, skip if not matching
-			if (cc && String(d.costcenter_id) !== String(cc)) continue;
-			const vehicle_id = d.vehicle_id;
+			const ccId = d.cc_id ?? d.costcenter_id;
+			if (cc && String(ccId) !== String(cc)) continue;
+			const asset_id = d.asset_id;
 			// Resolve category, brand, and model objects
 			let category = null;
 			let brand = null;
@@ -817,8 +820,8 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 			let brandId = null;
 			let modelId = null;
 			let ramcoId = null;
-			if (assetMap.has(vehicle_id)) {
-				const asset = assetMap.get(vehicle_id);
+			if (assetMap.has(asset_id)) {
+				const asset = assetMap.get(asset_id);
 				if (!categoryId) categoryId = asset.category_id;
 				brandId = asset.brand_id;
 				modelId = asset.model_id;
@@ -843,42 +846,51 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 				owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
 			}
 
-			if (!summary[vehicle_id]) {
-				const vehicleObj = vehicle_id && assetMap.has(vehicle_id) ? assetMap.get(vehicle_id) : null;
-				const ccObj = d.costcenter_id && ccMap.has(d.costcenter_id) ? ccMap.get(d.costcenter_id) : null;
-				const districtObj = d.location_id && districtMap.has(d.location_id) ? districtMap.get(d.location_id) : null;
-				summary[vehicle_id] = {
-					vehicle_id,
-					vehicle: vehicleObj ? vehicleObj.vehicle_regno : null,
+			if (!summary[asset_id]) {
+				const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) : null;
+				const ccId = d.cc_id ?? d.costcenter_id;
+				const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
+				const locId = d.loc_id ?? d.location_id;
+				const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
+				summary[asset_id] = {
+					vehicle_id: asset_id,
+					vehicle: vehicleObj ? (vehicleObj.vehicle_regno || vehicleObj.register_number || null) : null,
 					category,
 					brand,
 					model,
 					owner,
-					transmission: vehicleObj ? vehicleObj.vtrans_type : null,
-					fuel: vehicleObj ? vehicleObj.vfuel_type : null,
-					purchase_date: dayjs(vehicleObj?.v_dop).format('DD/MM/YYYY'),
-					age: vehicleObj ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null,
-					costcenter: ccObj ? { id: d.costcenter_id, name: ccObj.name } : null,
-					district: districtObj ? { id: d.location_id, code: districtObj.code } : null,
-					classification: vehicleObj ? vehicleObj.classification : null,
-					record_status: vehicleObj ? vehicleObj.record_status : null,
+					transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
+					fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
+					purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
+					age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
+					costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
+					location: locationObj ? { id: locId, name: locationObj.name ?? locationObj.code } : null,
+					classification: vehicleObj ? (vehicleObj.classification || null) : null,
+					record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
 					total_litre: 0,
 					total_amount: 0,
 					_yearMap: {} // temp for grouping by year
 				};
 			}
-			summary[vehicle_id].total_litre += parseFloat(d.total_litre || '0');
-			summary[vehicle_id].total_amount += parseFloat(d.amount || '0');
-			// Group by year
-			const year = dayjs(bill.stmt_date).year();
-			if (!summary[vehicle_id]._yearMap[year]) {
-				summary[vehicle_id]._yearMap[year] = { expenses: 0, fuel: [] };
+			summary[asset_id].total_litre += parseFloat(d.total_litre || '0');
+			summary[asset_id].total_amount += parseFloat(d.amount || '0');
+			// Determine date for this detail (prefer detail row date)
+			const detailDate = d.stmt_date || bill.stmt_date;
+			const year = detailDate ? dayjs(detailDate).year() : dayjs(bill.stmt_date).year();
+			if (!summary[asset_id]._yearMap[year]) {
+				summary[asset_id]._yearMap[year] = { total_annual: 0, monthlyMap: {} };
 			}
-			summary[vehicle_id]._yearMap[year].expenses += parseFloat(d.amount || '0');
-			summary[vehicle_id]._yearMap[year].fuel.push({
+			const amountNum = parseFloat(d.amount || '0');
+			summary[asset_id]._yearMap[year].total_annual += amountNum;
+			const monthNum = detailDate ? dayjs(detailDate).month() + 1 : 0;
+			const monthName = detailDate ? dayjs(detailDate).format('MMMM') : null;
+			if (!summary[asset_id]._yearMap[year].monthlyMap[monthNum]) summary[asset_id]._yearMap[year].monthlyMap[monthNum] = [];
+			summary[asset_id]._yearMap[year].monthlyMap[monthNum].push({
+				month: monthName,
+				monthNum,
 				s_id: d.s_id,
 				stmt_id: d.stmt_id,
-				stmt_date: bill.stmt_date, // Use parent bill's stmt_date
+				stmt_date: detailDate ? dayjs(detailDate).format('YYYY-MM-DD') : null,
 				total_litre: d.total_litre,
 				amount: d.amount
 			});
@@ -886,11 +898,25 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	}
 	// Format output
 	const result = Object.values(summary).map((asset: any) => {
-		const details = Object.entries(asset._yearMap).map(([year, data]: [string, any]) => ({
-			year: Number(year),
-			expenses: data.expenses.toFixed(2),
-			fuel: data.fuel
-		}));
+		const details = Object.entries(asset._yearMap).map(([year, data]: [string, any]) => {
+			// Convert monthlyMap to sorted array (descending month)
+			const monthNums = Object.keys(data.monthlyMap).map(n => Number(n)).sort((a, b) => b - a);
+			const monthly_expenses = monthNums.flatMap((mn) => {
+				return (data.monthlyMap[mn] || []).map((m: any) => ({
+					month: m.month,
+					s_id: m.s_id,
+					stmt_id: m.stmt_id,
+					stmt_date: m.stmt_date,
+					total_litre: m.total_litre,
+					amount: m.amount
+				}));
+			});
+			return {
+				year: Number(year),
+				total_annual: (data.total_annual || data.total_annual === 0) ? Number(data.total_annual).toFixed(2) : '0.00',
+				monthly_expenses
+			};
+		});
 		// Remove temp _yearMap from output
 		const { _yearMap, ...rest } = asset;
 		return { ...rest, details };
@@ -923,8 +949,8 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 	for (const bill of fuelBillings) {
 		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
 		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
-			const costcenter_id = d.costcenter_id;
-			const ccObj = costcenter_id && ccMap.has(costcenter_id) ? ccMap.get(costcenter_id) : null;
+			const ccId = d.cc_id ?? d.costcenter_id;
+			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
 			const ccName = ccObj ? ccObj.name : 'Unknown';
 			if (!summary[ccName]) {
 				summary[ccName] = { costcenter: ccName, _yearMap: {} };
