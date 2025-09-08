@@ -196,8 +196,8 @@ export const deleteFuelBilling = async (id: number): Promise<void> => {
 
 export const getFuelBillingByDate = async (from: string, to: string): Promise<any[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${fuelBillingTable} WHERE stmt_date BETWEEN ? AND ? ORDER BY stmt_date DESC`,
-    [from, to]
+  `SELECT * FROM ${fuelBillingTable} WHERE DATE(stmt_date) BETWEEN ? AND ? ORDER BY stmt_date DESC`,
+  [from, to]
   );
   return rows as any[];
 };
