@@ -206,7 +206,7 @@ export const createSummon = async (req: Request, res: Response) => {
     (async () => {
       try {
         const created = await summonModel.getSummonById(id);
-  const ramco = created?.ramco_id || null;
+        const ramco = created?.ramco_id || null;
         if (ramco) {
           const emp = await assetModel.getEmployeeByRamco(String(ramco));
           const toEmail = emp?.email || created?.v_email || null;
@@ -220,9 +220,13 @@ export const createSummon = async (req: Request, res: Response) => {
               summon_amt: created?.summon_amt || null,
               summon_agency: created?.summon_agency || null,
             });
-            await sendMail(toEmail, `Summon notification #${created?.smn_id || id}`, html).catch(() => {});
-            // mark emailStat = 1
-            await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
+            try {
+              await sendMail(toEmail, `Summon notification #${created?.smn_id || id}`, html);
+              // only mark emailStat = 1 when the mailer reports success
+              await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
+            } catch (mailErr) {
+              console.error('createSummon: mail send error to', toEmail, mailErr);
+            }
           }
         }
       } catch (e) {
@@ -323,6 +327,56 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
     res.json({ status: 'success', message: 'Payment receipt uploaded', data: { id } });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to upload payment receipt', data: null });
+  }
+};
+
+// POST /api/compliance/summon/notify
+export const resendSummonNotification = async (req: Request, res: Response) => {
+  try {
+    // Allow id in body or query
+    const id = Number((req.body && (req.body.id || req.body.smn_id)) || req.query.id || req.query.smn_id);
+    if (!id || Number.isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+
+    const record = await summonModel.getSummonById(id);
+    if (!record) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+    const r = Array.isArray(record) ? record[0] : record;
+
+    // TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
+    const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+    const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+
+    const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+    const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+
+    // Resolve recipient email: prefer employee email by ramco_id, fallback to stored v_email
+    const ramco = r?.ramco_id || null;
+    let emp: any = null;
+    if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
+    const toEmail = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+    if (!toEmail) return res.status(400).json({ status: 'error', message: 'Recipient email not found', data: null });
+
+    const html = renderSummonNotification({
+      driverName: localTestName || (emp?.full_name || emp?.name) || null,
+      smn_id: r?.smn_id || id,
+      summon_no: r?.summon_no || null,
+      summon_dt: r?.summon_dt || null,
+      summon_loc: r?.summon_loc || null,
+      summon_amt: r?.summon_amt || null,
+      summon_agency: r?.summon_agency || null,
+    });
+
+    try {
+      await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html);
+      // mark emailStat = 1 (best-effort)
+      await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
+      return res.json({ status: 'success', message: 'Notification sent', data: { id, sentTo: toEmail, testMode: !!localTestEmail } });
+    } catch (mailErr) {
+      // don't expose mail errors, but return failure status
+      console.error('resendSummonNotification: mailer error', mailErr);
+      return res.status(500).json({ status: 'error', message: 'Failed to send email', data: null });
+    }
+  } catch (err) {
+    return res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Unknown error', data: null });
   }
 };
 

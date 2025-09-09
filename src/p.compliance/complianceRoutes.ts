@@ -13,6 +13,7 @@ router.get('/summon', asyncHandler(summonController.getSummons));
 router.post('/summon', uploader.single('summon_upl'), asyncHandler(summonController.createSummon));
 router.put('/summon/:id', uploader.single('summon_upl'), asyncHandler(summonController.updateSummon));
 router.post('/summon/:id/payment', uploader.single('summon_receipt'), asyncHandler(summonController.uploadSummonPayment));
+router.post('/summon/notify', asyncHandler(summonController.resendSummonNotification));
 router.delete('/summon/:id', asyncHandler(summonController.deleteSummon));
 
 export default router;
