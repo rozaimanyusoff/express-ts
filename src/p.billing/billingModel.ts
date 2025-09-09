@@ -746,7 +746,7 @@ export const createBillingAccount = async (data: any): Promise<number> => {
   // Prevent duplicate billing account by bill_ac + service + cc_id + loc_id
   if (data.account && data.category !== undefined && data.costcenter_id !== undefined && data.location_id !== undefined) {
     const [existingRows] = await pool2.query(
-      `SELECT id FROM ${billingAccountTable} WHERE account = ? AND category = ? AND costcenter_id = ? AND location_id = ? LIMIT 1`,
+      `SELECT bill_id FROM ${billingAccountTable} WHERE account = ? AND category = ? AND costcenter_id = ? AND location_id = ? LIMIT 1`,
       [data.account, data.category, data.costcenter_id, data.location_id]
     );
     if (Array.isArray(existingRows) && (existingRows as any[]).length > 0) {
