@@ -1852,11 +1852,11 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 	const { costcenter, from, to, service } = req.query;
 	let bills = await billingModel.getUtilityBills();
 	const accounts = await billingModel.getBillingAccounts();
+	const accountMap = new Map((accounts || []).map((a: any) => [a.bill_id, a]));
 	const costcentersRaw = await assetsModel.getCostcenters();
 	const locationsRaw = await assetsModel.getLocations();
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
 	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
-	const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const locMap = new Map(locations.map((l: any) => [l.id, l]));
 
@@ -2129,38 +2129,79 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 		const monthNames = [
 			'January','February','March','April','May','June','July','August','September','October','November','December'
 		];
-		const yearMap = new Map<number, any[]>();
+		// Group bills by year -> account -> monthly expenses
+		const yearMap = new Map<number, Map<number, any>>();
+		const accountMap = new Map((accounts || []).map((a: any) => [a.bill_id, a]));
+
+		// We'll aggregate monthly sums per account per year. Use numeric accumulators and format later.
 		for (const bill of (bills || [])) {
 			const d = bill.ubill_date ? new Date(bill.ubill_date) : null;
 			if (!d || isNaN(d.getTime())) continue;
 			const year = d.getFullYear();
-			if (!yearMap.has(year)) yearMap.set(year, []);
-			const arr = yearMap.get(year) as any[];
-			const monthName = monthNames[d.getMonth()];
-					arr.push({
-						month: monthName,
-						util_id: (bill as any).util_id,
-						ubill_date: d.toISOString().slice(0,10),
-						ubill_color: bill.ubill_color,
-						ubill_bw: bill.ubill_bw,
-						ubill_gtotal: bill.ubill_gtotal
-					});
+			if (!yearMap.has(year)) yearMap.set(year, new Map<number, any>());
+			const accountsMap = yearMap.get(year) as Map<number, any>;
+			const billId = (bill as any).bill_id;
+			if (!billId) continue;
+			if (!accountsMap.has(billId)) {
+				const accRaw = accountMap.get(billId) || null;
+				accountsMap.set(billId, {
+					bill_id: billId,
+					account: accRaw ? accRaw.account : null,
+					monthlyMap: new Map<number, {month:string, rent:number, color:number, bw:number}>()
+				});
+			}
+			const accEntry = accountsMap.get(billId);
+			const monthIdx = d.getMonth();
+			const monthName = monthNames[monthIdx];
+			const rentNum = Number((bill as any).ubill_rent) || 0;
+			const colorNum = Number((bill as any).ubill_color) || 0;
+			const bwNum = Number((bill as any).ubill_bw) || 0;
+			if (!accEntry.monthlyMap.has(monthIdx)) {
+				accEntry.monthlyMap.set(monthIdx, { month: monthName, rent: 0, color: 0, bw: 0 });
+			}
+			const m = accEntry.monthlyMap.get(monthIdx);
+			m.rent += rentNum;
+			m.color += colorNum;
+			m.bw += bwNum;
 		}
 
-		const details = Array.from(yearMap.entries())
+		// Build final details array per year
+		const detailsArr = Array.from(yearMap.entries())
 			.sort((a,b) => b[0] - a[0])
-			.map(([year, entries]) => {
-				const monthOrder = (e: any) => monthNames.indexOf(e.month || '') || 0;
-				entries.sort((x: any, y: any) => monthOrder(x) - monthOrder(y));
-				const total_annual_num = entries.reduce((sum: number, e: any) => sum + (Number(e.ubill_gtotal) || 0), 0);
+			.map(([year, accountsMap]) => {
+				// Determine month indices present in this year across all accounts so we can include zeros if needed
+				const monthsSet = new Set<number>();
+				for (const acc of accountsMap.values()) {
+					for (const mi of acc.monthlyMap.keys()) monthsSet.add(mi);
+				}
+				const monthsList = Array.from(monthsSet).sort((x,y) => x - y);
+				const accountsList = Array.from(accountsMap.values()).map((acc: any) => {
+					const monthly_expenses = monthsList.map((mi: number) => {
+						const m = acc.monthlyMap.get(mi) || { month: monthNames[mi], rent: 0, color: 0, bw: 0 };
+						return {
+							month: m.month,
+							ubill_rent: (m.rent === 0 ? '0' : m.rent.toFixed(2)),
+							ubill_color: (m.color === 0 ? '0' : m.color.toFixed(2)),
+							ubill_bw: (m.bw === 0 ? '0' : m.bw.toFixed(2))
+						};
+					});
+					return {
+						bill_id: acc.bill_id,
+						account: acc.account,
+						monthly_expenses
+					};
+				});
+				const total_annual_num = accountsList.reduce((s: number, a: any) => {
+					return s + a.monthly_expenses.reduce((ss: number, m: any) => ss + (Number(m.ubill_rent) || 0) + (Number(m.ubill_color) || 0) + (Number(m.ubill_bw) || 0), 0);
+				}, 0);
 				return {
 					year,
 					total_annual: total_annual_num.toFixed(2),
-					monthly_expenses: entries
+					details: accountsList
 				};
 			});
 
-		res.json({ status: 'success', message: 'Printing summary retrieved successfully', data: { details } });
+		res.json({ status: 'success', message: 'ok', data: detailsArr });
 	} catch (err) {
 		res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch printing summary', data: null });
 	}
