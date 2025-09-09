@@ -1909,7 +1909,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
 					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
 				} : acc.provider,
-				service: acc.service,
+				service: acc.category,
 				desc: acc.bill_desc
 			};
 		}
@@ -2045,7 +2045,7 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 					//	name: benObj.bfcy_name ?? benObj.name,
 					//	logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null)
 					//} : acc.provider,
-					service: acc.service,
+					service: acc.category,
 					desc: acc.bill_desc,
 					category: acc.category
 				};
@@ -2963,6 +2963,150 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 
 	res.json({ status: 'success', message: `${dataWithPrevious.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data: dataWithPrevious });
 };
+
+	// POST variant for printing bills: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
+	export const postPrintingBillsByIds = async (req: Request, res: Response) => {
+		// beneficiaryId from route params
+		const beneficiaryId = Number(req.params.beneficiaryId ?? req.params.beneficiary_id ?? req.params.beneficiaryId);
+		if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid beneficiary id in path' });
+
+		// fetch beneficiary record and enrich
+		const ben = await billingModel.getBeneficiaryById(beneficiaryId);
+		if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+		const baseUrl = process.env.BACKEND_URL || '';
+		const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
+		let logo = rawLogo;
+		if (rawLogo) {
+			const normalized = String(rawLogo).replace(/^\/+/, '');
+			if (normalized.startsWith('uploads/')) logo = `${baseUrl.replace(/\/$/, '')}/${normalized}`;
+			else logo = `${baseUrl.replace(/\/$/, '')}/uploads/${normalized}`;
+		}
+		// resolve entry_by name if possible
+		const employeesRaw = await assetsModel.getEmployees();
+		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+		const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
+		let beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+		if (ben.entry_by) {
+			const k = String(ben.entry_by);
+			if (empMap.has(k)) {
+				const e = empMap.get(k);
+				beneficiaryResp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			} else {
+				beneficiaryResp.entry_by = { ramco_id: ben.entry_by };
+			}
+		}
+
+		// parse provided ids in request body
+		const bodyIds = req.body?.util_id ?? req.body?.ids ?? req.body?.idsList;
+		let ids: number[] = [];
+		if (Array.isArray(bodyIds)) ids = bodyIds.map((v: any) => Number(v)).filter(n => Number.isFinite(n));
+		else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
+		else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
+
+		if (ids.length === 0) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+
+		// Fetch bills for provided ids and enrichment lookups
+		const bills = await billingModel.getUtilityBillsByIds(ids);
+		const accounts = await billingModel.getBillingAccounts();
+		const costcentersRaw = await assetsModel.getCostcenters();
+		const locationsRaw = await assetsModel.getLocations();
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+		const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
+		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
+		// beneficiaries lookup to resolve account->beneficiary mapping
+		const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+		const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+		const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
+
+		// Build result: only include bills whose account resolves to the requested beneficiary AND category is 'printing'
+		const data = bills.map((bill: any) => {
+			if (!bill.bill_id) return null;
+			const acc = accountMap.get(bill.bill_id);
+			if (!acc) return null;
+			// only printing category
+			const category = String(acc.category || '').toLowerCase();
+			if (category !== 'printing') return null;
+			// attempt to resolve beneficiary for this account
+			let benObj: any = null;
+			const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
+			if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+			if (!benObj) {
+				const accBenId = acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+				if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
+			}
+			if (!benObj) return null; // account has no resolved beneficiary
+			const benIdResolved = Number(benObj.id ?? benObj.bfcy_id ?? benObj.bfcyId ?? benObj.id);
+			if (benIdResolved !== beneficiaryId) return null; // not the beneficiary we want
+
+			// build account object (without embedding beneficiary; top-level beneficiary included separately)
+			let costcenter = null;
+			const ccLookupId = acc.cc_id ?? acc.costcenter_id ?? bill.cc_id;
+			if (ccLookupId && ccMap.has(ccLookupId)) {
+				const cc = ccMap.get(ccLookupId) as any;
+				costcenter = { id: cc.id, name: cc.name };
+			}
+			let location = null;
+			const locLookupId = acc.loc_id ?? acc.location_id ?? bill.loc_id;
+			if (locLookupId && locMap.has(locLookupId)) {
+				const d = locMap.get(locLookupId) as any;
+				location = { id: d.id, name: d.name };
+			}
+
+			return {
+				util_id: bill.util_id,
+				account: {
+					bill_id: acc.bill_id,
+					account_no: acc.account,
+					costcenter,
+					location
+				},
+				ubill_date: bill.ubill_date,
+				ubill_no: bill.ubill_no,
+				ubill_rent: bill.ubill_rent,
+				ubill_color: bill.ubill_color,
+				ubill_bw: bill.ubill_bw,
+				ubill_gtotal: bill.ubill_gtotal
+			};
+		}).filter(Boolean) as any[];
+
+		// Enrich each item with previous 5 bills for the same account (printing context)
+		const dataWithPrevious = await Promise.all(
+			data.map(async (item: any) => {
+				const prev = await billingModel.getPreviousUtilityBillsForAccount(
+					item.account?.bill_id,
+					item.util_id,
+					5
+				);
+				const previous_5_bills = (prev || []).map((p: any) => ({
+					ubill_no: p.ubill_no,
+					month: p.ubill_date ? dayjs(p.ubill_date).format('MMM-YYYY') : null,
+					ubill_gtotal: p.ubill_gtotal as string,
+					trending: null as any
+				}));
+				for (let i = 0; i < previous_5_bills.length; i++) {
+					if (i < previous_5_bills.length - 1) {
+						const curr = parseFloat(previous_5_bills[i].ubill_gtotal ?? '0');
+						const prevAmt = parseFloat(previous_5_bills[i + 1].ubill_gtotal ?? '0');
+						if (Number.isFinite(curr) && Number.isFinite(prevAmt)) {
+							const diff = curr - prevAmt;
+							previous_5_bills[i].trending = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}`;
+						} else {
+							previous_5_bills[i].trending = null;
+						}
+					} else {
+						previous_5_bills[i].trending = null;
+					}
+				}
+				return { ...item, previous_5_bills };
+			})
+		);
+
+		res.json({ status: 'success', message: `${dataWithPrevious.length} printing bill(s) retrieved`, beneficiary: beneficiaryResp, data: dataWithPrevious });
+	};
 
 // =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
 export const getBeneficiaries = async (req: Request, res: Response) => {

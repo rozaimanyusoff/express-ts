@@ -95,6 +95,7 @@ router.get('/util/summary/service', asyncHandler(billingController.getUtilityBil
 router.post('/util/by-ids/:beneficiaryId', asyncHandler(billingController.postUtilityBillsByIds));
 // Utility printing bills (filter by billing account category = 'printing')
 router.get('/util/printing', asyncHandler(billingController.getPrintingBills));
+router.post('/util/printing/by-ids/:beneficiaryId', asyncHandler(billingController.postPrintingBillsByIds));
 router.get('/util/printing/summary', asyncHandler(billingController.getPrintingSummary));
 router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
 router.get('/util', asyncHandler(billingController.getUtilityBills));
