@@ -1973,6 +1973,199 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: 'Utility bills retrieved successfully', data: final });
 };
 
+// Get utility bills only for printing category (cc_id, loc_id, ubill_rent, ubill_color, ubill_bw, ubill_stotal, ubill_gtotal, ubill_no, ubill_date)
+export const getPrintingBills = async (req: Request, res: Response) => {
+	try {
+		const costcenter = req.query.costcenter || req.query.cc || null;
+		const from = req.query.from || null;
+		const to = req.query.to || null;
+		// load all bills and accounts
+		let bills = await billingModel.getUtilityBills();
+		const accounts = await billingModel.getBillingAccounts();
+
+		// determine bill_ids that belong to 'printing' category (case-insensitive)
+		const printingBillIds = new Set(
+			(accounts || []).filter((a: any) => String(a.category || '').toLowerCase() === 'printing').map((a: any) => a.bill_id)
+		);
+
+		// filter bills by printing category
+		bills = (bills || []).filter((bill: any) => printingBillIds.has(bill.bill_id));
+
+		// apply costcenter filter
+		if (costcenter) {
+			bills = bills.filter((bill: any) => String(bill.cc_id) === String(costcenter));
+		}
+
+		// apply date range filter
+		if (from || to) {
+			const fromDate = from ? new Date(from as string) : null;
+			const toDate = to ? new Date(to as string) : null;
+			bills = bills.filter((bill: any) => {
+				const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
+				if (!billDate) return false;
+				if (fromDate && billDate < fromDate) return false;
+				if (toDate && billDate > toDate) return false;
+				return true;
+			});
+		}
+
+		// Enrichment lookups
+		const costcentersRaw = await assetsModel.getCostcenters();
+		const locationsRaw = await assetsModel.getLocations();
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
+		// Build account map for enrichment (include raw account for provider/service if needed)
+		const accountMap = new Map((accounts || []).map((a: any) => [a.bill_id, a]));
+
+		// beneficiaries for possible enrichment (same approach as getUtilityBills)
+		const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+		const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+		const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+		const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
+
+		const result = (bills || []).map((bill: any) => {
+			let account = null;
+			if (bill.bill_id && accountMap.has(bill.bill_id)) {
+				const acc = accountMap.get(bill.bill_id);
+				let benObj: any = null;
+				const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
+				if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+				if (!benObj) {
+					const accBenId = acc.id ?? acc.bfcy_id ?? acc.beneficiary_id ?? acc.bfcyId ?? acc.beneficiaryId ?? null;
+					if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
+				}
+				account = {
+					bill_id: acc.bill_id,
+					account: acc.account,
+					//beneficiary: benObj ? {
+					//	id: benObj.id ?? benObj.bfcy_id,
+					//	name: benObj.bfcy_name ?? benObj.name,
+					//	logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null)
+					//} : acc.provider,
+					service: acc.service,
+					desc: acc.bill_desc,
+					category: acc.category
+				};
+			}
+
+			// costcenter & location lookup
+			let costcenter = null;
+			const ccLookupId = bill.cc_id;
+			if (ccLookupId && ccMap.has(ccLookupId)) {
+				const cc = ccMap.get(ccLookupId) as any;
+				costcenter = { id: cc.id, name: cc.name };
+			}
+			let location = null;
+			const locLookupId = bill.loc_id;
+			if (locLookupId && locMap.has(locLookupId)) {
+				const d = locMap.get(locLookupId) as any;
+				location = { id: d.id, name: d.name };
+			}
+
+			if (account) {
+				(account as any).costcenter = costcenter;
+				(account as any).location = location;
+			}
+
+			return {
+				util_id: bill.util_id,
+				//cc_id: bill.cc_id,
+				//loc_id: bill.loc_id,
+				account,
+				//costcenter,
+				//location,
+				ubill_date: bill.ubill_date,
+				ubill_no: bill.ubill_no,
+				ubill_rent: bill.ubill_rent,
+				ubill_color: bill.ubill_color,
+				ubill_bw: bill.ubill_bw,
+				//ubill_stotal: bill.ubill_stotal,
+				ubill_gtotal: bill.ubill_gtotal,
+				//ubill_ref: bill.ubill_ref ?? null,
+				//ubill_url: publicUrl(bill.ubill_ref ?? null)
+			};
+		});
+
+			// Return the printing bills list directly (no year/month aggregation)
+			res.json({ status: 'success', message: 'Printing utility bills retrieved successfully', data: result });
+	} catch (err) {
+		res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch printing bills', data: null });
+	}
+};
+
+// GET /api/bills/util/printing/summary
+// Returns details grouped by year -> monthly_expenses (one entry per bill) and annual totals
+export const getPrintingSummary = async (req: Request, res: Response) => {
+	try {
+		const costcenter = req.query.costcenter || req.query.cc || null;
+		const from = req.query.from || null;
+		const to = req.query.to || null;
+
+		let bills = await billingModel.getUtilityBills();
+		const accounts = await billingModel.getBillingAccounts();
+		const printingBillIds = new Set(
+			(accounts || []).filter((a: any) => String(a.category || '').toLowerCase() === 'printing').map((a: any) => a.bill_id)
+		);
+		bills = (bills || []).filter((bill: any) => printingBillIds.has(bill.bill_id));
+
+		if (costcenter) bills = bills.filter((bill: any) => String(bill.cc_id) === String(costcenter));
+
+		if (from || to) {
+			const fromDate = from ? new Date(from as string) : null;
+			const toDate = to ? new Date(to as string) : null;
+			bills = bills.filter((bill: any) => {
+				const billDate = bill.ubill_date ? new Date(bill.ubill_date) : null;
+				if (!billDate) return false;
+				if (fromDate && billDate < fromDate) return false;
+				if (toDate && billDate > toDate) return false;
+				return true;
+			});
+		}
+
+		// Build details grouping by year -> monthly entries (one per bill)
+		const monthNames = [
+			'January','February','March','April','May','June','July','August','September','October','November','December'
+		];
+		const yearMap = new Map<number, any[]>();
+		for (const bill of (bills || [])) {
+			const d = bill.ubill_date ? new Date(bill.ubill_date) : null;
+			if (!d || isNaN(d.getTime())) continue;
+			const year = d.getFullYear();
+			if (!yearMap.has(year)) yearMap.set(year, []);
+			const arr = yearMap.get(year) as any[];
+			const monthName = monthNames[d.getMonth()];
+					arr.push({
+						month: monthName,
+						util_id: (bill as any).util_id,
+						ubill_date: d.toISOString().slice(0,10),
+						ubill_color: bill.ubill_color,
+						ubill_bw: bill.ubill_bw,
+						ubill_gtotal: bill.ubill_gtotal
+					});
+		}
+
+		const details = Array.from(yearMap.entries())
+			.sort((a,b) => b[0] - a[0])
+			.map(([year, entries]) => {
+				const monthOrder = (e: any) => monthNames.indexOf(e.month || '') || 0;
+				entries.sort((x: any, y: any) => monthOrder(x) - monthOrder(y));
+				const total_annual_num = entries.reduce((sum: number, e: any) => sum + (Number(e.ubill_gtotal) || 0), 0);
+				return {
+					year,
+					total_annual: total_annual_num.toFixed(2),
+					monthly_expenses: entries
+				};
+			});
+
+		res.json({ status: 'success', message: 'Printing summary retrieved successfully', data: { details } });
+	} catch (err) {
+		res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch printing summary', data: null });
+	}
+};
+
 export const getUtilityBillById = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	const bill = await billingModel.getUtilityBillById(bill_id);
