@@ -66,11 +66,13 @@ export const createUploader = (subfolder: string) => {
 		}
 	};
 
-	return multer({
+    // Allow overriding max upload file size via environment variable (bytes). Default 10MB.
+    const maxFileSize = Number(process.env.UPLOAD_MAX_FILE_SIZE || String(1024 * 1024 * 10));
+    return multer({
 		storage: storage,
 		fileFilter: fileFilter,
 		limits: {
-			fileSize: 1024 * 1024 * 10, // 10 MB file size limit
+			fileSize: maxFileSize,
 		},
 	});
 };
