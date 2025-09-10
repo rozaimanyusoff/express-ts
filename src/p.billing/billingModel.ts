@@ -649,17 +649,6 @@ export const getUtilityBillById = async (util_id: number): Promise<UtilityBill |
 };
 
 export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<number> => {
-  // Check for duplicate ubill_no and ubill_date
-  const [existingRows] = await pool2.query(
-    `SELECT util_id FROM ${utilitiesTable} WHERE bill_id = ? AND ubill_no = ? AND ubill_date = ? LIMIT 1`,
-    [data.bill_id, data.ubill_no, data.ubill_date]
-  );
-  if (Array.isArray(existingRows) && existingRows.length > 0) {
-    const err: any = new Error('Utility bill with this bill number and date already exists.');
-    err.status = 400; // client error
-    err.isPublic = true; // safe to expose message
-    throw err;
-  }
   // Sanitize ubill_ref: accept only non-empty strings, otherwise null
   const ubillRef: string | null = (typeof data.ubill_ref === 'string' && data.ubill_ref.trim() !== '') ? data.ubill_ref : null;
 

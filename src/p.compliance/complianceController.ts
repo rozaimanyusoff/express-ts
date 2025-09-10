@@ -160,79 +160,25 @@ export const getSummonById = async (req: Request, res: Response) => {
 
 export const createSummon = async (req: Request, res: Response) => {
   try {
-    const body: any = { ...req.body };
-    const payload: any = {};
+  // Pass request body directly to the model (no payload construction here)
+  const data: any = req.body || {};
+  const id = await summonModel.createSummon(data);
 
-    if (body.registration_no !== undefined) payload.asset_id = Number(body.registration_no) || body.registration_no;
-    if (body.asset_id !== undefined) payload.asset_id = Number(body.asset_id) || body.asset_id;
-    if (body.assigned_driver !== undefined) payload.ramco_id = String(body.assigned_driver).trim();
-    if (body.ramco_id !== undefined && !payload.ramco_id) payload.ramco_id = String(body.ramco_id).trim();
-    if (body.summon_no !== undefined) payload.summon_no = String(body.summon_no).trim();
-    if (body.summon_loc !== undefined) payload.summon_loc = String(body.summon_loc).trim();
-    if (body.summon_agency !== undefined) payload.summon_agency = String(body.summon_agency).trim();
-    if (body.type_of_summon !== undefined) payload.type_of_summon = String(body.type_of_summon).trim();
-    if (body.summon_amt !== undefined) payload.summon_amt = Number(body.summon_amt) || 0;
-
-  // summon_dt is not set from the payload here; keep summon_date and summon_time as separate fields
-
-    if (body.myeg_date !== undefined) payload.myeg_date = body.myeg_date ? String(body.myeg_date).trim() : null;
-
+    // If there was an uploaded file, validate, move it into final storage and update the record
     if ((req as any).file && (req as any).file.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
       if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
-      const normalized = normalizeStoredPath(tempPath);
-      if (normalized) payload.summon_upl = normalized as string;
-    }
-
-    const id = await summonModel.createSummon(payload);
-
-    if ((req as any).file && (req as any).file.path) {
-      const tempPath: string = (req as any).file.path;
-      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
-      const ext = path.extname(originalName) || path.extname(tempPath) || '';
-  const filename = `summon-${id}-${Date.now()}${ext}`;
-  const base = await getUploadBase();
-  const destDir = path.join(base, 'compliance', 'summon');
+      const filename = `summon-${id}-${Date.now()}${ext}`;
+      const base = await getUploadBase();
+      const destDir = path.join(base, 'compliance', 'summon');
       await fsPromises.mkdir(destDir, { recursive: true });
       const destPath = path.join(destDir, filename);
       await safeMove(tempPath, destPath);
-  const storedRel = path.posix.join('uploads', 'compliance', 'summon', filename);
-  await summonModel.updateSummon(id, { summon_upl: storedRel });
+      const storedRel = path.posix.join('uploads', 'compliance', 'summon', filename);
+      await summonModel.updateSummon(id, { summon_upl: storedRel }).catch(() => {});
     }
-
-    // After creation, try to resolve driver email by ramco_id and send notification
-    (async () => {
-      try {
-        const created = await summonModel.getSummonById(id);
-        const ramco = created?.ramco_id || null;
-        if (ramco) {
-          const emp = await assetModel.getEmployeeByRamco(String(ramco));
-          const toEmail = emp?.email || created?.v_email || null;
-          if (toEmail) {
-            const html = renderSummonNotification({
-              driverName: emp?.full_name || emp?.name || null,
-              smn_id: created?.smn_id || id,
-              summon_no: created?.summon_no || null,
-              summon_dt: created?.summon_dt || null,
-              summon_loc: created?.summon_loc || null,
-              summon_amt: created?.summon_amt || null,
-              summon_agency: created?.summon_agency || null,
-            });
-            try {
-              await sendMail(toEmail, `Summon notification #${created?.smn_id || id}`, html);
-              // only mark emailStat = 1 when the mailer reports success
-              await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
-            } catch (mailErr) {
-              console.error('createSummon: mail send error to', toEmail, mailErr);
-            }
-          }
-        }
-      } catch (e) {
-        // non-blocking
-      }
-    })();
 
     res.status(201).json({ status: 'success', message: 'Summon created', data: { id, smn_id: id } });
   } catch (err) {
