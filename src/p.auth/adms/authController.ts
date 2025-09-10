@@ -88,7 +88,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     }
 };
 
-// Admin approves multiple pending users and sends activation emails
+// Admin approves individual registered pending users -- Bulk invites will skipped this step
 export const approvePendingUser = async (req: Request, res: Response): Promise<Response> => {
     const { user_ids } = req.body;
     if (!Array.isArray(user_ids) || user_ids.length === 0) {
@@ -144,7 +144,7 @@ export const validateActivationDetails = async (req: Request, res: Response): Pr
     }
 }
 
-// Activate user account
+// Activate user account from bulk invite or individual registration
 export const activateAccount = async (req: Request, res: Response): Promise<Response> => {
     const { email, contact, activationCode, username, password } = req.body;
 
@@ -689,3 +689,47 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
     }
     return res.status(200).json({ status: 'success', results });
 };
+
+// Delete pending user (admin)
+export const deletePendingUser = async (req: Request, res: Response): Promise<Response> => {
+    // Accept only `user_ids` in the body. It may be a single id or an array of ids.
+    const body: any = req.body || {};
+    const raw = body.user_ids;
+
+    if (raw === undefined || raw === null) {
+        return res.status(400).json({ status: 'error', message: 'user_ids is required' });
+    }
+
+    let userIds: number[] = [];
+    if (Array.isArray(raw)) {
+        userIds = raw.map((v: any) => Number(v)).filter((n: number) => !Number.isNaN(n));
+    } else {
+        const n = Number(raw);
+        if (Number.isNaN(n)) return res.status(400).json({ status: 'error', message: 'user_ids must contain valid numeric ids' });
+        userIds = [n];
+    }
+
+    if (!userIds.length) {
+        return res.status(400).json({ status: 'error', message: 'user_ids must contain at least one valid id' });
+    }
+
+    const results: Array<{ user_id: number; status: string; error?: string }> = [];
+    for (const uid of userIds) {
+        try {
+            const pendingUser = await pendingUserModel.getPendingUserById(uid);
+            if (!pendingUser) {
+                results.push({ user_id: uid, status: 'not_found' });
+                continue;
+            }
+            await pendingUserModel.deletePendingUser(uid);
+            await logModel.logAuthActivity(0, 'other', 'success', { pendingUserId: uid, action: 'delete_pending_user' }, req);
+            results.push({ user_id: uid, status: 'deleted' });
+        } catch (error) {
+            logger.error('Delete pending user error for id ' + uid + ':', error);
+            await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'exception', error: String(error), pendingUserId: uid, action: 'delete_pending_user' }, req);
+            results.push({ user_id: uid, status: 'error', error: String(error instanceof Error ? error.message : error) });
+        }
+    }
+
+    return res.status(200).json({ status: 'success', message: 'Pending users processed', results });
+}

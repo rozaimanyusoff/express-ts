@@ -78,3 +78,18 @@ export const deletePendingUser = async (id: number): Promise<void> => {
     throw error;
   }
 };
+
+//truncate pending users table -- applied
+
+export const getPendingUserById = async (id: number): Promise<any | null> => {
+  try {
+    const [rows]: any[] = await pool.query(
+      `SELECT * FROM ${PENDING_USERS_TABLE} WHERE id = ?`,
+      [id]
+    );
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch (error) {
+    logger.error('Database error in getPendingUserById:', error);
+    throw error;
+  }
+};

@@ -1,6 +1,6 @@
 // filepath: /src/routes/authRoutes.ts
 import { Router } from 'express';
-import { register, validateActivationDetails, activateAccount, login, resetPassword, verifyResetToken, updatePassword, logout, refreshToken, resetPasswordMulti, approvePendingUser, inviteUsers } from './authController.js';
+import { register, validateActivationDetails, activateAccount, login, resetPassword, verifyResetToken, updatePassword, logout, refreshToken, resetPasswordMulti, approvePendingUser, inviteUsers, deletePendingUser } from './authController.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 //import { rsaDecryptMiddleware } from '../middlewares/rsaDecrypt.js';
 import tokenValidator from '../../middlewares/tokenValidator.js';
@@ -20,5 +20,6 @@ router.post('/logout', tokenValidator, asyncHandler(logout));
 router.post('/refresh-token', asyncHandler(refreshToken)); // not apply tokenValidator as it is used for refreshing token
 router.post('/approve-pending-user', asyncHandler(approvePendingUser));
 router.post('/invite-users', asyncHandler(inviteUsers));
+router.post('/delete-pending-user', asyncHandler(deletePendingUser));
 
 export default router;
