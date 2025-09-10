@@ -248,7 +248,7 @@ export const createSummon = async (req: Request, res: Response) => {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+  if (!['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)' }); }
       const filename = `summon-${id}-${Date.now()}${ext}`;
       const base = await getUploadBase();
       const destDir = path.join(base, 'compliance', 'summon');
@@ -331,7 +331,7 @@ export const updateSummon = async (req: Request, res: Response) => {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+  if (!['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)' }); }
       const normalized = normalizeStoredPath(tempPath);
       if (normalized) payload.summon_upl = normalized as string;
     }
@@ -374,7 +374,7 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and PNG uploads are allowed' }); }
+  if (!['.pdf', '.png', '.jpg', '.jpeg'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => {}); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg)' }); }
 
       const filename = `summon-receipt-${id}-${Date.now()}${ext}`;
       const base = await getUploadBase();
