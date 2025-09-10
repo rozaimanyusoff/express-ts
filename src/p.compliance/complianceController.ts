@@ -6,6 +6,7 @@ import { renderSummonNotification } from '../utils/emailTemplates/summonNotifica
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
+import * as adminNotificationModel from '../p.admin/notificationModel';
 
 
 // Helper to normalize a temp file path into stored relative path
@@ -385,6 +386,25 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
     if (Object.keys(payload).length === 0) return res.status(400).json({ status: 'error', message: 'No data provided' });
 
     await summonModel.updateSummon(id, payload);
+    // Notify admins via in-app notifications and optionally email
+    (async () => {
+      try {
+        const created = await summonModel.getSummonById(id);
+        const r = Array.isArray(created) ? created[0] : created;
+        const msg = `Payment receipt uploaded for summon #${r?.smn_id || id} by ${r?.ramco_id || 'unknown'}`;
+        await adminNotificationModel.createAdminNotification({ type: 'summon_payment', message: msg });
+
+        // Also send email to configured ADMIN_EMAIL (best-effort)
+        const ADMIN_EMAIL = process.env.ADMIN_EMAIL || null;
+        if (ADMIN_EMAIL) {
+          const html = `<p>${msg}</p><p>Receipt date: ${payload.receipt_date || 'N/A'}</p>`;
+          try { await sendMail(ADMIN_EMAIL, `Summon payment received #${r?.smn_id || id}`, html); } catch(e) { console.error('admin email send failed', e); }
+        }
+      } catch (e) {
+        // silent
+      }
+    })();
+
     res.json({ status: 'success', message: 'Payment receipt uploaded', data: { id } });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to upload payment receipt', data: null });
