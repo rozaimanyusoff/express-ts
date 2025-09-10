@@ -15,6 +15,56 @@ function normalizeStoredPath(filePath?: string | null): string | null {
   return `uploads/compliance/summon/${filename}`;
 }
 
+// Format helpers for controller responses
+function fmtDateOnly(input?: any): string | null {
+  if (!input) return null;
+  try {
+    const s = String(input);
+    // If already in YYYY-MM-DD, return as-is (or if contains space/ T, take date part)
+    const tIndex = s.indexOf('T');
+    if (tIndex > 0) return s.slice(0, tIndex);
+    const sp = s.indexOf(' ');
+    if (sp > 0) return s.slice(0, sp);
+    // fallback: try Date
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  } catch (e) {
+    return null;
+  }
+}
+
+function fmtTimeOnly(input?: any): string | null {
+  if (!input) return null;
+  try {
+    const s = String(input).trim();
+    // If it's already HH:MM or HH:MM:SS, normalize to HH:MM:SS
+    const parts = s.split('T').pop()?.split(' ')[0] || s;
+    const p = parts.split(':');
+    const hh = String(Number(p[0] || 0)).padStart(2, '0');
+    const mm = String(Number(p[1] || 0)).padStart(2, '0');
+    const ss = p[2] ? String(Number(p[2])).padStart(2, '0') : '00';
+    return `${hh}:${mm}:${ss}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+function fmtDatetimeMySQL(input?: any): string | null {
+  if (!input) return null;
+  const s = String(input).trim();
+  // If already in 'YYYY-MM-DD HH:mm:ss' or contains T, normalize
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  const YYYY = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const DD = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
+}
+
 export const getSummons = async (req: Request, res: Response) => {
   try {
     const rows = await summonModel.getSummons();
@@ -45,7 +95,7 @@ export const getSummons = async (req: Request, res: Response) => {
       return `${base}/${s.replace(/^\/+/, '')}`;
     };
 
-    const data = (rows || []).map((r: any) => {
+  const data = (rows || []).map((r: any) => {
       const rawUpl = r.summon_upl || null;
       const rawReceipt = r.summon_receipt || null;
       const summon_upl = toPublicUrl(rawUpl);
@@ -76,8 +126,13 @@ export const getSummons = async (req: Request, res: Response) => {
         return { ramco_id: r.ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
       })() : null;
 
-      const { reg_no, f_name, v_email, ...rest } = r as any;
-      return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+  const { reg_no, f_name, v_email, ...rest } = r as any;
+  // format date/time fields for API consumers
+  if (rest.myeg_date) rest.myeg_date = fmtDateOnly(rest.myeg_date);
+  if (rest.summon_date) rest.summon_date = fmtDateOnly(rest.summon_date);
+  if (rest.summon_time) rest.summon_time = fmtTimeOnly(rest.summon_time);
+  if (rest.summon_dt) rest.summon_dt = fmtDatetimeMySQL(rest.summon_dt);
+  return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
     });
 
     res.json({ status: 'success', message: 'Summons retrieved', data });
@@ -113,8 +168,8 @@ export const getSummonById = async (req: Request, res: Response) => {
     const locationMap = new Map(locations.map((l: any) => [l.id, l]));
     const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
-    const rawUpl = r.summon_upl || null;
-    const rawReceipt = r.summon_receipt || null;
+  const rawUpl = r.summon_upl || null;
+  const rawReceipt = r.summon_receipt || null;
     const makeUrl = (val: any) => {
       if (!val) return null;
       const s = String(val).trim();
@@ -150,7 +205,12 @@ export const getSummonById = async (req: Request, res: Response) => {
     })() : null;
 
     const { reg_no, f_name, v_email, ...rest } = r as any;
-    const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+  const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+  // format date/time fields for API consumers
+  if ((data as any).myeg_date) (data as any).myeg_date = fmtDateOnly((data as any).myeg_date);
+  if ((data as any).summon_date) (data as any).summon_date = fmtDateOnly((data as any).summon_date);
+  if ((data as any).summon_time) (data as any).summon_time = fmtTimeOnly((data as any).summon_time);
+  if ((data as any).summon_dt) (data as any).summon_dt = fmtDatetimeMySQL((data as any).summon_dt);
 
     res.json({ status: 'success', message: 'Summon retrieved', data });
   } catch (err) {
@@ -179,6 +239,46 @@ export const createSummon = async (req: Request, res: Response) => {
       const storedRel = path.posix.join('uploads', 'compliance', 'summon', filename);
       await summonModel.updateSummon(id, { summon_upl: storedRel }).catch(() => {});
     }
+
+    // Fire-and-forget: try to send notification email (reuse logic from resend endpoint)
+    (async () => {
+      try {
+        const created = await summonModel.getSummonById(id);
+        const r = Array.isArray(created) ? created[0] : created;
+        if (!r) return;
+
+        // TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
+        const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+        const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+        const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+        const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+
+        const ramco = r?.ramco_id || null;
+        let emp: any = null;
+        if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
+        const toEmail = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+        if (!toEmail) return;
+
+        const html = renderSummonNotification({
+          driverName: localTestName || (emp?.full_name || emp?.name) || null,
+          smn_id: r?.smn_id || id,
+          summon_no: r?.summon_no || null,
+          summon_dt: r?.summon_dt || null,
+          summon_loc: r?.summon_loc || null,
+          summon_amt: r?.summon_amt || null,
+          summon_agency: r?.summon_agency || null,
+        });
+
+        try {
+          await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html);
+          await summonModel.updateSummon(id, { emailStat: 1 }).catch(() => {});
+        } catch (mailErr) {
+          console.error('createSummon: mail send error', mailErr, 'to', toEmail);
+        }
+      } catch (e) {
+        // non-blocking
+      }
+    })();
 
     res.status(201).json({ status: 'success', message: 'Summon created', data: { id, smn_id: id } });
   } catch (err) {
