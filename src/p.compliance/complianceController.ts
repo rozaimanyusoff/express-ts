@@ -34,6 +34,21 @@ function fmtDateOnly(input?: any): string | null {
   }
 }
 
+// Format as d/m/yyyy (no leading zeros) for myeg_date display per frontend requirement
+function fmtDateDMY(input?: any): string | null {
+  if (!input) return null;
+  try {
+    const d = new Date(String(input));
+    if (isNaN(d.getTime())) return null;
+    const day = String(d.getDate());
+    const month = String(d.getMonth() + 1);
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return null;
+  }
+}
+
 function fmtTimeOnly(input?: any): string | null {
   if (!input) return null;
   try {
@@ -128,8 +143,8 @@ export const getSummons = async (req: Request, res: Response) => {
 
   const { reg_no, f_name, v_email, ...rest } = r as any;
   // format date/time fields for API consumers
-  if (rest.myeg_date) rest.myeg_date = fmtDateOnly(rest.myeg_date);
-  if (rest.summon_date) rest.summon_date = fmtDateOnly(rest.summon_date);
+  if (rest.myeg_date) rest.myeg_date = fmtDateDMY(rest.myeg_date);
+  if (rest.summon_date) rest.summon_date = fmtDateDMY(rest.summon_date);
   if (rest.summon_time) rest.summon_time = fmtTimeOnly(rest.summon_time);
   if (rest.summon_dt) rest.summon_dt = fmtDatetimeMySQL(rest.summon_dt);
   return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
@@ -207,8 +222,8 @@ export const getSummonById = async (req: Request, res: Response) => {
     const { reg_no, f_name, v_email, ...rest } = r as any;
   const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
   // format date/time fields for API consumers
-  if ((data as any).myeg_date) (data as any).myeg_date = fmtDateOnly((data as any).myeg_date);
-  if ((data as any).summon_date) (data as any).summon_date = fmtDateOnly((data as any).summon_date);
+  if ((data as any).myeg_date) (data as any).myeg_date = fmtDateDMY((data as any).myeg_date);
+  if ((data as any).summon_date) (data as any).summon_date = fmtDateDMY((data as any).summon_date);
   if ((data as any).summon_time) (data as any).summon_time = fmtTimeOnly((data as any).summon_time);
   if ((data as any).summon_dt) (data as any).summon_dt = fmtDatetimeMySQL((data as any).summon_dt);
 
