@@ -3,6 +3,7 @@ import * as summonModel from './complianceModel';
 import * as assetModel from '../p.asset/assetModel';
 import { sendMail } from '../utils/mailer';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
+import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
@@ -145,6 +146,7 @@ export const getSummons = async (req: Request, res: Response) => {
   const { reg_no, f_name, v_email, ...rest } = r as any;
   // format date/time fields for API consumers
   if (rest.myeg_date) rest.myeg_date = fmtDateDMY(rest.myeg_date);
+  if (rest.receipt_date) rest.receipt_date = fmtDateDMY(rest.receipt_date);
   if (rest.summon_date) rest.summon_date = fmtDateDMY(rest.summon_date);
   if (rest.summon_time) rest.summon_time = fmtTimeOnly(rest.summon_time);
   if (rest.summon_dt) rest.summon_dt = fmtDatetimeMySQL(rest.summon_dt);
@@ -224,6 +226,7 @@ export const getSummonById = async (req: Request, res: Response) => {
   const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
   // format date/time fields for API consumers
   if ((data as any).myeg_date) (data as any).myeg_date = fmtDateDMY((data as any).myeg_date);
+  if ((data as any).receipt_date) (data as any).receipt_date = fmtDateDMY((data as any).receipt_date);
   if ((data as any).summon_date) (data as any).summon_date = fmtDateDMY((data as any).summon_date);
   if ((data as any).summon_time) (data as any).summon_time = fmtTimeOnly((data as any).summon_time);
   if ((data as any).summon_dt) (data as any).summon_dt = fmtDatetimeMySQL((data as any).summon_dt);
@@ -397,7 +400,18 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
         // Also send email to configured ADMIN_EMAIL (best-effort)
         const ADMIN_EMAIL = process.env.ADMIN_EMAIL || null;
         if (ADMIN_EMAIL) {
-          const html = `<p>${msg}</p><p>Receipt date: ${payload.receipt_date || 'N/A'}</p>`;
+          const html = renderSummonPaymentReceipt({
+            adminName: 'Admin',
+            smn_id: r?.smn_id || id,
+            summon_no: r?.summon_no || null,
+            summon_dt: r?.summon_dt || null,
+            summon_loc: r?.summon_loc || null,
+            summon_amt: r?.summon_amt || null,
+            summon_agency: r?.summon_agency || null,
+            ramco_id: r?.ramco_id || null,
+            receipt_date: payload.receipt_date || null,
+            payer: payload.payer || null,
+          });
           try { await sendMail(ADMIN_EMAIL, `Summon payment received #${r?.smn_id || id}`, html); } catch(e) { console.error('admin email send failed', e); }
         }
       } catch (e) {
