@@ -2046,8 +2046,6 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 					//	logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null)
 					//} : acc.provider,
 					service: acc.category,
-					desc: acc.bill_desc,
-					category: acc.category
 				};
 			}
 
