@@ -497,3 +497,229 @@ export const deleteSummon = async (req: Request, res: Response) => {
     }
   }
 };
+
+/* ====== SUMMON TYPES ====== */
+export const getSummonTypes = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getSummonTypes();
+    // enrich with assigned agencies
+    const out: any[] = [];
+    for (const t of rows) {
+      const agencies = await summonModel.getAgenciesByType(Number(t.id));
+      out.push({ ...t, agencies });
+    }
+    return res.json({ status: 'success', message: 'Summon types retrieved', data: out });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon types', data: null });
+  }
+};
+
+export const getSummonTypeById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getSummonTypeById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Summon type not found', data: null });
+  const agencies = await summonModel.getAgenciesByType(id);
+  return res.json({ status: 'success', message: 'Summon type retrieved', data: { ...row, agencies } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon type', data: null });
+  }
+};
+
+export const createSummonType = async (req: Request, res: Response) => {
+  try {
+  const data: any = req.body || {};
+  // avoid passing agency_ids into the DB insert for summon_type
+  const payload: any = { ...data };
+  if ('agency_ids' in payload) delete payload.agency_ids;
+  const id = await summonModel.createSummonType(payload);
+    // if agency_ids provided, sync mappings
+    if (Array.isArray(data.agency_ids) && data.agency_ids.length > 0) {
+      const toAssign = data.agency_ids.map((v: any) => Number(v)).filter((v: number) => !!v);
+      for (const ag of toAssign) {
+        await summonModel.createSummonTypeAgency({ type_id: id, agency_id: ag }).catch(() => {});
+      }
+    }
+    return res.status(201).json({ status: 'success', message: 'Summon type created', data: { id } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create summon type', data: null });
+  }
+};
+
+export const updateSummonType = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+  // avoid passing agency_ids into the DB update for summon_type
+  const payload: any = { ...data };
+  if ('agency_ids' in payload) delete payload.agency_ids;
+  await summonModel.updateSummonType(id, payload);
+    // sync agency assignments if provided (accept empty array to unassign all)
+    if (Array.isArray(data.agency_ids)) {
+      const desired = data.agency_ids.map((v: any) => Number(v)).filter((v: number) => !!v);
+      // current mappings
+      const current = await summonModel.getSummonTypeAgenciesByType(id);
+      const currentIds = current.map(c => Number(c.agency_id));
+      // create missing
+      for (const aid of desired) {
+        if (!currentIds.includes(aid)) await summonModel.createSummonTypeAgency({ type_id: id, agency_id: aid }).catch(() => {});
+      }
+      // delete extras
+      for (const c of current) {
+        if (!desired.includes(Number(c.agency_id))) await summonModel.deleteSummonTypeAgency(Number(c.id)).catch(() => {});
+      }
+    }
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update summon type', data: null });
+  }
+};
+
+export const deleteSummonType = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteSummonType(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete summon type', data: null });
+  }
+};
+
+/* ====== SUMMON AGENCIES ====== */
+export const getSummonAgencies = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getSummonAgencies();
+    return res.json({ status: 'success', message: 'Summon agencies retrieved', data: rows });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon agencies', data: null });
+  }
+};
+
+export const getSummonAgencyById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getSummonAgencyById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Summon agency not found', data: null });
+    return res.json({ status: 'success', message: 'Summon agency retrieved', data: row });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon agency', data: null });
+  }
+};
+
+export const createSummonAgency = async (req: Request, res: Response) => {
+  try {
+    const data: any = req.body || {};
+    const id = await summonModel.createSummonAgency(data);
+    return res.status(201).json({ status: 'success', message: 'Summon agency created', data: { id } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create summon agency', data: null });
+  }
+};
+
+export const updateSummonAgency = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+    await summonModel.updateSummonAgency(id, data);
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update summon agency', data: null });
+  }
+};
+
+export const deleteSummonAgency = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteSummonAgency(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete summon agency', data: null });
+  }
+};
+
+/* ====== SUMMON TYPE <-> AGENCY MAPPINGS ====== */
+export const getSummonTypeAgencies = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getSummonTypeAgencies();
+    return res.json({ status: 'success', message: 'Mappings retrieved', data: rows });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch mappings', data: null });
+  }
+};
+
+export const getSummonTypeAgencyById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getSummonTypeAgencyById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Mapping not found', data: null });
+    return res.json({ status: 'success', message: 'Mapping retrieved', data: row });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch mapping', data: null });
+  }
+};
+
+export const createSummonTypeAgency = async (req: Request, res: Response) => {
+  try {
+    const data: any = req.body || {};
+    const id = await summonModel.createSummonTypeAgency(data);
+    return res.status(201).json({ status: 'success', message: 'Mapping created', data: { id } });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create mapping', data: null });
+  }
+};
+
+export const updateSummonTypeAgency = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+    await summonModel.updateSummonTypeAgency(id, data);
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('exists')) return res.status(400).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update mapping', data: null });
+  }
+};
+
+export const deleteSummonTypeAgency = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteSummonTypeAgency(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete mapping', data: null });
+  }
+};
+
+// Return agencies that belong to a summon type (for chainable select)
+export const getAgenciesByType = async (req: Request, res: Response) => {
+  try {
+    const typeId = Number(req.params.typeId || req.query.typeId);
+    if (!typeId) return res.status(400).json({ status: 'error', message: 'Invalid type id' });
+    const rows = await summonModel.getAgenciesByType(typeId);
+    return res.json({ status: 'success', message: 'Agencies retrieved', data: rows });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch agencies by type', data: null });
+  }
+};
+
+// Return all types with their assigned agencies (for initial load)
+export const getSummonTypesWithAgencies = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getSummonTypesWithAgencies();
+    return res.json({ status: 'success', message: 'Types with agencies retrieved', data: rows });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch types with agencies', data: null });
+  }
+};

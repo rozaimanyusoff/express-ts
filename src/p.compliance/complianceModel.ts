@@ -1,8 +1,35 @@
 import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
-const dbName = 'assets';
+const dbName = 'compliance';
 const summonTable = `${dbName}.summon`;
+const summonTypeTable = `${dbName}.summon_type`;
+const summonAgencyTable = `${dbName}.summon_agency`;
+const summonTypeAgencyTable = `${dbName}.summon_type_agency`;
+
+export interface SummonType {
+  id?: number;
+  name?: string | null;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SummonAgency {
+  id?: number;
+  name?: string | null;
+  code?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SummonTypeAgency {
+  id?: number;
+  type_id?: number | null;
+  agency_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
 
 // Helper to format JS Date/ISO into MySQL DATETIME: 'YYYY-MM-DD HH:mm:ss'
 const formatToMySQLDatetime = (input?: any): string | null => {
@@ -98,10 +125,165 @@ export const getSummons = async (): Promise<SummonRecord[]> => {
   return rows as SummonRecord[];
 };
 
+export const getSummonTypeAgencies = async (): Promise<SummonTypeAgency[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} ORDER BY id DESC`);
+  return rows as SummonTypeAgency[];
+};
+
+export const getSummonTypeAgencyById = async (id: number): Promise<SummonTypeAgency | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
+  const data = rows as SummonTypeAgency[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const getSummonTypeAgencyByPair = async (type_id: number, agency_id: number): Promise<SummonTypeAgency | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? AND agency_id = ? LIMIT 1`, [type_id, agency_id]);
+  const data = rows as SummonTypeAgency[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const getSummonTypeAgenciesByType = async (type_id: number): Promise<SummonTypeAgency[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? ORDER BY id DESC`, [type_id]);
+  return rows as SummonTypeAgency[];
+};
+
+export const getAgenciesByType = async (type_id: number): Promise<SummonAgency[]> => {
+  const [rows] = await pool2.query(
+    `SELECT a.* FROM ${summonAgencyTable} a JOIN ${summonTypeAgencyTable} ta ON ta.agency_id = a.id WHERE ta.type_id = ? ORDER BY a.name`,
+    [type_id]
+  );
+  return rows as SummonAgency[];
+};
+
+export const getSummonTypesWithAgencies = async (): Promise<Array<{ type: SummonType; agencies: SummonAgency[] }>> => {
+  const types = await getSummonTypes();
+  const allAgencies = await getSummonAgencies();
+  // Build agency map for quick lookup
+  const agencyMap = new Map<number, SummonAgency>();
+  for (const a of allAgencies) if (a.id) agencyMap.set(a.id, a);
+
+  const result: Array<{ type: SummonType; agencies: SummonAgency[] }> = [];
+  for (const t of types) {
+    const mappings = await getSummonTypeAgenciesByType(Number(t.id));
+    const agencies: SummonAgency[] = [];
+    for (const m of mappings) {
+      const aid = Number(m.agency_id);
+      if (agencyMap.has(aid)) agencies.push(agencyMap.get(aid) as SummonAgency);
+    }
+    result.push({ type: t, agencies });
+  }
+  return result;
+};
+
+export const createSummonTypeAgency = async (data: Partial<SummonTypeAgency>) => {
+  const type_id = Number((data as any).type_id) || 0;
+  const agency_id = Number((data as any).agency_id) || 0;
+  if (!type_id || !agency_id) throw new Error('type_id and agency_id are required');
+  // prevent duplicate mapping
+  const existing = await getSummonTypeAgencyByPair(type_id, agency_id);
+  if (existing) return existing.id;
+  const now = formatToMySQLDatetime(new Date());
+  const [result] = await pool2.query(`INSERT INTO ${summonTypeAgencyTable} (type_id, agency_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, [type_id, agency_id, now, now]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateSummonTypeAgency = async (id: number, data: Partial<SummonTypeAgency>): Promise<void> => {
+  const payload: any = {};
+  if (data.type_id !== undefined) payload.type_id = Number((data as any).type_id) || null;
+  if (data.agency_id !== undefined) payload.agency_id = Number((data as any).agency_id) || null;
+  // if both provided, ensure no duplicate pair exists for different id
+  if (payload.type_id && payload.agency_id) {
+    const found = await getSummonTypeAgencyByPair(payload.type_id, payload.agency_id);
+    if (found && found.id !== id) throw new Error('Mapping already exists');
+  }
+  // set updated_at
+  const now = formatToMySQLDatetime(new Date());
+  payload.updated_at = now;
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${summonTypeAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
+  }
+};
+
+export const deleteSummonTypeAgency = async (id: number): Promise<void> => {
+  const [result] = await pool2.query(`DELETE FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Summon type-agency mapping not found');
+};
+
+export const getSummonTypes = async (): Promise<SummonType[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeTable} ORDER BY id DESC`);
+  return rows as SummonType[];
+};
+
+export const getSummonTypeById = async (id: number): Promise<SummonType | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeTable} WHERE id = ?`, [id]);
+  const data = rows as SummonType[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createSummonType = async (data: Partial<SummonType>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload = { ...data, created_at: now, updated_at: now } as any;
+  const [result] = await pool2.query(`INSERT INTO ${summonTypeTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateSummonType = async (id: number, data: Partial<SummonType>): Promise<void> => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${summonTypeTable} SET ${fields} WHERE id = ?`, [...values, id]);
+  }
+};
+
+export const deleteSummonType = async (id: number): Promise<void> => {
+  const [result] = await pool2.query(`DELETE FROM ${summonTypeTable} WHERE id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Summon type not found');
+};
+
 export const getSummonById = async (id: number): Promise<SummonRecord | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonTable} WHERE smn_id = ?`, [id]);
   const data = rows as SummonRecord[];
   return data.length > 0 ? data[0] : null;
+};
+
+export const getSummonAgencies = async (): Promise<SummonAgency[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonAgencyTable} ORDER BY id DESC`);
+  return rows as SummonAgency[];
+};
+
+export const getSummonAgencyById = async (id: number): Promise<SummonAgency | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${summonAgencyTable} WHERE id = ?`, [id]);
+  const data = rows as SummonAgency[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createSummonAgency = async (data: Partial<SummonAgency>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload = { ...data, created_at: now, updated_at: now } as any;
+  const [result] = await pool2.query(`INSERT INTO ${summonAgencyTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateSummonAgency = async (id: number, data: Partial<SummonAgency>): Promise<void> => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${summonAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
+  }
+};
+
+export const deleteSummonAgency = async (id: number): Promise<void> => {
+  const [result] = await pool2.query(`DELETE FROM ${summonAgencyTable} WHERE id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Summon agency not found');
 };
 
 export const createSummon = async (data: SummonRecord) => {
