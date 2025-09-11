@@ -5,15 +5,69 @@ import * as assetModel from '../p.asset/assetModel';
 
 // Database table name
 const dbName = 'purchases'; // Replace with your actual database name
-const purchaseTable = `${dbName}.purchase_data`;
+const purchaseRequestTable = `${dbName}.purchase_request`;
+const purchaseRequestItemTable = `${dbName}.purchase_items`;
+const purchaseDeliveryTable = `${dbName}.purchase_delivery`;
 const supplierTable = `${dbName}.purchase_supplier`;
 const purchaseAssetRegistryTable = `${dbName}.purchase_asset_registry`;
 const purchaseRequestItemsTable = `${dbName}.purchase_request_items`;
 // Join table linking purchase_data (pr_id) and purchase_asset_registry (registry_id)
 const purchaseRegistryTable = `${dbName}.purchase_registry`;
 
+
+/* ======= PURCHASE REQUEST (simple CRUD) ======= */
+export interface PurchaseRequestRecord {
+  id?: number;
+  pr_no?: string | null;
+  pr_date: string; // YYYY-MM-DD
+  request_type: string;
+  ramco_id: string;
+  costcenter_id: number;
+  department_id: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const getPurchaseRequests = async (): Promise<PurchaseRequestRecord[]> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${purchaseRequestTable} ORDER BY pr_date DESC, id DESC`
+  );
+  return rows as PurchaseRequestRecord[];
+};
+
+export const getPurchaseRequestById = async (id: number): Promise<PurchaseRequestRecord | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestTable} WHERE id = ?`, [id]);
+  const recs = rows as PurchaseRequestRecord[];
+  return recs.length > 0 ? recs[0] : null;
+};
+
+export const createPurchaseRequest = async (data: Omit<PurchaseRequestRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+  const [result] = await pool.query(
+    `INSERT INTO ${purchaseRequestTable} (pr_no, pr_date, request_type, ramco_id, costcenter_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.pr_no ?? null, data.pr_date, data.request_type, data.ramco_id, data.costcenter_id]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updatePurchaseRequest = async (id: number, data: Partial<Omit<PurchaseRequestRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
+  const allowed: Array<keyof PurchaseRequestRecord> = ['pr_no', 'pr_date', 'request_type', 'ramco_id', 'costcenter_id'];
+  const keys = Object.keys(data).filter(k => allowed.includes(k as any));
+  if (!keys.length) return;
+  const fields = keys.map(k => `${k} = ?`).join(', ');
+  const values = keys.map(k => (data as any)[k]);
+  await pool.query(`UPDATE ${purchaseRequestTable} SET ${fields}, updated_at = NOW() WHERE id = ?`, [...values, id]);
+};
+
+export const deletePurchaseRequest = async (id: number): Promise<void> => {
+  const [result] = await pool.query(`DELETE FROM ${purchaseRequestTable} WHERE id = ?`, [id]);
+  const rr = result as ResultSetHeader;
+  if (rr.affectedRows === 0) throw new Error('Purchase request not found');
+};
+
+/* ======= PURCHASE RECORDS - TO be removed as replaced by PurchaseRequestItemRecord ======= */
 export interface PurchaseRecord {
   id?: number;
+  request_id?: number;
   request_type: string;
   costcenter: string;
   costcenter_id?: number;
@@ -33,13 +87,8 @@ export interface PurchaseRecord {
   pr_no?: string;
   po_date?: string;
   po_no?: string;
-  do_date?: string;
-  do_no?: string;
-  inv_date?: string;
-  inv_no?: string;
-  grn_date?: string;
-  grn_no?: string;
-  upload_path?: string;
+  // delivery / invoice fields moved to purchase_delivery table
+  // do_date, do_no, inv_date, inv_no, grn_date, grn_no, upload_path removed
   // renamed from released_* to handover_* in schema
   handover_to?: string;
   handover_at?: string;
@@ -48,128 +97,106 @@ export interface PurchaseRecord {
   updated_at?: string;
 }
 
-// PURCHASE REQUEST ITEMS
+/* ======= PURCHASE REQUEST ITEMS -- Procurement Scopes ======= */
 export interface PurchaseRequestItemRecord {
   id?: number;
+  request_id?: number;
   pr_no?: string | null;
-  request_type: string;
-  pr_date: string; // YYYY-MM-DD
-  costcenter_id: number;
-  department_id: number;
-  position_id?: number | null;
-  ramco_id: string;
   type_id: number;
+  item_type?: string;
+  costcenter?: string;
+  costcenter_id?: number;
   category_id?: number | null;
-  description: string;
   qty: number;
+  description: string;
   purpose?: string | null;
+  supplier_id?: number;
+  unit_price: number;
+  total_price: number;
+  po_no?: string;
+  po_date?: string;
+  upload_path?: string; // keep for PR item attachments (if any)
+  handover_to?: string;
+  handover_at?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
-// Returns the last PR number (by value) on a given pr_date from purchase_data
-export const getLastPrNoByDate = async (pr_date: string): Promise<string | null> => {
-  try {
-    // Try numeric ordering; fallback to lexical if needed
-    const [rows] = await pool.query(
-      `SELECT pr_no FROM ${purchaseTable} WHERE pr_date = ? AND pr_no IS NOT NULL AND TRIM(pr_no) <> ''
-       ORDER BY (CASE WHEN pr_no REGEXP '^[0-9]+$' THEN 0 ELSE 1 END), CAST(pr_no AS UNSIGNED) DESC, pr_no DESC LIMIT 1`,
-      [pr_date]
-    );
-    const r = (rows as RowDataPacket[])[0];
-    return r ? (r as any).pr_no ?? null : null;
-  } catch {
-    return null;
-  }
+/* ======= PURCHASE DELIVERY (separate deliveries for items) ======= */
+export interface PurchaseDeliveryRecord {
+  id?: number;
+  purchase_id: number; // references purchase_request_items.id
+  request_id: number; // references purchase_request.id
+  do_no?: string | null;
+  do_date?: string | null;
+  inv_no?: string | null;
+  inv_date?: string | null;
+  grn_no?: string | null;
+  grn_date?: string | null;
+  upload_path?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const getDeliveries = async (): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} ORDER BY created_at DESC, id DESC`);
+  return rows as PurchaseDeliveryRecord[];
 };
 
-// Returns last pr_no along with the latest pr_date found in purchase_data
-export const getLastPrNoByLatestDate = async (): Promise<{ pr_no: string | null; pr_date: string | null }> => {
-  try {
-    const [dateRows] = await pool.query(
-      `SELECT pr_date FROM ${purchaseTable} WHERE pr_date IS NOT NULL ORDER BY pr_date DESC LIMIT 1`
-    );
-    const latestRow = (dateRows as RowDataPacket[])[0] as any;
-    const latestDate: string | null = latestRow ? (latestRow.pr_date as string) : null;
-    if (!latestDate) return { pr_no: null, pr_date: null };
-    const pr_no = await getLastPrNoByDate(latestDate);
-    return { pr_no, pr_date: latestDate };
-  } catch {
-    return { pr_no: null, pr_date: null };
-  }
+export const getDeliveryById = async (id: number): Promise<PurchaseDeliveryRecord | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
+  const recs = rows as PurchaseDeliveryRecord[];
+  return recs.length > 0 ? recs[0] : null;
 };
 
-// Bulk insert purchase request items. Returns insert ids.
-export const createPurchaseRequestItems = async (
-  header: {
-    pr_no?: string | null;
-    request_type: string;
-    pr_date: string;
-    costcenter_id: number;
-    department_id: number;
-    position_id?: number | null;
-    ramco_id: string;
-  },
-  items: Array<{ type_id: number; category_id?: number | null; description: string; qty: number; purpose?: string | null; }>
-): Promise<number[]> => {
-  const ids: number[] = [];
-  for (const it of items) {
-    const rec: Omit<PurchaseRequestItemRecord, 'id' | 'created_at'> = {
-      pr_no: header.pr_no ?? null,
-      request_type: header.request_type,
-      pr_date: header.pr_date,
-      costcenter_id: Number(header.costcenter_id),
-      department_id: Number(header.department_id),
-      position_id: header.position_id !== undefined && header.position_id !== null ? Number(header.position_id) : null,
-      ramco_id: header.ramco_id,
-      type_id: Number(it.type_id),
-      category_id: it.category_id !== undefined && it.category_id !== null ? Number(it.category_id) : null,
-      description: String(it.description || '').trim(),
-      qty: Number(it.qty || 0),
-      purpose: it.purpose !== undefined ? String(it.purpose) : null,
-    };
-    const [result] = await pool.query(
-      `INSERT INTO ${purchaseRequestItemsTable}
-        (pr_no, request_type, pr_date, costcenter_id, department_id, position_id, ramco_id, type_id, category_id, description, qty, purpose, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [
-        rec.pr_no,
-        rec.request_type,
-        rec.pr_date,
-        rec.costcenter_id,
-        rec.department_id,
-        rec.position_id,
-        rec.ramco_id,
-        rec.type_id,
-        rec.category_id,
-        rec.description,
-        rec.qty,
-        rec.purpose,
-      ]
-    );
-    ids.push((result as ResultSetHeader).insertId);
-  }
-  return ids;
+export const getDeliveriesByRequestId = async (request_id: number): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE request_id = ? ORDER BY created_at DESC, id DESC`, [request_id]);
+  return rows as PurchaseDeliveryRecord[];
 };
 
-// GET ALL PURCHASES
-export const getPurchases = async (): Promise<PurchaseRecord[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseTable} ORDER BY pr_date DESC`);
-  return rows as PurchaseRecord[];
+export const getDeliveriesByPurchaseId = async (purchase_id: number): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE purchase_id = ? ORDER BY created_at DESC, id DESC`, [purchase_id]);
+  return rows as PurchaseDeliveryRecord[];
 };
 
-// GET PURCHASE BY ID
-export const getPurchaseById = async (id: number): Promise<PurchaseRecord | null> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseTable} WHERE id = ?`, [id]);
-  const purchases = rows as PurchaseRecord[];
+export const createDelivery = async (data: Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+  const [result] = await pool.query(
+    `INSERT INTO ${purchaseDeliveryTable} (purchase_id, request_id, do_no, do_date, inv_no, inv_date, grn_no, grn_date, upload_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.purchase_id, data.request_id, data.do_no ?? null, data.do_date ?? null, data.inv_no ?? null, data.inv_date ?? null, data.grn_no ?? null, data.grn_date ?? null, data.upload_path ?? null]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateDelivery = async (id: number, data: Partial<Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
+  const keys = Object.keys(data);
+  if (!keys.length) return;
+  const fields = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => (data as any)[k]);
+  await pool.query(`UPDATE ${purchaseDeliveryTable} SET ${fields}, updated_at = NOW() WHERE id = ?`, [...vals, id]);
+};
+
+export const deleteDelivery = async (id: number): Promise<void> => {
+  const [result] = await pool.query(`DELETE FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
+  const rr = result as ResultSetHeader;
+  if (rr.affectedRows === 0) throw new Error('Delivery record not found');
+};
+
+export const getPurchaseRequestItems = async (): Promise<PurchaseRequestItemRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestItemTable} ORDER BY pr_date DESC`);
+  return rows as PurchaseRequestItemRecord[];
+};
+
+export const getPurchaseRequestItemById = async (id: number): Promise<PurchaseRequestItemRecord | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestItemTable} WHERE id = ?`, [id]);
+  const purchases = rows as PurchaseRequestItemRecord[];
   return purchases.length > 0 ? purchases[0] : null;
 };
 
-// CREATE PURCHASE
-export const createPurchase = async (data: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
   // Check for duplicate based on pr_no if provided
-  if (data.pr_no) {
+  if ((data as any).pr_no) {
     const [existingRows] = await pool.query(
-      `SELECT id FROM ${purchaseTable} WHERE pr_no = ?`,
+      `SELECT id FROM ${purchaseRequestItemTable} WHERE pr_no = ?`,
       [data.pr_no]
     );
     if (Array.isArray(existingRows) && existingRows.length > 0) {
@@ -197,37 +224,28 @@ export const createPurchase = async (data: Omit<PurchaseRecord, 'id' | 'created_
     pr_no,
     po_date,
     po_no,
-    do_date,
-    do_no,
-    inv_date,
-    inv_no,
-    grn_date,
-    grn_no,
     upload_path
-  } = data;
+  } = data as any;
 
   const [result] = await pool.query(
-    `INSERT INTO ${purchaseTable} (
+    `INSERT INTO ${purchaseRequestItemTable} (
       request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, items,
       supplier, supplier_id, brand_id, brand, qty,
-      unit_price, total_price, pr_date, pr_no, po_date, po_no, do_date, do_no,
-      inv_date, inv_no, grn_date, grn_no, upload_path, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [
       request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, items,
       supplier, supplier_id, brand_id, brand, qty,
-      unit_price, total_price, pr_date, pr_no, po_date, po_no, do_date, do_no,
-      inv_date, inv_no, grn_date, grn_no, upload_path
+      unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path
     ]
   );
 
   return (result as ResultSetHeader).insertId;
 };
 
-// UPDATE PURCHASE
-export const updatePurchase = async (
+export const updatePurchaseRequestItem = async (
   id: number,
-  data: Partial<Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>>
+  data: Partial<Omit<PurchaseRequestItemRecord, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<void> => {
   // Duplicate PR number check intentionally skipped on update (per request)
 
@@ -236,15 +254,14 @@ export const updatePurchase = async (
 
   if (fields) {
     await pool.query(
-      `UPDATE ${purchaseTable} SET ${fields}, updated_at = NOW() WHERE id = ?`,
+      `UPDATE ${purchaseRequestItemTable} SET ${fields}, updated_at = NOW() WHERE id = ?`,
       [...values, id]
     );
   }
 };
 
-// DELETE PURCHASE
-export const deletePurchase = async (id: number): Promise<void> => {
-  const [result] = await pool.query(`DELETE FROM ${purchaseTable} WHERE id = ?`, [id]);
+export const deletePurchaseRequestItem = async (id: number): Promise<void> => {
+  const [result] = await pool.query(`DELETE FROM ${purchaseRequestItemTable} WHERE id = ?`, [id]);
   const deleteResult = result as ResultSetHeader;
 
   if (deleteResult.affectedRows === 0) {
@@ -252,21 +269,7 @@ export const deletePurchase = async (id: number): Promise<void> => {
   }
 };
 
-// GET PURCHASES BY DATE RANGE
-export const getPurchasesByDateRange = async (
-  startDate: string,
-  endDate: string,
-  dateField: 'pr_date' | 'po_date' | 'do_date' | 'inv_date' | 'grn_date' = 'pr_date'
-): Promise<PurchaseRecord[]> => {
-  const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseTable} WHERE ${dateField} BETWEEN ? AND ? ORDER BY ${dateField} DESC`,
-    [startDate, endDate]
-  );
-  return rows as PurchaseRecord[];
-};
-
-// GET PURCHASES BY STATUS (based on completion of process stages)
-export const getPurchasesByStatus = async (status: string): Promise<PurchaseRecord[]> => {
+export const getPurchaseRequestItemByStatus = async (status: string): Promise<PurchaseRecord[]> => {
   let whereClause = '';
 
   switch (status.toLowerCase()) {
@@ -295,48 +298,48 @@ export const getPurchasesByStatus = async (status: string): Promise<PurchaseReco
   }
 
   const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseTable} WHERE ${whereClause} ORDER BY id DESC`
+    `SELECT * FROM ${purchaseRequestItemTable} WHERE ${whereClause} ORDER BY id DESC`
   );
   return rows as PurchaseRecord[];
 };
 
-// GET PURCHASES BY COST CENTER
-export const getPurchasesByCostCenter = async (costCenter: string): Promise<PurchaseRecord[]> => {
+export const getPurchaseRequestItemByCostCenter = async (costCenter: string): Promise<PurchaseRecord[]> => {
   const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseTable} WHERE costcenter = ? ORDER BY id DESC`,
+    `SELECT * FROM ${purchaseRequestItemTable} WHERE costcenter = ? ORDER BY id DESC`,
     [costCenter]
   );
   return rows as PurchaseRecord[];
 };
 
-// GET PURCHASES BY SUPPLIER
-export const getPurchasesBySupplier = async (supplier: string): Promise<PurchaseRecord[]> => {
+export const getPurchaseRequestItemBySupplier = async (supplier: string): Promise<PurchaseRecord[]> => {
   const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseTable} WHERE supplier LIKE ? ORDER BY id DESC`,
+    `SELECT * FROM ${purchaseRequestItemTable} WHERE supplier LIKE ? ORDER BY id DESC`,
     [`%${supplier}%`]
   );
   return rows as PurchaseRecord[];
 };
 
-// BULK INSERT PURCHASES (for Excel import)
-export const bulkInsertPurchases = async (purchases: Omit<PurchaseRecord, 'id' | 'created_at' | 'updated_at'>[]): Promise<number[]> => {
-  const insertIds: number[] = [];
-
-  for (const purchase of purchases) {
-    try {
-      const insertId = await createPurchase(purchase);
-      insertIds.push(insertId);
-    } catch (error) {
-      console.error(`Failed to insert purchase with PR: ${purchase.pr_no}`, error);
-      // Continue with other records instead of failing the entire batch
-    }
-  }
-
-  return insertIds;
+export const getPurchaseRequestItemByDateRange = async (
+  startDate: string,
+  endDate: string,
+  dateField: 'pr_date' | 'po_date' | 'do_date' | 'inv_date' | 'grn_date' = 'pr_date'
+): Promise<PurchaseRecord[]> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${purchaseRequestItemTable} WHERE ${dateField} BETWEEN ? AND ? ORDER BY ${dateField} DESC`,
+    [startDate, endDate]
+  );
+  return rows as PurchaseRecord[];
 };
 
-// GET PURCHASE SUMMARY BY DATE RANGE
-export const getPurchaseSummary = async (startDate?: string, endDate?: string) => {
+export const getPurchaseRequestItemByRequestId = async (request_id: number): Promise<PurchaseRecord[]> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${purchaseRequestItemTable} WHERE request_id = ? ORDER BY id DESC`,
+    [request_id]
+  );
+  return rows as PurchaseRecord[];
+};
+
+export const getPurchaseRequestItemSummary = async (startDate?: string, endDate?: string) => {
   let dateFilter = '';
   const params: any[] = [];
 
@@ -353,14 +356,49 @@ export const getPurchaseSummary = async (startDate?: string, endDate?: string) =
       SUM(CASE WHEN po_no IS NOT NULL AND grn_no IS NULL THEN 1 ELSE 0 END) as pending_purchases,
       COUNT(DISTINCT supplier) as unique_suppliers,
       COUNT(DISTINCT costcenter) as unique_costcenters
-    FROM ${purchaseTable} ${dateFilter}`,
+    FROM ${purchaseRequestItemTable} ${dateFilter}`,
     params
   );
 
   return (rows as any[])[0];
 };
 
-/* ======= SUPPLIER QUERIES ======= */
+
+// Returns the last PR number (by value) on a given pr_date from purchase_data
+export const getLastPrNoByDate = async (pr_date: string): Promise<string | null> => {
+  try {
+    // Try numeric ordering; fallback to lexical if needed
+    const [rows] = await pool.query(
+      `SELECT pr_no FROM ${purchaseRequestItemTable} WHERE pr_date = ? AND pr_no IS NOT NULL AND TRIM(pr_no) <> ''
+      ORDER BY (CASE WHEN pr_no REGEXP '^[0-9]+$' THEN 0 ELSE 1 END), CAST(pr_no AS UNSIGNED) DESC, pr_no DESC LIMIT 1`,
+      [pr_date]
+    );
+    const r = (rows as RowDataPacket[])[0];
+    return r ? (r as any).pr_no ?? null : null;
+  } catch {
+    return null;
+  }
+};
+
+// Returns last pr_no along with the latest pr_date found in purchase_data
+export const getLastPrNoByLatestDate = async (): Promise<{ pr_no: string | null; pr_date: string | null }> => {
+  try {
+    const [dateRows] = await pool.query(
+      `SELECT pr_date FROM ${purchaseRequestItemTable} WHERE pr_date IS NOT NULL ORDER BY pr_date DESC LIMIT 1`
+    );
+    const latestRow = (dateRows as RowDataPacket[])[0] as any;
+    const latestDate: string | null = latestRow ? (latestRow.pr_date as string) : null;
+    if (!latestDate) return { pr_no: null, pr_date: null };
+    const pr_no = await getLastPrNoByDate(latestDate);
+    return { pr_no, pr_date: latestDate };
+  } catch {
+    return { pr_no: null, pr_date: null };
+  }
+};
+
+
+
+/* ======= SUPPLIER ======= */
 export interface Supplier {
   id: number;
   name: string;
@@ -398,8 +436,8 @@ export const deleteSupplier = async (id: number): Promise<boolean> => {
   return (result as any).affectedRows > 0;
 };
 
-/* ======= PURCHASE ASSET REGISTRY ======= */
 
+/* ======= PURCHASE ASSET REGISTRY -- Asset Manager Scopes ======= */
 export interface PurchaseAssetRegistryRecord {
   id?: number;
   register_number?: string | null;
@@ -420,7 +458,7 @@ export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryReco
   const [result] = await pool.query(
     `INSERT INTO ${purchaseAssetRegistryTable}
       (register_number, classification, type_id, category_id, brand_id, model, costcenter_id, location_id, item_condition, description, pr_id, created_at, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
     [
       rec.register_number ?? null,
       rec.classification ?? null,
@@ -583,9 +621,12 @@ export const createMasterAssetsFromRegistryBatch = async (
 };
 
 // Mark a purchase as handed over (sets handover_to = updated_by, handover_at = NOW(), also updates updated_by/updated_at)
-export const markPurchaseHandover = async (id: number, updatedBy: string | null): Promise<void> => {
+export const updatePurchaseRequestItemHandover = async (id: number, updatedBy: string | null): Promise<void> => {
   await pool.query(
-    `UPDATE ${purchaseTable} SET handover_to = ?, handover_at = NOW(), updated_at = NOW() WHERE id = ?`,
+    `UPDATE ${purchaseRequestItemTable} SET handover_to = ?, handover_at = NOW(), updated_at = NOW() WHERE id = ?`,
     [updatedBy, id]
   );
 };
+
+
+

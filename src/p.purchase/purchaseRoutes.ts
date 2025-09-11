@@ -7,6 +7,12 @@ const purchaseUploader = createUploader('purchases');
 
 const router = Router();
 
+// PURCHASE REQUEST (simple CRUD)
+router.get('/requests/:id', asyncHandler(purchaseController.getPurchaseRequestById));
+router.get('/requests', asyncHandler(purchaseController.getPurchaseRequests));
+router.post('/requests', asyncHandler(purchaseController.createPurchaseRequest));
+router.put('/requests/:id', asyncHandler(purchaseController.updatePurchaseRequest));
+router.delete('/requests/:id', asyncHandler(purchaseController.deletePurchaseRequest));
 /* SUPPLIERS */
 
 router.get('/suppliers/:id', asyncHandler(purchaseController.getSupplierById));
@@ -23,24 +29,29 @@ router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier))
 // - supplier: filter by supplier (partial match)
 // - startDate & endDate: date range filter
 // - dateField: pr_date|po_date|do_date|inv_date|grn_date (default: pr_date)
-// GET purchase by ID
-router.get('/:id', asyncHandler(purchaseController.getPurchaseById));
-router.get('/', asyncHandler(purchaseController.getPurchases));
-// GET purchase summary
-router.get('/summary', asyncHandler(purchaseController.getPurchaseSummary));
-// CREATE new purchase (supports optional file upload under field 'upload_path')
-router.post('/', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.createPurchase));
-// BULK IMPORT purchases (for Excel import)
-router.post('/import', asyncHandler(purchaseController.importPurchases));
+
+router.get('/:id', asyncHandler(purchaseController.getPurchaseRequestItemById));// GET purchase by ID
+router.get('/summary', asyncHandler(purchaseController.getPurchaseRequestItemSummary));// GET purchase summary
+router.get('/', asyncHandler(purchaseController.getPurchaseRequestItems));
+router.post('/', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.createPurchaseRequestItem));// CREATE new purchase (supports optional file upload under field 'upload_path')
+router.put('/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updatePurchaseRequestItem));// UPDATE purchase by ID (supports optional file upload under field 'upload_path')
+router.delete('/:id', asyncHandler(purchaseController.deletePurchaseRequestItem));// DELETE purchase by ID
+
 // PURCHASE ASSET REGISTRY
-router.post('/registry', asyncHandler(purchaseController.registerPurchaseAssetsBatch));
+router.post('/registry', asyncHandler(purchaseController.createPurchaseAssetsRegistry));
 router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // ?pr_id=123
-// PURCHASE REQUEST ITEMS
-router.post('/request-items', asyncHandler(purchaseController.createPurchaseRequestItemsHandler));
-// UPDATE purchase by ID (supports optional file upload under field 'upload_path')
-router.put('/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updatePurchase));
-// DELETE purchase by ID
-router.delete('/:id', asyncHandler(purchaseController.deletePurchase));
+
+// PURCHASE DELIVERIES
+router.get('/deliveries', asyncHandler(purchaseController.getDeliveries));
+router.get('/deliveries/:id', asyncHandler(purchaseController.getDeliveryById));
+router.post('/deliveries', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.createDelivery));
+router.put('/deliveries/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updateDelivery));
+router.delete('/deliveries/:id', asyncHandler(purchaseController.deleteDelivery));
+
+
+
+
+
 
 
 export default router;
