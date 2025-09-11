@@ -652,6 +652,17 @@ export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<num
   // Sanitize ubill_ref: accept only non-empty strings, otherwise null
   const ubillRef: string | null = (typeof data.ubill_ref === 'string' && data.ubill_ref.trim() !== '') ? data.ubill_ref : null;
 
+  // Duplicate check: require bill_id, ubill_no and ubill_date to be present for the check
+  if (data.bill_id && data.ubill_no && data.ubill_date) {
+    const [existingRows] = await pool2.query(
+      `SELECT util_id FROM ${utilitiesTable} WHERE bill_id = ? AND ubill_no = ? AND ubill_date = ? LIMIT 1`,
+      [data.bill_id, data.ubill_no, data.ubill_date]
+    );
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      throw new Error('duplicate_utility_bill');
+    }
+  }
+
   const [result] = await pool2.query(
     `INSERT INTO ${utilitiesTable} (
       bill_id, cc_id, loc_id, ubill_bw, ubill_color, ubill_date, ubill_disc, ubill_gtotal, ubill_no, ubill_ref, ubill_paystat, ubill_rent, ubill_round, ubill_stotal, ubill_tax
