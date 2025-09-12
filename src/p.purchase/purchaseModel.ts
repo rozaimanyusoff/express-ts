@@ -4,7 +4,7 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import * as assetModel from '../p.asset/assetModel';
 
 // Database table name
-const dbName = 'purchases'; // Replace with your actual database name
+const dbName = 'test_purchases'; // Replace with your actual database name
 const purchaseRequestTable = `${dbName}.purchase_request`;
 const purchaseRequestItemTable = `${dbName}.purchase_items`;
 const purchaseDeliveryTable = `${dbName}.purchase_delivery`;
@@ -122,64 +122,6 @@ export interface PurchaseRequestItemRecord {
   updated_at?: string;
 }
 
-/* ======= PURCHASE DELIVERY (separate deliveries for items) ======= */
-export interface PurchaseDeliveryRecord {
-  id?: number;
-  purchase_id: number; // references purchase_request_items.id
-  request_id: number; // references purchase_request.id
-  do_no?: string | null;
-  do_date?: string | null;
-  inv_no?: string | null;
-  inv_date?: string | null;
-  grn_no?: string | null;
-  grn_date?: string | null;
-  upload_path?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export const getDeliveries = async (): Promise<PurchaseDeliveryRecord[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} ORDER BY created_at DESC, id DESC`);
-  return rows as PurchaseDeliveryRecord[];
-};
-
-export const getDeliveryById = async (id: number): Promise<PurchaseDeliveryRecord | null> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
-  const recs = rows as PurchaseDeliveryRecord[];
-  return recs.length > 0 ? recs[0] : null;
-};
-
-export const getDeliveriesByRequestId = async (request_id: number): Promise<PurchaseDeliveryRecord[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE request_id = ? ORDER BY created_at DESC, id DESC`, [request_id]);
-  return rows as PurchaseDeliveryRecord[];
-};
-
-export const getDeliveriesByPurchaseId = async (purchase_id: number): Promise<PurchaseDeliveryRecord[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE purchase_id = ? ORDER BY created_at DESC, id DESC`, [purchase_id]);
-  return rows as PurchaseDeliveryRecord[];
-};
-
-export const createDelivery = async (data: Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
-  const [result] = await pool.query(
-    `INSERT INTO ${purchaseDeliveryTable} (purchase_id, request_id, do_no, do_date, inv_no, inv_date, grn_no, grn_date, upload_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [data.purchase_id, data.request_id, data.do_no ?? null, data.do_date ?? null, data.inv_no ?? null, data.inv_date ?? null, data.grn_no ?? null, data.grn_date ?? null, data.upload_path ?? null]
-  );
-  return (result as ResultSetHeader).insertId;
-};
-
-export const updateDelivery = async (id: number, data: Partial<Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
-  const keys = Object.keys(data);
-  if (!keys.length) return;
-  const fields = keys.map(k => `${k} = ?`).join(', ');
-  const vals = keys.map(k => (data as any)[k]);
-  await pool.query(`UPDATE ${purchaseDeliveryTable} SET ${fields}, updated_at = NOW() WHERE id = ?`, [...vals, id]);
-};
-
-export const deleteDelivery = async (id: number): Promise<void> => {
-  const [result] = await pool.query(`DELETE FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
-  const rr = result as ResultSetHeader;
-  if (rr.affectedRows === 0) throw new Error('Delivery record not found');
-};
 
 export const getPurchaseRequestItems = async (): Promise<PurchaseRequestItemRecord[]> => {
   const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestItemTable} ORDER BY pr_date DESC`);
@@ -626,6 +568,67 @@ export const updatePurchaseRequestItemHandover = async (id: number, updatedBy: s
     `UPDATE ${purchaseRequestItemTable} SET handover_to = ?, handover_at = NOW(), updated_at = NOW() WHERE id = ?`,
     [updatedBy, id]
   );
+};
+
+
+
+/* ======= PURCHASE DELIVERY (separate deliveries for items) ======= */
+export interface PurchaseDeliveryRecord {
+  id?: number;
+  purchase_id: number; // references purchase_request_items.id
+  request_id: number; // references purchase_request.id
+  do_no?: string | null;
+  do_date?: string | null;
+  inv_no?: string | null;
+  inv_date?: string | null;
+  grn_no?: string | null;
+  grn_date?: string | null;
+  upload_path?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const getDeliveries = async (): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} ORDER BY created_at DESC, id DESC`);
+  return rows as PurchaseDeliveryRecord[];
+};
+
+export const getDeliveryById = async (id: number): Promise<PurchaseDeliveryRecord | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
+  const recs = rows as PurchaseDeliveryRecord[];
+  return recs.length > 0 ? recs[0] : null;
+};
+
+export const getDeliveriesByRequestId = async (request_id: number): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE request_id = ?`, [request_id]);
+  return rows as PurchaseDeliveryRecord[];
+};
+
+export const getDeliveriesByPurchaseId = async (purchase_id: number): Promise<PurchaseDeliveryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseDeliveryTable} WHERE purchase_id = ?`, [purchase_id]);
+  return rows as PurchaseDeliveryRecord[];
+};
+
+export const createDelivery = async (data: Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+  const [result] = await pool.query(
+    `INSERT INTO ${purchaseDeliveryTable} (purchase_id, request_id, do_no, do_date, inv_no, inv_date, grn_no, grn_date, upload_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.purchase_id, data.request_id, data.do_no ?? null, data.do_date ?? null, data.inv_no ?? null, data.inv_date ?? null, data.grn_no ?? null, data.grn_date ?? null, data.upload_path ?? null]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateDelivery = async (id: number, data: Partial<Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
+  const keys = Object.keys(data);
+  if (!keys.length) return;
+  const fields = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => (data as any)[k]);
+  await pool.query(`UPDATE ${purchaseDeliveryTable} SET ${fields}, updated_at = NOW() WHERE id = ?`, [...vals, id]);
+};
+
+export const deleteDelivery = async (id: number): Promise<void> => {
+  const [result] = await pool.query(`DELETE FROM ${purchaseDeliveryTable} WHERE id = ?`, [id]);
+  const rr = result as ResultSetHeader;
+  if (rr.affectedRows === 0) throw new Error('Delivery record not found');
 };
 
 
