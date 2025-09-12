@@ -33,8 +33,9 @@ router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier))
 router.get('/:id', asyncHandler(purchaseController.getPurchaseRequestItemById));// GET purchase by ID
 router.get('/summary', asyncHandler(purchaseController.getPurchaseRequestItemSummary));// GET purchase summary
 router.get('/', asyncHandler(purchaseController.getPurchaseRequestItems));
-router.post('/', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.createPurchaseRequestItem));// CREATE new purchase (supports optional file upload under field 'upload_path')
-router.put('/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updatePurchaseRequestItem));// UPDATE purchase by ID (supports optional file upload under field 'upload_path')
+// Accept any file fields to support nested delivery uploads like deliveries[0][upload_path]
+router.post('/', purchaseUploader.any(), asyncHandler(purchaseController.createPurchaseRequestItem));
+router.put('/:id', purchaseUploader.any(), asyncHandler(purchaseController.updatePurchaseRequestItem));
 router.delete('/:id', asyncHandler(purchaseController.deletePurchaseRequestItem));// DELETE purchase by ID
 
 // PURCHASE ASSET REGISTRY

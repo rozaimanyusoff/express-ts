@@ -304,15 +304,53 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
 
 export const createPurchaseRequestItem = async (req: Request, res: Response) => {
   try {
-  const purchaseData: any = {
-      request_id: req.body.request_id ? Number(req.body.request_id) : undefined,
+    // If request_id is not provided, create a parent request record first
+    let requestId: number | undefined = req.body.request_id ? Number(req.body.request_id) : undefined;
+    if (!requestId) {
+      const request_type = req.body.request_type ?? null;
+      const pr_no = req.body.pr_no ?? null;
+      const pr_date = req.body.pr_date ?? null;
+      const ramco_id = req.body.ramco_id ?? null;
+      const costcenter_id = req.body.costcenter_id !== undefined ? Number(req.body.costcenter_id) : undefined;
+
+      if (!request_type || !pr_date || !ramco_id || !costcenter_id) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Missing required request fields: request_type, pr_date, ramco_id, costcenter_id',
+          data: null,
+        });
+      }
+      try {
+        requestId = await purchaseModel.createPurchaseRequest({
+          request_type,
+          pr_no,
+          pr_date,
+          ramco_id,
+          costcenter_id,
+          // department_id is not present in payload; leave default/null at DB level if column exists
+          // Type definition requires department_id, but model createPurchaseRequest signature does too.
+          // To avoid breaking, attempt to infer department_id = 0 if not applicable.
+          department_id: (undefined as unknown as number),
+        } as any);
+      } catch (e) {
+        return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create purchase request', data: null });
+      }
+    }
+
+    const purchaseData: any = {
+      request_id: requestId,
+      request_type: req.body.request_type ?? null,
       pr_no: req.body.pr_no ?? null,
       pr_date: req.body.pr_date ?? null,
+      ramco_id: req.body.ramco_id ?? null,
       type_id: req.body.type_id ? Number(req.body.type_id) : undefined,
       item_type: req.body.item_type ?? undefined,
       category_id: req.body.category_id ? Number(req.body.category_id) : undefined,
+      brand_id: req.body.brand_id !== undefined ? Number(req.body.brand_id) : undefined,
       qty: req.body.qty !== undefined ? Number(req.body.qty) : 0,
       description: req.body.description || req.body.items || null,
+      // keep items field for backward compatibility with model insert
+      items: req.body.items || req.body.description || null,
       purpose: req.body.purpose || null,
       supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
       unit_price: req.body.unit_price !== undefined ? Number(req.body.unit_price) : 0,
@@ -336,17 +374,63 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
     // Insert first to obtain ID (two-step upload flow)
     const insertId = await purchaseModel.createPurchaseRequestItem(purchaseData);
 
+    // If deliveries[] present in payload, create delivery rows linked to this item and request
+    try {
+      const deliveries = Array.isArray(req.body.deliveries) ? req.body.deliveries : [];
+      if (deliveries.length > 0 && requestId) {
+        const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
+        for (let i = 0; i < deliveries.length; i++) {
+          const d = deliveries[i];
+          const payload = {
+            purchase_id: insertId,
+            request_id: requestId,
+            do_no: d.do_no ?? null,
+            do_date: d.do_date ?? null,
+            inv_no: d.inv_no ?? null,
+            inv_date: d.inv_date ?? null,
+            grn_no: d.grn_no ?? null,
+            grn_date: d.grn_date ?? null,
+            upload_path: d.upload_path ?? null,
+          } as any;
+          const deliveryId = await purchaseModel.createDelivery(payload);
+          // If a file uploaded for this delivery index, rename and update
+          const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
+          if (fileForThis && fileForThis.path) {
+            try {
+              const tempPath = fileForThis.path as string;
+              const originalName: string = fileForThis.originalname || path.basename(tempPath);
+              const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+              const filename = `delivery-${deliveryId}-${Date.now()}${ext}`;
+              const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+              await safeMove(tempPath, destPath);
+              await purchaseModel.updateDelivery(deliveryId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+            } catch (fileErr) {
+              // non-blocking
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking: if delivery creation fails, continue
+      console.error('createPurchase: deliveries insert error', e);
+    }
+
     // If a file was uploaded, rename and update stored path to include module id
-    if ((req as any).file && (req as any).file.path) {
-      const tempPath = (req as any).file.path as string;
-      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
-      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      const filename = `purchase-${insertId}-${Date.now()}${ext}`;
-      const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
-      const destDir = path.dirname(destPath);
-      await fsPromises.mkdir(destDir, { recursive: true }).catch(() => { });
-      await safeMove(tempPath, destPath);
-      await purchaseModel.updatePurchaseRequestItem(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+    {
+      const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
+      const singleFile = (req as any).file && (req as any).file.path ? (req as any).file : undefined;
+      const itemUpload = singleFile || filesArr.find((f: any) => f && f.fieldname === 'upload_path');
+      if (itemUpload && itemUpload.path) {
+        const tempPath = itemUpload.path as string;
+        const originalName: string = itemUpload.originalname || path.basename(tempPath);
+        const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+        const filename = `purchase-${insertId}-${Date.now()}${ext}`;
+        const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+        const destDir = path.dirname(destPath);
+        await fsPromises.mkdir(destDir, { recursive: true }).catch(() => { });
+        await safeMove(tempPath, destPath);
+        await purchaseModel.updatePurchaseRequestItem(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+      }
     }
 
     // After creating the purchase, notify relevant asset managers by manager_id match
@@ -421,7 +505,7 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
     res.status(201).json({
       status: 'success',
       message: 'Purchase created successfully',
-      data: { id: insertId }
+      data: { id: insertId, request_id: requestId }
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('already exists')) {
@@ -468,26 +552,31 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
   if (req.body.po_no !== undefined) updateData.po_no = req.body.po_no;
 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
-    if ((req as any).file && (req as any).file.path) {
-      const tempPath = (req as any).file.path as string;
-      const originalName: string = (req as any).file.originalname || path.basename(tempPath);
-      const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      const filename = `purchase-${id}-${Date.now()}${ext}`;
-      // Attempt to remove previous file if existed
-      try {
-        const existing = await purchaseModel.getPurchaseRequestItemById(id);
-        if (existing && existing.upload_path) {
-          const prevFilename = path.basename(existing.upload_path);
-          const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
-          const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
-          await fsPromises.unlink(prevFull).catch(() => { });
+    {
+      const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
+      const singleFile = (req as any).file && (req as any).file.path ? (req as any).file : undefined;
+      const itemUpload = singleFile || filesArr.find((f: any) => f && f.fieldname === 'upload_path');
+      if (itemUpload && itemUpload.path) {
+        const tempPath = itemUpload.path as string;
+        const originalName: string = itemUpload.originalname || path.basename(tempPath);
+        const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+        const filename = `purchase-${id}-${Date.now()}${ext}`;
+        // Attempt to remove previous file if existed
+        try {
+          const existing = await purchaseModel.getPurchaseRequestItemById(id);
+          if (existing && existing.upload_path) {
+            const prevFilename = path.basename(existing.upload_path);
+            const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+            const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
+            await fsPromises.unlink(prevFull).catch(() => { });
+          }
+        } catch {
+          // ignore errors
         }
-      } catch {
-        // ignore errors
+        const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+        await safeMove(tempPath, destPath);
+        updateData.upload_path = toDbPath(PURCHASE_SUBDIR, filename);
       }
-      const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
-      await safeMove(tempPath, destPath);
-      updateData.upload_path = toDbPath(PURCHASE_SUBDIR, filename);
     }
 
     // Auto-calculate total_price if qty or unit_price is updated
@@ -501,6 +590,66 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
     }
 
     await purchaseModel.updatePurchaseRequestItem(id, updateData);
+
+    // If deliveries[] present, upsert and handle per-delivery file uploads
+    try {
+      const deliveries = Array.isArray(req.body.deliveries) ? req.body.deliveries : [];
+      if (deliveries.length > 0) {
+        const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
+        // Get purchase to fetch its request_id
+        const existingPurchase = await purchaseModel.getPurchaseRequestItemById(id);
+        const reqId = existingPurchase?.request_id ? Number(existingPurchase.request_id) : (req.body.request_id ? Number(req.body.request_id) : undefined);
+        for (let i = 0; i < deliveries.length; i++) {
+          const d = deliveries[i];
+          const payload = {
+            purchase_id: id,
+            request_id: reqId,
+            do_no: d.do_no ?? null,
+            do_date: d.do_date ?? null,
+            inv_no: d.inv_no ?? null,
+            inv_date: d.inv_date ?? null,
+            grn_no: d.grn_no ?? null,
+            grn_date: d.grn_date ?? null,
+            upload_path: d.upload_path ?? null,
+          } as any;
+          const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
+          if (d.id) {
+            await purchaseModel.updateDelivery(Number(d.id), payload);
+            if (fileForThis && fileForThis.path) {
+              try {
+                const tempPath = fileForThis.path as string;
+                const originalName: string = fileForThis.originalname || path.basename(tempPath);
+                const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+                const filename = `delivery-${Number(d.id)}-${Date.now()}${ext}`;
+                const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+                await safeMove(tempPath, destPath);
+                await purchaseModel.updateDelivery(Number(d.id), { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+              } catch {
+                // non-blocking
+              }
+            }
+          } else if (reqId) {
+            const newId = await purchaseModel.createDelivery(payload);
+            if (fileForThis && fileForThis.path) {
+              try {
+                const tempPath = fileForThis.path as string;
+                const originalName: string = fileForThis.originalname || path.basename(tempPath);
+                const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+                const filename = `delivery-${newId}-${Date.now()}${ext}`;
+                const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+                await safeMove(tempPath, destPath);
+                await purchaseModel.updateDelivery(newId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+              } catch {
+                // non-blocking
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Non-blocking: continue even if deliveries update fails
+      console.error('updatePurchase: deliveries upsert error', e);
+    }
 
     res.json({
       status: 'success',
@@ -1139,5 +1288,3 @@ export const deleteSupplier = async (req: Request, res: Response) => {
     });
   }
 };
-
-
