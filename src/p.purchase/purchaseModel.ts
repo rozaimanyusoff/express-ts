@@ -42,9 +42,21 @@ export const getPurchaseRequestById = async (id: number): Promise<PurchaseReques
 };
 
 export const createPurchaseRequest = async (data: Omit<PurchaseRequestRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+  // Prevent duplicate by PR number + date + requester + costcenter
+  if (data.pr_no && data.pr_date && data.ramco_id && data.costcenter_id) {
+    const [existing] = await pool.query(
+      `SELECT id FROM ${purchaseRequestTable} WHERE pr_no = ? AND pr_date = ? AND ramco_id = ? AND costcenter_id = ? LIMIT 1`,
+      [data.pr_no, data.pr_date, data.ramco_id, data.costcenter_id]
+    );
+    const exArr = Array.isArray(existing) ? existing as any[] : [];
+    if (exArr.length > 0) {
+      throw new Error('Purchase request already exists for the same PR number/date/requester/costcenter');
+    }
+  }
+
   const [result] = await pool.query(
     `INSERT INTO ${purchaseRequestTable} (pr_no, pr_date, request_type, ramco_id, costcenter_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-    [data.pr_no ?? null, data.pr_date, data.request_type, data.ramco_id, data.costcenter_id]
+    [data.pr_no, data.pr_date, data.request_type, data.ramco_id, data.costcenter_id]
   );
   return (result as ResultSetHeader).insertId;
 };
@@ -147,37 +159,27 @@ export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRe
   }
 
   const {
-    request_type,
-    costcenter,
+    request_id,
     costcenter_id,
-    pic,
     ramco_id,
-    item_type,
     type_id,
     description,
-    supplier,
     supplier_id,
     brand_id,
-    brand,
     qty,
     unit_price,
     total_price,
     pr_date,
     pr_no,
     po_date,
-    po_no,
-    upload_path
+    po_no
   } = data as any;
 
   const [result] = await pool.query(
     `INSERT INTO ${purchaseRequestItemTable} (
-      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, description,
-      supplier, supplier_id, brand_id, brand, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [
-      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, description,
-      supplier, supplier_id, brand_id, brand, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path
-    ]
+      request_id, costcenter_id, ramco_id, type_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [request_id, costcenter_id, ramco_id, type_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no ]
   );
 
   return (result as ResultSetHeader).insertId;
