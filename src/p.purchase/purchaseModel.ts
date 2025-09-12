@@ -154,7 +154,7 @@ export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRe
     ramco_id,
     item_type,
     type_id,
-    items,
+    description,
     supplier,
     supplier_id,
     brand_id,
@@ -171,12 +171,12 @@ export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRe
 
   const [result] = await pool.query(
     `INSERT INTO ${purchaseRequestItemTable} (
-      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, items,
+      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, description,
       supplier, supplier_id, brand_id, brand, qty,
       unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [
-      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, items,
+      request_type, costcenter, costcenter_id, pic, ramco_id, item_type, type_id, description,
       supplier, supplier_id, brand_id, brand, qty,
       unit_price, total_price, pr_date, pr_no, po_date, po_no, upload_path
     ]
