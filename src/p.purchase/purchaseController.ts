@@ -348,9 +348,7 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
       category_id: req.body.category_id ? Number(req.body.category_id) : undefined,
       brand_id: req.body.brand_id !== undefined ? Number(req.body.brand_id) : undefined,
       qty: req.body.qty !== undefined ? Number(req.body.qty) : 0,
-      description: req.body.description || req.body.items || null,
-      // keep items field for backward compatibility with model insert
-      items: req.body.items || req.body.description || null,
+  description: req.body.description || null,
       purpose: req.body.purpose || null,
       supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
       unit_price: req.body.unit_price !== undefined ? Number(req.body.unit_price) : 0,
