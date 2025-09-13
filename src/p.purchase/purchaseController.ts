@@ -23,7 +23,7 @@ import { buildStoragePath, safeMove, toDbPath, toPublicUrl } from '../utils/uplo
 export const getPurchaseRequestItems = async (req: Request, res: Response) => {
   try {
     const { status, costcenter, supplier, startDate, endDate, dateField } = req.query;
-  let purchases: any[] = [];
+    let purchases: any[] = [];
 
     // Filter by status if provided
     if (status && typeof status === 'string') {
@@ -106,14 +106,14 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
       assetModel.getBrands(),
       (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([])
     ]);
-  const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
-  const categories = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
-  const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
-  const typeMap = new Map(types.map((t: any) => [t.id, t]));
-  const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
-  const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-  const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
-  const deptMap = new Map(departments.map((d: any) => [d.id, d]));
+    const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+    const categories = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+    const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+    const typeMap = new Map(types.map((t: any) => [t.id, t]));
+    const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
+    const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const deptMap = new Map(departments.map((d: any) => [d.id, d]));
     const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
     const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
     const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
@@ -124,12 +124,18 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
     const requestsArr = await Promise.all(requestIds.map(id => purchaseModel.getPurchaseRequestById(id)));
     const requestMap = new Map((requestsArr || []).filter(Boolean).map((r: any) => [r.id, r]));
 
+  // Batch fetch registry rows for purchases to determine asset_registry status
+  const purchaseIds = Array.from(new Set((purchases || []).map((p: any) => p.id).filter((v: any) => v !== undefined && v !== null).map((v: any) => Number(v))));
+  const registries = await purchaseModel.getRegistriesByPurchaseIds(purchaseIds);
+  const registrySet = new Set((registries || []).map(r => Number(r.purchase_id)));
+
     const enrichedPurchases = purchases.map((purchase: any) => {
       const reqRec = purchase.request_id && requestMap.has(Number(purchase.request_id)) ? requestMap.get(Number(purchase.request_id)) : null;
       const requestedBy = reqRec && reqRec.ramco_id ? (employeeMap.get(reqRec.ramco_id) ? { ramco_id: reqRec.ramco_id, full_name: (employeeMap.get(reqRec.ramco_id) as any)?.full_name || null } : { ramco_id: reqRec.ramco_id, full_name: null }) : null;
       const reqCostcenter = reqRec && reqRec.costcenter_id ? (ccMap.has(reqRec.costcenter_id) ? { id: reqRec.costcenter_id, name: ccMap.get(reqRec.costcenter_id)?.name || null } : { id: reqRec.costcenter_id, name: null }) : null;
       const reqDept = reqRec && reqRec.department_id ? (deptMap.has(reqRec.department_id) ? { id: reqRec.department_id, name: deptMap.get(reqRec.department_id)?.name || null } : { id: reqRec.department_id, name: null }) : null;
-      return {
+
+      const enrichedPurchase: any = {
         id: purchase.id,
         request_id: purchase.request_id ?? null,
         request: reqRec ? {
@@ -159,6 +165,12 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
         created_at: purchase.created_at ?? null,
         updated_at: purchase.updated_at ?? null,
       };
+
+      // Asset registry status: completed if a registry entry exists for this purchase id
+      const pidNum = Number(purchase.id || 0);
+      enrichedPurchase.asset_registry = (pidNum > 0 && registrySet.has(pidNum)) ? 'completed' : 'incompleted';
+
+      return enrichedPurchase;
     });
 
     res.json({
@@ -178,7 +190,7 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
 export const getPurchaseRequestItemById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-  const purchase: any = await purchaseModel.getPurchaseRequestItemById(id);
+    const purchase: any = await purchaseModel.getPurchaseRequestItemById(id);
 
     if (!purchase) {
       return res.status(404).json({
@@ -226,7 +238,7 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
     const enrichedPurchase = {
       id: purchase.id,
       request_id: purchase.request_id ?? null,
-  request: null,
+      request: null,
       type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
       category: purchase.category_id && categoryMap.has(purchase.category_id) ? { id: purchase.category_id, name: categoryMap.get(purchase.category_id)?.name || null } : null,
       brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
@@ -348,7 +360,7 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
       category_id: req.body.category_id ? Number(req.body.category_id) : undefined,
       brand_id: req.body.brand_id !== undefined ? Number(req.body.brand_id) : undefined,
       qty: req.body.qty !== undefined ? Number(req.body.qty) : 0,
-  description: req.body.description || null,
+      description: req.body.description || null,
       purpose: req.body.purpose || null,
       supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
       unit_price: req.body.unit_price !== undefined ? Number(req.body.unit_price) : 0,
@@ -527,7 +539,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
     const id = Number(req.params.id);
 
     // Build update data from request body
-  const updateData: any = {};
+    const updateData: any = {};
 
     if (req.body.request_type !== undefined) updateData.request_type = req.body.request_type;
     if (req.body.costcenter !== undefined) updateData.costcenter = req.body.costcenter;
@@ -546,8 +558,8 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
     if (req.body.total_price !== undefined) updateData.total_price = Number(req.body.total_price);
     if (req.body.pr_date !== undefined) updateData.pr_date = req.body.pr_date;
     if (req.body.pr_no !== undefined) updateData.pr_no = req.body.pr_no;
-  if (req.body.po_date !== undefined) updateData.po_date = req.body.po_date;
-  if (req.body.po_no !== undefined) updateData.po_no = req.body.po_no;
+    if (req.body.po_date !== undefined) updateData.po_date = req.body.po_date;
+    if (req.body.po_no !== undefined) updateData.po_no = req.body.po_no;
 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
     {
@@ -759,32 +771,45 @@ function publicUrl(rawPath?: string | null): string | null {
 /* ======= PURCHASE ASSET REGISTRY -- Asset Manager Scopes ======= */
 export const createPurchaseAssetsRegistry = async (req: Request, res: Response) => {
   try {
-    const { pr_id, assets, created_by, updated_by } = req.body || {};
-    const prIdNum = Number(pr_id);
-    if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+    const { purchase_id, request_id, assets, created_by, updated_by } = req.body || {}; //
+    const purchaseId = Number(purchase_id);
+    if (!purchaseId || !Array.isArray(assets) || assets.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'Invalid payload: purchase_id and non-empty assets[] are required', data: null });
     }
-    const ids = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
+    const ids = await purchaseModel.createPurchaseAssetRegistryBatch(purchaseId, request_id, assets, created_by || null);
+
+    // If the registry batch did not create/return ids for all provided assets, abort further processing.
+    // This prevents creating master assets, updating handover, or sending notifications when registry insertion failed.
+    if (!Array.isArray(ids) || ids.length !== assets.length) {
+      const msg = `Failed to register all assets: expected=${assets.length} registered=${Array.isArray(ids) ? ids.length : 0}`;
+      console.error('createPurchaseAssetsRegistry:', msg);
+      return res.status(500).json({ status: 'error', message: msg, data: { expected: assets.length, registered: Array.isArray(ids) ? ids.length : 0 } });
+    }
+
     // Also create master asset records in assets.assetdata
     try {
-      await purchaseModel.createMasterAssetsFromRegistryBatch(prIdNum, assets);
+      await purchaseModel.createMasterAssetsFromRegistryBatch(purchaseId, assets);
     } catch (e) {
       console.error('registerPurchaseAssetsBatch: create master assets failed', e);
+      // If creating master assets failed, we should not proceed to mark handover or send notifications.
+      return res.status(500).json({ status: 'error', message: 'Failed to create master asset records', data: null });
     }
 
     // Update purchase handover fields
     try {
       const who = (typeof updated_by === 'string' && updated_by) ? updated_by : (typeof created_by === 'string' ? created_by : null);
-      await purchaseModel.updatePurchaseRequestItemHandover(prIdNum, who ?? null);
+      await purchaseModel.updatePurchaseRequestItemHandover(purchaseId, who ?? null);
     } catch (e) {
       console.error('registerPurchaseAssetsBatch: handover update failed', e);
+      // If handover update failed, do not continue to notifications because state may be inconsistent.
+      return res.status(500).json({ status: 'error', message: 'Failed to update handover state', data: null });
     }
 
     // Notify procurement admins and asset managers
     try {
       // Load purchase and lookups
-  const purchase: any = await purchaseModel.getPurchaseRequestItemById(prIdNum);
-  if (purchase) {
+      const purchase: any = await purchaseModel.getPurchaseRequestItemById(purchaseId);
+      if (purchase) {
         const [employeesRaw, costcentersRaw, brandsRaw, managersRaw, typesRaw] = await Promise.all([
           assetModel.getEmployees(),
           assetModel.getCostcenters(),
@@ -822,11 +847,11 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
           .filter(Boolean)
           .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
           .filter((x: any) => x.email);
-        const subjectAdmin = `Assets Registered — PR ${purchase.pr_no || prIdNum}`;
+        const subjectAdmin = `Assets Registered — PR ${purchase.pr_no || purchaseId}`;
         for (const r of procurementRecipients) {
           const html = renderPurchaseRegistryCompleted({
             recipientName: r.name,
-            prNo: purchase.pr_no || String(prIdNum),
+            prNo: purchase.pr_no || String(purchaseId),
             prDate: prDateFormatted,
             itemType: itemTypeName,
             items: purchase.items || null,
@@ -835,7 +860,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
             itemCount: Array.isArray(assets) ? assets.length : null,
             audience: 'procurement',
           });
-          try { await sendMail(r.email, subjectAdmin, html); } catch {}
+          try { await sendMail(r.email, subjectAdmin, html); } catch { }
         }
 
         // Asset managers by manager_id match
@@ -849,11 +874,11 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
             .filter(Boolean)
             .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
             .filter((x: any) => x.email);
-          const subjectMgr = `Registration Successful — PR ${purchase.pr_no || prIdNum}`;
+          const subjectMgr = `Registration Successful — PR ${purchase.pr_no || purchaseId}`;
           for (const r of managerRecipients) {
             const html = renderPurchaseRegistryCompleted({
               recipientName: r.name,
-              prNo: purchase.pr_no || String(prIdNum),
+              prNo: purchase.pr_no || String(purchaseId),
               prDate: prDateFormatted,
               itemType: itemTypeName,
               items: purchase.items || null,
@@ -862,7 +887,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
               itemCount: Array.isArray(assets) ? assets.length : null,
               audience: 'manager',
             });
-            try { await sendMail(r.email, subjectMgr, html); } catch {}
+            try { await sendMail(r.email, subjectMgr, html); } catch { }
           }
         }
       }
@@ -870,7 +895,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       console.error('registerPurchaseAssetsBatch: notification error', notifyErr);
     }
 
-    return res.status(201).json({ status: 'success', message: `Registered ${ids.length} assets for PR ${prIdNum}`, data: { pr_id: prIdNum, insertIds: ids } });
+    return res.status(201).json({ status: 'success', message: `Registered ${ids.length} assets for PR ${purchaseId}`, data: { pr_id: purchaseId, insertIds: ids } });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets', data: null });
   }
@@ -879,11 +904,11 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
 // PURCHASE ASSET REGISTRY — list by PR id
 export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
   try {
-    const prIdNum = Number((req.query.pr_id as string) || (req.params as any).pr_id);
-    if (!prIdNum) {
+    const purchaseId = Number((req.query.pr as string) || (req.params as any).pr);
+    if (!purchaseId) {
       return res.status(400).json({ status: 'error', message: 'pr_id is required', data: null });
     }
-    const rows = await purchaseModel.getPurchaseAssetRegistryByPrId(prIdNum);
+    const rows = await purchaseModel.getPurchaseAssetRegistryByPrId(purchaseId);
     return res.json({ status: 'success', message: 'Purchase asset registry retrieved', data: rows });
   } catch (error) {
     return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve registry', data: null });
@@ -1111,10 +1136,10 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
       };
     });
 
-  // Reuse previously loaded lookup maps (employeeMap, ccMap, deptMap) to enrich the request
-  const requestedBy = rec.ramco_id ? (employeeMap.get(rec.ramco_id) ? { ramco_id: rec.ramco_id, full_name: (employeeMap.get(rec.ramco_id) as any)?.full_name || null } : { ramco_id: rec.ramco_id, full_name: null }) : null;
-  const reqCostcenter = rec.costcenter_id ? (ccMap.has(rec.costcenter_id) ? { id: rec.costcenter_id, name: ccMap.get(rec.costcenter_id)?.name || null } : { id: rec.costcenter_id, name: null }) : null;
-  const reqDept = rec.department_id ? (deptMap.has(rec.department_id) ? { id: rec.department_id, name: deptMap.get(rec.department_id)?.name || null } : { id: rec.department_id, name: null }) : null;
+    // Reuse previously loaded lookup maps (employeeMap, ccMap, deptMap) to enrich the request
+    const requestedBy = rec.ramco_id ? (employeeMap.get(rec.ramco_id) ? { ramco_id: rec.ramco_id, full_name: (employeeMap.get(rec.ramco_id) as any)?.full_name || null } : { ramco_id: rec.ramco_id, full_name: null }) : null;
+    const reqCostcenter = rec.costcenter_id ? (ccMap.has(rec.costcenter_id) ? { id: rec.costcenter_id, name: ccMap.get(rec.costcenter_id)?.name || null } : { id: rec.costcenter_id, name: null }) : null;
+    const reqDept = rec.department_id ? (deptMap.has(rec.department_id) ? { id: rec.department_id, name: deptMap.get(rec.department_id)?.name || null } : { id: rec.department_id, name: null }) : null;
 
     const enrichedRec = {
       id: rec.id,

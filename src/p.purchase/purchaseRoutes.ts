@@ -22,6 +22,12 @@ router.put('/suppliers/:id', asyncHandler(purchaseController.updateSupplier));
 router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier));
 
 
+
+
+// PURCHASE ASSET REGISTRY
+router.post('/registry', asyncHandler(purchaseController.createPurchaseAssetsRegistry));
+router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // ?pr_id=123
+
 // GET all purchases with optional filtering
 // Query params:
 // - status: requested|ordered|delivered|invoiced|completed
@@ -29,7 +35,6 @@ router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier))
 // - supplier: filter by supplier (partial match)
 // - startDate & endDate: date range filter
 // - dateField: pr_date|po_date|do_date|inv_date|grn_date (default: pr_date)
-
 router.get('/:id', asyncHandler(purchaseController.getPurchaseRequestItemById));// GET purchase by ID
 router.get('/summary', asyncHandler(purchaseController.getPurchaseRequestItemSummary));// GET purchase summary
 router.get('/', asyncHandler(purchaseController.getPurchaseRequestItems));
@@ -38,9 +43,6 @@ router.post('/', purchaseUploader.any(), asyncHandler(purchaseController.createP
 router.put('/:id', purchaseUploader.any(), asyncHandler(purchaseController.updatePurchaseRequestItem));
 router.delete('/:id', asyncHandler(purchaseController.deletePurchaseRequestItem));// DELETE purchase by ID
 
-// PURCHASE ASSET REGISTRY
-router.post('/registry', asyncHandler(purchaseController.createPurchaseAssetsRegistry));
-router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // ?pr_id=123
 
 // PURCHASE DELIVERIES
 router.get('/deliveries', asyncHandler(purchaseController.getDeliveries));

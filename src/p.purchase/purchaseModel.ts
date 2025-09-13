@@ -4,7 +4,7 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import * as assetModel from '../p.asset/assetModel';
 
 // Database table name
-const dbName = 'test_purchases'; // Replace with your actual database name
+const dbName = 'purchases'; // Replace with your actual database name
 const purchaseRequestTable = `${dbName}.purchase_request`;
 const purchaseRequestItemTable = `${dbName}.purchase_items`;
 const purchaseDeliveryTable = `${dbName}.purchase_delivery`;
@@ -163,6 +163,7 @@ export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRe
     costcenter_id,
     ramco_id,
     type_id,
+    category_id,
     description,
     supplier_id,
     brand_id,
@@ -177,9 +178,9 @@ export const createPurchaseRequestItem = async (data: Omit<PurchaseRequestItemRe
 
   const [result] = await pool.query(
     `INSERT INTO ${purchaseRequestItemTable} (
-      request_id, costcenter_id, ramco_id, type_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [request_id, costcenter_id, ramco_id, type_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no ]
+      request_id, costcenter_id, ramco_id, type_id, category_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    [request_id, costcenter_id, ramco_id, type_id, category_id, description, supplier_id, brand_id, qty, unit_price, total_price, pr_date, pr_no, po_date, po_no]
   );
 
   return (result as ResultSetHeader).insertId;
@@ -380,6 +381,7 @@ export const deleteSupplier = async (id: number): Promise<boolean> => {
 
 
 /* ======= PURCHASE ASSET REGISTRY -- Asset Manager Scopes ======= */
+const assetDataTable = 'assets.assetdata';
 export interface PurchaseAssetRegistryRecord {
   id?: number;
   register_number?: string | null;
@@ -388,64 +390,127 @@ export interface PurchaseAssetRegistryRecord {
   category_id?: number | null;
   brand_id?: number | null;
   model?: string | null;
+  warranty_period?: number | null;
   costcenter_id?: number | null;
   location_id?: number | null;
   item_condition?: string | null;
   description?: string | null;
-  pr_id: number;
+  request_id?: number | null;
+  purchase_id?: number | null;
   created_by?: string | null;
 }
 
 export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryRecord): Promise<number> => {
-  const [result] = await pool.query(
-    `INSERT INTO ${purchaseAssetRegistryTable}
-      (register_number, classification, type_id, category_id, brand_id, model, costcenter_id, location_id, item_condition, description, pr_id, created_at, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
-    [
-      rec.register_number ?? null,
-      rec.classification ?? null,
-      rec.type_id ?? null,
-      rec.category_id ?? null,
-      rec.brand_id ?? null,
-      rec.model ?? null,
-      rec.costcenter_id ?? null,
-      rec.location_id ?? null,
-      rec.item_condition ?? null,
-      rec.description ?? null,
-      rec.pr_id,
-      rec.created_by ?? null,
-    ]
-  );
-  const registryId = (result as ResultSetHeader).insertId;
-
-  // Create link in join table: (pr_id, registry_id)
+  // Use a transaction to ensure both inserts (registry + join table) are atomic.
+  const conn = await pool.getConnection();
   try {
-    await pool.query(
-      `INSERT INTO ${purchaseRegistryTable} (pr_id, registry_id) VALUES (?, ?)`,
-      [rec.pr_id, registryId]
-    );
-  } catch (e) {
-    // Non-blocking: join table might not exist in some environments
-  }
+    await conn.beginTransaction();
 
-  return registryId;
+    // Duplicate check: prefer register_number when available, otherwise fall back to purchase_id+request_id if both provided
+    let existingId: number | null = null;
+    const regnum = rec.register_number !== undefined && rec.register_number !== null ? String(rec.register_number).trim() : '';
+    if (regnum) {
+      const [rows] = await conn.query(
+        `SELECT id FROM ${purchaseAssetRegistryTable} WHERE register_number = ? AND ((purchase_id = ?) OR (purchase_id IS NULL AND ? IS NULL)) AND ((request_id = ?) OR (request_id IS NULL AND ? IS NULL)) LIMIT 1`,
+        [regnum, rec.purchase_id ?? null, rec.purchase_id ?? null, rec.request_id ?? null, rec.request_id ?? null]
+      );
+      const r = Array.isArray(rows) ? (rows as any[])[0] : null;
+      if (r && r.id) existingId = r.id;
+    } else if (rec.purchase_id !== undefined && rec.purchase_id !== null && rec.request_id !== undefined && rec.request_id !== null) {
+      const [rows] = await conn.query(
+        `SELECT id FROM ${purchaseAssetRegistryTable} WHERE purchase_id = ? AND request_id = ? LIMIT 1`,
+        [rec.purchase_id, rec.request_id]
+      );
+      const r = Array.isArray(rows) ? (rows as any[])[0] : null;
+      if (r && r.id) existingId = r.id;
+    }
+
+    if (existingId) {
+      // Nothing to insert; rollback any transaction state and return existing id
+      await conn.rollback();
+      conn.release();
+      return existingId;
+    }
+
+    const [result] = await conn.query(
+      `INSERT INTO ${purchaseAssetRegistryTable}
+      (register_number, classification, type_id, category_id, brand_id, model, warranty_period, costcenter_id, location_id, item_condition, description, request_id, purchase_id, created_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      [
+        rec.register_number ?? null,
+        rec.classification ?? null,
+        rec.type_id ?? null,
+        rec.category_id ?? null,
+        rec.brand_id ?? null,
+        rec.model ?? null,
+        rec.warranty_period ?? null,
+        rec.costcenter_id ?? null,
+        rec.location_id ?? null,
+        rec.item_condition ?? null,
+        rec.description ?? null,
+        rec.request_id ?? null,
+        rec.purchase_id ?? null,
+        rec.created_by ?? null,
+      ]
+    );
+    const registryId = (result as ResultSetHeader).insertId; //purchase_asset_registry.id
+
+    // Create link in join table: (request_id, purchase_id, registry_id)
+    await conn.query(
+      `INSERT INTO ${purchaseRegistryTable} (request_id, purchase_id, registry_id) VALUES (?, ?, ?)`,
+      [rec.request_id ?? null, rec.purchase_id ?? null, registryId]
+    );
+
+    await conn.commit();
+    conn.release();
+    return registryId;
+  } catch (e) {
+    try {
+      await conn.rollback();
+    } catch (_) {
+      // ignore rollback errors
+    }
+    conn.release();
+    throw e;
+  }
 };
 
 export const createPurchaseAssetRegistryBatch = async (
-  pr_id: number,
-  assets: Array<Omit<PurchaseAssetRegistryRecord, 'pr_id' | 'id'>>,
-  created_by?: string | null
+  purchase_id: number,
+  // This function accepts two calling styles for backwards-compatibility with existing callers:
+  // - (purchase_id, assets, created_by?)
+  // - (purchase_id, request_id, assets, created_by?)
+  request_id_or_assets: number | Array<Omit<PurchaseAssetRegistryRecord, 'purchase_id' | 'id'>>,
+  assets_or_created_by?: Array<Omit<PurchaseAssetRegistryRecord, 'purchase_id' | 'id'>> | string | null,
+  maybe_created_by?: string | null
 ): Promise<number[]> => {
+  let request_id: number | null = null;
+  let assets: Array<Omit<PurchaseAssetRegistryRecord, 'purchase_id' | 'id'>> = [];
+  let created_by: string | null = null;
+
+  if (Array.isArray(request_id_or_assets)) {
+    // Called as (purchase_id, assets, created_by?)
+    assets = request_id_or_assets;
+    created_by = (assets_or_created_by as string) ?? null;
+  } else {
+    // Called as (purchase_id, request_id, assets, created_by?)
+    request_id = Number(request_id_or_assets) || null;
+    assets = Array.isArray(assets_or_created_by) ? (assets_or_created_by as any[]) : [];
+    created_by = maybe_created_by ?? null;
+  }
+
   const insertIds: number[] = [];
   for (const a of assets) {
     const rec: PurchaseAssetRegistryRecord = {
-      pr_id,
+      purchase_id: purchase_id ?? null,
+      request_id: request_id ?? null,
       register_number: a.register_number ?? null,
       classification: a.classification ?? null,
       type_id: a.type_id !== undefined && a.type_id !== null ? Number(a.type_id) : null,
       category_id: a.category_id !== undefined && a.category_id !== null ? Number(a.category_id) : null,
       brand_id: a.brand_id !== undefined && a.brand_id !== null ? Number(a.brand_id) : null,
       model: a.model ?? null,
+      warranty_period: a.warranty_period !== undefined && a.warranty_period !== null ? Number(a.warranty_period) : null,
       costcenter_id: a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null,
       location_id: a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,
       item_condition: a.item_condition ?? null,
@@ -464,19 +529,29 @@ export const createPurchaseAssetRegistryBatch = async (
   return insertIds;
 };
 
-export const getPurchaseAssetRegistryByPrId = async (pr_id: number): Promise<PurchaseAssetRegistryRecord[]> => {
+export const getPurchaseAssetRegistryByPrId = async (purchase_id: number): Promise<PurchaseAssetRegistryRecord[]> => {
   const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseAssetRegistryTable} WHERE pr_id = ? ORDER BY id DESC`,
-    [pr_id]
+    `SELECT * FROM ${purchaseAssetRegistryTable} WHERE purchase_id = ? ORDER BY id DESC`,
+    [purchase_id]
   );
   return rows as PurchaseAssetRegistryRecord[];
+};
+
+// Batch fetch registry rows for multiple purchase_ids to avoid N+1 queries
+export const getRegistriesByPurchaseIds = async (purchaseIds: number[]): Promise<{ purchase_id: number; registry_id: number }[]> => {
+  if (!Array.isArray(purchaseIds) || purchaseIds.length === 0) return [];
+  // Prepare placeholders
+  const placeholders = purchaseIds.map(() => '?').join(',');
+  const sql = `SELECT purchase_id, id as registry_id FROM ${purchaseAssetRegistryTable} WHERE purchase_id IN (${placeholders})`;
+  const [rows] = await pool.query(sql, purchaseIds);
+  return (rows as any[]).map(r => ({ purchase_id: Number(r.purchase_id), registry_id: Number(r.registry_id) }));
 };
 
 // Create master asset records in assets.assetdata based on registry payload
 // Returns array of created asset IDs
 export const createMasterAssetsFromRegistryBatch = async (
-  pr_id: number,
-  assets: Array<Omit<PurchaseAssetRegistryRecord, 'pr_id' | 'id'>>
+  purchase_id: number,
+  assets: Array<Omit<PurchaseAssetRegistryRecord, 'purchase_id' | 'id'>>
 ): Promise<number[]> => {
   const insertAssetIds: number[] = [];
 
@@ -489,7 +564,7 @@ export const createMasterAssetsFromRegistryBatch = async (
       if (reg) {
         try {
           const [dupRows] = await pool.query(
-            `SELECT id FROM assets.assetdata WHERE register_number = ? LIMIT 1`,
+            `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
             [reg]
           );
           if (Array.isArray(dupRows) && dupRows.length > 0) {
@@ -498,8 +573,8 @@ export const createMasterAssetsFromRegistryBatch = async (
             if (existingId) {
               try {
                 await pool.query(
-                  `UPDATE assets.assetdata SET pr_id = ? WHERE id = ?`,
-                  [pr_id, existingId]
+                  `UPDATE ${assetDataTable} SET purchase_id = ? WHERE id = ?`,
+                  [purchase_id, existingId]
                 );
                 insertAssetIds.push(existingId);
               } catch {
@@ -549,9 +624,9 @@ export const createMasterAssetsFromRegistryBatch = async (
       // Defaults: include record_status if schema supports it
       pushCol('record_status', 'active');
       // include linkage to purchase id on assetdata (pr_id) if present in schema
-      pushCol('pr_id', pr_id);
+      pushCol('purchase_id', purchase_id);
 
-      const sql = `INSERT INTO assets.assetdata (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
+      const sql = `INSERT INTO ${assetDataTable} (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
       const [result] = await pool.query(sql, vals);
       const insertId = (result as ResultSetHeader).insertId;
       if (insertId) insertAssetIds.push(insertId);
