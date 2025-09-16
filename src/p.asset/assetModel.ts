@@ -1,4 +1,4 @@
-import {pool, pool2} from "../utils/db";
+import { pool, pool2 } from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +8,7 @@ import { get } from "axios";
 const db = 'assets';
 const companyDb = 'companies';
 const assetTable = `${db}.assetdata`;
+const assetSpecsTable = `${db}.spec_properties`;
 const assetManagerTable = `${db}.asset_managers`;
 const assetHistoryTable = `${db}.asset_history`;
 const brandTable = `${db}.brands`;
@@ -47,7 +48,7 @@ const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd()
 export const createType = async (data: any) => {
   const { name, description, image, ramco_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)` ,
+    `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)`,
     [name, description, image, ramco_id]
   );
   return result;
@@ -82,7 +83,7 @@ export const deleteType = async (id: number) => {
 export const createCategory = async (data: any) => {
   const { name, image, type_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${categoryTable} (name, image, type_id) VALUES (?, ?, ?)` ,
+    `INSERT INTO ${categoryTable} (name, image, type_id) VALUES (?, ?, ?)`,
     [name, image, type_id ?? null]
   );
   return result;
@@ -537,7 +538,7 @@ export const createEmployee = async (data: any) => {
   return result;
 };
 
-export const getEmployees = async (status?: string, cc?: string[] , dept?: string[] , loc?: string[] , supervisor?: string[], ramco?: string[], pos?: string[]) => {
+export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
   let query = `SELECT * FROM ${employeeTable}`;
   const params: any[] = [];
   const conditions: string[] = [];
@@ -777,7 +778,7 @@ export const createAsset = async (data: any) => {
 export const updateAsset = async (id: number, data: any) => {
   const [result] = await pool.query(
     `UPDATE ${assetTable} SET brand_id = ?, category_id = ?, classification = ?, costcenter_id = ?, department_id = ?, entry_code = ?, fuel_type = ?, location_id = ?, model_id = ?, purchase_date = ?, purpose = ?, ramco_id = ?, record_status = ?, transmission = ?, type_id = ? WHERE id = ?`,
-    [ data.brand_id, data.category_id, data.classification, data.costcenter_id, data.department_id, data.entry_code, data.fuel_type, data.location_id, data.model_id, data.purchase_date, data.purpose, data.ramco_id, data.record_status, data.transmission, data.type_id, id ]
+    [data.brand_id, data.category_id, data.classification, data.costcenter_id, data.department_id, data.entry_code, data.fuel_type, data.location_id, data.model_id, data.purchase_date, data.purpose, data.ramco_id, data.record_status, data.transmission, data.type_id, id]
   );
 
   // insert into asset_history on successful update
@@ -837,7 +838,7 @@ export const deleteAsset = async (id: number) => {
 export const createAssetOwnership = async (data: any) => {
   const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${assetHistoryTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)` ,
+    `INSERT INTO ${assetHistoryTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)`,
     [asset_code, ramco_id, effective_date]
   );
   return result;
@@ -1089,6 +1090,160 @@ export async function getVehicleSpecsForAsset(asset_id: number) {
   return rows;
 }
 
+// ===== Spec properties (master) + schema application helpers =====
+/**
+ * Sanitize a user-provided name into a safe SQL column name.
+ * Allowed characters: lowercase letters, numbers and underscore. Must start with a letter.
+ */
+function sanitizeColumnName(name: string): string {
+  if (!name || typeof name !== 'string') throw new Error('Invalid name');
+  let s = name.toLowerCase().trim();
+  // replace spaces and hyphens with underscore
+  s = s.replace(/[\s\-]+/g, '_');
+  // remove any chars other than a-z0-9_
+  s = s.replace(/[^a-z0-9_]/g, '');
+  // ensure it starts with a letter
+  if (!/^[a-z]/.test(s)) s = 'c_' + s;
+  // trim length to reasonable limit
+  return s.substring(0, 120);
+}
+
+function mapDataTypeToSql(dataType: string): string {
+  switch ((dataType || '').toLowerCase()) {
+    case 'string': return 'VARCHAR(255)';
+    case 'text': return 'TEXT';
+    case 'integer': case 'int': return 'INT';
+    case 'float': return 'DOUBLE';
+    case 'decimal': return 'DECIMAL(18,4)';
+    case 'boolean': return 'TINYINT(1)';
+    case 'date': return 'DATE';
+    case 'datetime': return 'DATETIME';
+    case 'json': return 'JSON';
+    default: return 'VARCHAR(255)';
+  }
+}
+
+function mapTypeIdToSpecTable(type_id: number): string | null {
+  // Extend mapping as more type-specific spec tables are added
+  if (type_id === 1) return computerSpecsTable; // computers
+  if (type_id === 2) return vehicleSpecsTable; // vehicles
+  // default: null => no per-type table
+  return null;
+}
+
+export const getSpecPropertiesByType = async (type_id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetSpecsTable} WHERE type_id = ? ORDER BY id`, [type_id]);
+  return rows;
+};
+
+export const getAllSpecProperties = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetSpecsTable} ORDER BY type_id, id`);
+  return rows;
+};
+
+export const getSpecPropertyById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetSpecsTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const createSpecProperty = async (data: any) => {
+  const { type_id, name, label, data_type, nullable = 1, default_value = null, options = null, created_by = null, column_name } = data;
+  const col = column_name ? sanitizeColumnName(column_name) : sanitizeColumnName(name);
+  // Insert metadata record
+  const [result] = await pool.query(
+    `INSERT INTO ${assetSpecsTable} (type_id, name, column_name, label, data_type, nullable, default_value, options, created_by, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    [type_id, name, col, label, data_type, nullable ? 1 : 0, default_value, options ? JSON.stringify(options) : null, created_by]
+  );
+  return { insertId: (result as any).insertId, column_name: col };
+};
+
+export const applySpecPropertyToType = async (specProperty: any) => {
+  // specProperty is a row from spec_properties table (must include type_id, column_name, data_type, nullable, default_value)
+  const tableName = mapTypeIdToSpecTable(Number(specProperty.type_id));
+  if (!tableName) throw new Error(`No spec table mapped for type_id ${specProperty.type_id}`);
+  const column = specProperty.column_name;
+  if (!/^[a-z][a-z0-9_]{0,119}$/.test(column)) throw new Error('Invalid column name');
+  const sqlType = mapDataTypeToSql(specProperty.data_type);
+  const nullable = specProperty.nullable ? 'NULL' : 'NOT NULL';
+  const defaultClause = (specProperty.default_value !== null && specProperty.default_value !== undefined)
+    ? `DEFAULT '${String(specProperty.default_value).replace(/'/g, "\\'")}'`
+    : '';
+  // Note: mysql2's pool.query will not accept parameterized column names/types, so we must build a safe string after sanitization
+  try {
+    // Execute the ALTER TABLE after sanitization
+    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${column}\` ${sqlType} ${nullable} ${defaultClause}`);
+    // mark active
+    await pool.query(`UPDATE ${assetSpecsTable} SET is_active = 1, updated_at = NOW() WHERE id = ?`, [specProperty.id]);
+    return { ok: true };
+  } catch (err) {
+    // do not throw raw DB errors up; return info for caller (controller/worker) to handle
+    return { ok: false, error: (err as Error).message };
+  }
+};
+
+export const updateSpecProperty = async (id: number, data: any) => {
+  // Only allow safe updates to metadata (label, nullable, default_value, options, is_active)
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (data.label !== undefined) { sets.push('label = ?'); params.push(data.label); }
+  if (data.nullable !== undefined) { sets.push('nullable = ?'); params.push(data.nullable ? 1 : 0); }
+  if (data.default_value !== undefined) { sets.push('default_value = ?'); params.push(data.default_value); }
+  if (data.options !== undefined) { sets.push('options = ?'); params.push(JSON.stringify(data.options)); }
+  if (data.is_active !== undefined) { sets.push('is_active = ?'); params.push(data.is_active ? 1 : 0); }
+  if (sets.length === 0) return { affectedRows: 0 } as any;
+  params.push(id);
+  const sql = `UPDATE ${assetSpecsTable} SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ?`;
+  const [result] = await pool.query(sql, params);
+  return result;
+};
+
+export const deleteSpecProperty = async (id: number, dropColumn: boolean = false) => {
+  const spec = await getSpecPropertyById(id);
+  if (!spec) throw new Error('Spec property not found');
+  if (dropColumn) {
+    const tableName = mapTypeIdToSpecTable(Number(spec.type_id));
+    if (!tableName) throw new Error(`No spec table mapped for type_id ${spec.type_id}`);
+    const column = spec.column_name;
+    // Drop column if exists
+    try {
+      await pool.query(`ALTER TABLE ${tableName} DROP COLUMN \`${column}\``);
+    } catch (err) {
+      // continue; still allow metadata cleanup
+    }
+  }
+  const [result] = await pool.query(`DELETE FROM ${assetSpecsTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/**
+ * Apply all pending spec properties (is_active = 0) to their mapped per-type spec tables.
+ * If type_id provided, only apply for that type.
+ */
+export const applyPendingSpecProperties = async (type_id?: number) => {
+  const params: any[] = [];
+  let sql = `SELECT * FROM ${assetSpecsTable} WHERE is_active = 0`;
+  if (typeof type_id === 'number') {
+    sql += ' AND type_id = ?';
+    params.push(type_id);
+  }
+  sql += ' ORDER BY id';
+  const [rows] = await pool.query(sql, params);
+  const results: any[] = [];
+  for (const r of rows as any[]) {
+    try {
+      const res = await applySpecPropertyToType(r);
+      if (res && res.ok) {
+        results.push({ id: r.id, column_name: r.column_name, ok: true });
+      } else {
+        results.push({ id: r.id, column_name: r.column_name, ok: false, error: res && res.error ? res.error : 'unknown' });
+      }
+    } catch (err) {
+      results.push({ id: r.id, column_name: r.column_name, ok: false, error: (err as Error).message });
+    }
+  }
+  return results;
+};
+
 // Helper: safely extract string from query param
 export function getStringParam(param: any): string | undefined {
   if (typeof param === 'string') return param;
@@ -1289,139 +1444,4 @@ export const deleteAssetManager = async (id: number) => {
 }
 
 
-export default {
-  createType,
-  getTypes,
-  getTypeById,
-  updateType,
-  deleteType,
-  createCategory,
-  getCategories,
-  getCategoryById,
-  updateCategory,
-  deleteCategory,
-  createBrand,
-  getBrands,
-  getBrandById,
-  updateBrand,
-  deleteBrand,
-  createModel,
-  getModels,
-  getModelById,
-  getModelsByBrand,
-  updateModel,
-  deleteModel,
-  createDepartment,
-  getDepartments,
-  getDepartmentById,
-  updateDepartment,
-  deleteDepartment,
-  createPosition,
-  getPositions,
-  getPositionById,
-  updatePosition,
-  deletePosition,
-  createLocation,
-  getLocations,
-  getLocationById,
-  updateLocation,
-  deleteLocation,
-  createDistrict,
-  getDistricts,
-  getDistrictById,
-  updateDistrict,
-  deleteDistrict,
-  createZone,
-  getZones,
-  getZoneById,
-  updateZone,
-  deleteZone,
-  createSite,
-  getSites,
-  getSiteById,
-  updateSite,
-  deleteSite,
-  getSitesBatch,
-  getSitesCount,
-  addDistrictToZone,
-  removeDistrictFromZone,
-  getDistrictsByZone,
-  getZonesByDistrict,
-  createEmployee,
-  getEmployees,
-  getEmployeeById,
-  updateEmployee,
-  deleteUser,
-  createVendor,
-  getVendors,
-  getVendorById,
-  updateVendor,
-  deleteVendor,
-  createProcurement,
-  getProcurements,
-  getProcurementById,
-  updateProcurement,
-  deleteProcurement,
-  createAsset,
-  getAssets,
-  getAssetById,
-  getAssetByCode,
-  updateAsset,
-  deleteAsset,
-  createAssetOwnership,
-  getAssetOwnerships,
-  getAssetOwnershipById,
-  updateAssetOwnership,
-  deleteAssetOwnership,
-  createSection,
-  getSections,
-  getSectionById,
-  updateSection,
-  deleteSection,
-  createCostcenter,
-  getCostcenters,
-  getCostcenterById,
-  updateCostcenter,
-  deleteCostcenter,
-  createModule,
-  getModules,
-  getModuleById,
-  updateModule,
-  deleteModule,
-  getAllZoneDistricts,
-  removeAllZonesFromDistrict,
-  removeAllDistrictsFromZone,
-  getTypeByCode,
-  getCategoryByCode,
-  getBrandByCode,
-  addBrandCategory,
-  removeBrandCategory,
-  getCategoriesByBrand,
-  getCategoriesByBrandId,
-  getBrandsByCategory,
-  getBrandsByCategoryId,
-  getSoftwares,
-  getSoftwareById,
-  createSoftware,
-  updateSoftware,
-  deleteSoftware,
-  getComputerSpecsForAsset,
-  getInstalledSoftwareForAsset,
-  getVehicleSpecsForAsset,
-  searchEmployeesAutocomplete,
-  createAssetTransferRequest,
-  createAssetTransferDetail,
-  getAssetTransferRequestsWithDetails,
-  generateNextRequestNo,
-  getTransferChecklists,
-  getTransferChecklistById,
-  createTransferChecklist,
-  updateTransferChecklist,
-  deleteTransferChecklist,
-  getAssetManagers,
-  getAssetManagerById,
-  getAssetManagerByRamcoId,
-  createAssetManager,
-  updateAssetManager,
-  deleteAssetManager,
-};
+// Note: named exports are used throughout the codebase. No default export to normalize usage.

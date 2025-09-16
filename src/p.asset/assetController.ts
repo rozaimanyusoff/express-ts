@@ -362,24 +362,24 @@ function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
 
 // Register batch of assets into purchase registry table
 export const registerAssetsBatch = async (req: Request, res: Response) => {
-    try {
-        const { pr_id, assets, created_by } = req.body || {};
-        const prIdNum = Number(pr_id);
-        if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
-            return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
-        }
+	try {
+		const { pr_id, assets, created_by } = req.body || {};
+		const prIdNum = Number(pr_id);
+		if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
+			return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+		}
 
-        // Basic normalization is handled in model; perform minimal structure check here
-        const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
+		// Basic normalization is handled in model; perform minimal structure check here
+		const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
 
-        return res.status(201).json({
-            status: 'success',
-            message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
-            data: { pr_id: prIdNum, insertIds }
-        });
-    } catch (error) {
-        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
-    }
+		return res.status(201).json({
+			status: 'success',
+			message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
+			data: { pr_id: prIdNum, insertIds }
+		});
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
+	}
 }
 
 // TYPES
@@ -410,6 +410,70 @@ export const getTypes = async (req: Request, res: Response) => {
 		message: 'Asset type retrieved successfully',
 		data
 	});
+};
+
+// ===== Spec properties (master) controller =====
+export const getSpecProperties = async (req: Request, res: Response) => {
+	const typeParam = req.query.type || req.params.type_id;
+	if (typeParam === undefined || typeParam === null || String(typeParam).trim() === '') {
+		const rows = await assetModel.getAllSpecProperties();
+		return res.json({ status: 'success', message: 'All spec properties retrieved', data: rows });
+	}
+	const typeId = Number(typeParam);
+	if (!typeId || isNaN(typeId)) return res.status(400).json({ status: 'error', message: 'type_id is invalid' });
+	const rows = await assetModel.getSpecPropertiesByType(typeId);
+	res.json({ status: 'success', message: 'Spec properties retrieved', data: rows });
+};
+
+export const createSpecProperty = async (req: Request, res: Response) => {
+	try {
+		const payload = req.body;
+		// payload: { type_id, name, label, data_type, nullable, default_value, options }
+		const result: any = await assetModel.createSpecProperty(payload);
+		res.status(201).json({ status: 'success', message: 'Spec property created', data: result });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Unknown error';
+		res.status(500).json({ status: 'error', message, data: null });
+	}
+};
+
+export const applySpecProperty = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	const spec = await assetModel.getSpecPropertyById(id);
+	if (!spec) return res.status(404).json({ status: 'error', message: 'Spec property not found' });
+	const result: any = await assetModel.applySpecPropertyToType(spec);
+	if (result.ok) {
+		res.json({ status: 'success', message: 'Spec applied to type table', data: null });
+	} else {
+		res.status(500).json({ status: 'error', message: 'Failed to apply spec', data: result.error });
+	}
+};
+
+export const updateSpecProperty = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	const result = await assetModel.updateSpecProperty(id, req.body);
+	res.json({ status: 'success', message: 'Spec property updated', data: result });
+};
+
+export const deleteSpecProperty = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	const drop = req.query.drop === '1' || req.query.drop === 'true';
+	const result = await assetModel.deleteSpecProperty(id, drop);
+	res.json({ status: 'success', message: 'Spec property deleted', data: result });
+};
+
+export const applyPendingSpecProperties = async (req: Request, res: Response) => {
+	const typeParam = req.query.type || req.body.type_id;
+	let typeId: number | undefined = undefined;
+	if (typeParam !== undefined && typeParam !== null && String(typeParam).trim() !== '') {
+		typeId = Number(typeParam);
+		if (isNaN(typeId)) return res.status(400).json({ status: 'error', message: 'type_id is invalid' });
+	}
+	const results = await assetModel.applyPendingSpecProperties(typeId);
+	res.json({ status: 'success', message: 'Apply results', data: results });
 };
 export const getTypeById = async (req: Request, res: Response) => {
 	const row = await assetModel.getTypeById(Number(req.params.id));
@@ -648,13 +712,13 @@ export const getBrands = async (req: Request, res: Response) => {
 		// Get models for this brand
 		const modelsForBrand = modelsMap.get(brand.id) || [];
 
-    data.push({
-        id: brand.id.toString(),
-        name: brand.name,
-        type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null,
-        categories: categoriesForBrand,
-        models: modelsForBrand
-    });
+		data.push({
+			id: brand.id.toString(),
+			name: brand.name,
+			type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null,
+			categories: categoriesForBrand,
+			models: modelsForBrand
+		});
 	}
 
 	res.json({

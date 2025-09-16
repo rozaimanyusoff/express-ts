@@ -32,6 +32,16 @@ router.post('/models', asyncHandler(assetController.createModel));
 router.put('/models/:id', asyncHandler(assetController.updateModel));
 router.delete('/models/:id', asyncHandler(assetController.deleteModel));
 
+// SPEC PROPERTIES (master table)
+router.get('/spec-properties', asyncHandler(assetController.getSpecProperties)); // ?type={type_id}
+router.post('/spec-properties', asyncHandler(assetController.createSpecProperty));
+// Trigger applying metadata to the per-type spec table (ALTER TABLE)
+router.post('/spec-properties/:id/apply', asyncHandler(assetController.applySpecProperty));
+// Apply all pending spec properties (optionally filter by ?type=)
+router.post('/spec-properties/apply-pending', asyncHandler(assetController.applyPendingSpecProperties));
+router.put('/spec-properties/:id', asyncHandler(assetController.updateSpecProperty));
+router.delete('/spec-properties/:id', asyncHandler(assetController.deleteSpecProperty));
+
 
 // DEPARTMENTS
 router.get('/departments', asyncHandler(assetController.getDepartments));
