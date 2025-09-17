@@ -1,8 +1,6 @@
 import { pool, pool2 } from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
-import fs from 'fs';
 import path from 'path';
-import { get } from "axios";
 
 // Database and table declarations for easy swapping/testing
 const db = 'assets';

@@ -18,7 +18,7 @@ import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActi
 import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
 import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
 import { v4 as uuidv4 } from 'uuid';
-import assetModel from '../../p.asset/assetModel';
+import * as assetModel from '../../p.asset/assetModel';
 import {pool} from '../../utils/db';
 
 dotenv.config();

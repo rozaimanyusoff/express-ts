@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
 import * as assetModel from './assetModel';
 import * as billingModel from '../p.billing/billingModel';
-import path from 'path';
-import { getAssetsByIds, getStringParam } from "./assetModel";
 import { sendMail } from '../utils/mailer';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
