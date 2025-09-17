@@ -1152,46 +1152,126 @@ export const createSpecProperty = async (data: any) => {
     `INSERT INTO ${assetSpecsTable} (type_id, name, column_name, label, data_type, nullable, default_value, options, created_by, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [type_id, name, col, label, data_type, nullable ? 1 : 0, default_value, options ? JSON.stringify(options) : null, created_by]
   );
-  return { insertId: (result as any).insertId, column_name: col };
+  const insertId = (result as any).insertId;
+  // Fetch the inserted row and attempt to apply it immediately (best-effort)
+  try {
+    const specRow = await getSpecPropertyById(insertId);
+    if (specRow) {
+      const applyRes: any = await applySpecPropertyToType(specRow);
+      return { insertId, column_name: col, applied: applyRes && applyRes.ok, applyError: applyRes && applyRes.error ? applyRes.error : null };
+    }
+  } catch (err) {
+    // swallow errors here; caller can call applyPendingSpecProperties if needed
+    return { insertId, column_name: col, applied: false, applyError: err instanceof Error ? err.message : String(err) };
+  }
+  return { insertId, column_name: col, applied: false };
 };
+
+// Helper to check whether a column exists in a given schema.table
+async function columnExistsInTable(fullTableName: string, columnName: string) {
+  // fullTableName format: `${schema}.${table}`
+  const parts = String(fullTableName).split('.');
+  let schema = parts.length > 1 ? parts[0] : null;
+  let table = parts.length > 1 ? parts[1] : parts[0];
+  if (!schema) schema = db; // fallback
+  const [rows] = await pool.query(
+    `SELECT COUNT(1) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [schema, table, columnName]
+  );
+  const cnt = Array.isArray(rows) && (rows as any[])[0] ? (rows as any[])[0].cnt : 0;
+  return Number(cnt) > 0;
+}
 
 export const applySpecPropertyToType = async (specProperty: any) => {
   // specProperty is a row from spec_properties table (must include type_id, column_name, data_type, nullable, default_value)
   const tableName = mapTypeIdToSpecTable(Number(specProperty.type_id));
   if (!tableName) throw new Error(`No spec table mapped for type_id ${specProperty.type_id}`);
-  const column = specProperty.column_name;
+  const column = sanitizeColumnName(specProperty.column_name);
   if (!/^[a-z][a-z0-9_]{0,119}$/.test(column)) throw new Error('Invalid column name');
   const sqlType = mapDataTypeToSql(specProperty.data_type);
   const nullable = specProperty.nullable ? 'NULL' : 'NOT NULL';
-  const defaultClause = (specProperty.default_value !== null && specProperty.default_value !== undefined)
+  const defaultClause = (specProperty.default_value !== null && specProperty.default_value !== undefined && specProperty.default_value !== '')
     ? `DEFAULT '${String(specProperty.default_value).replace(/'/g, "\\'")}'`
     : '';
-  // Note: mysql2's pool.query will not accept parameterized column names/types, so we must build a safe string after sanitization
+
   try {
-    // Execute the ALTER TABLE after sanitization
-    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${column}\` ${sqlType} ${nullable} ${defaultClause}`);
+    const exists = await columnExistsInTable(tableName, column);
+    const columnDef = `${sqlType} ${nullable} ${defaultClause}`.trim();
+    if (exists) {
+      // Modify existing column to match new definition
+      await pool.query(`ALTER TABLE ${tableName} MODIFY COLUMN \`${column}\` ${columnDef}`);
+    } else {
+      // Add new column
+      await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${column}\` ${columnDef}`);
+    }
     // mark active
     await pool.query(`UPDATE ${assetSpecsTable} SET is_active = 1, updated_at = NOW() WHERE id = ?`, [specProperty.id]);
     return { ok: true };
   } catch (err) {
-    // do not throw raw DB errors up; return info for caller (controller/worker) to handle
     return { ok: false, error: (err as Error).message };
   }
 };
 
 export const updateSpecProperty = async (id: number, data: any) => {
-  // Only allow safe updates to metadata (label, nullable, default_value, options, is_active)
+  // Fetch current row to diff changes
+  const existing = await getSpecPropertyById(id);
+  if (!existing) throw new Error('Spec property not found');
+
+  // Allow updates to: label, nullable, default_value, options, is_active, column_name, data_type, name
   const sets: string[] = [];
   const params: any[] = [];
+  if (data.name !== undefined) { sets.push('name = ?'); params.push(data.name); }
+  if (data.column_name !== undefined) { sets.push('column_name = ?'); params.push(sanitizeColumnName(data.column_name)); }
   if (data.label !== undefined) { sets.push('label = ?'); params.push(data.label); }
   if (data.nullable !== undefined) { sets.push('nullable = ?'); params.push(data.nullable ? 1 : 0); }
   if (data.default_value !== undefined) { sets.push('default_value = ?'); params.push(data.default_value); }
   if (data.options !== undefined) { sets.push('options = ?'); params.push(JSON.stringify(data.options)); }
+  if (data.data_type !== undefined) { sets.push('data_type = ?'); params.push(data.data_type); }
   if (data.is_active !== undefined) { sets.push('is_active = ?'); params.push(data.is_active ? 1 : 0); }
   if (sets.length === 0) return { affectedRows: 0 } as any;
   params.push(id);
   const sql = `UPDATE ${assetSpecsTable} SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ?`;
   const [result] = await pool.query(sql, params);
+
+  // Fetch updated row
+  const updated = await getSpecPropertyById(id);
+  try {
+    const tableName = mapTypeIdToSpecTable(Number(updated.type_id));
+    if (tableName) {
+      // If column name changed and the column existed before, rename it
+      const oldCol = existing.column_name;
+      const newCol = updated.column_name;
+      const sqlType = mapDataTypeToSql(updated.data_type);
+      const nullableClause = updated.nullable ? 'NULL' : 'NOT NULL';
+      const defaultClause = (updated.default_value !== null && updated.default_value !== undefined && updated.default_value !== '')
+        ? `DEFAULT '${String(updated.default_value).replace(/'/g, "\\'")}'`
+        : '';
+      const columnDef = `${sqlType} ${nullableClause} ${defaultClause}`.trim();
+
+      if (oldCol && newCol && oldCol !== newCol) {
+        // Only attempt rename if old column exists
+        const existsOld = await columnExistsInTable(tableName, oldCol);
+        if (existsOld) {
+          await pool.query(`ALTER TABLE ${tableName} CHANGE \`${oldCol}\` \`${newCol}\` ${columnDef}`);
+        } else {
+          // Old column missing: try adding the new column
+          await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${newCol}\` ${columnDef}`);
+        }
+      } else {
+        // Column name unchanged: modify type/null/default if column exists
+        const exists = await columnExistsInTable(tableName, newCol);
+        if (exists) {
+          await pool.query(`ALTER TABLE ${tableName} MODIFY COLUMN \`${newCol}\` ${columnDef}`);
+        } else if (updated.is_active) {
+          // column missing but metadata indicates active => try to create
+          await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${newCol}\` ${columnDef}`);
+        }
+      }
+    }
+  } catch (err) {
+    // ignore DB errors here; caller can inspect returned result if needed
+  }
+
   return result;
 };
 
