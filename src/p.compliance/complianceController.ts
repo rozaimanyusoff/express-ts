@@ -724,11 +724,59 @@ export const getSummonTypesWithAgencies = async (req: Request, res: Response) =>
   }
 };
 
+
 /* ========== ASSESSMENT CRITERIA CONTROLLERS ========== */
 export const getAssessmentCriteria = async (req: Request, res: Response) => {
   try {
+    // Accept optional query params: ?status=active|inactive and ?type={type}
+    const statusParam = typeof req.query.status === 'string' ? String(req.query.status).trim().toLowerCase() : undefined;
+    const typeParam = typeof req.query.type === 'string' ? String(req.query.type).trim() : undefined;
+
+    // Validate status if provided
+    if (statusParam !== undefined && statusParam !== '' && !['active', 'inactive', '1', '0'].includes(statusParam)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid status filter. Use active or inactive', data: null });
+    }
+
     const rows = await summonModel.getAssessmentCriteria();
-    return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: rows });
+
+    // If no filters, return raw rows
+    if ((!statusParam || String(statusParam).trim() === '') && (!typeParam || String(typeParam).trim() === '')) {
+      return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: rows });
+    }
+
+    // Helper to interpret qset_stat values flexibly
+    const statusMatches = (rowStat: any, wanted: string) => {
+      if (wanted === undefined || wanted === '') return true;
+      const s = String(rowStat ?? '').toLowerCase();
+      if (wanted === 'active' || wanted === '1') {
+        return s === 'active' || s === '1' || s === 'a' || s === 'y' || s === 'yes' || s === 'enabled';
+      }
+      if (wanted === 'inactive' || wanted === '0') {
+        return s === 'inactive' || s === '0' || s === 'i' || s === 'n' || s === 'no' || s === 'disabled';
+      }
+      return s === wanted;
+    };
+
+    // Helper to match type: be permissive about field name (qset_type, type, qset_for)
+    const typeMatches = (row: any, wanted: string) => {
+      if (wanted === undefined || wanted === '') return true;
+      const candidates = [row.qset_type, row.type, row.qset_for, row.qset_id, row.qset_quesno];
+      for (const c of candidates) {
+        if (c === undefined || c === null) continue;
+        if (String(c) === wanted) return true;
+        // numeric compare
+        if (!isNaN(Number(wanted)) && Number(c) === Number(wanted)) return true;
+      }
+      return false;
+    };
+
+    const filtered = (rows || []).filter((r: any) => {
+      const okStatus = statusParam ? statusMatches(r.qset_stat, statusParam) : true;
+      const okType = typeParam ? typeMatches(r, typeParam) : true;
+      return okStatus && okType;
+    });
+
+    return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: filtered });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', data: null });
   }
