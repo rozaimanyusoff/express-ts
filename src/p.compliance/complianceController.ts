@@ -723,3 +723,75 @@ export const getSummonTypesWithAgencies = async (req: Request, res: Response) =>
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch types with agencies', data: null });
   }
 };
+
+/* ========== ASSESSMENT CRITERIA CONTROLLERS ========== */
+export const getAssessmentCriteria = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getAssessmentCriteria();
+    return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: rows });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', data: null });
+  }
+};
+
+export const getAssessmentCriteriaById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getAssessmentCriteriaById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment criteria not found', data: null });
+    return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: row });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', data: null });
+  }
+};
+
+export const createAssessmentCriteria = async (req: Request, res: Response) => {
+  try {
+    const data: any = req.body || {};
+    const qset_id = await summonModel.createAssessmentCriteria(data);
+    return res.status(201).json({ status: 'success', message: 'Assessment criteria created', data: { qset_id } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment criteria', data: null });
+  }
+};
+
+export const updateAssessmentCriteria = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+    await summonModel.updateAssessmentCriteria(id, data);
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment criteria', data: null });
+  }
+};
+
+export const deleteAssessmentCriteria = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteAssessmentCriteria(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment criteria', data: null });
+  }
+};
+
+export const reorderAssessmentCriteria = async (req: Request, res: Response) => {
+  try {
+    const qset_id = Number(req.params.id);
+    if (!qset_id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const newOrderRaw = req.body && (req.body.qset_order ?? req.body.newOrder ?? req.body.order);
+    if (newOrderRaw === undefined || newOrderRaw === null) return res.status(400).json({ status: 'error', message: 'new qset_order is required' });
+    const newOrder = Number(newOrderRaw);
+    if (!Number.isFinite(newOrder) || newOrder < 1) return res.status(400).json({ status: 'error', message: 'Invalid new qset_order' });
+
+    await summonModel.reorderAssessmentCriteria(qset_id, newOrder);
+    return res.json({ status: 'success', message: 'Reordered' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to reorder assessment criteria', data: null });
+  }
+};

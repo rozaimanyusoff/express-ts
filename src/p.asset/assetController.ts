@@ -154,23 +154,23 @@ export const getAssets = async (req: Request, res: Response) => {
 				: null,
 			status: asset.status,
 			disposed_date: asset.disposed_date,
-			types: type ? {
+			type: type ? {
 				id: type.id,
 				name: type.name
 			} : null,
-			categories: asset.category_id && categoryMap.has(asset.category_id)
+			category: asset.category_id && categoryMap.has(asset.category_id)
 				? {
 					id: asset.category_id,
 					name: categoryMap.get(asset.category_id)?.name || null
 				}
 				: null,
-			brands: asset.brand_id && brandMap.has(asset.brand_id)
+			brand: asset.brand_id && brandMap.has(asset.brand_id)
 				? {
 					id: asset.brand_id,
 					name: brandMap.get(asset.brand_id)?.name || null
 				}
 				: null,
-			models: asset.model_id && modelMap.has(asset.model_id)
+			model: asset.model_id && modelMap.has(asset.model_id)
 				? {
 					id: asset.model_id,
 					name: modelMap.get(asset.model_id)?.name || null
@@ -253,31 +253,25 @@ export const getAssetById = async (req: Request, res: Response) => {
 		}
 	}
 
-	// Build specs
+	// Build specs dynamically based on type_id (per-type spec tables named '{type_id}_specs')
 	const type = typeMap.get(asset.type_id);
 	let specs: any = null;
-	if (type && type.id === 1) {
-		const compSpecsArr = await assetModel.getComputerSpecsForAsset(asset.id);
-		if (Array.isArray(compSpecsArr) && compSpecsArr.length > 0) {
-			const compSpecs = compSpecsArr[0];
-			// Fetch installed software for this asset
-			const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
+	if (type && Number.isFinite(type.id)) {
+		// fetch from dynamic per-type spec table
+		const specRows = await assetModel.getSpecsForAsset(type.id, asset.id);
+		if (Array.isArray(specRows) && specRows.length > 0) {
+			// use the first row as the spec data (tables store one row per asset)
+			const specData = specRows[0];
+			// Only include the per-type spec fields; categories/brands/models are already present above
 			specs = {
-				categories: asset.category_id ? {
-					category_id: asset.category_id,
-					name: categoryMap.get(asset.category_id)?.name || null
-				} : null,
-				brands: asset.brand_id ? {
-					brand_id: asset.brand_id,
-					name: brandMap.get(asset.brand_id)?.name || null
-				} : null,
-				models: asset.model_id ? {
-					model_id: asset.model_id,
-					name: modelMap.get(asset.model_id)?.name || null
-				} : null,
-				...compSpecs,
-				installed_software: installedSoftware || []
+				...specData
 			};
+
+			// For computers (type 1) include installed software
+			if (type.id === 1) {
+				const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
+				specs.installed_software = installedSoftware || [];
+			}
 		}
 	}
 
@@ -298,7 +292,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 			: null,
 		disposed_date: asset.disposed_date,
 		type: type ? {
-			type_id: type.id,
+			id: type.id,
 			name: type.name
 		} : null,
 		category: asset.category_id && categoryMap.has(asset.category_id)
@@ -310,7 +304,8 @@ export const getAssetById = async (req: Request, res: Response) => {
 		model: asset.model_id && modelMap.has(asset.model_id)
 			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
 			: null,
-		owner: ownershipsByAsset[asset.id] || []
+		owner: ownershipsByAsset[asset.id] || [],
+		specs,
 	};
 
 	res.json({

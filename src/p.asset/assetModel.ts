@@ -1060,11 +1060,7 @@ export const getBrandByCode = async (code: string | number) => {
 
 // Fetch specs for an asset (by asset_id)
 export async function getComputerSpecsForAsset(asset_id: number) {
-  const [rows] = await pool.query(
-    `SELECT * FROM ${computerSpecsTable} WHERE asset_id = ?`,
-    [asset_id]
-  );
-  return rows;
+  return getSpecsForAsset(1, asset_id);
 }
 
 // Fetch installed software for an asset (by asset_id)
@@ -1081,11 +1077,7 @@ export async function getInstalledSoftwareForAsset(asset_id: number) {
 
 // Fetch vehicle specs for an asset (by asset_id)
 export async function getVehicleSpecsForAsset(asset_id: number) {
-  const [rows] = await pool.query(
-    `SELECT * FROM ${vehicleSpecsTable} WHERE asset_id = ?`,
-    [asset_id]
-  );
-  return rows;
+  return getSpecsForAsset(2, asset_id);
 }
 
 // ===== Spec properties (master) + schema application helpers =====
@@ -1122,12 +1114,24 @@ function mapDataTypeToSql(dataType: string): string {
 }
 
 function mapTypeIdToSpecTable(type_id: number): string | null {
-  // Extend mapping as more type-specific spec tables are added
-  if (type_id === 1) return computerSpecsTable; // computers
-  if (type_id === 2) return vehicleSpecsTable; // vehicles
-  // default: null => no per-type table
-  return null;
+  // New convention: per-type spec tables are named '{type_id}_specs' within the assets schema
+  // e.g. assets.1_specs, assets.2_specs
+  if (!Number.isFinite(type_id) || type_id <= 0) return null;
+  return `${db}.${type_id}_specs`;
 }
+
+// Generic spec fetcher for per-type spec tables named '{type_id}_specs'
+export const getSpecsForAsset = async (type_id: number, asset_id: number) => {
+  const table = mapTypeIdToSpecTable(type_id);
+  if (!table) return [] as any[];
+  try {
+    const [rows] = await pool.query(`SELECT * FROM ${table} WHERE asset_id = ?`, [asset_id]);
+    return rows as any[];
+  } catch (err) {
+    // Table may not exist yet; return empty array to avoid throwing from model layer
+    return [] as any[];
+  }
+};
 
 export const getSpecPropertiesByType = async (type_id: number) => {
   const [rows] = await pool.query(`SELECT * FROM ${assetSpecsTable} WHERE type_id = ? ORDER BY id`, [type_id]);

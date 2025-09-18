@@ -36,4 +36,13 @@ router.post('/summon/notify', asyncHandler(summonController.resendSummonNotifica
 router.delete('/summon/:id', asyncHandler(summonController.deleteSummon));
 
 
+/* ========== ASSESSMENT CRITERIA ROUTES ========== */
+router.get('/assessment-criteria/:id', asyncHandler(summonController.getAssessmentCriteriaById));
+router.get('/assessment-criteria', asyncHandler(summonController.getAssessmentCriteria));
+router.post('/assessment-criteria', asyncHandler(summonController.createAssessmentCriteria));
+router.put('/assessment-criteria/:id', asyncHandler(summonController.updateAssessmentCriteria));
+router.delete('/assessment-criteria/:id', asyncHandler(summonController.deleteAssessmentCriteria));
+router.put('/assessment-criteria/:id/reorder', asyncHandler(summonController.reorderAssessmentCriteria));
+
+
 export default router;

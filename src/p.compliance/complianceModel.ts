@@ -2,10 +2,14 @@ import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
 const dbName = 'compliance';
+const assessmentDb = 'assets';
 const summonTable = `${dbName}.summon`;
 const summonTypeTable = `${dbName}.summon_type`;
 const summonAgencyTable = `${dbName}.summon_agency`;
 const summonTypeAgencyTable = `${dbName}.summon_type_agency`;
+
+const assessmentCriteriaTable = `${assessmentDb}.v_assess_qset`;
+
 
 export interface SummonType {
   id?: number;
@@ -323,4 +327,103 @@ export const deleteSummon = async (id: number): Promise<void> => {
   const [result] = await pool2.query(`DELETE FROM ${summonTable} WHERE smn_id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Summon record not found');
+};
+
+/* ========== ASSESSMENT CRITERIA ========== */
+export interface AssessmentCriteria {
+  qset_id?: number;
+  q_id?: number;
+  qset_quesno?: number;
+  qset_desc?: string;
+  qset_stat?: string;
+  qset_order?: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export const getAssessmentCriteria = async (): Promise<AssessmentCriteria[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} ORDER BY qset_id DESC`);
+  return rows as AssessmentCriteria[];
+};
+
+export const getAssessmentCriteriaById = async (id: number): Promise<AssessmentCriteria | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
+  const data = rows as AssessmentCriteria[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createAssessmentCriteria = async (data: Partial<AssessmentCriteria>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload: any = { ...data, created_at: now, updated_at: now };
+  const [result] = await pool2.query(`INSERT INTO ${assessmentCriteriaTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateAssessmentCriteria = async (id: number, data: Partial<AssessmentCriteria>) => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${assessmentCriteriaTable} SET ${fields} WHERE qset_id = ?`, [...values, id]);
+  }
+};
+
+export const deleteAssessmentCriteria = async (id: number) => {
+  const [result] = await pool2.query(`DELETE FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Assessment criteria not found');
+};
+
+// Reorder an assessment criteria item by changing its qset_order and shifting others
+export const reorderAssessmentCriteria = async (qset_id: number, newOrderInput: number) => {
+  const conn = await pool2.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // fetch current order
+    const [rows] = await conn.query(`SELECT qset_order FROM ${assessmentCriteriaTable} WHERE qset_id = ? FOR UPDATE`, [qset_id]);
+    const data = rows as any[];
+    if (!data || data.length === 0) throw new Error('Assessment criteria not found');
+    const currentOrder = Number(data[0].qset_order) || 0;
+
+    // determine bounds
+    const [maxRows] = await conn.query(`SELECT MAX(qset_order) as maxOrder FROM ${assessmentCriteriaTable}`);
+    const maxOrder = (Array.isArray(maxRows) && (maxRows as any[])[0] && (maxRows as any[])[0].maxOrder) ? Number((maxRows as any[])[0].maxOrder) : currentOrder;
+
+    let newOrder = Number(newOrderInput) || 0;
+    if (newOrder < 1) newOrder = 1;
+    if (newOrder > maxOrder) newOrder = maxOrder;
+
+    if (newOrder === currentOrder) {
+      await conn.commit();
+      return;
+    }
+
+    const now = formatToMySQLDatetime(new Date());
+
+    if (newOrder < currentOrder) {
+      // shift others down (increment) to make space
+      await conn.query(
+        `UPDATE ${assessmentCriteriaTable} SET qset_order = qset_order + 1, updated_at = ? WHERE qset_order >= ? AND qset_order < ?`,
+        [now, newOrder, currentOrder]
+      );
+    } else {
+      // newOrder > currentOrder: shift others up (decrement)
+      await conn.query(
+        `UPDATE ${assessmentCriteriaTable} SET qset_order = qset_order - 1, updated_at = ? WHERE qset_order <= ? AND qset_order > ?`,
+        [now, newOrder, currentOrder]
+      );
+    }
+
+    // set target item to newOrder
+    await conn.query(`UPDATE ${assessmentCriteriaTable} SET qset_order = ?, updated_at = ? WHERE qset_id = ?`, [newOrder, now, qset_id]);
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
 };

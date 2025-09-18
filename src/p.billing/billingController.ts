@@ -2305,7 +2305,20 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 	}
 
 	// First, create DB record (without ubill_ref)
-	const id = await billingModel.createUtilityBill(payload);
+	let id: number;
+	try {
+		id = await billingModel.createUtilityBill(payload);
+	} catch (err: any) {
+		// Handle duplicate/unique constraint errors gracefully
+		const msg = err && (err.message || err.sqlMessage || err.toString());
+		const code = err && err.code;
+		// Common MySQL duplicate error code is 'ER_DUP_ENTRY' or message contains 'Duplicate' / 'already exists'
+		if (String(code) === 'ER_DUP_ENTRY' || (typeof msg === 'string' && (/duplicate|already exists|duplicate entry|unique constraint/i).test(msg))) {
+			return res.status(409).json({ status: 'error', message: 'Utility bill already exists' });
+		}
+		// rethrow unknown errors to be handled by outer try/catch below
+		throw err;
+	}
 
 	let finalRef: string | null = null;
 	if (file) {
