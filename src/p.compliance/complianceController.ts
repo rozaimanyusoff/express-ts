@@ -119,7 +119,7 @@ export const getSummons = async (req: Request, res: Response) => {
       const summon_receipt = toPublicUrl(rawReceipt);
       const attachment_url = summon_upl || summon_receipt || null;
 
-      let asset = null;
+  let asset = null;
       if (r.asset_id && assetMap.has(r.asset_id)) {
         const a = assetMap.get(r.asset_id);
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
@@ -841,5 +841,272 @@ export const reorderAssessmentCriteria = async (req: Request, res: Response) => 
     return res.json({ status: 'success', message: 'Reordered' });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to reorder assessment criteria', data: null });
+  }
+};
+
+/* ========== ASSESSMENTS (parent) CONTROLLERS ========== */
+export const getAssessments = async (req: Request, res: Response) => {
+  try {
+    const rows = await summonModel.getAssessments();
+
+    // enrich asset_id into full asset object (reuse same enrichment pattern as summons)
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+
+    const assetMap = new Map();
+    for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+    const data = (rows || []).map((r: any) => {
+      let asset = null;
+      if (r.asset_id && assetMap.has(r.asset_id)) {
+        const a = assetMap.get(r.asset_id);
+        // compute purchase_date and age if available
+        const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
+        let age: number | null = null;
+        if (purchase_date) {
+          const pd = new Date(String(purchase_date));
+          if (!isNaN(pd.getTime())) {
+            const diffMs = Date.now() - pd.getTime();
+            age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365));
+          }
+        }
+        const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        asset = {
+          id: r.asset_id,
+          register_number: a.register_number || a.vehicle_regno || null,
+          purchase_date,
+          age,
+          costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          location: (() => {
+            const locId = a.location_id ?? a.location?.id ?? null;
+            if (!locId) return null;
+            const found = locationMap.get(locId);
+            return found ? { id: locId, code: found.code || found.name || null } : null;
+          })(),
+          owner
+        };
+      }
+      // omit reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id from response (these are internal identifiers)
+      const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, ...clean } = r as any;
+      // attach assessment_location resolved from loc_id (if present)
+      const assessment_location = (r.loc_id && locationMap.has(r.loc_id)) ? (() => {
+        const l = locationMap.get(r.loc_id);
+        return { id: r.loc_id, code: l.code || l.name || null };
+      })() : null;
+      return { ...clean, asset, assessment_location };
+    });
+
+    return res.json({ status: 'success', message: 'Assessments retrieved', data });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessments', data: null });
+  }
+};
+
+export const getAssessmentById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getAssessmentById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment not found', data: null });
+  // also fetch child details and include them
+  const details = await summonModel.getAssessmentDetails(id).catch(() => []);
+
+  // load assessment criteria to resolve adt_item (qset_id) -> qset_desc
+  const criteriaRaw = await summonModel.getAssessmentCriteria().catch(() => []);
+  const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+  const qsetMap = new Map<number, string>();
+  for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+
+  // enrich asset_id into full asset object (reuse same enrichment pattern as other endpoints)
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const assetMap = new Map();
+    for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+  let asset = null;
+    if ((row as any).asset_id && assetMap.has((row as any).asset_id)) {
+      const a = assetMap.get((row as any).asset_id);
+      // compute purchase_date and age if available
+      const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
+      let age: number | null = null;
+      if (purchase_date) {
+        const pd = new Date(String(purchase_date));
+        if (!isNaN(pd.getTime())) {
+          const diffMs = Date.now() - pd.getTime();
+          age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365));
+        }
+      }
+      const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+      asset = {
+        id: (row as any).asset_id,
+        register_number: a.register_number || a.vehicle_regno || null,
+        purchase_date,
+        age,
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+        location: (() => {
+          const locId = a.location_id ?? a.location?.id ?? null;
+          if (!locId) return null;
+          const found = locationMap.get(locId);
+          return found ? { id: locId, code: found.code || found.name || null } : null;
+        })(),
+        owner
+      };
+    }
+
+    // attach qset_desc to each detail (if available)
+    const enrichedDetails = (Array.isArray(details) ? details : []).map((d: any) => {
+      const qid = d && d.adt_item ? Number(d.adt_item) : null;
+      const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
+      const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
+      // remove internal ids from detail response
+      const { vehicle_id, asset_id, ...rest } = d || {};
+      return { ...rest, qset_desc, qset_type };
+    });
+
+    // omit internal fields before returning
+    const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, ...cleanRow } = row as any;
+    const assessment_location = ((row as any).loc_id && locationMap.has((row as any).loc_id)) ? (() => {
+      const l = locationMap.get((row as any).loc_id);
+      return { id: (row as any).loc_id, code: l.code || l.name || null };
+    })() : null;
+    return res.json({ status: 'success', message: 'Assessment retrieved', data: { ...cleanRow, asset, assessment_location, details: enrichedDetails } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment', data: null });
+  }
+};
+
+export const createAssessment = async (req: Request, res: Response) => {
+  try {
+    const data: any = req.body || {};
+    const id = await summonModel.createAssessment(data);
+    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment', data: null });
+  }
+};
+
+export const updateAssessment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+    await summonModel.updateAssessment(id, data);
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment', data: null });
+  }
+};
+
+export const deleteAssessment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteAssessment(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment', data: null });
+  }
+};
+
+/* ========== ASSESSMENT DETAILS (child) CONTROLLERS ========== */
+export const getAssessmentDetails = async (req: Request, res: Response) => {
+  try {
+    const assess_id = Number(req.params.assessId || req.query.assess_id || req.query.assessId);
+    if (!assess_id) return res.status(400).json({ status: 'error', message: 'Invalid assess_id' });
+    const rows = await summonModel.getAssessmentDetails(assess_id);
+    const criteriaRaw = await summonModel.getAssessmentCriteria().catch(() => []);
+    const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+    const qsetMap = new Map<number, string>();
+    for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+    const enriched = (Array.isArray(rows) ? rows : []).map((r: any) => {
+      const qid = r && r.adt_item ? Number(r.adt_item) : null;
+      const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
+      const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
+      const { vehicle_id, asset_id, ...rest } = r || {};
+      return { ...rest, qset_desc, qset_type };
+    });
+    return res.json({ status: 'success', message: 'Assessment details retrieved', data: enriched });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment details', data: null });
+  }
+};
+
+export const getAssessmentDetailById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const row = await summonModel.getAssessmentDetailById(id);
+    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment detail not found', data: null });
+    const criteriaRaw = await summonModel.getAssessmentCriteria().catch(() => []);
+    const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+    const qsetMap = new Map<number, string>();
+    for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+  const qid = row && (row as any).adt_item ? Number((row as any).adt_item) : null;
+  const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
+  const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
+  const { vehicle_id, asset_id, ...rest } = (row as any) || {};
+  return res.json({ status: 'success', message: 'Assessment detail retrieved', data: { ...rest, qset_desc, qset_type } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment detail', data: null });
+  }
+};
+
+export const createAssessmentDetail = async (req: Request, res: Response) => {
+  try {
+    const data: any = req.body || {};
+    const id = await summonModel.createAssessmentDetail(data);
+    return res.status(201).json({ status: 'success', message: 'Assessment detail created', data: { id } });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment detail', data: null });
+  }
+};
+
+export const updateAssessmentDetail = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    const data: any = req.body || {};
+    await summonModel.updateAssessmentDetail(id, data);
+    return res.json({ status: 'success', message: 'Updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment detail', data: null });
+  }
+};
+
+export const deleteAssessmentDetail = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    await summonModel.deleteAssessmentDetail(id);
+    return res.json({ status: 'success', message: 'Deleted' });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment detail', data: null });
   }
 };
