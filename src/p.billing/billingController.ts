@@ -238,8 +238,23 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		inv_stat: body.inv_stat
 	};
 
-	// Handle parts: insert custom parts into service parts table
-	let parts = Array.isArray(body.parts) ? [...body.parts] : [];
+	// If this was a multipart/form-data request, req.file may contain the uploaded file
+	// Normalize and attach to updateData so the DB update sets the correct upload column.
+	// Note: multer puts the file on req.file and other fields remain in req.body (strings).
+	const uploadedFile = (req as any).file;
+	if (uploadedFile && uploadedFile.path) {
+		const normalized = normalizeStoredPath(uploadedFile.path);
+		if (normalized) updateData.attachment = normalized; // passed to updateVehicleMtnBilling -> upload column
+	}
+	// ensure we also set upload in updateData to match DB column used by model
+	if (updateData.attachment) updateData.upload = updateData.attachment;
+
+	// Handle parts: body.parts can be an array or a JSON string when using multipart/form-data
+	let parts: any[] = [];
+	if (Array.isArray(body.parts)) parts = [...body.parts];
+	else if (typeof body.parts === 'string') {
+		try { parts = JSON.parse(body.parts); } catch (e) { parts = []; }
+	}
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
 		if (part && part.is_custom && part.autopart_id && part.autopart_id < 0) {
@@ -259,12 +274,14 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		await billingModel.createVehicleMtnBillingParts(id, parts);
 	}
 
-	await billingModel.updateVehicleMtnBilling(id, updateData);
-
-	// Handle attachment if present
-	if (body.attachment && typeof body.attachment === 'string' && body.attachment.trim() !== '') {
-		await billingModel.setVehicleMtnBillingAttachment(id, body.attachment.trim());
+	// If the client provided attachment path as a string field (not file), normalize it too
+	if (!updateData.attachment && body.attachment && typeof body.attachment === 'string' && body.attachment.trim() !== '') {
+		updateData.attachment = normalizeStoredPath(body.attachment.trim()) || body.attachment.trim();
 	}
+	// mirror to `upload` field which is the actual column name used in the model
+	if (updateData.attachment && !updateData.upload) updateData.upload = updateData.attachment;
+
+	await billingModel.updateVehicleMtnBilling(id, updateData);
 
 	res.json({ status: 'success', message: 'Vehicle maintenance billing updated successfully' });
 };
