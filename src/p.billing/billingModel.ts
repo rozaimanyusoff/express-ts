@@ -1,13 +1,19 @@
+// Set the attachment (PDF filename) for a vehicle maintenance billing record
+export const setVehicleMtnBillingAttachment = async (inv_id: number, attachment: string): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${vehicleMtnBillingTable} SET attachment = ? WHERE inv_id = ?`,
+    [attachment, inv_id]
+  );
+};
 import { pool, pool2 } from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
-const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
-const vehicleMtnBillingPartTable = `${dbBillings}.tbl_inv_part`;
+
 const workshopTable = `${dbBillings}.costws`;
 const fuelBillingTable = `${dbBillings}.fuel_stmt`;
 const fuelVehicleAmountTable = `${dbBillings}.fuel_stmt_detail`;
@@ -19,11 +25,165 @@ const utilitiesTable = `${dbBillings}.tbl_util`;
 const billingAccountTable = `${dbBillings}.util_billing_ac`;
 const beneficiaryTable = `${dbBillings}.util_beneficiary`;
 
-const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
 const serviceOptionsTable = `${dbApps}.svctype`;
+const servicePartsTable = `${dbBillings}.autoparts`;
+const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
+const vehicleMtnBillingPartTable = `${dbBillings}.tbl_inv_part`;
 
+//to be removed later
 const tempVehicleRecordTable = `${dbAssets}.assetdata`;
 const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
+const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
+
+/* =================== SERVICE OPTION TABLE ========================== */
+export interface ServiceOption {
+  svcTypeId: number;
+  svcType: string;
+  svcOpt: string;
+  group_desc: string;
+}
+
+export const getServiceOptions = async (): Promise<ServiceOption[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} ORDER BY svcTypeId DESC`);
+  return rows as ServiceOption[];
+};
+export const getServiceOptionById = async (id: number): Promise<ServiceOption | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} WHERE svcTypeId = ?`, [id]);
+  const serviceOption = (rows as ServiceOption[])[0];
+  return serviceOption || null;
+};
+export const createServiceOption = async (data: ServiceOption): Promise<number> => {
+  const [result] = await pool2.query(
+    `INSERT INTO ${serviceOptionsTable} (
+      svcType, svcOpt, group_desc
+    ) VALUES (?, ?, ?)`,
+    [ data.svcType, data.svcOpt, data.group_desc ]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+export const updateServiceOption = async (id: number, data: ServiceOption): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${serviceOptionsTable} SET svcType = ?, svcOpt = ?, group_desc = ? WHERE svcTypeId = ?`,
+    [ data.svcType, data.svcOpt, data.group_desc, id ]
+  );
+};
+
+
+
+/* =================== SERVICE PARTS (autoparts) CRUD =================== */
+export interface ServicePart {
+  autopart_id: number;
+  autocat_id?: string;
+  vtype_id?: string;
+  part_name?: string;
+  part_uprice?: string;
+  part_sst_rate?: number;
+  part_sst_amount?: string;
+  part_disc_amount?: string;
+  part_final_amount?: string;
+  part_stat?: number;
+  reg_date?: string | null;
+}
+
+export const getServiceParts = async (): Promise<ServicePart[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${servicePartsTable} ORDER BY autopart_id DESC`);
+  return rows as ServicePart[];
+};
+
+export const getServicePartById = async (id: number): Promise<ServicePart | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${servicePartsTable} WHERE autopart_id = ?`, [id]);
+  const part = (rows as ServicePart[])[0];
+  return part || null;
+};
+
+export const createServicePart = async (data: Partial<ServicePart>): Promise<number> => {
+  // Prevent duplicate: check for existing part with same part_name (case-insensitive, trimmed)
+  if (data.part_name) {
+    const [rows] = await pool2.query(
+      `SELECT autopart_id FROM ${servicePartsTable} WHERE LOWER(TRIM(part_name)) = LOWER(TRIM(?)) LIMIT 1`,
+      [data.part_name]
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      // Return existing autopart_id
+      return (rows[0] as any).autopart_id;
+    }
+  }
+  const [result] = await pool2.query(
+    `INSERT INTO ${servicePartsTable} (autocat_id, vtype_id, part_name, part_uprice, part_sst_rate, part_sst_amount, part_disc_amount, part_final_amount, part_stat, reg_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    [data.autocat_id ?? null, data.vtype_id ?? null, data.part_name ?? null, data.part_uprice ?? null, data.part_sst_rate ?? null, data.part_sst_amount ?? null, data.part_disc_amount ?? null, data.part_final_amount ?? null, data.part_stat ?? 1]
+  );
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateServicePart = async (id: number, data: Partial<ServicePart>): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${servicePartsTable} SET autocat_id = ?, vtype_id = ?, part_name = ?, part_uprice = ?, part_sst_rate = ?, part_sst_amount = ?, part_disc_amount = ?, part_final_amount = ?, part_stat = ? WHERE autopart_id = ?`,
+    [data.autocat_id ?? null, data.vtype_id ?? null, data.part_name ?? null, data.part_uprice ?? null, data.part_sst_rate ?? null, data.part_sst_amount ?? null, data.part_disc_amount ?? null, data.part_final_amount ?? null, data.part_stat ?? null, id]
+  );
+};
+
+export const deleteServicePart = async (id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${servicePartsTable} WHERE autopart_id = ?`, [id]);
+};
+
+// Count service parts matching optional filters
+export const countServiceParts = async (q?: string, category?: number): Promise<number> => {
+  const where: string[] = [];
+  const params: any[] = [];
+  if (q && q.trim() !== '') {
+    where.push(`(part_name LIKE ? OR autopart_id LIKE ?)`);
+    const like = `%${q}%`;
+    params.push(like, like);
+  }
+  if (Number.isFinite(category)) {
+    where.push(`autocat_id = ?`);
+    params.push(category);
+  }
+  const sql = `SELECT COUNT(*) as cnt FROM ${servicePartsTable}` + (where.length ? ` WHERE ${where.join(' AND ')}` : '');
+  const [rows] = await pool2.query(sql, params);
+  const cnt = Array.isArray(rows) && rows.length > 0 ? (rows as any)[0].cnt : 0;
+  return Number(cnt) || 0;
+};
+
+// Paginated fetch for service parts with optional search q and category filter
+export const getServicePartsPaged = async (q?: string, page: number = 1, per_page: number = 50, category?: number): Promise<ServicePart[]> => {
+  page = Number(page) || 1;
+  per_page = Number(per_page) || 50;
+  const offset = (page - 1) * per_page;
+  const where: string[] = [];
+  const params: any[] = [];
+  if (q && q.trim() !== '') {
+    where.push(`(part_name LIKE ? OR autopart_id LIKE ?)`);
+    const like = `%${q}%`;
+    params.push(like, like);
+  }
+  if (Number.isFinite(category)) {
+    where.push(`autocat_id = ?`);
+    params.push(category);
+  }
+  const sql = `SELECT * FROM ${servicePartsTable}` + (where.length ? ` WHERE ${where.join(' AND ')}` : '') + ` ORDER BY autopart_id DESC LIMIT ? OFFSET ?`;
+  params.push(per_page, offset);
+  const [rows] = await pool2.query(sql, params);
+  return rows as ServicePart[];
+};
+
+// Quick search endpoint for typeahead or global search (not paginated)
+export const searchServiceParts = async (q: string, limit: number = 10): Promise<ServicePart[]> => {
+  const like = `%${q}%`;
+  const [rows] = await pool2.query(`SELECT * FROM ${servicePartsTable} WHERE part_name LIKE ? ORDER BY autopart_id DESC LIMIT ?`, [like, Number(limit) || 10]);
+  return rows as ServicePart[];
+};
+
+// Bulk fetch service parts by autopart_id array
+export const getServicePartsByIds = async (ids: number[]): Promise<ServicePart[]> => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const clean = ids.map((i: any) => Number(i)).filter((n: number) => Number.isFinite(n));
+  if (clean.length === 0) return [];
+  const placeholders = clean.map(() => '?').join(',');
+  const sql = `SELECT * FROM ${servicePartsTable} WHERE autopart_id IN (${placeholders})`;
+  const [rows] = await pool2.query(sql, clean);
+  return rows as ServicePart[];
+};
 
 
 /* =========== VEHICLE MAINTENANCE BILLING PARENT TABLE =========== */
@@ -42,6 +202,7 @@ export interface VehicleMaintenance {
   inv_total: string;
   inv_stat: string;
   inv_remarks: string | null;
+  attachment: string | null;
   running_no: number;
 }
 
@@ -56,21 +217,10 @@ export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaint
   return VehicleMaintenance || null;
 };
 
-export const createVehicleMtnBilling = async (data: Partial<VehicleMaintenance>): Promise<number> => {
-  const [result] = await pool2.query(
-    `INSERT INTO ${vehicleMtnBillingTable} (
-      inv_no, inv_date, svc_order, vehicle_id, costcenter_id, location_id, ws_id, svc_date, svc_odo, inv_total, inv_stat, inv_remarks, running_no
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.inv_no, data.inv_date, data.svc_order, data.vehicle_id, data.costcenter_id, data.location_id, data.ws_id, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.running_no ]
-  );
-  return (result as ResultSetHeader).insertId;
-};
-
 export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
   await pool2.query(
-    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_order = ?, vehicle_id = ?, costcenter_id = ?, location_id = ?, ws_id = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, running_no = ? WHERE inv_id = ?`,
-    [ data.inv_no, data.inv_date, data.svc_order, data.vehicle_id, data.costcenter_id, data.location_id, data.ws_id, data.svc_date,
-      data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.running_no,id ]
+    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
+    [ data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.attachment, id ]
   );
 };
 
@@ -79,13 +229,37 @@ export const deleteVehicleMtnBilling = async (id: number): Promise<void> => {
 };
 
 /* =========== VEHICLE MAINTENANCE BILLING PARTS TABLE ============= */
+
 // Obtain vehicle maintenance parts by maintenance ID
-export const getVehicleMtnBillingParts = async (maintenanceId: number): Promise<VehicleMaintenance[]> => {
+export const getVehicleMtnBillingParts = async (maintenanceId: number): Promise<any[]> => {
   const [rows] = await pool2.query(
     `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
     [maintenanceId]
   );
-  return rows as VehicleMaintenance[];
+  return rows as any[];
+};
+
+// Delete all parts for a given invoice (inv_id)
+export const deleteAllVehicleMtnBillingParts = async (inv_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`, [inv_id]);
+};
+
+// Bulk insert parts for a given invoice (inv_id)
+export const createVehicleMtnBillingParts = async (inv_id: number, parts: any[]): Promise<void> => {
+  if (!Array.isArray(parts) || parts.length === 0) return;
+  // Map part_amount (payload) to part_final_amount (DB)
+  const values = parts.map(part => [
+    inv_id,
+    part.autopart_id ?? null,
+    part.part_qty ?? null,
+    part.part_uprice ?? null,
+    part.part_final_amount ?? part.part_amount ?? null
+  ]);
+  await pool2.query(
+    `INSERT INTO ${vehicleMtnBillingPartTable} (inv_id, autopart_id, part_qty, part_uprice, part_final_amount)
+     VALUES ?`,
+    [values]
+  );
 };
 
 export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleMaintenance | null> => {
@@ -96,6 +270,7 @@ export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleM
   const part = (rows as VehicleMaintenance[])[0];
   return part || null;
 };
+
 
 export const getVehicleMtnBillingByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
   const [rows] = await pool2.query(
@@ -441,33 +616,6 @@ export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
     [asset_id, costcenter_id, purpose, stmt_id, card_id]
   );
 }
-
-/* =================== SERVICE OPTION TABLE ========================== */
-
-export const getServiceOptions = async (): Promise<any[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} ORDER BY svcTypeId DESC`);
-  return rows as any[];
-};
-export const getServiceOptionById = async (id: number): Promise<any | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} WHERE svcTypeId = ?`, [id]);
-  const serviceOption = (rows as any[])[0];
-  return serviceOption || null;
-};
-export const createServiceOption = async (data: any): Promise<number> => {
-  const [result] = await pool2.query(
-    `INSERT INTO ${serviceOptionsTable} (
-      svcType, svcOpt, group_desc
-    ) VALUES (?, ?, ?)`,
-    [ data.svcType, data.svcOpt, data.group_desc ]
-  );
-  return (result as ResultSetHeader).insertId;
-};
-export const updateServiceOption = async (id: number, data: any): Promise<void> => {
-  await pool2.query(
-    `UPDATE ${serviceOptionsTable} SET svcType = ?, svcOpt = ?, group_desc = ? WHERE svcTypeId = ?`,
-    [ data.svcType, data.svcOpt, data.group_desc, id ]
-  );
-};
 
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========

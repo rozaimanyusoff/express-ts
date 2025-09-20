@@ -9,6 +9,7 @@ const router = Router();
 
 const logoUploader = createUploader('images/logo');
 const utilUploader = createUploader('billings/utilities');
+const mtnUploader = createUploader('billings/maintenance');
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 router.get('/temp-vehicle', asyncHandler(billingController.getTempVehicleRecords));
@@ -17,18 +18,31 @@ router.post('/temp-vehicle', asyncHandler(billingController.createTempVehicleRec
 router.put('/temp-vehicle/:id', asyncHandler(billingController.updateTempVehicleRecord));
 router.delete('/temp-vehicle/:id', asyncHandler(billingController.deleteTempVehicleRecord));
 
+/* =================== SERVICE OPTION TABLE ========================== */
+router.get('/mtn/options', asyncHandler(billingController.getServiceOptions)); // /api/bills/service/options
+router.get('/mtn/options/:id', asyncHandler(billingController.getServiceOptionById));
+router.post('/mtn/options', asyncHandler(billingController.createServiceOption));
+router.put('/mtn/options/:id', asyncHandler(billingController.updateServiceOption));
+
+/* =================== SERVICE PARTS (autoparts) ROUTES =================== */
+router.get('/mtn/parts', asyncHandler(billingController.getServiceParts));
+router.get('/mtn/parts/:id', asyncHandler(billingController.getServicePartById));
+router.post('/mtn/parts', asyncHandler(billingController.createServicePart));
+router.put('/mtn/parts/:id', asyncHandler(billingController.updateServicePart));
+router.delete('/mtn/parts/:id', asyncHandler(billingController.deleteServicePart));
+router.get('/mtn/parts/search', asyncHandler(billingController.searchServiceParts));
+
 /* ================== VEHICLE MAINTENANCE BILLINGS ================== */
 
 router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnBillingByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id} -- EXCEL GENERATED REPORT
 router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
 router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
-
-//router.post('/vehicle', asyncHandler(billingController.createVehicleMtnBilling)); //UNUSED
-router.put('/mtn/vehicle/:id', asyncHandler(billingController.updateVehicleMtnBilling));
+router.put('/mtn/:id', mtnUploader.single('attachment'), asyncHandler(billingController.updateVehicleMtnBilling));
 //router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMtnBilling)); //NO DATA DELETE ALLOWED
 // Maintenance lookup by asset id
 router.get('/mtn/vehicle/:asset_id', asyncHandler(billingController.getVehicleMaintenanceByAsset));
+
 
 /* =================== WORKSHOP ======================= */
 router.get('/workshops', asyncHandler(billingController.getWorkshops));
@@ -65,11 +79,6 @@ router.post('/fleet', asyncHandler(billingController.createFleetCard));
 router.put('/fleet/:id', asyncHandler(billingController.updateFleetCard));
 router.put('/fleet/:id/billing', asyncHandler(billingController.updateFleetCardFromBilling)); // update fleet card details from billing
 
-/* =================== SERVICE OPTION TABLE ========================== */
-router.get('/service/options', asyncHandler(billingController.getServiceOptions)); // /api/bills/service/options
-router.get('/service/options/:id', asyncHandler(billingController.getServiceOptionById));
-router.post('/service/options', asyncHandler(billingController.createServiceOption));
-router.put('/service/options/:id', asyncHandler(billingController.updateServiceOption));
 
 // =================== BILLING ACCOUNT TABLE ROUTES ===================
 router.get('/util/accounts/:id', asyncHandler(billingController.getBillingAccountById));
