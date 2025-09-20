@@ -9,6 +9,7 @@ import logger from '../utils/logger';
 import path from 'path';
 import fs from 'fs';
 import { setUtilityBillRef } from './billingModel';
+import { toPublicUrl } from '../utils/uploadUtil';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
@@ -216,7 +217,10 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		inv_stat: billing.inv_stat,
 		inv_remarks: billing.inv_remarks,
 		running_no: billing.running_no,
-		parts: enrichedParts
+		parts: enrichedParts,
+		// Provide full public URL for the uploaded attachment if present
+		//upload: (billing as any).upload ?? (billing as any).attachment ?? null,
+		upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null)
 	};
 
 	res.json({ status: 'success', message: 'Vehicle maintenance billing retrieved successfully', data: structuredBilling });
