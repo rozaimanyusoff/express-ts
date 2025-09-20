@@ -1,7 +1,8 @@
 // Set the attachment (PDF filename) for a vehicle maintenance billing record
 export const setVehicleMtnBillingAttachment = async (inv_id: number, attachment: string): Promise<void> => {
+  // Persist to the `upload` column which is the column used by updateVehicleMtnBilling
   await pool2.query(
-    `UPDATE ${vehicleMtnBillingTable} SET attachment = ? WHERE inv_id = ?`,
+    `UPDATE ${vehicleMtnBillingTable} SET upload = ? WHERE inv_id = ?`,
     [attachment, inv_id]
   );
 };
@@ -218,9 +219,11 @@ export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaint
 };
 
 export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
+  // Prefer data.upload if provided by controller; fall back to data.attachment for compatibility
+  const uploadValue = (data as any).upload ?? (data as any).attachment ?? null;
   await pool2.query(
     `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
-    [ data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, data.attachment, id ]
+    [ data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, uploadValue, id ]
   );
 };
 
