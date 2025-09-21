@@ -355,6 +355,29 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	res.json({ status: 'success', message: 'Vehicle maintenance by date range retrieved successfully', data: filtered });
 };
 
+// Check if an invoice number already exists for maintenance billings.
+// Query params: inv_no (required), exclude_id (optional, numeric) to ignore a specific record (useful during edit)
+export const checkVehicleMtnInvNo = async (req: Request, res: Response) => {
+	const inv_no = (req.query.inv_no || '').toString().trim();
+	if (!inv_no) return res.status(400).json({ status: 'error', message: 'inv_no is required' });
+	const excludeId = req.query.exclude_id ? Number(req.query.exclude_id) : undefined;
+	const billId = req.query.bill_id ? Number(req.query.bill_id) : undefined;
+	const count = await billingModel.countVehicleMtnByInvNo(inv_no, excludeId, billId);
+ 	if (count > 0) return res.json({ status: 'exists', message: 'inv_no already exists', exists: true });
+ 	return res.json({ status: 'ok', message: 'inv_no available', exists: false });
+};
+
+// Check if a utility bill number already exists (ubill_no)
+export const checkUtilityUbillNo = async (req: Request, res: Response) => {
+	const ubill_no = (req.query.ubill_no || '').toString().trim();
+	if (!ubill_no) return res.status(400).json({ status: 'error', message: 'ubill_no is required' });
+	const excludeId = req.query.exclude_id ? Number(req.query.exclude_id) : undefined;
+	const billId = req.query.bill_id ? Number(req.query.bill_id) : undefined;
+	const count = await billingModel.countUtilityByUbillNo(ubill_no, excludeId, billId);
+	if (count > 0) return res.json({ status: 'exists', message: 'ubill_no already exists', exists: true });
+	return res.json({ status: 'ok', message: 'ubill_no available', exists: false });
+};
+
 //Purposely to export maintenance consumption report data to Excel
 export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Response) => {
 	const { from, to, cc } = req.query;

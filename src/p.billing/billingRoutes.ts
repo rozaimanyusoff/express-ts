@@ -38,6 +38,8 @@ router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnB
 router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
 router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
+// Check invoice number existence for maintenance billings
+router.get('/mtn/check-invno', asyncHandler(billingController.checkVehicleMtnInvNo));
 router.put('/mtn/:id', mtnUploader.single('attachment'), asyncHandler(billingController.updateVehicleMtnBilling));
 //router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMtnBilling)); //NO DATA DELETE ALLOWED
 // Maintenance lookup by asset id
@@ -108,6 +110,8 @@ router.post('/util/printing/by-ids/:beneficiaryId', asyncHandler(billingControll
 router.get('/util/printing/summary', asyncHandler(billingController.getPrintingSummary));
 router.get('/util/:id', asyncHandler(billingController.getUtilityBillById));
 router.get('/util', asyncHandler(billingController.getUtilityBills));
+// Check utility bill number existence
+router.get('/util/check-ubillno', asyncHandler(billingController.checkUtilityUbillNo));
 // Accept file under either 'ubill_ref' (preferred) or 'ubill_file' (legacy)
 router.post('/util', utilUploader.fields([{ name: 'ubill_ref', maxCount: 1 }, { name: 'ubill_file', maxCount: 1 }]), asyncHandler(billingController.createUtilityBill));
 router.put('/util/:id', asyncHandler(billingController.updateUtilityBill));

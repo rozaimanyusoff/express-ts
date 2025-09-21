@@ -291,6 +291,24 @@ export const getVehicleMtnBillingByAssetId = async (assetId: number): Promise<Ve
   return rows as VehicleMaintenance[];
 };
 
+// Count maintenance billings by inv_no. Optionally exclude a specific inv_id (useful when validating during edit)
+export const countVehicleMtnByInvNo = async (inv_no: string, excludeInvId?: number, billId?: number): Promise<number> => {
+  if (!inv_no || String(inv_no).trim() === '') return 0;
+  const params: any[] = [inv_no.trim()];
+  let sql = `SELECT COUNT(*) as cnt FROM ${vehicleMtnBillingTable} WHERE inv_no = ?`;
+  if (Number.isFinite(billId)) {
+    sql += ` AND bill_id = ?`;
+    params.push(billId);
+  }
+  if (Number.isFinite(excludeInvId)) {
+    sql += ` AND inv_id != ?`;
+    params.push(excludeInvId);
+  }
+  const [rows] = await pool2.query(sql, params);
+  const cnt = Array.isArray(rows) && rows.length > 0 ? (rows as any)[0].cnt : 0;
+  return Number(cnt) || 0;
+};
+
 /* =================================== WORKSHOP TABLE ========================================== */
 
 export const getWorkshops = async (): Promise<any[]> => {
@@ -791,6 +809,24 @@ export const getPreviousUtilityBillsForAccount = async (
   const sql = `SELECT ubill_no, ubill_date, ubill_gtotal FROM ${utilitiesTable} WHERE ${where} ORDER BY ubill_date DESC, util_id DESC LIMIT ?`;
   const [rows] = await pool2.query(sql, params);
   return rows as Array<Pick<UtilityBill, 'ubill_no' | 'ubill_date' | 'ubill_gtotal'>>;
+};
+
+// Count utility bills by ubill_no. Optionally exclude a specific util_id (useful during edit)
+export const countUtilityByUbillNo = async (ubill_no: string, excludeUtilId?: number, billId?: number): Promise<number> => {
+  if (!ubill_no || String(ubill_no).trim() === '') return 0;
+  const params: any[] = [ubill_no.trim()];
+  let sql = `SELECT COUNT(*) as cnt FROM ${utilitiesTable} WHERE ubill_no = ?`;
+  if (Number.isFinite(billId)) {
+    sql += ` AND bill_id = ?`;
+    params.push(billId);
+  }
+  if (Number.isFinite(excludeUtilId)) {
+    sql += ` AND util_id != ?`;
+    params.push(excludeUtilId);
+  }
+  const [rows] = await pool2.query(sql, params);
+  const cnt = Array.isArray(rows) && rows.length > 0 ? (rows as any)[0].cnt : 0;
+  return Number(cnt) || 0;
 };
 
 export const getUtilityBillById = async (util_id: number): Promise<UtilityBill | null> => {
