@@ -36,10 +36,20 @@ router.post('/summon/notify', asyncHandler(summonController.resendSummonNotifica
 router.delete('/summon/:id', asyncHandler(summonController.deleteSummon));
 
 
+/* ========== ASSESSMENT CRITERIA ROUTES ========== */
+router.get('/assessments/criteria/:id', asyncHandler(summonController.getAssessmentCriteriaById));
+router.get('/assessments/criteria', asyncHandler(summonController.getAssessmentCriteria));
+router.post('/assessments/criteria', asyncHandler(summonController.createAssessmentCriteria));
+router.put('/assessments/criteria/:id', asyncHandler(summonController.updateAssessmentCriteria));
+router.delete('/assessments/criteria/:id', asyncHandler(summonController.deleteAssessmentCriteria));
+router.put('/assessments/criteria/:id/reorder', asyncHandler(summonController.reorderAssessmentCriteria));
 /* ========== ASSESSMENTS (parent) ROUTES ========== */
+const uploadAssessment = createUploader('compliance/assessment');
+
 router.get('/assessments', asyncHandler(summonController.getAssessments));
 router.get('/assessments/:id', asyncHandler(summonController.getAssessmentById));
-router.post('/assessments', asyncHandler(summonController.createAssessment));
+// Accept multiple files: vehicle_images[] and per-detail images (adt_image, adt_image_N, etc.)
+router.post('/assessments', uploadAssessment.any(), asyncHandler(summonController.createAssessment));
 router.put('/assessments/:id', asyncHandler(summonController.updateAssessment));
 router.delete('/assessments/:id', asyncHandler(summonController.deleteAssessment));
 
@@ -50,13 +60,6 @@ router.post('/assessments/details', asyncHandler(summonController.createAssessme
 router.put('/assessments/details/:id', asyncHandler(summonController.updateAssessmentDetail));
 router.delete('/assessments/details/:id', asyncHandler(summonController.deleteAssessmentDetail));
 
-/* ========== ASSESSMENT CRITERIA ROUTES ========== */
-router.get('/assessment-criteria/:id', asyncHandler(summonController.getAssessmentCriteriaById));
-router.get('/assessment-criteria', asyncHandler(summonController.getAssessmentCriteria));
-router.post('/assessment-criteria', asyncHandler(summonController.createAssessmentCriteria));
-router.put('/assessment-criteria/:id', asyncHandler(summonController.updateAssessmentCriteria));
-router.delete('/assessment-criteria/:id', asyncHandler(summonController.deleteAssessmentCriteria));
-router.put('/assessment-criteria/:id/reorder', asyncHandler(summonController.reorderAssessmentCriteria));
 
 
 export default router;

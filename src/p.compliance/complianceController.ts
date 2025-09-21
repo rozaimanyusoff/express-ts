@@ -1002,9 +1002,142 @@ export const getAssessmentById = async (req: Request, res: Response) => {
 
 export const createAssessment = async (req: Request, res: Response) => {
   try {
-    const data: any = req.body || {};
-    const id = await summonModel.createAssessment(data);
-    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id } });
+    // We expect multipart/form-data with files in req.files and JSON fields in req.body
+    const body: any = req.body || {};
+
+    // Parse details JSON if provided as string
+    let details: any[] = [];
+    if (body.details) {
+      try {
+        details = typeof body.details === 'string' ? JSON.parse(body.details) : body.details;
+        if (!Array.isArray(details)) details = [];
+      } catch (err) {
+        return res.status(400).json({ status: 'error', message: 'Invalid details JSON', data: null });
+      }
+    }
+
+    // Prepare parent payload: allow known assessment fields to be set via form fields
+    const payload: any = { ...body };
+    // Remove details from payload
+    delete payload.details;
+
+    // create parent assessment first to get assess_id
+    const assessId = await summonModel.createAssessment(payload);
+
+    // Files array from multer (uploadAssessment.any())
+    const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
+
+    // Helper maps: originalname -> file, and fieldname -> files[]
+    const filesByOriginal = new Map<string, Express.Multer.File[]>();
+    const filesByField = new Map<string, Express.Multer.File[]>();
+    for (const f of files) {
+      const on = f.originalname || '';
+      if (!filesByOriginal.has(on)) filesByOriginal.set(on, []);
+      filesByOriginal.get(on)!.push(f);
+      const fn = f.fieldname || '';
+      if (!filesByField.has(fn)) filesByField.set(fn, []);
+      filesByField.get(fn)!.push(f);
+    }
+
+    // Move vehicle images into storage and set up to 4 upload columns: a_upload..a_upload4
+    const vehicleImages: string[] = [];
+    // vehicle images may be under field 'vehicle_images' (array) or named 'vehicle_image' etc.
+    const candidateVehicleFiles = filesByField.get('vehicle_images') || filesByField.get('vehicle_image') || [];
+    for (const f of candidateVehicleFiles) {
+      const tempPath = f.path;
+      const ext = path.extname(f.originalname || tempPath) || '';
+      const filename = `assessment-${assessId}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+      const base = await getUploadBase();
+      const destDir = path.join(base, 'compliance', 'assessment');
+      await fsPromises.mkdir(destDir, { recursive: true });
+      const destPath = path.join(destDir, filename);
+      await safeMove(tempPath, destPath);
+      const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
+      vehicleImages.push(stored);
+    }
+
+    // If there are any other files that look like vehicle images (fieldnames that start with vehicle_images[]), include them
+    // (already covered by multer.any())
+
+    // Update parent with up to 4 upload columns
+    const parentUpdate: any = {};
+    if (vehicleImages.length > 0) parentUpdate.a_upload = vehicleImages[0] || null;
+    if (vehicleImages.length > 1) parentUpdate.a_upload2 = vehicleImages[1] || null;
+    if (vehicleImages.length > 2) parentUpdate.a_upload3 = vehicleImages[2] || null;
+    if (vehicleImages.length > 3) parentUpdate.a_upload4 = vehicleImages[3] || null;
+    if (Object.keys(parentUpdate).length > 0) {
+      await summonModel.updateAssessment(assessId, parentUpdate);
+    }
+
+    // Insert details: for each detail, try to find a file using these strategies in order:
+    // 1) file field with name 'adt_image' (single) or 'adt_image_<index>' or 'adt_image_<adt_id>'
+    // 2) file originalname matches detail.adt_image (frontend may send the filename string in detail)
+    // 3) file field with name 'detail_<index>_image' etc.
+
+    for (let i = 0; i < details.length; i++) {
+      const d = { ...details[i] } as any;
+      d.assess_id = assessId;
+
+      // attempt to attach an image
+      let attachedPath: string | null = null;
+      // try field 'adt_image'
+      const f1 = filesByField.get('adt_image');
+      if (f1 && f1.length > 0) {
+        // if multiple, try to pick one by index
+        const sel = f1[i] || f1[0];
+        const tempPath = sel.path;
+        const ext = path.extname(sel.originalname || tempPath) || '';
+        const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
+        const base = await getUploadBase();
+        const destDir = path.join(base, 'compliance', 'assessment');
+        await fsPromises.mkdir(destDir, { recursive: true });
+        const destPath = path.join(destDir, filename);
+        await safeMove(tempPath, destPath);
+        attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+      }
+
+      // try matching by originalname if not yet attached and detail has adt_image filename
+      if (!attachedPath && d.adt_image) {
+        const matches = filesByOriginal.get(String(d.adt_image)) || [];
+        if (matches.length > 0) {
+          const sel = matches[0];
+          const tempPath = sel.path;
+          const ext = path.extname(sel.originalname || tempPath) || '';
+          const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
+          const base = await getUploadBase();
+          const destDir = path.join(base, 'compliance', 'assessment');
+          await fsPromises.mkdir(destDir, { recursive: true });
+          const destPath = path.join(destDir, filename);
+          await safeMove(tempPath, destPath);
+          attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+        }
+      }
+
+      // fallback: look for field 'adt_image_<i>'
+      if (!attachedPath) {
+        const key = `adt_image_${i}`;
+        const arr = filesByField.get(key) || [];
+        if (arr.length > 0) {
+          const sel = arr[0];
+          const tempPath = sel.path;
+          const ext = path.extname(sel.originalname || tempPath) || '';
+          const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
+          const base = await getUploadBase();
+          const destDir = path.join(base, 'compliance', 'assessment');
+          await fsPromises.mkdir(destDir, { recursive: true });
+          const destPath = path.join(destDir, filename);
+          await safeMove(tempPath, destPath);
+          attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+        }
+      }
+
+      if (attachedPath) d.adt_image = attachedPath;
+
+      // create detail row
+      await summonModel.createAssessmentDetail(d);
+    }
+
+    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id: assessId } });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment', data: null });
   }

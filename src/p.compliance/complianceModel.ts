@@ -1,16 +1,15 @@
 import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
-const dbName = 'compliance';
-const assessmentDb = 'assets';
+const dbName = 'compliance2';
 const summonTable = `${dbName}.summon`;
 const summonTypeTable = `${dbName}.summon_type`;
 const summonAgencyTable = `${dbName}.summon_agency`;
 const summonTypeAgencyTable = `${dbName}.summon_type_agency`;
 
-const assessmentCriteriaTable = `${assessmentDb}.v_assess_qset`;
-const assessmentTable = `${assessmentDb}.v_assess2`;
-const assessmentDetailTable = `${assessmentDb}.v_assess_dt2`; // linked to v_assess2 via assess_id
+const assessmentCriteriaTable = `${dbName}.v_assess_qset`;
+const assessmentTable = `${dbName}.v_assess2`;
+const assessmentDetailTable = `${dbName}.v_assess_dt2`; // linked to v_assess2 via assess_id
 
 
 export interface SummonType {
