@@ -2576,43 +2576,48 @@ export const getLocations = async (req: Request, res: Response) => {
 
 /* ======= ASSET MANAGERS ======= */
 export const getAssetManagers = async (req: Request, res: Response) => {
-	// Fetch all asset managers
-	const managers = await assetModel.getAssetManagers();
-	if (!Array.isArray(managers)) {
-		return res.status(500).json({ status: 'error', message: 'Failed to fetch asset managers' });
-	}
-	// Fetch departments, locations, costcenters and all employees for mapping
-	const [departmentsRaw, locationsRaw, costcentersRaw, employeesRaw] = await Promise.all([
-		assetModel.getDepartments(),
-		assetModel.getLocations(),
-		assetModel.getCostcenters(),
-		assetModel.getEmployees()
-	]);
-	const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
-	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
-	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-	const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
-	const deptMap = new Map(departments.map((d: any) => [d.id, d]));
-	const locMap = new Map(locations.map((l: any) => [l.id, l]));
-	const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
-	// Enrich managers with employee details, including nested department and location
-	const enrichedManagers = (managers as any[]).map(mgr => {
-		const emp = mgr.ramco_id && empMap.has(mgr.ramco_id) ? empMap.get(mgr.ramco_id) : null;
-		return {
-			...mgr,
-			employee: emp ? {
-				ramco_id: emp.ramco_id,
-				full_name: emp.full_name,
-				email: emp.email,
-				contact: emp.contact,
-				costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap.get(emp.costcenter_id)?.name || null } : null,
-				department: emp.department_id ? { id: emp.department_id, name: deptMap.get(emp.department_id)?.code || null } : null,
-				location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null
-			} : null
-		};
-	});
-	res.json({ status: 'success', message: 'Asset managers retrieved successfully', data: enrichedManagers });
+		// Fetch all asset managers
+		const managers = await assetModel.getAssetManagers();
+		if (!Array.isArray(managers)) {
+			return res.status(500).json({ status: 'error', message: 'Failed to fetch asset managers' });
+		}
+		// Fetch departments, locations, costcenters and all employees for mapping
+		const [departmentsRaw, locationsRaw, costcentersRaw, employeesRaw] = await Promise.all([
+			assetModel.getDepartments(),
+			assetModel.getLocations(),
+			assetModel.getCostcenters(),
+			assetModel.getEmployees()
+		]);
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+		const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+		const deptMap = new Map(departments.map((d: any) => [d.id, d]));
+		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+		const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+		// Enrich managers with employee details, including nested department and location
+		let enrichedManagers = (managers as any[]).map(mgr => {
+			const emp = mgr.ramco_id && empMap.has(mgr.ramco_id) ? empMap.get(mgr.ramco_id) : null;
+			return {
+				...mgr,
+				employee: emp ? {
+					ramco_id: emp.ramco_id,
+					full_name: emp.full_name,
+					email: emp.email,
+					contact: emp.contact,
+					costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap.get(emp.costcenter_id)?.name || null } : null,
+					department: emp.department_id ? { id: emp.department_id, name: deptMap.get(emp.department_id)?.code || null } : null,
+					location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null
+				} : null
+			};
+		});
+		// Optional filter by ?ramco=... query param
+		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : null;
+		if (ramco) {
+			enrichedManagers = enrichedManagers.filter((mgr: any) => String(mgr.ramco_id) === ramco);
+		}
+		res.json({ status: 'success', message: 'Asset managers retrieved successfully', data: enrichedManagers });
 }
 export const getAssetManagerById = async (req: Request, res: Response) => {
 	const managerId = Number(req.params.id);

@@ -1017,24 +1017,73 @@ export const deleteDelivery = async (req: Request, res: Response) => {
 export const getPurchaseRequests = async (req: Request, res: Response) => {
   try {
     const rows = await purchaseModel.getPurchaseRequests();
+    const requestIds = rows.map((r: any) => r.id).filter((id: any) => id != null);
+    const allItems = await purchaseModel.getPurchaseRequestItems();
+    // Group items by request_id
+    const itemsByRequestId = new Map<number, any[]>();
+    for (const item of allItems) {
+      if (item.request_id != null) {
+        if (!itemsByRequestId.has(item.request_id)) itemsByRequestId.set(item.request_id, []);
+        itemsByRequestId.get(item.request_id)!.push(item);
+      }
+    }
 
     // Enrich ramco_id -> requested_by, costcenter_id -> costcenter, department_id -> department
-    const [employeesRaw, costcentersRaw, departmentsRaw] = await Promise.all([
+    const [employeesRaw, costcentersRaw, departmentsRaw, typesRaw, categoriesRaw, suppliersRaw, brandsRaw] = await Promise.all([
       assetModel.getEmployees(),
       assetModel.getCostcenters(),
       (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getTypes(),
+      assetModel.getCategories(),
+      purchaseModel.getSuppliers(),
+      assetModel.getBrands(),
     ]);
     const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
     const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
     const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+    const categories = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+    const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw as any[] : [];
+    const brands = Array.isArray(brandsRaw) ? brandsRaw as any[] : [];
     const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
     const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
     const deptMap = new Map(departments.map((d: any) => [d.id, d]));
+    const typeMap = new Map(types.map((t: any) => [t.id, t]));
+    const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
+    const supplierMap = new Map(suppliers.map((s: any) => [s.id, s]));
+    const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+
+    // Optionally, fetch all deliveries and group by purchase_id for enrichment
+    const allDeliveries = await purchaseModel.getDeliveries();
+    const deliveriesMap = new Map<number, any[]>();
+    for (const d of allDeliveries) {
+      const pid = Number(d.purchase_id);
+      if (!deliveriesMap.has(pid)) deliveriesMap.set(pid, []);
+      deliveriesMap.get(pid)!.push(d);
+    }
 
     const enriched = (rows || []).map((r: any) => {
       const requestedBy = r.ramco_id ? (empMap.get(r.ramco_id) ? { ramco_id: r.ramco_id, full_name: (empMap.get(r.ramco_id) as any)?.full_name || null } : { ramco_id: r.ramco_id, full_name: null }) : null;
       const costcenter = r.costcenter_id ? (ccMap.has(r.costcenter_id) ? { id: r.costcenter_id, name: ccMap.get(r.costcenter_id)?.name || null } : { id: r.costcenter_id, name: null }) : null;
       const department = r.department_id ? (deptMap.has(r.department_id) ? { id: r.department_id, name: deptMap.get(r.department_id)?.name || null } : { id: r.department_id, name: null }) : null;
+      // Enrich items for this request
+      const itemsRaw = itemsByRequestId.get(r.id) || [];
+      const items = itemsRaw.map((it: any) => ({
+        id: it.id,
+        type: it.type_id && typeMap.has(it.type_id) ? { id: it.type_id, name: typeMap.get(it.type_id)?.name || null } : null,
+        category: it.category_id && categoryMap.has(it.category_id) ? { id: it.category_id, name: categoryMap.get(it.category_id)?.name || null } : null,
+        brand: it.brand_id && brandMap.has(it.brand_id) ? { id: it.brand_id, name: brandMap.get(it.brand_id)?.name || null } : null,
+        qty: it.qty,
+        description: it.items || it.description || null,
+        purpose: it.purpose ?? null,
+        supplier: it.supplier_id && supplierMap.has(it.supplier_id) ? { id: it.supplier_id, name: supplierMap.get(it.supplier_id)?.name || null } : null,
+        unit_price: it.unit_price !== undefined && it.unit_price !== null ? Number(it.unit_price).toFixed(2) : null,
+        total_price: it.total_price !== undefined && it.total_price !== null ? Number(it.total_price).toFixed(2) : null,
+        po_no: it.po_no ?? null,
+        po_date: it.po_date ?? null,
+        handover_to: it.handover_to ?? null,
+        handover_at: it.handover_at ?? null,
+      }));
       return {
         id: r.id,
         request_type: r.request_type ?? null,
@@ -1045,6 +1094,7 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
         department: department,
         created_at: r.created_at ?? null,
         updated_at: r.updated_at ?? null,
+        items,
       };
     });
 
