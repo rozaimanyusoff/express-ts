@@ -2,6 +2,7 @@ import {pool} from '../utils/db';
 import logger from '../utils/logger';
 import { io } from '../server';
 import { getAdminUserIds } from '../p.user/userModel';
+import { sendWebhook } from '../utils/webhook';
 
 export interface Notification {
   userId: number;
@@ -18,6 +19,18 @@ export const createNotification = async ({ userId, type, message }: Notification
 
     // Emit the notification event via WebSocket
     io.emit('notification', { userId, type, message });
+
+    // Forward to configured webhook (if any) - fire-and-forget
+    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        // do not await to avoid blocking main flow; sendWebhook handles its own errors
+        sendWebhook(webhookUrl, { userId, type, message, createdAt: new Date().toISOString() }, { fireAndForget: true });
+      } catch (err) {
+        // sendWebhook should swallow errors when fireAndForget is true, but log defensively
+        logger.error('Notification webhook call failed (synchronous):', err);
+      }
+    }
   } catch (error) {
     logger.error('Error creating notification:', error);
     throw error;
