@@ -537,15 +537,54 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Allow verification of expired tokens for refresh (ignoreExpiration: true)
+        let decoded: any;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+        } catch (err: any) {
+            if (err.name === 'TokenExpiredError') {
+                // Allow expired tokens for refresh, but verify signature
+                decoded = jwt.verify(token, process.env.JWT_SECRET, { 
+                    algorithms: ['HS256'], 
+                    ignoreExpiration: true 
+                });
+            } else {
+                throw err;
+            }
+        }
 
         if (typeof decoded !== 'object' || !('userId' in decoded)) {
             await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'invalid_token' }, req);
             return res.status(401).json({ status: 'error', code: 401, message: 'Invalid token' });
         }
 
+        // Verify user still exists and is active
+        const user = await userModel.getUserById(decoded.userId);
+        if (!user || user.status !== 1) {
+            await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'user_inactive' }, req);
+            return res.status(401).json({ status: 'error', code: 401, message: 'User account is inactive' });
+        }
+
+        // Validate session token if present (for single-session enforcement)
+        if (decoded.session) {
+            const currentSession = await userModel.getUserSessionToken(decoded.userId);
+            if (currentSession !== decoded.session) {
+                await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'session_mismatch' }, req);
+                return res.status(401).json({ status: 'error', code: 401, message: 'Session expired elsewhere' });
+            }
+        }
+
+        // Generate new session token for enhanced security
+        const newSessionToken = uuidv4();
+        await userModel.setUserSessionToken(decoded.userId, newSessionToken);
+
         const newToken = jwt.sign(
-            { userId: decoded.userId, email: decoded.email, contact: decoded.contact },
+            { 
+                userId: decoded.userId, 
+                email: decoded.email, 
+                contact: decoded.contact,
+                session: newSessionToken 
+            },
             process.env.JWT_SECRET,
             { expiresIn: '1h', algorithm: 'HS256' }
         );

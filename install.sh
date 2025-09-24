@@ -34,8 +34,9 @@ if ! command -v pm2 &> /dev/null; then
   npm install -g pm2
 fi
 
-# Start with PM2
-pm2 start dist/server.js --name express-ts-backend
+
+# Start with PM2 using ecosystem config and keep process name as 'express-ts'
+pm2 start ecosystem.config.js --only express-ts
 pm2 save
 pm2 startup
 
