@@ -56,6 +56,15 @@ JWT_SECRET=your_jwt_secret
 # URLs
 BACKEND_URL=http://localhost:3001
 FRONTEND_URL=http://localhost:3000
+
+# File Storage / Uploads
+# Optional: Override where uploaded files are stored & served from.
+# If not set, code falls back to <project_root>/uploads locally.
+# In production you might mount an external volume (e.g. /mnt/winshare) and set:
+#   UPLOAD_BASE_PATH=/uploads            # internal write path inside container
+#   STATIC_UPLOAD_PATH=/mnt/winshare     # path exposed via /uploads route
+UPLOAD_BASE_PATH=
+STATIC_UPLOAD_PATH=
 ```
 
 ## API Endpoints
@@ -375,6 +384,36 @@ npm start
 # Run tests
 npm test
 ```
+
+## Uploads Path (Local vs Production)
+
+Uploaded files are publicly served at the route `/uploads`.
+
+Static serving resolution order at runtime:
+1. `STATIC_UPLOAD_PATH` (if defined)
+2. `/mnt/winshare` (if it exists – typical production mount)
+3. Fallback project directory: `<project_root>/uploads`
+
+When writing files (multer, manual saves) the base path is resolved by:
+1. `UPLOAD_BASE_PATH` (if set) – if set to `/uploads` locally and not writable, it falls back automatically to `<project_root>/uploads` and logs a warning.
+2. Fallback: `<project_root>/uploads`
+
+### Local Development
+Leave both variables empty. A folder `./uploads` will be created automatically at first use.
+
+### Production Example
+```
+UPLOAD_BASE_PATH=/uploads
+STATIC_UPLOAD_PATH=/mnt/winshare
+```
+Ensure your container / host mounts the real persistent volume at `/mnt/winshare` (or whichever directory you choose) and that the process user has write permissions.
+
+### Troubleshooting
+- ENOENT or permission errors for `/uploads`: unset `UPLOAD_BASE_PATH` locally or point it to an owned directory.
+- Confirm start-up log: `Serving /uploads from: <resolved_path>`.
+
+### Security Note
+Any file placed under the resolved directory becomes publicly accessible via `GET /uploads/...`. Add validation and sanitization when accepting file uploads.
 
 ## License
 

@@ -1,19 +1,51 @@
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 import fs from 'fs';
+import logger from './logger';
 
 // Return the base directory where uploads are stored on disk.
 // Prefers UPLOAD_BASE_PATH; falls back to <project>/uploads.
 export const getUploadBaseSync = (): string => {
-  const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
-  try { fs.mkdirSync(base, { recursive: true }); } catch { /* ignore */ }
-  return base;
+  let requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+  // If someone sets UPLOAD_BASE_PATH="/uploads" (container style) but we're on local dev without permission, fallback.
+  try {
+    fs.mkdirSync(requested, { recursive: true });
+    return requested;
+  } catch (e: any) {
+    if (requested === '/uploads') {
+      const fallback = path.join(process.cwd(), 'uploads');
+      try {
+        fs.mkdirSync(fallback, { recursive: true });
+        logger.warn(`UPLOAD_BASE_PATH '/uploads' not writable locally. Falling back to project-relative path: ${fallback}`);
+        return fallback;
+      } catch (e2) {
+        logger.error(`Failed to create fallback uploads directory '${fallback}': ${(e2 as any).message}`);
+      }
+    }
+    logger.error(`Failed to create uploads directory '${requested}': ${e?.message}`);
+    return requested; // return anyway; caller may handle errors later
+  }
 };
 
 export const getUploadBase = async (): Promise<string> => {
-  const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
-  await fsPromises.mkdir(base, { recursive: true }).catch(() => {});
-  return base;
+  let requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+  try {
+    await fsPromises.mkdir(requested, { recursive: true });
+    return requested;
+  } catch (e: any) {
+    if (requested === '/uploads') {
+      const fallback = path.join(process.cwd(), 'uploads');
+      try {
+        await fsPromises.mkdir(fallback, { recursive: true });
+        logger.warn(`UPLOAD_BASE_PATH '/uploads' not writable locally. Falling back to project-relative path: ${fallback}`);
+        return fallback;
+      } catch (e2: any) {
+        logger.error(`Failed to create fallback uploads directory '${fallback}': ${e2.message}`);
+      }
+    }
+    logger.error(`Failed to create uploads directory '${requested}': ${e.message}`);
+    return requested;
+  }
 };
 
 // Build an absolute storage path for a given module directory + filename

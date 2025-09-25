@@ -21,6 +21,8 @@ import rateLimit from './middlewares/rateLimiter';
 import securityHeaders from './middlewares/securityHeaders';
 import logger from './utils/logger';
 import path from 'path';
+import fs from 'fs';
+import { getUploadBaseSync } from './utils/uploadUtil';
 
 const app: Express = express();
 
@@ -40,7 +42,21 @@ app.use('/uploads', (req, res, next) => {
   res.header('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
-app.use('/uploads', express.static('/mnt/winshare'));
+// Dynamically select static uploads directory.
+// Priority: explicit STATIC_UPLOAD_PATH | existing /mnt/winshare | resolved upload base util
+(() => {
+  const explicit = process.env.STATIC_UPLOAD_PATH;
+  const sharePath = '/mnt/winshare';
+  let staticPath = explicit ? explicit : (fs.existsSync(sharePath) ? sharePath : getUploadBaseSync());
+  try {
+    // Ensure directory exists for fallback/local scenario.
+    fs.mkdirSync(staticPath, { recursive: true });
+  } catch (e) {
+    logger.error(`Unable to ensure static uploads directory '${staticPath}': ${(e as any).message}`);
+  }
+  logger.info(`Serving /uploads from: ${staticPath}`);
+  app.use('/uploads', express.static(staticPath));
+})();
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

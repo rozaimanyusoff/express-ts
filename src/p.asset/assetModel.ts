@@ -743,6 +743,8 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
+  // Sort by type_id first, then by register_number within each type group
+  sql += ' ORDER BY type_id ASC, register_number ASC';
   const [rows] = await pool.query(sql, params);
   // Ensure compatibility: some callers expect `asset_id` field (billing code).
   // Mirror `id` to `asset_id` when `asset_id` is not present.

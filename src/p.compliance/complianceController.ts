@@ -847,7 +847,20 @@ export const reorderAssessmentCriteria = async (req: Request, res: Response) => 
 /* ========== ASSESSMENTS (parent) CONTROLLERS ========== */
 export const getAssessments = async (req: Request, res: Response) => {
   try {
-    const rows = await summonModel.getAssessments();
+    // Parse optional year filter from query params
+    const yearParam = req.query.year as string;
+    const year = yearParam ? parseInt(yearParam, 10) : undefined;
+    
+    // Validate year if provided
+    if (yearParam && (isNaN(year!) || year! < 1900 || year! > new Date().getFullYear() + 10)) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Invalid year parameter. Must be between 1900 and current year + 10.',
+        data: null 
+      });
+    }
+
+    const rows = await summonModel.getAssessments(year);
 
     // enrich asset_id into full asset object (reuse same enrichment pattern as summons)
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
@@ -1040,20 +1053,35 @@ export const createAssessment = async (req: Request, res: Response) => {
     }
 
     // Move vehicle images into storage and set up to 4 upload columns: a_upload..a_upload4
+    // Frontend may send field names like:
+    //  - vehicle_images (array)
+    //  - vehicle_images[] (common with some libs)
+    //  - vehicle_images[0], vehicle_images[1]
+    //  - vehicle_image (singular)
+    // We'll capture any file whose fieldname starts with 'vehicle_images' or 'vehicle_image'
     const vehicleImages: string[] = [];
-    // vehicle images may be under field 'vehicle_images' (array) or named 'vehicle_image' etc.
-    const candidateVehicleFiles = filesByField.get('vehicle_images') || filesByField.get('vehicle_image') || [];
+    const candidateVehicleFiles: Express.Multer.File[] = [];
+    for (const f of files) {
+      const fn = f.fieldname || '';
+      if (/^vehicle_images/.test(fn) || /^vehicle_image/.test(fn)) {
+        candidateVehicleFiles.push(f);
+      }
+    }
     for (const f of candidateVehicleFiles) {
-      const tempPath = f.path;
-      const ext = path.extname(f.originalname || tempPath) || '';
-      const filename = `assessment-${assessId}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-      const base = await getUploadBase();
-      const destDir = path.join(base, 'compliance', 'assessment');
-      await fsPromises.mkdir(destDir, { recursive: true });
-      const destPath = path.join(destDir, filename);
-      await safeMove(tempPath, destPath);
-      const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
-      vehicleImages.push(stored);
+      try {
+        const tempPath = f.path;
+        const ext = path.extname(f.originalname || tempPath) || '';
+        const filename = `assessment-${assessId}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+        const base = await getUploadBase();
+        const destDir = path.join(base, 'compliance', 'assessment');
+        await fsPromises.mkdir(destDir, { recursive: true });
+        const destPath = path.join(destDir, filename);
+        await safeMove(tempPath, destPath);
+        const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
+        vehicleImages.push(stored);
+      } catch (err) {
+        // Continue processing others; skip failures
+      }
     }
 
     // If there are any other files that look like vehicle images (fieldnames that start with vehicle_images[]), include them

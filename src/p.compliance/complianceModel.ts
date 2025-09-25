@@ -7,9 +7,9 @@ const summonTypeTable = `${dbName}.summon_type`;
 const summonAgencyTable = `${dbName}.summon_agency`;
 const summonTypeAgencyTable = `${dbName}.summon_type_agency`;
 
-const assessmentCriteriaTable = `${dbName}.v_assess_qset`;
-const assessmentTable = `${dbName}.v_assess2`;
-const assessmentDetailTable = `${dbName}.v_assess_dt2`; // linked to v_assess2 via assess_id
+const assessmentCriteriaTable = `${dbName}.test_v_assess_qset`;
+const assessmentTable = `${dbName}.test_v_assess2`;
+const assessmentDetailTable = `${dbName}.test_v_assess_dt2`; // linked to v_assess2 via assess_id
 
 
 export interface SummonType {
@@ -366,8 +366,17 @@ export interface AssessmentRecord {
   ownership?: number | null;
 }
 
-export const getAssessments = async (): Promise<AssessmentRecord[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentTable} ORDER BY assess_id DESC`);
+export const getAssessments = async (year?: number): Promise<AssessmentRecord[]> => {
+  let query = `SELECT * FROM ${assessmentTable}`;
+  const params: any[] = [];
+  
+  if (year) {
+    query += ` WHERE YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?)`;
+    params.push(year, year);
+  }
+  
+  query += ` ORDER BY assess_id DESC`;
+  const [rows] = await pool2.query(query, params);
   return rows as AssessmentRecord[];
 };
 
