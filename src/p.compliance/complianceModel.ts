@@ -1,7 +1,20 @@
+// Update acceptance_status and acceptance_date for assessment
+export const updateAssessmentAcceptance = async (id: number, acceptance_status: number, acceptance_date: Date) => {
+  const payload: any = {
+    acceptance_status,
+    acceptance_date: formatToMySQLDatetime(acceptance_date),
+    updated_at: formatToMySQLDatetime(new Date()),
+  };
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+  }
+};
 import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
-const dbName = 'compliance2';
+const dbName = 'compliance';
 const summonTable = `${dbName}.summon`;
 const summonTypeTable = `${dbName}.summon_type`;
 const summonAgencyTable = `${dbName}.summon_agency`;

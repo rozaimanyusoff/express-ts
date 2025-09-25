@@ -51,6 +51,8 @@ router.get('/assessments/:id', asyncHandler(summonController.getAssessmentById))
 // Accept multiple files: vehicle_images[] and per-detail images (adt_image, adt_image_N, etc.)
 router.post('/assessments', uploadAssessment.any(), asyncHandler(summonController.createAssessment));
 router.put('/assessments/:id', asyncHandler(summonController.updateAssessment));
+// Driver acceptance endpoint
+router.put('/assessments/:id/acceptance', asyncHandler(summonController.acceptAssessment));
 router.delete('/assessments/:id', asyncHandler(summonController.deleteAssessment));
 
 /* ========== ASSESSMENT DETAILS (child) ROUTES ========== */

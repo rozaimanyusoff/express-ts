@@ -1,3 +1,19 @@
+// PUT /api/compliance/assessments/:id/acceptance
+export const acceptAssessment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid assessment id' });
+    const { acceptance_status } = req.body;
+    if (![1, 2].includes(Number(acceptance_status))) {
+      return res.status(400).json({ status: 'error', message: 'Invalid acceptance_status (must be 1 or 2)' });
+    }
+    const acceptance_date = new Date();
+    await summonModel.updateAssessmentAcceptance(id, Number(acceptance_status), acceptance_date);
+    return res.json({ status: 'success', message: 'Assessment acceptance updated' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update acceptance', data: null });
+  }
+};
 import { Request, Response } from 'express';
 import * as summonModel from './complianceModel';
 import * as assetModel from '../p.asset/assetModel';
@@ -912,14 +928,14 @@ export const getAssessments = async (req: Request, res: Response) => {
           owner
         };
       }
-      // omit reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id from response (these are internal identifiers)
-      const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, ...clean } = r as any;
-      // attach assessment_location resolved from loc_id (if present)
-      const assessment_location = (r.loc_id && locationMap.has(r.loc_id)) ? (() => {
-        const l = locationMap.get(r.loc_id);
-        return { id: r.loc_id, code: l.code || l.name || null };
+      // omit reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id from response (these are internal identifiers)
+      const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id, ...clean } = r as any;
+      // attach assessed_location resolved from location_id (if present)
+      const assessed_location = (r.location_id && locationMap.has(r.location_id)) ? (() => {
+        const l = locationMap.get(r.location_id);
+        return { id: r.location_id, code: l.code || l.name || null };
       })() : null;
-      return { ...clean, asset, assessment_location };
+      return { ...clean, asset, assessed_location };
     });
 
     return res.json({ status: 'success', message: 'Assessments retrieved', data });
@@ -1002,10 +1018,10 @@ export const getAssessmentById = async (req: Request, res: Response) => {
     });
 
     // omit internal fields before returning
-    const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, ...cleanRow } = row as any;
-    const assessment_location = ((row as any).loc_id && locationMap.has((row as any).loc_id)) ? (() => {
-      const l = locationMap.get((row as any).loc_id);
-      return { id: (row as any).loc_id, code: l.code || l.name || null };
+    const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id, ...cleanRow } = row as any;
+    const assessment_location = ((row as any).location_id && locationMap.has((row as any).location_id)) ? (() => {
+      const l = locationMap.get((row as any).location_id);
+      return { id: (row as any).location_id, code: l.code || l.name || null };
     })() : null;
     return res.json({ status: 'success', message: 'Assessment retrieved', data: { ...cleanRow, asset, assessment_location, details: enrichedDetails } });
   } catch (e) {
@@ -1053,46 +1069,35 @@ export const createAssessment = async (req: Request, res: Response) => {
     }
 
     // Move vehicle images into storage and set up to 4 upload columns: a_upload..a_upload4
-    // Frontend may send field names like:
-    //  - vehicle_images (array)
-    //  - vehicle_images[] (common with some libs)
-    //  - vehicle_images[0], vehicle_images[1]
-    //  - vehicle_image (singular)
-    // We'll capture any file whose fieldname starts with 'vehicle_images' or 'vehicle_image'
-    const vehicleImages: string[] = [];
-    const candidateVehicleFiles: Express.Multer.File[] = [];
-    for (const f of files) {
-      const fn = f.fieldname || '';
-      if (/^vehicle_images/.test(fn) || /^vehicle_image/.test(fn)) {
-        candidateVehicleFiles.push(f);
-      }
-    }
-    for (const f of candidateVehicleFiles) {
-      try {
-        const tempPath = f.path;
-        const ext = path.extname(f.originalname || tempPath) || '';
-        const filename = `assessment-${assessId}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-        const base = await getUploadBase();
-        const destDir = path.join(base, 'compliance', 'assessment');
-        await fsPromises.mkdir(destDir, { recursive: true });
-        const destPath = path.join(destDir, filename);
-        await safeMove(tempPath, destPath);
-        const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
-        vehicleImages.push(stored);
-      } catch (err) {
-        // Continue processing others; skip failures
-      }
-    }
-
-    // If there are any other files that look like vehicle images (fieldnames that start with vehicle_images[]), include them
-    // (already covered by multer.any())
-
-    // Update parent with up to 4 upload columns
+    // Frontend now sends field names: a_upload, a_upload2, a_upload3, a_upload4
+    const vehicleFiles = ['a_upload', 'a_upload2', 'a_upload3', 'a_upload4'];
     const parentUpdate: any = {};
-    if (vehicleImages.length > 0) parentUpdate.a_upload = vehicleImages[0] || null;
-    if (vehicleImages.length > 1) parentUpdate.a_upload2 = vehicleImages[1] || null;
-    if (vehicleImages.length > 2) parentUpdate.a_upload3 = vehicleImages[2] || null;
-    if (vehicleImages.length > 3) parentUpdate.a_upload4 = vehicleImages[3] || null;
+
+    for (let i = 0; i < vehicleFiles.length; i++) {
+      const fieldName = vehicleFiles[i];
+      const fileArray = filesByField.get(fieldName);
+      
+      if (fileArray && fileArray.length > 0) {
+        const f = fileArray[0]; // Take first file if multiple
+        try {
+          const tempPath = f.path;
+          const ext = path.extname(f.originalname || tempPath) || '';
+          const filename = `assessment-${assessId}-${fieldName}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+          const base = await getUploadBase();
+          const destDir = path.join(base, 'compliance', 'assessment');
+          await fsPromises.mkdir(destDir, { recursive: true });
+          const destPath = path.join(destDir, filename);
+          await safeMove(tempPath, destPath);
+          const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
+          parentUpdate[fieldName] = stored;
+        } catch (err) {
+          console.error(`Failed to process file for ${fieldName}:`, err);
+          // Continue processing others; skip failures
+        }
+      }
+    }
+
+    // Update parent assessment with file paths
     if (Object.keys(parentUpdate).length > 0) {
       await summonModel.updateAssessment(assessId, parentUpdate);
     }
