@@ -4,7 +4,7 @@ import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import * as assetModel from '../p.asset/assetModel';
 
 // Database table name
-const dbName = 'purchases'; // Replace with your actual database name
+const dbName = 'purchases2'; // Replace with your actual database name
 const purchaseRequestTable = `${dbName}.purchase_request`;
 const purchaseRequestItemTable = `${dbName}.purchase_items`;
 const purchaseDeliveryTable = `${dbName}.purchase_delivery`;
@@ -192,15 +192,15 @@ export const updatePurchaseRequestItem = async (
 ): Promise<void> => {
   // Duplicate PR number check intentionally skipped on update (per request)
 
-  const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
-  const values = Object.values(data);
-
-  if (fields) {
-    await pool.query(
-      `UPDATE ${purchaseRequestItemTable} SET ${fields}, updated_at = NOW() WHERE id = ?`,
-      [...values, id]
-    );
-  }
+  // Filter out undefined or null fields
+  const validEntries = Object.entries(data).filter(([_, v]) => v !== undefined && v !== null);
+  if (!validEntries.length) return;
+  const fields = validEntries.map(([k]) => `${k} = ?`).join(', ');
+  const values = validEntries.map(([_, v]) => v);
+  await pool.query(
+    `UPDATE ${purchaseRequestItemTable} SET ${fields}, updated_at = NOW() WHERE id = ?`,
+    [...values, id]
+  );
 };
 
 export const deletePurchaseRequestItem = async (id: number): Promise<void> => {
@@ -685,6 +685,41 @@ export const getDeliveriesByPurchaseId = async (purchase_id: number): Promise<Pu
 };
 
 export const createDelivery = async (data: Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
+  // Check for duplicates using delivery document numbers and dates
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  // Check for DO (Delivery Order) duplicate
+  if (data.do_no && data.do_date) {
+    conditions.push('(do_no = ? AND do_date = ?)');
+    params.push(data.do_no, data.do_date);
+  }
+
+  // Check for Invoice duplicate
+  if (data.inv_no && data.inv_date) {
+    conditions.push('(inv_no = ? AND inv_date = ?)');
+    params.push(data.inv_no, data.inv_date);
+  }
+
+  // Check for GRN (Goods Receipt Note) duplicate
+  if (data.grn_no && data.grn_date) {
+    conditions.push('(grn_no = ? AND grn_date = ?)');
+    params.push(data.grn_no, data.grn_date);
+  }
+
+  // If any conditions exist, check for duplicates
+  if (conditions.length > 0) {
+    const whereClause = conditions.join(' OR ');
+    const [existingRows] = await pool.query(
+      `SELECT id FROM ${purchaseDeliveryTable} WHERE ${whereClause} LIMIT 1`,
+      params
+    );
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      // Return the existing id (skip insert, like INSERT IGNORE)
+      return (existingRows[0] as any).id;
+    }
+  }
+
   const [result] = await pool.query(
     `INSERT INTO ${purchaseDeliveryTable} (purchase_id, request_id, do_no, do_date, inv_no, inv_date, grn_no, grn_date, upload_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [data.purchase_id, data.request_id, data.do_no ?? null, data.do_date ?? null, data.inv_no ?? null, data.inv_date ?? null, data.grn_no ?? null, data.grn_date ?? null, data.upload_path ?? null]

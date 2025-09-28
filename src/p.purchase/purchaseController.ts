@@ -537,29 +537,18 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
 export const updatePurchaseRequestItem = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-
-    // Build update data from request body
+    // Build update data from request body, coercing types, but exclude 'deliveries'
     const updateData: any = {};
-
-    if (req.body.request_type !== undefined) updateData.request_type = req.body.request_type;
-    if (req.body.costcenter !== undefined) updateData.costcenter = req.body.costcenter;
-    if (req.body.costcenter_id !== undefined) updateData.costcenter_id = req.body.costcenter_id;
-    if (req.body.pic !== undefined) updateData.pic = req.body.pic;
-    if (req.body.ramco_id !== undefined) updateData.ramco_id = req.body.ramco_id;
-    if (req.body.item_type !== undefined) updateData.item_type = req.body.item_type;
-    if (req.body.type_id !== undefined) updateData.type_id = Number(req.body.type_id);
-    if (req.body.items !== undefined) updateData.items = req.body.items;
-    if (req.body.supplier !== undefined) updateData.supplier = req.body.supplier;
-    if (req.body.supplier_id !== undefined) updateData.supplier_id = Number(req.body.supplier_id);
-    if (req.body.brand !== undefined) updateData.brand = req.body.brand;
-    if (req.body.brand_id !== undefined) updateData.brand_id = Number(req.body.brand_id);
-    if (req.body.qty !== undefined) updateData.qty = Number(req.body.qty);
-    if (req.body.unit_price !== undefined) updateData.unit_price = Number(req.body.unit_price);
-    if (req.body.total_price !== undefined) updateData.total_price = Number(req.body.total_price);
-    if (req.body.pr_date !== undefined) updateData.pr_date = req.body.pr_date;
-    if (req.body.pr_no !== undefined) updateData.pr_no = req.body.pr_no;
-    if (req.body.po_date !== undefined) updateData.po_date = req.body.po_date;
-    if (req.body.po_no !== undefined) updateData.po_no = req.body.po_no;
+    const numFields = ['costcenter_id', 'type_id', 'supplier_id', 'brand_id', 'qty', 'unit_price', 'total_price'];
+    for (const key in req.body) {
+      if (Object.prototype.hasOwnProperty.call(req.body, key) && key !== 'deliveries') {
+        if (numFields.includes(key)) {
+          updateData[key] = req.body[key] !== undefined && req.body[key] !== null && req.body[key] !== '' ? Number(req.body[key]) : undefined;
+        } else {
+          updateData[key] = req.body[key];
+        }
+      }
+    }
 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
     {
@@ -639,6 +628,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
               }
             }
           } else if (reqId) {
+            // Always upsert: createDelivery will skip/return existing if duplicate
             const newId = await purchaseModel.createDelivery(payload);
             if (fileForThis && fileForThis.path) {
               try {

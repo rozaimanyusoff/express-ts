@@ -1,16 +1,3 @@
-// Update acceptance_status and acceptance_date for assessment
-export const updateAssessmentAcceptance = async (id: number, acceptance_status: number, acceptance_date: Date) => {
-  const payload: any = {
-    acceptance_status,
-    acceptance_date: formatToMySQLDatetime(acceptance_date),
-    updated_at: formatToMySQLDatetime(new Date()),
-  };
-  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(payload).map(v => v === undefined ? null : v);
-  if (fields) {
-    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
-  }
-};
 import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
 
@@ -20,9 +7,11 @@ const summonTypeTable = `${dbName}.summon_type`;
 const summonAgencyTable = `${dbName}.summon_agency`;
 const summonTypeAgencyTable = `${dbName}.summon_type_agency`;
 
-const assessmentCriteriaTable = `${dbName}.test_v_assess_qset`;
-const assessmentTable = `${dbName}.test_v_assess2`;
-const assessmentDetailTable = `${dbName}.test_v_assess_dt2`; // linked to v_assess2 via assess_id
+const assessmentCriteriaTable = `${dbName}.v_assess_qset`;
+const assessmentTable = `${dbName}.v_assess2`;
+const assessmentDetailTable = `${dbName}.v_assess_dt2`; // linked to v_assess2 via assess_id
+
+const criteriaOwnershipTable = `${dbName}.criteria_ownership`;
 
 
 export interface SummonType {
@@ -306,7 +295,7 @@ export const deleteSummonAgency = async (id: number): Promise<void> => {
 
 export const createSummon = async (data: SummonRecord) => {
 
-  const [result] = await pool2.query(`INSERT INTO ${summonTable} (asset_id, ramco_id, summon_no, summon_date, summon_time, summon_loc, myeg_date, type_of_summon, summon_agency, summon_amt, summon_upl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+  const [result] = await pool2.query(`INSERT INTO ${summonTable} (asset_id, ramco_id, summon_no, summon_date, summon_time, summon_loc, myeg_date, type_of_summon, summon_agency, summon_amt, summon_upl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [data.asset_id, data.ramco_id, data.summon_no, data.summon_date, data.summon_time, data.summon_loc, data.myeg_date, data.type_of_summon, data.summon_agency, data.summon_amt, data.summon_upl]
   );
   return (result as ResultSetHeader).insertId;
@@ -348,127 +337,21 @@ export interface AssessmentCriteria {
   qset_id?: number;
   q_id?: number;
   qset_quesno?: number;
-  qset_desc?: string;
-  qset_stat?: string;
-  qset_order?: number;
+  ownership?: number | null;
+  qset_desc?: string | null;
+  qset_stat?: string | null;
+  qset_order?: number | null;
   created_at?: string | null;
+  created_by?: string | null;
   updated_at?: string | null;
   updated_by?: string | null;
 }
 
 export const getAssessmentCriteria = async (): Promise<AssessmentCriteria[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} ORDER BY qset_id DESC`);
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} ORDER BY qset_order`);
   return rows as AssessmentCriteria[];
 };
 
-/* ========== ASSESSMENTS (parent) ========== */
-export interface AssessmentRecord {
-  assess_id?: number;
-  asset_id?: number | null;
-  a_date?: string | null;
-  a_loc?: string | null;
-  loc_id?: number | null;
-  a_ncr?: number | null;
-  a_rate?: string | null;
-  a_upload?: string | null;
-  a_upload2?: string | null;
-  a_upload3?: string | null;
-  a_upload4?: string | null;
-  a_remark?: string | null;
-  a_dt?: string | null;
-  ownership?: number | null;
-}
-
-export const getAssessments = async (year?: number): Promise<AssessmentRecord[]> => {
-  let query = `SELECT * FROM ${assessmentTable}`;
-  const params: any[] = [];
-  
-  if (year) {
-    query += ` WHERE YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?)`;
-    params.push(year, year);
-  }
-  
-  query += ` ORDER BY assess_id DESC`;
-  const [rows] = await pool2.query(query, params);
-  return rows as AssessmentRecord[];
-};
-
-export const getAssessmentById = async (id: number): Promise<AssessmentRecord | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
-  const data = rows as AssessmentRecord[];
-  return data.length > 0 ? data[0] : null;
-};
-
-export const createAssessment = async (data: Partial<AssessmentRecord>) => {
-  const now = formatToMySQLDatetime(new Date());
-  const payload: any = { ...data, created_at: now, updated_at: now };
-  const [result] = await pool2.query(`INSERT INTO ${assessmentTable} SET ?`, [payload]);
-  return (result as ResultSetHeader).insertId;
-};
-
-export const updateAssessment = async (id: number, data: Partial<AssessmentRecord>) => {
-  const payload: any = { ...data };
-  payload.updated_at = formatToMySQLDatetime(new Date());
-  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(payload).map(v => v === undefined ? null : v);
-  if (fields) {
-    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
-  }
-};
-
-export const deleteAssessment = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
-  const r = result as ResultSetHeader;
-  if (r.affectedRows === 0) throw new Error('Assessment not found');
-};
-
-/* ========== ASSESSMENT DETAILS (child) ========== */
-export interface AssessmentDetailRecord {
-  adt_id?: number;
-  assess_id?: number;
-  vehicle_id?: number | null;
-  adt_item?: string | null;
-  adt_ncr?: number | null;
-  adt_rate?: string | null;
-  adt_rate2?: number | null;
-  adt_rem?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-export const getAssessmentDetails = async (assess_id: number): Promise<AssessmentDetailRecord[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? ORDER BY adt_id ASC`, [assess_id]);
-  return rows as AssessmentDetailRecord[];
-};
-
-export const getAssessmentDetailById = async (id: number): Promise<AssessmentDetailRecord | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
-  const data = rows as AssessmentDetailRecord[];
-  return data.length > 0 ? data[0] : null;
-};
-
-export const createAssessmentDetail = async (data: Partial<AssessmentDetailRecord>) => {
-  const now = formatToMySQLDatetime(new Date());
-  const payload: any = { ...data, created_at: now, updated_at: now };
-  const [result] = await pool2.query(`INSERT INTO ${assessmentDetailTable} SET ?`, [payload]);
-  return (result as ResultSetHeader).insertId;
-};
-
-export const updateAssessmentDetail = async (id: number, data: Partial<AssessmentDetailRecord>) => {
-  const payload: any = { ...data };
-  payload.updated_at = formatToMySQLDatetime(new Date());
-  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(payload).map(v => v === undefined ? null : v);
-  if (fields) {
-    await pool2.query(`UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`, [...values, id]);
-  }
-};
-
-export const deleteAssessmentDetail = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
-  const r = result as ResultSetHeader;
-  if (r.affectedRows === 0) throw new Error('Assessment detail not found');
-};
 
 export const getAssessmentCriteriaById = async (id: number): Promise<AssessmentCriteria | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
@@ -545,9 +428,188 @@ export const reorderAssessmentCriteria = async (qset_id: number, newOrderInput: 
 
     await conn.commit();
   } catch (err) {
-    await conn.rollback().catch(() => {});
+    await conn.rollback().catch(() => { });
     throw err;
   } finally {
     conn.release();
   }
+};
+
+/* ========== CRITERIA OWNERSHIP ========== */
+export interface CriteriaOwnership {
+  id?: number;
+  ramco_id?: string | null; //member ID
+  department_id?: number | null; // department ID
+  status?: string | null;
+  created_at?: string | null; //datetime - yyyy-mm-dd hh:mm:ss
+  updated_at?: string | null; //datetime - yyyy-mm-dd hh:mm:ss
+}
+
+export const getAssessmentCriteriaOwnerships = async (): Promise<CriteriaOwnership[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${criteriaOwnershipTable} ORDER BY id DESC`);
+  return rows as CriteriaOwnership[];
+}
+
+export const getAssessmentCriteriaOwnershipById = async (id: number): Promise<CriteriaOwnership | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
+  const data = rows as CriteriaOwnership[];
+  return data.length > 0 ? data[0] : null;
+}
+
+export const createAssessmentCriteriaOwnership = async (data: Partial<CriteriaOwnership>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const ramco_id = (data.ramco_id ?? '').toString();
+  const department_id = Number(data.department_id ?? 0);
+  if (!ramco_id || !department_id) throw new Error('ramco_id and department_id are required');
+  // Check for duplicate
+  const [dupRows] = await pool2.query(
+    `SELECT id FROM ${criteriaOwnershipTable} WHERE ramco_id = ? AND department_id = ? LIMIT 1`,
+    [ramco_id, department_id]
+  );
+  if (Array.isArray(dupRows) && dupRows.length > 0) {
+    throw new Error('Duplicate ownership record exists for this ramco_id and department_id');
+  }
+  const payload = { ...data, created_at: now, updated_at: now } as any;
+  const [result] = await pool2.query(`INSERT INTO ${criteriaOwnershipTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+}
+
+export const updateAssessmentCriteriaOwnership = async (id: number, data: Partial<CriteriaOwnership>): Promise<void> => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${criteriaOwnershipTable} SET ${fields} WHERE id = ?`, [...values, id]);
+  }
+}
+
+export const deleteAssessmentCriteriaOwnership = async (id: number): Promise<void> => {
+  const [result] = await pool2.query(`DELETE FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Criteria ownership record not found');
+}
+
+
+/* ========== ASSESSMENTS (parent) ========== */
+export interface AssessmentRecord {
+  assess_id?: number;
+  asset_id?: number | null;
+  a_date?: string | null;
+  a_loc?: string | null;
+  loc_id?: number | null;
+  a_ncr?: number | null;
+  a_rate?: string | null;
+  a_upload?: string | null;
+  a_upload2?: string | null;
+  a_upload3?: string | null;
+  a_upload4?: string | null;
+  a_remark?: string | null;
+  a_dt?: string | null;
+  ownership?: number | null;
+}
+
+export const getAssessments = async (year?: number): Promise<AssessmentRecord[]> => {
+  let query = `SELECT * FROM ${assessmentTable}`;
+  const params: any[] = [];
+
+  if (year) {
+    query += ` WHERE YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?)`;
+    params.push(year, year);
+  }
+
+  query += ` ORDER BY assess_id DESC`;
+  const [rows] = await pool2.query(query, params);
+  return rows as AssessmentRecord[];
+};
+
+export const getAssessmentById = async (id: number): Promise<AssessmentRecord | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
+  const data = rows as AssessmentRecord[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createAssessment = async (data: Partial<AssessmentRecord>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload: any = { ...data, created_at: now, updated_at: now };
+  const [result] = await pool2.query(`INSERT INTO ${assessmentTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateAssessment = async (id: number, data: Partial<AssessmentRecord>) => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+  }
+};
+
+export const deleteAssessment = async (id: number) => {
+  const [result] = await pool2.query(`DELETE FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Assessment not found');
+};
+
+// Update acceptance_status and acceptance_date for assessment
+export const updateAssessmentAcceptance = async (id: number, acceptance_status: number, acceptance_date: Date) => {
+  const payload: any = {
+    acceptance_status,
+    acceptance_date: formatToMySQLDatetime(acceptance_date),
+    updated_at: formatToMySQLDatetime(new Date()),
+  };
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+  }
+};
+
+/* ========== ASSESSMENT DETAILS (child) ========== */
+export interface AssessmentDetailRecord {
+  adt_id?: number;
+  assess_id?: number;
+  vehicle_id?: number | null;
+  adt_item?: string | null;
+  adt_ncr?: number | null;
+  adt_rate?: string | null;
+  adt_rate2?: number | null;
+  adt_rem?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export const getAssessmentDetails = async (assess_id: number): Promise<AssessmentDetailRecord[]> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? ORDER BY adt_id ASC`, [assess_id]);
+  return rows as AssessmentDetailRecord[];
+};
+
+export const getAssessmentDetailById = async (id: number): Promise<AssessmentDetailRecord | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
+  const data = rows as AssessmentDetailRecord[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createAssessmentDetail = async (data: Partial<AssessmentDetailRecord>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload: any = { ...data, created_at: now, updated_at: now };
+  const [result] = await pool2.query(`INSERT INTO ${assessmentDetailTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateAssessmentDetail = async (id: number, data: Partial<AssessmentDetailRecord>) => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await pool2.query(`UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`, [...values, id]);
+  }
+};
+
+export const deleteAssessmentDetail = async (id: number) => {
+  const [result] = await pool2.query(`DELETE FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Assessment detail not found');
 };
