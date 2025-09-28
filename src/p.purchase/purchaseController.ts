@@ -588,6 +588,44 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
       }
     }
 
+
+    // Update purchaseRequestTable if relevant fields are present
+    const purchaseItem = await purchaseModel.getPurchaseRequestItemById(id);
+    const requestId = purchaseItem?.request_id ? Number(purchaseItem.request_id) : (req.body.request_id ? Number(req.body.request_id) : undefined);
+    if (requestId) {
+      // List of fields belonging to purchaseRequestTable
+      const prFields = [
+        'request_type',
+        'pr_date',
+        'pr_no',
+        'ramco_id',
+        'costcenter_id',
+        'type_id',
+        'category_id',
+        'description',
+        'qty',
+      ];
+      const prUpdate: any = {};
+      for (const key of prFields) {
+        if (req.body[key] !== undefined) {
+          // Coerce numeric fields
+          if ([
+            'costcenter_id',
+            'type_id',
+            'category_id',
+            'qty'
+          ].includes(key)) {
+            prUpdate[key] = req.body[key] !== null && req.body[key] !== '' ? Number(req.body[key]) : undefined;
+          } else {
+            prUpdate[key] = req.body[key];
+          }
+        }
+      }
+      if (Object.keys(prUpdate).length > 0) {
+        await purchaseModel.updatePurchaseRequest(requestId, prUpdate);
+      }
+    }
+
     await purchaseModel.updatePurchaseRequestItem(id, updateData);
 
     // If deliveries[] present, upsert and handle per-delivery file uploads
