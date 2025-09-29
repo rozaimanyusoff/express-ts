@@ -5,6 +5,7 @@ import * as assetModel from '../p.asset/assetModel';
 import { sendMail } from '../utils/mailer';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
+import { renderVehicleAssessmentNotification } from '../utils/emailTemplates/vehicleAssessmentNotification';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
@@ -1279,6 +1280,56 @@ export const createAssessment = async (req: Request, res: Response) => {
       // create detail row
       await complianceModel.createAssessmentDetail(d);
     }
+
+    // Fire-and-forget: send assessment notification email to driver/owner if possible
+    (async () => {
+      try {
+        const assess = await complianceModel.getAssessmentById(assessId);
+        if (!assess) return;
+        const assetId = Number((assess as any).asset_id) || null;
+        let asset: any = null;
+        if (assetId) asset = await assetModel.getAssetById(assetId).catch(() => null);
+        // find driver from asset.ramco_id if available
+        const ramco = asset && (asset.ramco_id || asset.owner_ramco_id || asset.assigned_driver);
+        let driver: any = null;
+        if (ramco) driver = await assetModel.getEmployeeByRamco(String(ramco)).catch(() => null);
+
+        const toEmail = (driver && (driver.email || driver.contact)) || null;
+        if (!toEmail) return;
+
+        // Build template data
+        const assessmentDate = (assess as any).a_date || (assess as any).a_dt || null;
+        const { subject, html, text } = renderVehicleAssessmentNotification({
+          asset: { id: asset?.id || assetId, code: asset?.register_number || asset?.asset_code || String(assetId), name: asset?.model_name, ramco_id: asset?.ramco_id },
+          driver: { ramco_id: driver?.ramco_id || '', full_name: driver?.full_name || driver?.name || '', email: toEmail },
+          assessment: { id: assessId, date: String(assessmentDate || ''), remark: (assess as any).a_remark, rate: (assess as any).a_rate, ncr: (assess as any).a_ncr },
+          details: [],
+        });
+
+        // Prepare attachments (up to four parent uploads)
+        const basePath = (process.env.UPLOAD_BASE_PATH || process.env.STATIC_UPLOAD_PATH || '').trim();
+        const attachPaths: string[] = [
+          (assess as any).a_upload,
+          (assess as any).a_upload2,
+          (assess as any).a_upload3,
+          (assess as any).a_upload4,
+        ].filter(Boolean);
+        const attachments = attachPaths.map((p: string) => {
+          const filename = path.basename(p.replace(/^uploads\//, ''));
+          // If basePath exists, attach file via absolute path; else, skip attaching and rely on links in email body
+          const absPath = basePath ? path.join(basePath, p.replace(/^uploads\//, '')) : undefined;
+          return absPath ? { filename, path: absPath } : null;
+        }).filter(Boolean) as Array<{ filename: string; path: string }>;
+
+        try {
+          await sendMail(toEmail, subject, html, { text, attachments });
+        } catch (mailErr) {
+          console.error('createAssessment: mail send error', mailErr);
+        }
+      } catch (e) {
+        // ignore email errors
+      }
+    })();
 
     return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id: assessId } });
   } catch (e) {
