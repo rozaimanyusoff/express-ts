@@ -685,37 +685,52 @@ export const getDeliveriesByPurchaseId = async (purchase_id: number): Promise<Pu
 };
 
 export const createDelivery = async (data: Omit<PurchaseDeliveryRecord, 'id' | 'created_at' | 'updated_at'>): Promise<number> => {
-  // Check for duplicates using delivery document numbers and dates
+  // Check for duplicates using delivery document numbers and dates SCOPED TO THIS PURCHASE_ID
   const conditions: string[] = [];
   const params: any[] = [];
 
-  // Check for DO (Delivery Order) duplicate
+  // Always include purchase_id in the duplicate check to scope it properly
+  const baseCondition = 'purchase_id = ?';
+  params.push(data.purchase_id);
+
+  // Check for DO (Delivery Order) duplicate within this purchase
   if (data.do_no && data.do_date) {
     conditions.push('(do_no = ? AND do_date = ?)');
     params.push(data.do_no, data.do_date);
   }
 
-  // Check for Invoice duplicate
+  // Check for Invoice duplicate within this purchase
   if (data.inv_no && data.inv_date) {
     conditions.push('(inv_no = ? AND inv_date = ?)');
     params.push(data.inv_no, data.inv_date);
   }
 
-  // Check for GRN (Goods Receipt Note) duplicate
+  // Check for GRN (Goods Receipt Note) duplicate within this purchase
   if (data.grn_no && data.grn_date) {
     conditions.push('(grn_no = ? AND grn_date = ?)');
     params.push(data.grn_no, data.grn_date);
   }
 
-  // If any conditions exist, check for duplicates
+  // If any document conditions exist, check for duplicates within this purchase
   if (conditions.length > 0) {
-    const whereClause = conditions.join(' OR ');
+    const whereClause = `${baseCondition} AND (${conditions.join(' OR ')})`;
     const [existingRows] = await pool.query(
       `SELECT id FROM ${purchaseDeliveryTable} WHERE ${whereClause} LIMIT 1`,
       params
     );
     if (Array.isArray(existingRows) && existingRows.length > 0) {
-      // Return the existing id (skip insert, like INSERT IGNORE)
+      // Return the existing id (skip insert, like INSERT IGNORE) - but only for same purchase
+      return (existingRows[0] as any).id;
+    }
+  } else {
+    // If no document numbers provided, check if any delivery already exists for this purchase_id
+    // This prevents multiple empty deliveries for the same purchase
+    const [existingRows] = await pool.query(
+      `SELECT id FROM ${purchaseDeliveryTable} WHERE purchase_id = ? LIMIT 1`,
+      [data.purchase_id]
+    );
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      // Return the existing id for this purchase
       return (existingRows[0] as any).id;
     }
   }

@@ -4,7 +4,6 @@ import { promises as fsPromises } from 'fs';
 import * as assetModel from '../p.asset/assetModel';
 import * as userModel from '../p.user/userModel';
 import * as purchaseModel from './purchaseModel';
-import { PurchaseRecord, PurchaseRequestItemRecord } from './purchaseModel';
 import { sendMail } from '../utils/mailer';
 import { renderPurchaseNotification } from '../utils/emailTemplates/purchaseNotification';
 import { renderPurchaseRegistryCompleted } from '../utils/emailTemplates/purchaseRegistryCompleted';
@@ -636,8 +635,17 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
         // Get purchase to fetch its request_id
         const existingPurchase = await purchaseModel.getPurchaseRequestItemById(id);
         const reqId = existingPurchase?.request_id ? Number(existingPurchase.request_id) : (req.body.request_id ? Number(req.body.request_id) : undefined);
-        for (let i = 0; i < deliveries.length; i++) {
-          const d = deliveries[i];
+        
+        // Fetch existing deliveries for this purchase to avoid duplicates
+        const existingDeliveries = await purchaseModel.getDeliveriesByPurchaseId(id);
+        
+        // Use qty to determine delivery strategy
+        const purchaseQty = updateData.qty !== undefined ? Number(updateData.qty) : 
+                          (existingPurchase?.qty !== undefined ? Number(existingPurchase.qty) : 1);
+        
+        if (purchaseQty === 1) {
+          // For qty = 1, only allow ONE delivery record - update existing or create single new one
+          const d = deliveries[0]; // Only process first delivery for qty=1
           const payload = {
             purchase_id: id,
             request_id: reqId,
@@ -649,24 +657,38 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
             grn_date: d.grn_date ?? null,
             upload_path: d.upload_path ?? null,
           } as any;
-          const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
-          if (d.id) {
-            await purchaseModel.updateDelivery(Number(d.id), payload);
+          
+          const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[0][upload_path]`);
+          
+          if (existingDeliveries.length > 0) {
+            // Update the first (and should be only) existing delivery
+            const existingDelivery = existingDeliveries[0];
+            await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
+            
             if (fileForThis && fileForThis.path) {
               try {
                 const tempPath = fileForThis.path as string;
                 const originalName: string = fileForThis.originalname || path.basename(tempPath);
                 const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-                const filename = `delivery-${Number(d.id)}-${Date.now()}${ext}`;
+                const filename = `delivery-${Number(existingDelivery.id)}-${Date.now()}${ext}`;
                 const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
                 await safeMove(tempPath, destPath);
-                await purchaseModel.updateDelivery(Number(d.id), { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+                await purchaseModel.updateDelivery(Number(existingDelivery.id), { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
               } catch {
                 // non-blocking
               }
             }
+            
+            // Delete any extra deliveries beyond the first one for qty=1
+            for (let i = 1; i < existingDeliveries.length; i++) {
+              try {
+                await purchaseModel.deleteDelivery(Number(existingDeliveries[i].id));
+              } catch {
+                // non-blocking - continue even if delete fails
+              }
+            }
           } else if (reqId) {
-            // Always upsert: createDelivery will skip/return existing if duplicate
+            // Create single new delivery for qty=1
             const newId = await purchaseModel.createDelivery(payload);
             if (fileForThis && fileForThis.path) {
               try {
@@ -679,6 +701,82 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
                 await purchaseModel.updateDelivery(newId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
               } catch {
                 // non-blocking
+              }
+            }
+          }
+        } else {
+          // For qty > 1, use the original logic but simplified matching
+          // Build a map of existing deliveries by purchase_id for simpler matching
+          const existingDeliveryMap = new Map();
+          
+          for (let idx = 0; idx < existingDeliveries.length; idx++) {
+            const existing = existingDeliveries[idx];
+            existingDeliveryMap.set(`INDEX:${idx}`, existing);
+            if (existing.id) {
+              existingDeliveryMap.set(`ID:${existing.id}`, existing);
+            }
+          }
+          
+          for (let i = 0; i < Math.min(deliveries.length, purchaseQty); i++) {
+            const d = deliveries[i];
+            const payload = {
+              purchase_id: id,
+              request_id: reqId,
+              do_no: d.do_no ?? null,
+              do_date: d.do_date ?? null,
+              inv_no: d.inv_no ?? null,
+              inv_date: d.inv_date ?? null,
+              grn_no: d.grn_no ?? null,
+              grn_date: d.grn_date ?? null,
+              upload_path: d.upload_path ?? null,
+            } as any;
+            
+            const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
+            
+            // Try to find existing delivery to update
+            let existingDelivery = null;
+            
+            // First, try to match by ID if provided
+            if (d.id) {
+              existingDelivery = existingDeliveryMap.get(`ID:${d.id}`);
+            }
+            
+            // Fallback: match by index position for multi-qty items
+            if (!existingDelivery) {
+              existingDelivery = existingDeliveryMap.get(`INDEX:${i}`);
+            }
+            
+            if (existingDelivery) {
+              // Update existing delivery
+              await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
+              if (fileForThis && fileForThis.path) {
+                try {
+                  const tempPath = fileForThis.path as string;
+                  const originalName: string = fileForThis.originalname || path.basename(tempPath);
+                  const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+                  const filename = `delivery-${Number(existingDelivery.id)}-${Date.now()}${ext}`;
+                  const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+                  await safeMove(tempPath, destPath);
+                  await purchaseModel.updateDelivery(Number(existingDelivery.id), { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+                } catch {
+                  // non-blocking
+                }
+              }
+            } else if (reqId && existingDeliveries.length < purchaseQty) {
+              // Create new delivery only if we haven't reached the qty limit
+              const newId = await purchaseModel.createDelivery(payload);
+              if (fileForThis && fileForThis.path) {
+                try {
+                  const tempPath = fileForThis.path as string;
+                  const originalName: string = fileForThis.originalname || path.basename(tempPath);
+                  const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
+                  const filename = `delivery-${newId}-${Date.now()}${ext}`;
+                  const destPath = await buildStoragePath(PURCHASE_SUBDIR, filename);
+                  await safeMove(tempPath, destPath);
+                  await purchaseModel.updateDelivery(newId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
+                } catch {
+                  // non-blocking
+                }
               }
             }
           }
