@@ -79,10 +79,10 @@ export const deleteType = async (id: number) => {
 // CATEGORIES CRUD
 
 export const createCategory = async (data: any) => {
-  const { name, image, type_id } = data;
+  const { name, type_id } = data;
   const [result] = await pool.query(
-    `INSERT INTO ${categoryTable} (name, image, type_id) VALUES (?, ?, ?)`,
-    [name, image, type_id ?? null]
+    `INSERT INTO ${categoryTable} (name, type_id, manager_id) VALUES (?, ?, ?)`,
+    [name, type_id, type_id]
   );
   return result;
 };

@@ -575,13 +575,13 @@ export const getCategoryById = async (req: Request, res: Response) => {
 	res.json(row);
 };
 export const createCategory = async (req: Request, res: Response) => {
-	// Accept frontend payload with typeId, map to type_id for DB
-	const { name, description, typeId, image } = req.body;
+	// Accept frontend payload with type_id (or typeId), map to type_id for DB
+	const { name, type_id, typeId, manager_id } = req.body;
+	// Prefer type_id, fallback to typeId
 	const result = await assetModel.createCategory({
 		name,
-		description,
-		image,
-		type_id: typeId
+		type_id: type_id ?? typeId,
+		manager_id: manager_id ?? null
 	});
 	res.json({
 		status: 'success',

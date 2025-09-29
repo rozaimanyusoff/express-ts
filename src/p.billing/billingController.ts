@@ -3187,6 +3187,125 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: `${dataWithPrevious.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data: dataWithPrevious });
 };
 
+// POST /api/bills/util/by-ids?service=a,b,c
+// Body accepts { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
+// Returns utility bills for the given IDs filtered by service(s), enriched similar to getUtilityBills
+export const postUtilityBillsByIdsByService = async (req: Request, res: Response) => {
+	// Parse IDs from body
+	const bodyIds = (req.body && (req.body.util_id ?? req.body.ids ?? req.body.idsList)) as any;
+	let ids: number[] = [];
+	if (Array.isArray(bodyIds)) ids = bodyIds.map((v: any) => Number(v)).filter(n => Number.isFinite(n));
+	else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
+	else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
+
+	if (!ids.length) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+
+	// Parse service(s) filter from query: support service=, services=, repeated params, and comma-separated
+	const svcQuery: any = (req.query.service ?? req.query.services);
+	let serviceList: string[] = [];
+	if (Array.isArray(svcQuery)) serviceList = svcQuery.flatMap((s: any) => String(s).split(','));
+	else if (typeof svcQuery === 'string') serviceList = String(svcQuery).split(',');
+	const normalizedServices = serviceList.map(s => s.trim().toLowerCase()).filter(Boolean);
+
+	// Fetch bills and lookups
+	const bills = await billingModel.getUtilityBillsByIds(ids);
+	const accounts = await billingModel.getBillingAccounts();
+	const costcentersRaw = await assetsModel.getCostcenters();
+	const locationsRaw = await assetsModel.getLocations();
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+	const accountMap = new Map((accounts || []).map((a: any) => [a.bill_id, a]));
+	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const locMap = new Map(locations.map((l: any) => [l.id, l]));
+
+	// Beneficiaries for enrichment (align with getUtilityBills)
+	const beneficiariesRaw = await billingModel.getBeneficiaries(undefined);
+	const beneficiaries = Array.isArray(beneficiariesRaw) ? beneficiariesRaw : [];
+	const benByName = new Map(beneficiaries.map((b: any) => [String((b.bfcy_name ?? b.name) || '').toLowerCase(), b]));
+	const benById = new Map(beneficiaries.map((b: any) => [String((b.id ?? b.bfcy_id) ?? ''), b]));
+
+	// Build enriched rows similar to getUtilityBills
+	const enriched = bills.map((bill: any) => {
+		// Build account object
+		let account: any = null;
+		let acc: any = null;
+		if (bill.bill_id && accountMap.has(bill.bill_id)) {
+			acc = accountMap.get(bill.bill_id) as any;
+			// resolve beneficiary for account
+			let benObj: any = null;
+			const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
+			if (acc.beneficiary_id && benById.has(String(acc.beneficiary_id))) benObj = benById.get(String(acc.beneficiary_id));
+			else if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
+			account = {
+				bill_id: acc.bill_id,
+				account: acc.account,
+				// In this codebase, service corresponds to account category
+				service: acc.category,
+				desc: acc.description,
+				beneficiary: benObj ? {
+					id: benObj.id ?? benObj.bfcy_id,
+					name: benObj.bfcy_name ?? benObj.name,
+					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
+					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
+				} : null
+			};
+		}
+
+		// Build costcenter object (prefer account-level if present)
+		let costcenter: any = null;
+		const ccLookupId = (acc && acc.costcenter_id) ?? bill.cc_id;
+		if (ccLookupId && ccMap.has(ccLookupId)) {
+			const cc = ccMap.get(ccLookupId) as any;
+			costcenter = { id: cc.id, name: cc.name };
+		}
+
+		// Build location object (prefer account-level if present)
+		let location: any = null;
+		const locLookupId = (acc && acc.location_id) ?? bill.loc_id;
+		if (locLookupId && locMap.has(locLookupId)) {
+			const d = locMap.get(locLookupId) as any;
+			location = { id: d.id, name: d.name };
+		}
+
+		if (account) {
+			account.costcenter = costcenter;
+			account.location = location;
+		}
+
+		return {
+			util_id: bill.util_id,
+			account,
+			ubill_date: bill.ubill_date,
+			ubill_no: bill.ubill_no,
+			ubill_ref: bill.ubill_ref ?? null,
+			ubill_url: publicUrl(bill.ubill_ref ?? null),
+			ubill_submit: bill.ubill_submit ?? null,
+			ubill_rent: bill.ubill_rent,
+			ubill_color: bill.ubill_color,
+			ubill_bw: bill.ubill_bw,
+			ubill_stotal: bill.ubill_stotal,
+			ubill_taxrate: bill.ubill_taxrate,
+			ubill_tax: bill.ubill_tax,
+			ubill_round: bill.ubill_round,
+			ubill_deduct: bill.ubill_deduct,
+			ubill_gtotal: bill.ubill_gtotal,
+			ubill_count: bill.ubill_count,
+			ubill_disc: bill.ubill_disc,
+			ubill_usage: bill.ubill_usage,
+			ubill_payref: bill.ubill_payref,
+			ubill_paystat: bill.ubill_paystat
+		};
+	}).filter(Boolean);
+
+	// Apply service filter if provided: match getUtilityBills behavior (account.service)
+	const final = normalizedServices.length
+		? enriched.filter((item: any) => item.account && item.account.service && normalizedServices.some(s => String(item.account.service).toLowerCase().includes(s)))
+		: enriched;
+
+	res.json({ status: 'success', message: `${final.length} utility bill(s) retrieved`, data: final });
+};
+
 // POST variant for printing bills: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
 export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	// beneficiaryId from route params
