@@ -1014,7 +1014,18 @@ export const getAssessments = async (req: Request, res: Response) => {
         const l = locationMap.get(r.location_id);
         return { id: r.location_id, code: l.code || l.name || null };
       })() : null;
-      return { ...clean, asset, assessed_location };
+      
+      // Convert upload paths to full public URLs
+      return { 
+        ...clean, 
+        asset, 
+        assessed_location,
+        // Convert attachment fields to full URLs
+        a_upload: toPublicUrl(clean.a_upload),
+        a_upload2: toPublicUrl(clean.a_upload2),
+        a_upload3: toPublicUrl(clean.a_upload3),
+        a_upload4: toPublicUrl(clean.a_upload4),
+      };
     });
 
     return res.json({ status: 'success', message: 'Assessments retrieved', data });
@@ -1093,7 +1104,13 @@ export const getAssessmentById = async (req: Request, res: Response) => {
       const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
       // remove internal ids from detail response
       const { vehicle_id, asset_id, ...rest } = d || {};
-      return { ...rest, qset_desc, qset_type };
+      return { 
+        ...rest, 
+        qset_desc, 
+        qset_type,
+        // Convert detail image URL to full path
+        adt_image: toPublicUrl(rest.adt_image)
+      };
     });
 
     // omit internal fields before returning
@@ -1102,7 +1119,21 @@ export const getAssessmentById = async (req: Request, res: Response) => {
       const l = locationMap.get((row as any).location_id);
       return { id: (row as any).location_id, code: l.code || l.name || null };
     })() : null;
-    return res.json({ status: 'success', message: 'Assessment retrieved', data: { ...cleanRow, asset, assessment_location, details: enrichedDetails } });
+
+    // Convert upload paths to full public URLs
+    const responseData = {
+      ...cleanRow,
+      asset,
+      assessment_location,
+      details: enrichedDetails,
+      // Convert attachment fields to full URLs
+      a_upload: toPublicUrl(cleanRow.a_upload),
+      a_upload2: toPublicUrl(cleanRow.a_upload2),
+      a_upload3: toPublicUrl(cleanRow.a_upload3),
+      a_upload4: toPublicUrl(cleanRow.a_upload4),
+    };
+
+    return res.json({ status: 'success', message: 'Assessment retrieved', data: responseData });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment', data: null });
   }
