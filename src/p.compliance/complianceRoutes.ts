@@ -61,9 +61,12 @@ router.get('/assessments', asyncHandler(complianceController.getAssessments));
 router.get('/assessments/:id', asyncHandler(complianceController.getAssessmentById));
 // Accept multiple files: vehicle_images[] and per-detail images (adt_image, adt_image_N, etc.)
 router.post('/assessments', uploadAssessment.any(), asyncHandler(complianceController.createAssessment));
-router.put('/assessments/:id', asyncHandler(complianceController.updateAssessment));
 // Driver acceptance endpoint
 router.put('/assessments/:id/acceptance', asyncHandler(complianceController.acceptAssessment));
+router.put('/assessments/:id', asyncHandler(complianceController.updateAssessment));
+// Send a test Vehicle Assessment email (no attachments)
+router.post('/assessments/test-email', asyncHandler(complianceController.sendAssessmentTestEmail));
+
 router.delete('/assessments/:id', asyncHandler(complianceController.deleteAssessment));
 
 /* ========== ASSESSMENT DETAILS (child) ROUTES ========== */

@@ -87,6 +87,33 @@ function fmtDatetimeMySQL(input?: any): string | null {
   return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
 }
 
+// POST /api/compliance/assessments/test-email
+// Body: { to: string, asset?: { id, code, name }, driver?: { full_name, email, ramco_id }, assessment?: { id, date, remark, rate, ncr }, portalLink?: string, securityPin?: string }
+// Sends a test Vehicle Assessment email using the current template (no attachments)
+export const sendAssessmentTestEmail = async (req: Request, res: Response) => {
+  try {
+    const to = String(req.body?.to || req.query?.to || '').trim();
+    if (!to) return res.status(400).json({ status: 'error', message: 'Provide recipient email in body.to' });
+
+    const asset = req.body?.asset || { id: 999, code: 'TEST-123', name: 'Test Vehicle' };
+    const driver = req.body?.driver || { ramco_id: 'DRV001', full_name: 'Test Recipient', email: to };
+    const now = new Date();
+    const defaultAssess = { id: 1001, date: now.toISOString().slice(0, 10), remark: 'Automated test', rate: '-', ncr: '-' };
+    const assessment = req.body?.assessment || defaultAssess;
+    const securityPin = String(req.body?.securityPin || Math.floor(100000 + Math.random() * 900000));
+    const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url';
+    const portalLink = req.body?.portalLink || `${frontendUrl}/compliance/assessment/portal/${asset.id}?code=${driver.ramco_id}${securityPin}`;
+
+    const { subject, html, text } = renderVehicleAssessmentNotification({ asset, driver, assessment, details: [], portalLink, securityPin });
+
+    await sendMail(to, subject, html, { text });
+    return res.json({ status: 'success', message: 'Test email sent', to, subject });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Failed to send test email';
+    return res.status(500).json({ status: 'error', message: msg });
+  }
+};
+
 export const getSummons = async (req: Request, res: Response) => {
   try {
     const rows = await complianceModel.getSummons();
