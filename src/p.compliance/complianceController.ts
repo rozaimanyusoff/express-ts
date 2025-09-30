@@ -6,10 +6,13 @@ import { sendMail } from '../utils/mailer';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
 import { renderVehicleAssessmentNotification } from '../utils/emailTemplates/vehicleAssessmentNotification';
+import { getSupervisorBySubordinate } from '../utils/employeeHelper';
 import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
 import * as adminNotificationModel from '../p.admin/notificationModel';
+
+const summonAdminMail = 'admin@example.com';
 
 
 // Helper to normalize a temp file path into stored relative path
@@ -291,7 +294,7 @@ export const createSummon = async (req: Request, res: Response) => {
         });
 
         try {
-          await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html);
+          await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, { cc: summonAdminMail });
           await complianceModel.updateSummon(id, { emailStat: 1 }).catch(() => { });
         } catch (mailErr) {
           console.error('createSummon: mail send error', mailErr, 'to', toEmail);
@@ -943,9 +946,11 @@ export const deleteAssessmentCriteriaOwnership = async (req: Request, res: Respo
 /* ========== ASSESSMENTS (parent) CONTROLLERS ========== */
 export const getAssessments = async (req: Request, res: Response) => {
   try {
-    // Parse optional year filter from query params
+    // Parse optional year and asset filter from query params
     const yearParam = req.query.year as string;
+    const assetParam = req.query.asset as string;
     const year = yearParam ? parseInt(yearParam, 10) : undefined;
+    const asset_id = assetParam ? parseInt(assetParam, 10) : undefined;
 
     // Validate year if provided
     if (yearParam && (isNaN(year!) || year! < 1900 || year! > new Date().getFullYear() + 10)) {
@@ -956,7 +961,16 @@ export const getAssessments = async (req: Request, res: Response) => {
       });
     }
 
-    const rows = await complianceModel.getAssessments(year);
+    // Validate asset_id if provided
+    if (assetParam && isNaN(asset_id!)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid asset parameter. Must be a valid number.',
+        data: null
+      });
+    }
+
+    const rows = await complianceModel.getAssessments(year, asset_id);
 
     // enrich asset_id into full asset object (reuse same enrichment pattern as summons)
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
@@ -1297,6 +1311,30 @@ export const createAssessment = async (req: Request, res: Response) => {
         const toEmail = (driver && (driver.email || driver.contact)) || null;
         if (!toEmail) return;
 
+        // Get supervisor information for CC
+        const supervisor = driver?.ramco_id ? await getSupervisorBySubordinate(driver.ramco_id) : null;
+        const supervisorEmail = supervisor?.email || null;
+
+        // Generate 6-digit security PIN for portal access
+        const generateSecurityPin = (ramcoId: string, assessmentId: number): string => {
+          // Create a consistent 6-digit PIN based on ramco_id and assessment_id
+          const combined = `${ramcoId}${assessmentId}`;
+          let hash = 0;
+          for (let i = 0; i < combined.length; i++) {
+            const char = combined.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+          }
+          // Ensure positive number and convert to 6 digits
+          const pin = Math.abs(hash).toString().padStart(6, '0').slice(-6);
+          return pin;
+        };
+
+        const securityPin = generateSecurityPin(driver?.ramco_id || '', assessId);
+        const portalCode = `${driver?.ramco_id || ''}${securityPin}`;
+        const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url';
+        const portalLink = `${frontendUrl}/compliance/assessment/portal/${assetId}?code=${portalCode}`;
+
         // Build template data
         const assessmentDate = (assess as any).a_date || (assess as any).a_dt || null;
         const { subject, html, text } = renderVehicleAssessmentNotification({
@@ -1304,6 +1342,8 @@ export const createAssessment = async (req: Request, res: Response) => {
           driver: { ramco_id: driver?.ramco_id || '', full_name: driver?.full_name || driver?.name || '', email: toEmail },
           assessment: { id: assessId, date: String(assessmentDate || ''), remark: (assess as any).a_remark, rate: (assess as any).a_rate, ncr: (assess as any).a_ncr },
           details: [],
+          portalLink,
+          securityPin,
         });
 
         // Prepare attachments (up to four parent uploads)
@@ -1322,7 +1362,11 @@ export const createAssessment = async (req: Request, res: Response) => {
         }).filter(Boolean) as Array<{ filename: string; path: string }>;
 
         try {
-          await sendMail(toEmail, subject, html, { text, attachments });
+          await sendMail(toEmail, subject, html, { 
+            text, 
+            attachments,
+            cc: supervisorEmail || undefined
+          });
         } catch (mailErr) {
           console.error('createAssessment: mail send error', mailErr);
         }

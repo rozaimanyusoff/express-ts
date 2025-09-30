@@ -15,6 +15,7 @@ const transporter = nodemailer.createTransport({
 
 export interface MailOptions {
   text?: string;
+  cc?: string;
   attachments?: Array<{
     filename?: string;
     path?: string;
@@ -22,7 +23,7 @@ export interface MailOptions {
   }>;
 }
 
-// Backward compatible API: allow optional text and attachments
+// Backward compatible API: allow optional text, cc and attachments
 export const sendMail = async (to: string, subject: string, html: string, options?: MailOptions) => {
   const mail: any = {
     from: `"ADMS" <${process.env.EMAIL_USER}>`,
@@ -31,6 +32,7 @@ export const sendMail = async (to: string, subject: string, html: string, option
     html,
   };
   if (options?.text) mail.text = options.text;
+  if (options?.cc) mail.cc = options.cc;
   if (options?.attachments && Array.isArray(options.attachments) && options.attachments.length > 0) {
     mail.attachments = options.attachments;
   }

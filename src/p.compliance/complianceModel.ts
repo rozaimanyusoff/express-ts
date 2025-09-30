@@ -509,13 +509,23 @@ export interface AssessmentRecord {
   ownership?: number | null;
 }
 
-export const getAssessments = async (year?: number): Promise<AssessmentRecord[]> => {
+export const getAssessments = async (year?: number, asset_id?: number): Promise<AssessmentRecord[]> => {
   let query = `SELECT * FROM ${assessmentTable}`;
   const params: any[] = [];
+  const conditions: string[] = [];
 
   if (year) {
-    query += ` WHERE YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?)`;
+    conditions.push(`(YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?))`);
     params.push(year, year);
+  }
+
+  if (asset_id) {
+    conditions.push(`asset_id = ?`);
+    params.push(asset_id);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ${conditions.join(' AND ')}`;
   }
 
   query += ` ORDER BY assess_id DESC`;
