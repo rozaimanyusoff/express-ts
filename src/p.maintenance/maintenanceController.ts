@@ -14,219 +14,219 @@ import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceR
 
 // Helper to normalize asset IDs from various keys
 function normalizeAssetIds(input: any): number[] {
-    const body = input || {};
-    let ids: any = body.assets_ids ?? body.asset_ids ?? body.assets ?? body.assetIds ?? [];
-    if (typeof ids === 'string') {
-        ids = ids.split(',').map((s: string) => s.trim()).filter(Boolean);
-    }
-    if (!Array.isArray(ids)) ids = [];
-    return ids.map((n: any) => Number(n)).filter((n: any) => Number.isFinite(n));
+	const body = input || {};
+	let ids: any = body.assets_ids ?? body.asset_ids ?? body.assets ?? body.assetIds ?? [];
+	if (typeof ids === 'string') {
+		ids = ids.split(',').map((s: string) => s.trim()).filter(Boolean);
+	}
+	if (!Array.isArray(ids)) ids = [];
+	return ids.map((n: any) => Number(n)).filter((n: any) => Number.isFinite(n));
 }
 
 export const createFleetInsurance = async (req: Request, res: Response) => {
-    try {
-        const body = req.body || {};
-        const payload = {
-            assets_ids: normalizeAssetIds(body),
-            insurance: {
-                insurer: body.insurance?.insurer,
-                policy_no: body.insurance?.policy_no,
-                coverage_start: body.insurance?.coverage_start,
-                coverage_end: body.insurance?.coverage_end,
-                premium_amount: body.insurance?.premium_amount ?? null,
-                coverage_details: body.insurance?.coverage_details ?? null,
-                updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
-            }
-        } as any;
+	try {
+		const body = req.body || {};
+		const payload = {
+			assets_ids: normalizeAssetIds(body),
+			insurance: {
+				insurer: body.insurance?.insurer,
+				policy_no: body.insurance?.policy_no,
+				coverage_start: body.insurance?.coverage_start,
+				coverage_end: body.insurance?.coverage_end,
+				premium_amount: body.insurance?.premium_amount ?? null,
+				coverage_details: body.insurance?.coverage_details ?? null,
+				updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
+			}
+		} as any;
 
-        if (!payload.insurance?.insurer || !payload.insurance?.policy_no) {
-            return res.status(400).json({ status: 'error', message: 'insurer and policy_no are required', data: null });
-        }
+		if (!payload.insurance?.insurer || !payload.insurance?.policy_no) {
+			return res.status(400).json({ status: 'error', message: 'insurer and policy_no are required', data: null });
+		}
 
-        const id = await maintenanceModel.createFleetInsuranceWithAssets(payload);
+		const id = await maintenanceModel.createFleetInsuranceWithAssets(payload);
 
-        // Build response shape
-        const record = await maintenanceModel.getFleetInsuranceById(id);
-        if (!record) {
-            return res.status(500).json({ status: 'error', message: 'Failed to fetch created insurance', data: null });
-        }
+		// Build response shape
+		const record = await maintenanceModel.getFleetInsuranceById(id);
+		if (!record) {
+			return res.status(500).json({ status: 'error', message: 'Failed to fetch created insurance', data: null });
+		}
 
-        // Enrich assets: get asset details for category/register_number
-        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
-        const [assetsRaw, categoriesRaw] = await Promise.all([
-            assetModel.getAssetsByIds(assetIds),
-            assetModel.getCategories(),
-        ]);
-        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
-        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
-        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
-        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+		// Enrich assets: get asset details for category/register_number
+		const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+		const [assetsRaw, categoriesRaw] = await Promise.all([
+			assetModel.getAssetsByIds(assetIds),
+			assetModel.getCategories(),
+		]);
+		const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+		const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+		const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
 
-        const response = {
-            id: record.insurance.id,
-            insurer: record.insurance.insurer,
-            policy_no: record.insurance.policy_no,
-            coverage_start: record.insurance.coverage_start,
-            coverage_end: record.insurance.coverage_end,
-            premium_amount: record.insurance.premium_amount ?? null,
-            coverage_details: record.insurance.coverage_details ?? null,
-            created_at: record.insurance.created_at,
-            updated_at: record.insurance.updated_at,
-            assets: (record.assets || []).map((rt: any) => {
-                const a = assetMap.get(Number(rt.asset_id));
-                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
-                return {
-                    id: Number(rt.asset_id),
-                    register_number: a?.register_number ?? rt.register_number ?? null,
-                    category: category?.name ?? null,
-                    roadtax_expiry: rt.roadtax_expiry ?? null,
-                    roadtax_amount: rt.roadtax_amount ?? null,
-                };
-            })
-        };
+		const response = {
+			id: record.insurance.id,
+			insurer: record.insurance.insurer,
+			policy_no: record.insurance.policy_no,
+			coverage_start: record.insurance.coverage_start,
+			coverage_end: record.insurance.coverage_end,
+			premium_amount: record.insurance.premium_amount ?? null,
+			coverage_details: record.insurance.coverage_details ?? null,
+			created_at: record.insurance.created_at,
+			updated_at: record.insurance.updated_at,
+			assets: (record.assets || []).map((rt: any) => {
+				const a = assetMap.get(Number(rt.asset_id));
+				const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+				return {
+					id: Number(rt.asset_id),
+					register_number: a?.register_number ?? rt.register_number ?? null,
+					category: category?.name ?? null,
+					roadtax_expiry: rt.roadtax_expiry ?? null,
+					roadtax_amount: rt.roadtax_amount ?? null,
+				};
+			})
+		};
 
-        return res.status(201).json({
-            status: 'success',
-            message: 'Insurance details added successfully.',
-            data: response,
-        });
-    } catch (error) {
-        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
-    }
+		return res.status(201).json({
+			status: 'success',
+			message: 'Insurance details added successfully.',
+			data: response,
+		});
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+	}
 };
 
 export const updateFleetInsurance = async (req: Request, res: Response) => {
-    try {
-        const { id } = req.params;
-        const body = req.body || {};
-        const payload = {
-            assets_ids: normalizeAssetIds(body),
-            insurance: {
-                insurer: body.insurance?.insurer,
-                policy_no: body.insurance?.policy_no,
-                coverage_start: body.insurance?.coverage_start,
-                coverage_end: body.insurance?.coverage_end,
-                premium_amount: body.insurance?.premium_amount ?? null,
-                coverage_details: body.insurance?.coverage_details ?? null,
-                updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
-            }
-        } as any;
+	try {
+		const { id } = req.params;
+		const body = req.body || {};
+		const payload = {
+			assets_ids: normalizeAssetIds(body),
+			insurance: {
+				insurer: body.insurance?.insurer,
+				policy_no: body.insurance?.policy_no,
+				coverage_start: body.insurance?.coverage_start,
+				coverage_end: body.insurance?.coverage_end,
+				premium_amount: body.insurance?.premium_amount ?? null,
+				coverage_details: body.insurance?.coverage_details ?? null,
+				updated_by: (typeof req.user === 'object' && req.user && 'ramco_id' in req.user) ? (req.user as any).ramco_id : (body.insurance?.updated_by ?? null)
+			}
+		} as any;
 
-        await maintenanceModel.updateFleetInsuranceWithAssets(Number(id), payload);
-        const record = await maintenanceModel.getFleetInsuranceById(Number(id));
-        if (!record) {
-            return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
-        }
+		await maintenanceModel.updateFleetInsuranceWithAssets(Number(id), payload);
+		const record = await maintenanceModel.getFleetInsuranceById(Number(id));
+		if (!record) {
+			return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
+		}
 
-        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
-        const [assetsRaw, categoriesRaw] = await Promise.all([
-            assetModel.getAssetsByIds(assetIds),
-            assetModel.getCategories(),
-        ]);
-        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
-        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
-        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
-        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+		const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+		const [assetsRaw, categoriesRaw] = await Promise.all([
+			assetModel.getAssetsByIds(assetIds),
+			assetModel.getCategories(),
+		]);
+		const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+		const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+		const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
 
-        const response = {
-            id: record.insurance.id,
-            insurer: record.insurance.insurer,
-            policy_no: record.insurance.policy_no,
-            coverage_start: record.insurance.coverage_start,
-            coverage_end: record.insurance.coverage_end,
-            premium_amount: record.insurance.premium_amount ?? null,
-            coverage_details: record.insurance.coverage_details ?? null,
-            created_at: record.insurance.created_at,
-            updated_at: record.insurance.updated_at,
-            assets: (record.assets || []).map((rt: any) => {
-                const a = assetMap.get(Number(rt.asset_id));
-                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
-                return {
-                    id: Number(rt.asset_id),
-                    register_number: a?.register_number ?? rt.register_number ?? null,
-                    category: category?.name ?? null,
-                    roadtax_expiry: rt.roadtax_expiry ?? null,
-                    roadtax_amount: rt.roadtax_amount ?? null,
-                };
-            })
-        };
+		const response = {
+			id: record.insurance.id,
+			insurer: record.insurance.insurer,
+			policy_no: record.insurance.policy_no,
+			coverage_start: record.insurance.coverage_start,
+			coverage_end: record.insurance.coverage_end,
+			premium_amount: record.insurance.premium_amount ?? null,
+			coverage_details: record.insurance.coverage_details ?? null,
+			created_at: record.insurance.created_at,
+			updated_at: record.insurance.updated_at,
+			assets: (record.assets || []).map((rt: any) => {
+				const a = assetMap.get(Number(rt.asset_id));
+				const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+				return {
+					id: Number(rt.asset_id),
+					register_number: a?.register_number ?? rt.register_number ?? null,
+					category: category?.name ?? null,
+					roadtax_expiry: rt.roadtax_expiry ?? null,
+					roadtax_amount: rt.roadtax_amount ?? null,
+				};
+			})
+		};
 
-        return res.json({ status: 'success', message: 'Insurance details updated successfully.', data: response });
-    } catch (error) {
-        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
-    }
+		return res.json({ status: 'success', message: 'Insurance details updated successfully.', data: response });
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+	}
 };
 
 export const getFleetInsuranceById = async (req: Request, res: Response) => {
-    try {
-        const { id } = req.params;
-        const record = await maintenanceModel.getFleetInsuranceById(Number(id));
-        if (!record) {
-            return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
-        }
+	try {
+		const { id } = req.params;
+		const record = await maintenanceModel.getFleetInsuranceById(Number(id));
+		if (!record) {
+			return res.status(404).json({ status: 'error', message: 'Insurance not found', data: null });
+		}
 
-        const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
-        const [assetsRaw, categoriesRaw] = await Promise.all([
-            assetModel.getAssetsByIds(assetIds),
-            assetModel.getCategories(),
-        ]);
-        const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
-        const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
-        const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
-        const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
+		const assetIds = (record.assets || []).map((r: any) => Number(r.asset_id)).filter((n: any) => Number.isFinite(n));
+		const [assetsRaw, categoriesRaw] = await Promise.all([
+			assetModel.getAssetsByIds(assetIds),
+			assetModel.getCategories(),
+		]);
+		const assetsArr = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const categoriesArr = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
+		const assetMap = new Map(assetsArr.map(a => [Number(a.id), a]));
+		const categoryMap = new Map(categoriesArr.map(c => [Number(c.id), c]));
 
-        const response = {
-            id: record.insurance.id,
-            insurer: record.insurance.insurer,
-            policy_no: record.insurance.policy_no,
-            coverage_start: record.insurance.coverage_start,
-            coverage_end: record.insurance.coverage_end,
-            premium_amount: record.insurance.premium_amount ?? null,
-            coverage_details: record.insurance.coverage_details ?? null,
-            created_at: record.insurance.created_at,
-            updated_at: record.insurance.updated_at,
-            assets: (record.assets || []).map((rt: any) => {
-                const a = assetMap.get(Number(rt.asset_id));
-                const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
-                return {
-                    id: Number(rt.asset_id),
-                    register_number: a?.register_number ?? rt.register_number ?? null,
-                    category: category?.name ?? null,
-                    roadtax_expiry: rt.roadtax_expiry ?? null,
-                    roadtax_amount: rt.roadtax_amount ?? null,
-                };
-            })
-        };
+		const response = {
+			id: record.insurance.id,
+			insurer: record.insurance.insurer,
+			policy_no: record.insurance.policy_no,
+			coverage_start: record.insurance.coverage_start,
+			coverage_end: record.insurance.coverage_end,
+			premium_amount: record.insurance.premium_amount ?? null,
+			coverage_details: record.insurance.coverage_details ?? null,
+			created_at: record.insurance.created_at,
+			updated_at: record.insurance.updated_at,
+			assets: (record.assets || []).map((rt: any) => {
+				const a = assetMap.get(Number(rt.asset_id));
+				const category = a?.category_id ? categoryMap.get(Number(a.category_id)) : null;
+				return {
+					id: Number(rt.asset_id),
+					register_number: a?.register_number ?? rt.register_number ?? null,
+					category: category?.name ?? null,
+					roadtax_expiry: rt.roadtax_expiry ?? null,
+					roadtax_amount: rt.roadtax_amount ?? null,
+				};
+			})
+		};
 
-        return res.json({ status: 'success', message: 'Insurance details retrieved successfully.', data: response });
-    } catch (error) {
-        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
-    }
+		return res.json({ status: 'success', message: 'Insurance details retrieved successfully.', data: response });
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+	}
 };
 
 export const listFleetInsurances = async (req: Request, res: Response) => {
-    try {
-        const rows = await maintenanceModel.listFleetInsurances();
-        const counts = await maintenanceModel.getRoadtaxCountsByInsurer();
-        const countMap = new Map((Array.isArray(counts) ? counts : []).map((r: any) => [Number(r.insurer_id), Number(r.assets_count) || 0]));
+	try {
+		const rows = await maintenanceModel.listFleetInsurances();
+		const counts = await maintenanceModel.getRoadtaxCountsByInsurer();
+		const countMap = new Map((Array.isArray(counts) ? counts : []).map((r: any) => [Number(r.insurer_id), Number(r.assets_count) || 0]));
 
-        const data = (Array.isArray(rows) ? rows : []).map((r: any) => ({
-            id: r.id,
-            insurer: r.insurer,
-            policy_no: r.policy_no,
-            coverage_start: r.coverage_start,
-            coverage_end: r.coverage_end,
-            premium_amount: r.premium_amount ?? null,
-            coverage_details: r.coverage_details ?? null,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            assets_count: countMap.get(Number(r.id)) || 0,
-        }));
+		const data = (Array.isArray(rows) ? rows : []).map((r: any) => ({
+			id: r.id,
+			insurer: r.insurer,
+			policy_no: r.policy_no,
+			coverage_start: r.coverage_start,
+			coverage_end: r.coverage_end,
+			premium_amount: r.premium_amount ?? null,
+			coverage_details: r.coverage_details ?? null,
+			created_at: r.created_at,
+			updated_at: r.updated_at,
+			assets_count: countMap.get(Number(r.id)) || 0,
+		}));
 
-        return res.json({ status: 'success', message: 'Insurance list retrieved successfully.', data });
-    } catch (error) {
-        return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
-    }
+		return res.json({ status: 'success', message: 'Insurance list retrieved successfully.', data });
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+	}
 };
 
 export const getVehicleMtnRequests = async (req: Request, res: Response) => {
@@ -287,9 +287,10 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 				emailStat: record.emailStat,
 				inv_status: record.inv_status,
 				status: record.status,
-				vehicle: assetMap.has(record.vehicle_id) ? {
-					id: record.vehicle_id,
-					register_number: (assetMap.get(record.vehicle_id) as any)?.register_number
+				// Use asset_id (vehicle_id is deprecated)
+				asset: assetMap.has(record.asset_id) ? {
+					id: record.asset_id,
+					register_number: (assetMap.get(record.asset_id) as any)?.register_number
 				} : null,
 				requester: employeeMap.has(record.ramco_id) ? {
 					ramco_id: record.ramco_id,
@@ -306,9 +307,10 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 					name: (employeeMap.get(record.approval) as any)?.full_name,
 					email: (employeeMap.get(record.approval) as any)?.email
 				} : null,
-				costcenter: ccMap.has(record.cc_id) ? {
-					id: record.cc_id,
-					name: (ccMap.get(record.cc_id) as any)?.name
+				// Use costcenter_id (cc_id is deprecated)
+				costcenter: ccMap.has(record.costcenter_id) ? {
+					id: record.costcenter_id,
+					name: (ccMap.get(record.costcenter_id) as any)?.name
 				} : null,
 				workshop: wsMap.has(record.ws_id) ? {
 					id: record.ws_id,
@@ -515,30 +517,30 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 			emailStat: (record as any).emailStat,
 			inv_status: (record as any).inv_status,
 			status: (record as any).status,
-				asset: assetMap.has((record as any).asset_id) ? (() => {
-					const a = assetMap.get((record as any).asset_id) as any;
-					return {
-						id: (record as any).asset_id,
-						register_number: a?.register_number,
-						classification: a?.classification,
-						record_status: a?.record_status,
-						purchase_date: a?.purchase_date,
-						// asset age in full years calculated from purchase_date
-						age_years: (() => {
-							if (!a?.purchase_date) return null;
-							const pd = new Date(a.purchase_date);
-							if (Number.isNaN(pd.getTime())) return null;
-							const diffMs = Date.now() - pd.getTime();
-							const years = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
-							return years;
-						})(),
-						category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id) as any)?.name } : null,
-						brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
-						model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
-						costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
-							location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
-					};
-				})() : null,
+			asset: assetMap.has((record as any).asset_id) ? (() => {
+				const a = assetMap.get((record as any).asset_id) as any;
+				return {
+					id: (record as any).asset_id,
+					register_number: a?.register_number,
+					classification: a?.classification,
+					record_status: a?.record_status,
+					purchase_date: a?.purchase_date,
+					// asset age in full years calculated from purchase_date
+					age_years: (() => {
+						if (!a?.purchase_date) return null;
+						const pd = new Date(a.purchase_date);
+						if (Number.isNaN(pd.getTime())) return null;
+						const diffMs = Date.now() - pd.getTime();
+						const years = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
+						return years;
+					})(),
+					category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id) as any)?.name } : null,
+					brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
+					model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
+					costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
+					location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
+				};
+			})() : null,
 			requester: employeeMap.has((record as any).ramco_id) ? {
 				ramco_id: (record as any).ramco_id,
 				name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
@@ -728,7 +730,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 					date: formattedDate || rec.req_date,
 					applicant,
 					deptLocation: rec.asset && rec.asset.costcenter ? `${rec.asset.costcenter.name}${rec.asset.location ? ' / ' + rec.asset.location.name : ''}` : '',
-					vehicleInfo: rec.asset ? ( `${rec.asset.register_number || ''} ${(rec.asset.brand && rec.asset.brand.name) || ''} ${(rec.asset.model && rec.asset.model.name) || ''}`.trim() + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : '') ) : '',
+					vehicleInfo: rec.asset ? (`${rec.asset.register_number || ''} ${(rec.asset.brand && rec.asset.brand.name) || ''} ${(rec.asset.model && rec.asset.model.name) || ''}`.trim() + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : '')) : '',
 					requestType: Array.isArray(rec.svc_type) ? rec.svc_type.map((s: any) => s.name).join(', ') : '',
 					recentRequests,
 					annualSummary,
@@ -773,93 +775,93 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 curl -X POST 'http://localhost:3030/api/mtn/request' \
   -H 'Content-Type: application/json' \
   -d '{
-    "req_id": 11178,
-    "ramco_id": "000317",
-    "asset_id": 115,
-    "svc_opt": "1,6,4,16",
-    "req_comment": "Test request - please ignore",
-    "email": "rozaiman@ranhill.com.my",
-    "name": "Rozaiman",
-    "contact": "0100000000",
-    "testEmail": "rozaiman@ranhill.com.my",
-    "testName": "Rozaiman"
+	 "req_id": 11178,
+	 "ramco_id": "000317",
+	 "asset_id": 115,
+	 "svc_opt": "1,6,4,16",
+	 "req_comment": "Test request - please ignore",
+	 "email": "rozaiman@ranhill.com.my",
+	 "name": "Rozaiman",
+	 "contact": "0100000000",
+	 "testEmail": "rozaiman@ranhill.com.my",
+	 "testName": "Rozaiman"
   }'
 */
 
 export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
-	// Pass request body directly to model for update. Model will use data.{bodyField} mapping.
-	const data = req.body || {};
-	const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
+		// Pass request body directly to model for update. Model will use data.{bodyField} mapping.
+		const data = req.body || {};
+		const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
 
-	// If this update includes verification_stat = 1, notify recommender to review/recommend
-	try {
-		const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
-		if (verificationFlag) {
-			// fetch fresh record to get recommender ramco_id
-			const record = await maintenanceModel.getVehicleMtnRequestById(Number(id));
-			if (record && (record as any).recommendation) {
-				// resolve recommender from employees list
-				const employeesRaw = await assetModel.getEmployees();
-				const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
-				const recommender: any = employees.find((e: any) => String(e.ramco_id) === String((record as any).recommendation));
+		// If this update includes verification_stat = 1, notify recommender to review/recommend
+		try {
+			const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
+			if (verificationFlag) {
+				// fetch fresh record to get recommender ramco_id
+				const record = await maintenanceModel.getVehicleMtnRequestById(Number(id));
+				if (record && (record as any).recommendation) {
+					// resolve recommender from employees list
+					const employeesRaw = await assetModel.getEmployees();
+					const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+					const recommender: any = employees.find((e: any) => String(e.ramco_id) === String((record as any).recommendation));
 
-				if (recommender) {
-					// TEST EMAIL OVERRIDE precedence: query/body then env
-					const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
-					const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
-					const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
-					const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+					if (recommender) {
+						// TEST EMAIL OVERRIDE precedence: query/body then env
+						const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+						const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+						const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+						const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
 
-					// find authorized person from approval levels (module = 'maintenance')
-					let authorizerInfo: { ramco_id?: string; name?: string | null; email?: string | null } | null = null;
-					try {
-						const approvalLevelsRaw = await userModel.getApprovalLevels();
-						const approvalLevels = Array.isArray(approvalLevelsRaw) ? approvalLevelsRaw as any[] : [];
-						const maintenanceLevels = approvalLevels.filter(l => String(l.module_name).toLowerCase() === 'maintenance');
-						if (maintenanceLevels.length > 0) {
-							// Prefer level_order === 2 if present
-							let authLevel = maintenanceLevels.find((l: any) => Number(l.level_order) === 2) || null;
-							if (!authLevel) {
-								// fallback: choose the highest level_order
-								authLevel = maintenanceLevels.reduce((a: any, b: any) => (Number(a.level_order) >= Number(b.level_order) ? a : b));
-							}
-							// support if approval level contains nested employee info
-							const authRamco = authLevel?.ramco_id || (authLevel?.employee && authLevel.employee.ramco_id) || null;
-							if (authRamco) {
-								const authorizer = employees.find((e: any) => String(e.ramco_id) === String(authRamco));
-								if (authorizer) {
-									authorizerInfo = { ramco_id: authorizer.ramco_id, name: authorizer.full_name || authorizer.fullname || authorizer.name || null, email: authorizer.email || authorizer.contact || null };
+						// find authorized person from approval levels (module = 'maintenance')
+						let authorizerInfo: { ramco_id?: string; name?: string | null; email?: string | null } | null = null;
+						try {
+							const approvalLevelsRaw = await userModel.getApprovalLevels();
+							const approvalLevels = Array.isArray(approvalLevelsRaw) ? approvalLevelsRaw as any[] : [];
+							const maintenanceLevels = approvalLevels.filter(l => String(l.module_name).toLowerCase() === 'maintenance');
+							if (maintenanceLevels.length > 0) {
+								// Prefer level_order === 2 if present
+								let authLevel = maintenanceLevels.find((l: any) => Number(l.level_order) === 2) || null;
+								if (!authLevel) {
+									// fallback: choose the highest level_order
+									authLevel = maintenanceLevels.reduce((a: any, b: any) => (Number(a.level_order) >= Number(b.level_order) ? a : b));
+								}
+								// support if approval level contains nested employee info
+								const authRamco = authLevel?.ramco_id || (authLevel?.employee && authLevel.employee.ramco_id) || null;
+								if (authRamco) {
+									const authorizer = employees.find((e: any) => String(e.ramco_id) === String(authRamco));
+									if (authorizer) {
+										authorizerInfo = { ramco_id: authorizer.ramco_id, name: authorizer.full_name || authorizer.fullname || authorizer.name || null, email: authorizer.email || authorizer.contact || null };
+									}
 								}
 							}
+						} catch (authErr) {
+							console.warn('Failed to resolve authorizer info from approval levels', authErr);
 						}
-					} catch (authErr) {
-						console.warn('Failed to resolve authorizer info from approval levels', authErr);
-					}
 
-					// build encrypted credential for recommender
-					const credData = {
-						ramco_id: recommender.ramco_id,
-						contact: recommender.email || recommender.phone || recommender.contact || '',
-						req_id: Number(id)
-					} as any;
-					const secretKey = process.env.ENCRYPTION_KEY || 'default_secret_key';
-					const algorithm = 'aes-256-cbc';
-					const key = crypto.createHash('sha256').update(secretKey).digest();
-					const iv = crypto.randomBytes(16);
-					const cipher = crypto.createCipheriv(algorithm, key, iv);
-					let encrypted = cipher.update(JSON.stringify(credData), 'utf8', 'hex');
-					encrypted += cipher.final('hex');
-					const encryptedData = iv.toString('hex') + ':' + encrypted;
+						// build encrypted credential for recommender
+						const credData = {
+							ramco_id: recommender.ramco_id,
+							contact: recommender.email || recommender.phone || recommender.contact || '',
+							req_id: Number(id)
+						} as any;
+						const secretKey = process.env.ENCRYPTION_KEY || 'default_secret_key';
+						const algorithm = 'aes-256-cbc';
+						const key = crypto.createHash('sha256').update(secretKey).digest();
+						const iv = crypto.randomBytes(16);
+						const cipher = crypto.createCipheriv(algorithm, key, iv);
+						let encrypted = cipher.update(JSON.stringify(credData), 'utf8', 'hex');
+						encrypted += cipher.final('hex');
+						const encryptedData = iv.toString('hex') + ':' + encrypted;
 
-					const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-					const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${id}?_cred=${encodeURIComponent(encryptedData)}`;
+						const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+						const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${id}?_cred=${encodeURIComponent(encryptedData)}`;
 
-					const emailSubject = `Maintenance Request Verified — Recommendation Required (Service Order: ${id})`;
-					const recipientName = localTestName || recommender.full_name || recommender.fullname || recommender.name || '';
-					const authorizerHtml = authorizerInfo ? `<p>Authorized person: ${authorizerInfo.name || ''} ${authorizerInfo.email ? '(' + authorizerInfo.email + ')' : ''}</p>` : '';
-					const emailBody = `
+						const emailSubject = `Maintenance Request Verified — Recommendation Required (Service Order: ${id})`;
+						const recipientName = localTestName || recommender.full_name || recommender.fullname || recommender.name || '';
+						const authorizerHtml = authorizerInfo ? `<p>Authorized person: ${authorizerInfo.name || ''} ${authorizerInfo.email ? '(' + authorizerInfo.email + ')' : ''}</p>` : '';
+						const emailBody = `
 						<h3>Maintenance Request Requires Your Recommendation</h3>
 						<p>Dear ${recipientName},</p>
 						<p>The maintenance request (Request ID: ${id}) has been verified and requires your recommendation.</p>
@@ -871,32 +873,32 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 						<p>Best regards,<br/>Maintenance Team</p>
 					`;
 
-					const recipientEmail = localTestEmail || recommender.email || recommender.contact || null;
-					if (recipientEmail) {
-						console.log('updateVehicleMtnRequest: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
-						try {
-							await mailer.sendMail(recipientEmail, emailSubject, emailBody);
-							console.log('updateVehicleMtnRequest: mail sent to', recipientEmail);
-						} catch (mailErr) {
-							console.error('updateVehicleMtnRequest: mailer error sending to', recipientEmail, mailErr);
+						const recipientEmail = localTestEmail || recommender.email || recommender.contact || null;
+						if (recipientEmail) {
+							console.log('updateVehicleMtnRequest: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
+							try {
+								await mailer.sendMail(recipientEmail, emailSubject, emailBody);
+								console.log('updateVehicleMtnRequest: mail sent to', recipientEmail);
+							} catch (mailErr) {
+								console.error('updateVehicleMtnRequest: mailer error sending to', recipientEmail, mailErr);
+							}
+						} else {
+							console.warn('updateVehicleMtnRequest: recommender found but no email/contact available for', recommender);
 						}
 					} else {
-						console.warn('updateVehicleMtnRequest: recommender found but no email/contact available for', recommender);
+						console.warn('updateVehicleMtnRequest: recommender ramco_id not found in employees list', (record as any).recommendation);
 					}
-				} else {
-					console.warn('updateVehicleMtnRequest: recommender ramco_id not found in employees list', (record as any).recommendation);
 				}
 			}
+		} catch (emailErr) {
+			console.error('Failed to send recommender notification email', emailErr);
 		}
-	} catch (emailErr) {
-		console.error('Failed to send recommender notification email', emailErr);
-	}
 
-	res.json({
-		status: 'success',
-		message: 'Maintenance record updated successfully',
-		data: result
-	});
+		res.json({
+			status: 'success',
+			message: 'Maintenance record updated successfully',
+			data: result
+		});
 	} catch (error) {
 		res.status(500).json({
 			status: 'error',
@@ -1217,12 +1219,12 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 	try {
 		const { requestId } = req.params;
 
-	// TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
-	// Usage for testing:
-	// - manual POST: include { testEmail, testName } in body
-	// - quick override: set environment vars TEST_EMAIL and/or TEST_NAME
-	const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
-	const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
+		// TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
+		// Usage for testing:
+		// - manual POST: include { testEmail, testName } in body
+		// - quick override: set environment vars TEST_EMAIL and/or TEST_NAME
+		const GLOBAL_TEST_EMAIL = process.env.TEST_EMAIL || null;
+		const GLOBAL_TEST_NAME = process.env.TEST_NAME || null;
 
 		// Get maintenance record details
 		const record = await maintenanceModel.getVehicleMtnRequestById(Number(requestId));
@@ -1271,11 +1273,11 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 
 		// Send email to requester (or test email). We need similar design & layout as /utils/emailTemplates/vehicleMaintenance.ts
 		const emailSubject = 'Vehicle Maintenance Request Portal Access';
-				// resolve possible per-request test override
-				const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
-				const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
+		// resolve possible per-request test override
+		const localTestEmail = (req.query && (req.query.testEmail as string)) || (req.body && (req.body.testEmail || req.body.TEST_EMAIL)) || GLOBAL_TEST_EMAIL || null;
+		const localTestName = (req.query && (req.query.testName as string)) || (req.body && (req.body.testName || req.body.TEST_NAME)) || GLOBAL_TEST_NAME || null;
 
-				const emailBody = `
+		const emailBody = `
 			<h3>Maintenance Request Portal Access</h3>
 			<p>Dear ${localTestName || (requester as any).full_name || (requester as any).name},</p>
 			<p>You can access your maintenance request portal using the link below:</p>
@@ -1287,8 +1289,8 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 			<p>Best regards,<br>Maintenance Team</p>
 		`;
 
-				// Use test email (local override or global env) or actual requester email
-				const recipientEmail = localTestEmail || (requester as any).email;
+		// Use test email (local override or global env) or actual requester email
+		const recipientEmail = localTestEmail || (requester as any).email;
 
 		console.log('resendMaintenancePortalLink: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
 		try {
@@ -1410,9 +1412,9 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 					name: (employeeMap.get(record.approval) as any)?.full_name,
 					email: (employeeMap.get(record.approval) as any)?.email
 				} : null,
-				costcenter: ccMap.has(record.cc_id) ? {
-					id: record.cc_id,
-					name: (ccMap.get(record.cc_id) as any)?.name
+				costcenter: ccMap.has(record.costcenter_id) ? {
+					id: record.costcenter_id,
+					name: (ccMap.get(record.costcenter_id) as any)?.name
 				} : null,
 				workshop: wsMap.has(record.ws_id) ? {
 					id: record.ws_id,
