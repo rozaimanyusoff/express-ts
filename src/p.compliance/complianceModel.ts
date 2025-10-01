@@ -557,9 +557,26 @@ export const updateAssessment = async (id: number, data: Partial<AssessmentRecor
 };
 
 export const deleteAssessment = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
-  const r = result as ResultSetHeader;
-  if (r.affectedRows === 0) throw new Error('Assessment not found');
+  const conn = await pool2.getConnection();
+  try {
+    await conn.beginTransaction();
+    // First delete child records
+    await conn.query(`DELETE FROM ${assessmentDetailTable} WHERE assess_id = ?`, [id]);
+    // Then delete parent record
+    const [result] = await conn.query(`DELETE FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
+    const r = result as ResultSetHeader;
+    if (r.affectedRows === 0) {
+      // No parent row deleted; rollback to avoid leaving partial state (though children already deleted is harmless)
+      await conn.rollback();
+      throw new Error('Assessment not found');
+    }
+    await conn.commit();
+  } catch (e) {
+    try { await conn.rollback(); } catch {}
+    throw e;
+  } finally {
+    conn.release();
+  }
 };
 
 // Update acceptance_status and acceptance_date for assessment
