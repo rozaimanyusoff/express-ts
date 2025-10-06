@@ -640,3 +640,136 @@ export const deleteAssessmentDetail = async (id: number) => {
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Assessment detail not found');
 };
+
+// ========== Transaction helpers and bulk detail replacement ==========
+import type { PoolConnection } from 'mysql2/promise';
+
+export const withTransaction = async <T>(fn: (conn: PoolConnection) => Promise<T>): Promise<T> => {
+  const conn = await pool2.getConnection();
+  try {
+    await conn.beginTransaction();
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
+  } catch (err) {
+    try { await conn.rollback(); } catch {}
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+export const createAssessmentWithConn = async (conn: PoolConnection, data: Partial<AssessmentRecord>) => {
+  const now = formatToMySQLDatetime(new Date());
+  const payload: any = { ...data, created_at: now, updated_at: now };
+  const [result] = await conn.query(`INSERT INTO ${assessmentTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateAssessmentWithConn = async (conn: PoolConnection, id: number, data: Partial<AssessmentRecord>) => {
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+  if (fields) {
+    await conn.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+  }
+};
+
+export const replaceAssessmentDetails = async (
+  assess_id: number,
+  details: Array<Partial<AssessmentDetailRecord>>
+): Promise<{ deleted: number; inserted: number }> => {
+  if (!assess_id) throw new Error('assess_id is required');
+
+  const conn = await pool2.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [delRes] = await conn.query(`DELETE FROM ${assessmentDetailTable} WHERE assess_id = ?`, [assess_id]);
+    const deleted = (delRes as ResultSetHeader).affectedRows || 0;
+
+    if (!Array.isArray(details) || details.length === 0) {
+      await conn.commit();
+      return { deleted, inserted: 0 };
+    }
+
+    const now = formatToMySQLDatetime(new Date());
+    const allowedCols = ['assess_id', 'vehicle_id', 'adt_item', 'adt_ncr', 'adt_rate', 'adt_rate2', 'adt_rem', 'adt_image'];
+    const rows: any[] = [];
+    for (const d of details) {
+      const row: any = { assess_id };
+      for (const k of allowedCols) {
+        if (k === 'assess_id') continue;
+        if ((d as any)[k] !== undefined) row[k] = (d as any)[k];
+      }
+      row.created_at = now;
+      row.updated_at = now;
+      rows.push(row);
+    }
+
+    if (rows.length === 0) {
+      await conn.commit();
+      return { deleted, inserted: 0 };
+    }
+
+    const sample = rows[0];
+    const cols = Object.keys(sample);
+    const placeholders = `(${cols.map(() => '?').join(', ')})`;
+    const sql = `INSERT INTO ${assessmentDetailTable} (${cols.join(', ')}) VALUES ${rows.map(() => placeholders).join(', ')}`;
+    const values: any[] = [];
+    for (const r of rows) values.push(...cols.map(c => r[c] === undefined ? null : r[c]));
+
+    const [insRes] = await conn.query(sql, values);
+    const inserted = (insRes as ResultSetHeader).affectedRows || 0;
+
+    await conn.commit();
+    return { deleted, inserted };
+  } catch (err) {
+    try { await conn.rollback(); } catch {}
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+export const replaceAssessmentDetailsWithConn = async (
+  conn: PoolConnection,
+  assess_id: number,
+  details: Array<Partial<AssessmentDetailRecord>>
+): Promise<{ deleted: number; inserted: number }> => {
+  if (!assess_id) throw new Error('assess_id is required');
+
+  const [delRes] = await conn.query(`DELETE FROM ${assessmentDetailTable} WHERE assess_id = ?`, [assess_id]);
+  const deleted = (delRes as ResultSetHeader).affectedRows || 0;
+
+  if (!Array.isArray(details) || details.length === 0) {
+    return { deleted, inserted: 0 };
+  }
+
+  const now = formatToMySQLDatetime(new Date());
+  const allowedCols = ['assess_id', 'vehicle_id', 'adt_item', 'adt_ncr', 'adt_rate', 'adt_rate2', 'adt_rem', 'adt_image'];
+  const rows: any[] = [];
+  for (const d of details) {
+    const row: any = { assess_id };
+    for (const k of allowedCols) {
+      if (k === 'assess_id') continue;
+      if ((d as any)[k] !== undefined) row[k] = (d as any)[k];
+    }
+    row.created_at = now;
+    row.updated_at = now;
+    rows.push(row);
+  }
+  if (rows.length === 0) {
+    return { deleted, inserted: 0 };
+  }
+  const sample = rows[0];
+  const cols = Object.keys(sample);
+  const placeholders = `(${cols.map(() => '?').join(', ')})`;
+  const sql = `INSERT INTO ${assessmentDetailTable} (${cols.join(', ')}) VALUES ${rows.map(() => placeholders).join(', ')}`;
+  const values: any[] = [];
+  for (const r of rows) values.push(...cols.map(c => r[c] === undefined ? null : r[c]));
+  const [insRes] = await conn.query(sql, values);
+  const inserted = (insRes as ResultSetHeader).affectedRows || 0;
+  return { deleted, inserted };
+};
