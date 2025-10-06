@@ -341,6 +341,111 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     }
 };
 
+// POST /api/auth/register/verifyme
+// Body: { name, email, contact }
+// Attempts to match an employee (assetModel employees table) by all three fields.
+// Matching strategy (case-insensitive for text):
+// 1. Exact email AND contact AND full name (supports name, fname, full_name columns fallback)
+// 2. If no exact triple match, attempt exact email + contact (unique pair) and return ramco_id with note.
+// 3. If still no match, attempt fuzzy name (case-insensitive) + email.
+// Returns { matched: boolean, ramco_id, confidence, strategy } on success.
+export const verifyRegisterUser = async (req: Request, res: Response): Promise<Response> => {
+    const { name, email, contact } = req.body || {};
+    if (!name || !email || !contact) {
+        return res.status(400).json({ status: 'error', message: 'Missing required fields (name, email, contact)' });
+    }
+    try {
+        // Load exclusion lists from environment variables (comma-separated) - when matched, skip duplicate check only
+        const splitList = (val?: string) => (val || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+        const EXC_EMAILS = splitList(process.env.VERIFY_EXCLUDE_EMAILS).map(s => s.toLowerCase());
+        const EXC_CONTACTS = splitList(process.env.VERIFY_EXCLUDE_CONTACTS).map(s => s.toLowerCase().replace(/[^0-9+]/g, ''));
+        const EXC_NAMES = splitList(process.env.VERIFY_EXCLUDE_NAMES).map(s => s.toLowerCase());
+
+        const normLower = (v: any) => String(v || '').trim().toLowerCase();
+        const targetNameLower = normLower(name);
+        const targetEmailLower = normLower(email);
+        const targetContactLower = normLower(contact).replace(/[^0-9+]/g, '');
+
+        const isExcluded = (
+            (EXC_EMAILS.length && EXC_EMAILS.includes(targetEmailLower)) ||
+            (EXC_CONTACTS.length && EXC_CONTACTS.includes(targetContactLower)) ||
+            (EXC_NAMES.length && EXC_NAMES.includes(targetNameLower))
+        );
+
+        // Duplicate check (skip if excluded identity)
+        if (!isExcluded) {
+            try {
+                const existingAccounts = await userModel.findUserByEmailOrContact(email, contact);
+                const pendingAccounts = await pendingUserModel.findPendingUserByEmailOrContact(email, contact);
+                if ((existingAccounts && existingAccounts.length > 0) || (pendingAccounts && pendingAccounts.length > 0)) {
+                    return res.status(409).json({ status: 'error', message: 'Account already exists or is pending activation', data: { matched: false, duplicate: true, excluded: false } });
+                }
+            } catch (dupErr) {
+                logger.error('verifyRegisterUser duplicate check error', dupErr);
+                // Continue – not fatal
+            }
+        }
+        // Fetch all employees once (could be optimized with targeted query if schema known)
+        const employees: any[] = Array.isArray(await assetModel.getEmployees()) ? await assetModel.getEmployees() as any[] : [];
+        const norm = (v: any) => String(v || '').trim().toLowerCase();
+        const targetName = norm(name);
+        const targetEmail = norm(email);
+        const targetContact = norm(contact).replace(/[^0-9+]/g, ''); // digits plus leading +
+
+        // Helper: normalize employee record name/email/contact
+        const extract = (emp: any) => {
+            const fullName = emp.full_name || emp.name || emp.fname || emp.employee_name || '';
+            const emailVal = emp.email || emp.work_email || emp.personal_email || '';
+            const contactVal = emp.contact || emp.phone || emp.mobile || emp.contact_no || emp.phone_no || '';
+            return {
+                fullNameRaw: fullName,
+                fullName: norm(fullName),
+                email: norm(emailVal),
+                contact: norm(String(contactVal).replace(/[^0-9+]/g, '')),
+                contactRaw: contactVal || null,
+                ramco_id: emp.ramco_id || emp.employee_id || emp.id || null
+            };
+        };
+
+        const extracted = employees.map(e => ({ original: e, ...extract(e) }));
+
+        // Strategy 1: exact triple match
+        const exact = extracted.find(e => e.fullName === targetName && e.email === targetEmail && e.contact === targetContact);
+        if (exact && exact.ramco_id) {
+            return res.json({ status: 'success', message: 'Employee verified (exact match)', data: { matched: true, ramco_id: exact.ramco_id, employee_full_name: exact.fullNameRaw, employee_contact: exact.contactRaw, confidence: 'high', strategy: 'exact_triple', excluded: isExcluded } });
+        }
+
+        // Strategy 2: email + contact match (unique)
+        const emailContactMatches = extracted.filter(e => e.email === targetEmail && e.contact === targetContact && e.ramco_id);
+        if (emailContactMatches.length === 1) {
+            const m = emailContactMatches[0];
+            return res.json({ status: 'success', message: 'Employee verified (email+contact match)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'medium', strategy: 'email_contact', excluded: isExcluded } });
+        }
+
+        // Strategy 3: name + email
+        const nameEmailMatches = extracted.filter(e => e.fullName === targetName && e.email === targetEmail && e.ramco_id);
+        if (nameEmailMatches.length === 1) {
+            const m = nameEmailMatches[0];
+            return res.json({ status: 'success', message: 'Employee verified (name+email match)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'medium', strategy: 'name_email', excluded: isExcluded } });
+        }
+
+        // Optional fallback: partial name + email (startswith)
+        const partialNameEmailMatches = extracted.filter(e => e.fullName.startsWith(targetName) && e.email === targetEmail && e.ramco_id);
+        if (partialNameEmailMatches.length === 1) {
+            const m = partialNameEmailMatches[0];
+            return res.json({ status: 'success', message: 'Employee verified (partial name + email)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'low', strategy: 'partial_name_email', excluded: isExcluded } });
+        }
+
+        return res.status(404).json({ status: 'error', message: 'No matching employee found', data: { matched: false } });
+    } catch (err) {
+        logger.error('verifyRegisterUser error', err);
+        return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
+
 // Reset password controller
 export const resetPassword = async (req: Request, res: Response): Promise<Response> => {
     const { email, contact } = req.body;
