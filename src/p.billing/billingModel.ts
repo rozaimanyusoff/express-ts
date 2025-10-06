@@ -11,7 +11,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
-const dbBillings = 'billings2';
+const dbBillings = 'billings';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 
