@@ -1186,44 +1186,58 @@ export const createAssessment = async (req: Request, res: Response) => {
     // We expect multipart/form-data with files in req.files and JSON fields in req.body
     const body: any = req.body || {};
 
-    // Parse details JSON if provided, and also support indexed fields details[i][...]
+    // Parse details from multiple possible encodings to be robust to form encoders
     let details: any[] = [];
-    if (body.details) {
+    if (body.details !== undefined) {
       try {
-        const parsed = typeof body.details === 'string' ? JSON.parse(body.details) : body.details;
-        if (Array.isArray(parsed)) details = parsed;
+        if (typeof body.details === 'string') {
+          const parsed = JSON.parse(body.details);
+          if (Array.isArray(parsed)) details = parsed;
+        } else if (Array.isArray(body.details)) {
+          details = body.details as any[];
+        } else if (body.details && typeof body.details === 'object') {
+          // Handle object with numeric keys: { '0': {...}, '1': {...} }
+          const keys = Object.keys(body.details).filter(k => /^\d+$/.test(k)).sort((a,b)=>Number(a)-Number(b));
+          if (keys.length > 0) {
+            details = keys.map(k => (body.details as any)[k]);
+          }
+        }
       } catch (err) {
-        return res.status(400).json({ status: 'error', message: 'Invalid details JSON', data: null });
+        // Ignore JSON parse errors; we will try indexed key parsing below
       }
     }
-    const indexedMap = new Map<number, any>();
-    const keyRe = /^details\[(\d+)\]\[([^\]]+)\]$/;
-    for (const [k, vRaw] of Object.entries(body)) {
-      const m = keyRe.exec(k);
-      if (!m) continue;
-      const idx = Number(m[1]);
-      const field = m[2];
-      if (!indexedMap.has(idx)) indexedMap.set(idx, {});
-      const val = vRaw as string;
-      if (['adt_item', 'adt_ncr', 'adt_rate2', 'vehicle_id'].includes(field)) {
-        const num = Number(val);
-        (indexedMap.get(idx) as any)[field] = isNaN(num) ? null : num;
+    if (!Array.isArray(details) || details.length === 0) {
+      // Fallback: parse bracketed/indexed keys e.g. details[0][field], details[0].field, details.0.field
+      const indexedMap = new Map<number, any>();
+      const keyPatterns: RegExp[] = [
+        /^details\[(\d+)\]\[([^\]]+)\]$/,
+        /^details\[(\d+)\]\.([^.]+)$/,
+        /^details\.(\d+)\.([^.]+)$/
+      ];
+      for (const [k, vRaw] of Object.entries(body)) {
+        let idx: number | null = null;
+        let field: string | null = null;
+        for (const re of keyPatterns) {
+          const m = re.exec(k);
+          if (m) { idx = Number(m[1]); field = m[2]; break; }
+        }
+        if (idx === null || field === null) continue;
+        if (!indexedMap.has(idx)) indexedMap.set(idx, {});
+        const val = vRaw as any;
+        if (['adt_item', 'adt_ncr', 'adt_rate2', 'vehicle_id'].includes(field)) {
+          const num = Number(val);
+          (indexedMap.get(idx) as any)[field] = isNaN(num) ? null : num;
+        } else {
+          (indexedMap.get(idx) as any)[field] = val;
+        }
+      }
+      if (indexedMap.size > 0) {
+        const maxIdx = Math.max(...Array.from(indexedMap.keys()));
+        const arr: any[] = [];
+        for (let i = 0; i <= maxIdx; i++) if (indexedMap.has(i)) arr.push(indexedMap.get(i));
+        details = arr;
       } else {
-        (indexedMap.get(idx) as any)[field] = val;
-      }
-    }
-    if (indexedMap.size > 0) {
-      const maxIdx = Math.max(...Array.from(indexedMap.keys()));
-      const arr: any[] = [];
-      for (let i = 0; i <= maxIdx; i++) {
-        if (indexedMap.has(i)) arr.push(indexedMap.get(i));
-      }
-      details = arr; // prefer indexed if supplied
-    }
-    const expectedCount = body.details_count !== undefined ? Number(body.details_count) : null;
-    if (expectedCount !== null && !isNaN(expectedCount)) {
-      if (Number(details?.length || 0) !== expectedCount) {
-        return res.status(400).json({ status: 'error', message: `details_count mismatch: got ${details?.length || 0}, expected ${expectedCount}` , data: null });
+        details = [];
       }
     }
 
@@ -1231,7 +1245,6 @@ export const createAssessment = async (req: Request, res: Response) => {
     const payload: any = { ...body };
     // Remove details from payload
     delete payload.details;
-    delete payload.details_count;
 
     // create parent assessment first to get assess_id
     const assessId = await complianceModel.createAssessment(payload);
@@ -1285,28 +1298,34 @@ export const createAssessment = async (req: Request, res: Response) => {
       await complianceModel.updateAssessment(assessId, parentUpdate);
     }
 
-    // Build details payloads then bulk insert once to avoid partial saves
-    const detailsToInsert: any[] = [];
+    // Insert details: for each detail, try to find a file using these strategies in order:
+    // 1) file field with name 'adt_image' (single) or 'adt_image_<index>' or 'adt_image_<adt_id>'
+    // 2) file originalname matches detail.adt_image (frontend may send the filename string in detail)
+    // 3) file field with name 'detail_<index>_image' etc.
+
     for (let i = 0; i < details.length; i++) {
       const d = { ...details[i] } as any;
       d.assess_id = assessId;
 
+      // attempt to attach an image
       let attachedPath: string | null = null;
+      // try field 'adt_image'
       const f1 = filesByField.get('adt_image');
       if (f1 && f1.length > 0) {
+        // if multiple, try to pick one by index
         const sel = f1[i] || f1[0];
-        if (sel) {
-          const tempPath = sel.path;
-          const ext = path.extname(sel.originalname || tempPath) || '';
-          const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
-          const base = await getUploadBase();
-          const destDir = path.join(base, 'compliance', 'assessment');
-          await fsPromises.mkdir(destDir, { recursive: true });
-          const destPath = path.join(destDir, filename);
-          await safeMove(tempPath, destPath);
-          attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
-        }
+        const tempPath = sel.path;
+        const ext = path.extname(sel.originalname || tempPath) || '';
+        const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
+        const base = await getUploadBase();
+        const destDir = path.join(base, 'compliance', 'assessment');
+        await fsPromises.mkdir(destDir, { recursive: true });
+        const destPath = path.join(destDir, filename);
+        await safeMove(tempPath, destPath);
+        attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
       }
+
+      // try matching by originalname if not yet attached and detail has adt_image filename
       if (!attachedPath && d.adt_image) {
         const matches = filesByOriginal.get(String(d.adt_image)) || [];
         if (matches.length > 0) {
@@ -1322,6 +1341,8 @@ export const createAssessment = async (req: Request, res: Response) => {
           attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
         }
       }
+
+      // fallback: look for field 'adt_image_<i>'
       if (!attachedPath) {
         const key = `adt_image_${i}`;
         const arr = filesByField.get(key) || [];
@@ -1338,14 +1359,11 @@ export const createAssessment = async (req: Request, res: Response) => {
           attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
         }
       }
+
       if (attachedPath) d.adt_image = attachedPath;
-      detailsToInsert.push(d);
-    }
-    const replaceRes = await complianceModel.replaceAssessmentDetails(assessId, detailsToInsert);
-    if (expectedCount !== null && !isNaN(expectedCount)) {
-      if (replaceRes.inserted !== expectedCount) {
-        return res.status(201).json({ status: 'warning', message: `Assessment created but detail count mismatch (inserted ${replaceRes.inserted} of expected ${expectedCount})`, data: { id: assessId, inserted: replaceRes.inserted, expected: expectedCount } });
-      }
+
+      // create detail row
+      await complianceModel.createAssessmentDetail(d);
     }
 
     // Fire-and-forget: send assessment notification email to driver/owner if possible
@@ -1428,7 +1446,7 @@ export const createAssessment = async (req: Request, res: Response) => {
       }
     })();
 
-    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id: assessId, inserted: replaceRes.inserted, expected: expectedCount ?? detailsToInsert.length } });
+    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id: assessId } });
   } catch (e) {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment', data: null });
   }
