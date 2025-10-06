@@ -718,7 +718,8 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name));
 
-	res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data: { ...rest, fuel_vendor, costcenter_summ, details } });
+	const msg = `Fuel billing retrieved successfully (${costcenter_summ.length} costcenter group(s), ${details.length} transaction detail(s))`;
+	res.json({ status: 'success', message: msg, data: { ...rest, fuel_vendor, costcenter_summ, details } });
 };
 
 // Get fuel consumption records and summary for a specific vehicle (asset_id)

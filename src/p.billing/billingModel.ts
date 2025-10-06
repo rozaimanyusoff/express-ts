@@ -11,7 +11,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings2';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 
@@ -401,8 +401,11 @@ export const getFuelBillingByDate = async (from: string, to: string): Promise<an
 /* ===== FUEL BILLING AMOUNT BY VEHICLE ===== */
 
 export const getFuelVehicleAmount = async (stmt_id: number): Promise<any[]> => {
+  // Removed previous filters on amount != '0.00', stmt_date IS NOT NULL, cc_id IS NOT NULL
+  // to allow full visibility of all raw transaction rows belonging to the statement.
+  // Any downstream aggregation should defensively handle null / zero values.
   const [rows] = await pool2.query(
-    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ? AND amount != '0.00' AND stmt_date IS NOT NULL AND cc_id IS NOT NULL`,
+    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_id = ?`,
     [stmt_id]
   );
   return rows as any[];
