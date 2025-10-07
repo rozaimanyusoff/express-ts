@@ -1299,70 +1299,80 @@ export const createAssessment = async (req: Request, res: Response) => {
     }
 
     // Insert details: for each detail, try to find a file using these strategies in order:
-    // 1) file field with name 'adt_image' (single) or 'adt_image_<index>' or 'adt_image_<adt_id>'
-    // 2) file originalname matches detail.adt_image (frontend may send the filename string in detail)
-    // 3) file field with name 'detail_<index>_image' etc.
+  // 1) Dedicated field per index: adt_image_<index>
+  // 2) Array-style fields: adt_image or adt_images (take i-th element)
+  // 3) Original name equals provided d.adt_image (when frontend supplies reference filename)
+  // 4) Generic fallback: detail_<index>_image
+  // NOTE: Previous implementation reused the same 'adt_image' collection for all rows causing
+  // index misalignment when the client sent multiple files; also relying on originalname often
+  // failed because multer's storage renames files. We now use fieldname-based matching only
+  // and only fall back to originalname if the client explicitly provided one in d.adt_image.
 
-    for (let i = 0; i < details.length; i++) {
-      const d = { ...details[i] } as any;
-      d.assess_id = assessId;
+    // Pre-extract possible array style fields
+    const adtImageArray = filesByField.get('adt_image') || filesByField.get('adt_images') || [];
 
-      // attempt to attach an image
-      let attachedPath: string | null = null;
-      // try field 'adt_image'
-      const f1 = filesByField.get('adt_image');
-      if (f1 && f1.length > 0) {
-        // if multiple, try to pick one by index
-        const sel = f1[i] || f1[0];
-        const tempPath = sel.path;
-        const ext = path.extname(sel.originalname || tempPath) || '';
-        const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
+    // Helper to persist a temp file and return stored relative path
+    const persistDetailFile = async (file: Express.Multer.File, index: number): Promise<string | null> => {
+      try {
+        const tempPath = file.path;
+        const ext = path.extname(file.originalname || tempPath) || '';
+        const filename = `assess-detail-${assessId}-${index}-${Date.now()}-${Math.round(Math.random()*1e6)}${ext}`;
         const base = await getUploadBase();
         const destDir = path.join(base, 'compliance', 'assessment');
         await fsPromises.mkdir(destDir, { recursive: true });
         const destPath = path.join(destDir, filename);
         await safeMove(tempPath, destPath);
-        attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+        return path.posix.join('uploads', 'compliance', 'assessment', filename);
+      } catch (err) {
+        console.error('persistDetailFile error:', err);
+        return null;
+      }
+    };
+
+    for (let i = 0; i < details.length; i++) {
+      const d = { ...details[i] } as any;
+      d.assess_id = assessId;
+      let attachedPath: string | null = null;
+
+      // Strategy 1: adt_image_<index>
+      if (!attachedPath) {
+        const specific = filesByField.get(`adt_image_${i}`);
+        if (specific && specific.length > 0) {
+          attachedPath = await persistDetailFile(specific[0], i);
+        }
       }
 
-      // try matching by originalname if not yet attached and detail has adt_image filename
+      // Strategy 2: array style field (same index)
+      if (!attachedPath && adtImageArray.length > 0) {
+        const sel = adtImageArray[i] || null;
+        if (sel) attachedPath = await persistDetailFile(sel, i);
+      }
+
+      // Strategy 3: originalname equals provided d.adt_image (legacy behavior)
       if (!attachedPath && d.adt_image) {
         const matches = filesByOriginal.get(String(d.adt_image)) || [];
         if (matches.length > 0) {
-          const sel = matches[0];
-          const tempPath = sel.path;
-          const ext = path.extname(sel.originalname || tempPath) || '';
-          const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
-          const base = await getUploadBase();
-          const destDir = path.join(base, 'compliance', 'assessment');
-          await fsPromises.mkdir(destDir, { recursive: true });
-          const destPath = path.join(destDir, filename);
-          await safeMove(tempPath, destPath);
-          attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+          attachedPath = await persistDetailFile(matches[0], i);
         }
       }
 
-      // fallback: look for field 'adt_image_<i>'
+      // Strategy 4: generic fallback field detail_<index>_image
       if (!attachedPath) {
-        const key = `adt_image_${i}`;
-        const arr = filesByField.get(key) || [];
-        if (arr.length > 0) {
-          const sel = arr[0];
-          const tempPath = sel.path;
-          const ext = path.extname(sel.originalname || tempPath) || '';
-          const filename = `assess-detail-${assessId}-${i}-${Date.now()}${ext}`;
-          const base = await getUploadBase();
-          const destDir = path.join(base, 'compliance', 'assessment');
-          await fsPromises.mkdir(destDir, { recursive: true });
-          const destPath = path.join(destDir, filename);
-          await safeMove(tempPath, destPath);
-          attachedPath = path.posix.join('uploads', 'compliance', 'assessment', filename);
+        const generic = filesByField.get(`detail_${i}_image`);
+        if (generic && generic.length > 0) {
+          attachedPath = await persistDetailFile(generic[0], i);
         }
       }
 
-      if (attachedPath) d.adt_image = attachedPath;
+      if (attachedPath) {
+        d.adt_image = attachedPath;
+      } else {
+        // If frontend supplied a string path (already uploaded) keep it, else null
+        if (typeof d.adt_image !== 'string' || d.adt_image.trim() === '') {
+          delete d.adt_image; // avoid inserting empty placeholder
+        }
+      }
 
-      // create detail row
       await complianceModel.createAssessmentDetail(d);
     }
 
