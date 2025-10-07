@@ -33,54 +33,187 @@ try {
     throw new Error('Invalid FRONTEND_URL in environment variables');
 }
 
-// Register a new user
+// Register a new user (mirrors frontend handler validation)
 export const register = async (req: Request, res: Response): Promise<Response> => {
-    const { name, email, contact, userType } = req.body;
+    const { name = '', email = '', contact = '', userType, username = '' } = req.body || {};
 
-    if (!name || !email || !contact || !userType) {
-        return res.status(400).json({ status: 'error', code: 400, message: 'Missing required fields' });
+    // Helper: company email check (configurable via COMPANY_EMAIL_DOMAINS env, comma separated)
+    const companyDomains = (process.env.COMPANY_EMAIL_DOMAINS || '')
+        .split(',')
+        .map(d => d.trim().toLowerCase())
+        .filter(Boolean);
+    const isCompanyEmail = (em: string) => {
+        if (!companyDomains.length) return true; // If not configured, allow any
+        const domain = em.split('@')[1]?.toLowerCase();
+        return !!domain && companyDomains.includes(domain);
+    };
+
+    const errors: Record<string, string> = {};
+
+    // Name validations
+    if (!name.trim()) {
+        errors.name = 'Please enter your full name.';
+    } else if (!/^[a-zA-Z\s'.-]+$/.test(name)) {
+        errors.name = 'Use a valid full name.';
     }
 
+    // Email validations
+    if (!email.trim()) {
+        errors.email = 'Please enter your email.';
+    } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        errors.email = 'Enter a valid email address.';
+    } else if (String(userType) === '1' && !isCompanyEmail(email)) {
+        // Employee must use company email
+        errors.email = 'Please use your company email for Employee registration.';
+    }
+
+    // Contact validations
+    if (!contact.trim()) {
+        errors.contact = 'Please enter your contact number.';
+    } else if (!/^[0-9]{8,12}$/.test(contact)) {
+        errors.contact = 'Contact must be 8-12 digits.';
+    }
+
+    // Optional username requirement (currently commented in frontend). Keep placeholder if future enforcement.
+    // if (String(userType) === '1' && !username.trim()) {
+    //     errors.username = 'Please provide your Ramco ID.';
+    // }
+
+    // userType basic validation
+    if (userType === undefined || userType === null || String(userType).trim() === '') {
+        errors.userType = 'User type is required.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+        return res.status(400).json({ status: 'error', code: 400, message: 'Validation failed', errors });
+    }
+
+    // Normalize email/contact for duplicate checks (email lowercased; contact as provided)
+    const normalizedEmail = email.toLowerCase();
+    const normalizedContact = contact;
+
     try {
-        // Check for duplicates in both users and pending_users
-        const existingAccounts = await userModel.findUserByEmailOrContact(email, contact);
-        const pendingAccounts = await pendingUserModel.findPendingUserByEmailOrContact(email, contact);
-        if (existingAccounts.length > 0 || pendingAccounts.length > 0) {
-            await logModel.logAuthActivity(0, 'register', 'fail', { reason: 'duplicate' }, req);
-            return res.status(400).json({ status: 'error', code: 400, message: 'The requested credentials already exist or are pending activation' });
+        // Duplicate check (email/contact)
+        const existingAccounts = await userModel.findUserByEmailOrContact(normalizedEmail, normalizedContact);
+        const pendingAccounts = await pendingUserModel.findPendingUserByEmailOrContact(normalizedEmail, normalizedContact);
+
+        // If already an activated account -> treat as success guidance
+        if (existingAccounts.length > 0 && existingAccounts[0].activated_at) {
+            return res.status(200).json({ status: 'success', message: 'Account already exists. Please login.' });
         }
 
-        // Only create pending user, do not send activation email
-        await pendingUserModel.createPendingUser({
-            fname: name,
-            email,
-            contact,
-            user_type: userType,
-            status: 2, // Will be set on approval
-            ip: req.headers['x-forwarded-for'] as string || req.socket?.remoteAddress || null,
-            user_agent: req.headers['user-agent'] || null,
-        });
+        // If pending exists -> idempotent behavior
+        if (pendingAccounts.length > 0) {
+            const pending = pendingAccounts[0];
+            if (Number(userType) === 1) {
+                // Employee: ensure activation_code present & (re)send activation email
+                let activationCode = pending.activation_code;
+                if (!activationCode) {
+                    activationCode = crypto.randomBytes(32).toString('hex');
+                    await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pending.id]);
+                }
+                const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+                try {
+                    await sendMail(normalizedEmail, 'Account Activation (Resent)', accountActivationTemplate(pending.fname || name, activationLink));
+                } catch (mailErr) {
+                    logger.error('Resend activation email error:', mailErr);
+                }
+                return res.status(200).json({ status: 'success', message: 'Activation email resent. Please check your inbox.' });
+            }
+            // Non-employee pending
+            return res.status(200).json({ status: 'success', message: 'Registration already received and pending admin approval.' });
+        }
 
-        // Notify admin of new registration (in-app notification)
-        await notificationModel.createNotification({
-            userId: 0,
-            type: 'registration',
-            message: `New user registration pending admin approval: ${name} (${email})`,
-        });
+        // Username required & uniqueness check only for employees (user_type = 1)
+        if (Number(userType) === 1) {
+            if (!username.trim()) {
+                return res.status(400).json({ status: 'error', code: 400, message: 'Username (Ramco ID) is required for employee registration' });
+            }
+            try {
+                const [userRows]: any[] = await pool.query('SELECT id FROM users WHERE username = ? LIMIT 1', [username.trim()]);
+                const [pendingRows]: any[] = await pool.query('SELECT id FROM pending_users WHERE username = ? LIMIT 1', [username.trim()]);
+                if ((Array.isArray(userRows) && userRows.length) || (Array.isArray(pendingRows) && pendingRows.length)) {
+                    return res.status(409).json({ status: 'error', code: 409, message: 'Username already in use' });
+                }
+            } catch (unameErr) {
+                logger.error('Username duplicate check error:', unameErr);
+                // continue; not fatal
+            }
+        }
 
-        // Send email to user: registration received, pending admin approval
-        const mailOptions = {
-            from: process.env.EMAIL_FROM,
-            to: email,
-            subject: 'Registration Received - Pending Approval',
-            html: `<p>Hi ${name},</p><p>Your registration has been received and is pending admin approval. You will receive an activation link via email once your account is approved.</p>`,
-        };
-        await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
+        if (Number(userType) === 1) {
+            // Employee flow: immediate activation email (similar to invitation)
+            const activationCode = crypto.randomBytes(32).toString('hex');
+            await pendingUserModel.createPendingUser({
+                fname: name.trim(),
+                username: username.trim(),
+                email: normalizedEmail,
+                contact: normalizedContact,
+                user_type: 1,
+                status: 2, // auto-approved state
+                activation_code: activationCode,
+                ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || null,
+                user_agent: req.headers['user-agent'] || null,
+            });
 
-        return res.status(201).json({
-            status: 'success',
-            message: 'Registration successful. Awaiting admin approval.',
-        });
+            const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+            try {
+                await sendMail(normalizedEmail, 'Account Activation', accountActivationTemplate(name.trim(), activationLink));
+            } catch (mailErr) {
+                logger.error('Employee activation email send error:', mailErr);
+                return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email' });
+            }
+
+            // Optional: notify admins of auto employee registration
+            try {
+                await notificationModel.createNotification({
+                    userId: 0,
+                    type: 'registration',
+                    message: `Employee registration (auto activation sent): ${name} (${normalizedEmail})`,
+                });
+            } catch (notifyErr) {
+                logger.error('Notification creation error (non-fatal):', notifyErr);
+            }
+
+            return res.status(201).json({
+                status: 'success',
+                message: 'Registration successful. Please check your email to activate your account.',
+            });
+        } else {
+            // Non-employee flow: pending admin approval (no activation code yet)
+            await pendingUserModel.createPendingUser({
+                fname: name.trim(),
+                username: username?.trim() || null,
+                email: normalizedEmail,
+                contact: normalizedContact,
+                user_type: Number(userType),
+                status: 1, // 1 = awaiting admin approval
+                activation_code: null,
+                ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || null,
+                user_agent: req.headers['user-agent'] || null,
+            });
+
+            try {
+                await notificationModel.createNotification({
+                    userId: 0,
+                    type: 'registration',
+                    message: `New user registration pending admin approval: ${name} (${normalizedEmail})`,
+                });
+            } catch (notifyErr) {
+                logger.error('Notification creation error (non-fatal):', notifyErr);
+            }
+
+            try {
+                await sendMail(normalizedEmail, 'Registration Received - Pending Approval', `<p>Hi ${name},</p><p>Your registration has been received and is pending admin approval. You will receive an activation link via email once your account is approved.</p>`);
+            } catch (mailErr) {
+                logger.error('Registration acknowledgement email send error (non-fatal):', mailErr);
+            }
+
+            return res.status(201).json({
+                status: 'success',
+                message: 'Registration successful. Awaiting admin approval.',
+            });
+        }
     } catch (error: unknown) {
         logger.error('Registration error:', error);
         await logModel.logAuthActivity(0, 'register', 'fail', { reason: 'exception', error: String(error) }, req);
@@ -108,7 +241,7 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
             const activationCode = crypto.randomBytes(32).toString('hex');
             const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
             // Update pending user with activation code
-            await pool.query('UPDATE pending_users SET activation_code = ? WHERE id = ?', [activationCode, pendingUserId]);
+            await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pendingUserId]);
             // Send activation email
             const mailOptions = {
                 from: process.env.EMAIL_FROM,
@@ -142,7 +275,7 @@ export const validateActivationDetails = async (req: Request, res: Response): Pr
         logger.error('Validation error:', error);
         return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
     }
-}
+};
 
 // Activate user account from bulk invite or individual registration
 export const activateAccount = async (req: Request, res: Response): Promise<Response> => {
@@ -275,7 +408,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
-        const token = jwt.sign({ userId: result.user.id, email: result.user.email, contact: result.user.contact, session: sessionToken }, process.env.JWT_SECRET, { expiresIn: '1h', algorithm: 'HS256' });
+    const token = jwt.sign({ userId: result.user.id, email: result.user.email, contact: result.user.contact, session: sessionToken }, process.env.JWT_SECRET, { expiresIn: '1h', algorithm: 'HS256' });
 
         const navigation = await navModel.getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 

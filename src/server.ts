@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
@@ -16,11 +17,28 @@ const io = new Server(httpServer, {
   }
 });
 
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  if (!token) return next(new Error('unauthorized'));
+  try {
+    if (!process.env.JWT_SECRET) throw new Error('Missing JWT secret');
+    const decoded: any = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    (socket as any).userId = decoded.userId;
+    next();
+  } catch (err) {
+    logger.error('Socket auth failed', err);
+    next(new Error('unauthorized'));
+  }
+});
 
+io.on('connection', (socket) => {
+  const userId = (socket as any).userId;
+  if (userId) {
+    socket.join(`user:${userId}`);
+    logger.info(`Socket connected userId=${userId} socketId=${socket.id}`);
+  }
   socket.on('disconnect', () => {
-    console.log('A user disconnected:', socket.id);
+    logger.info(`Socket disconnected userId=${userId} socketId=${socket.id}`);
   });
 });
 
