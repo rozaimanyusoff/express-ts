@@ -1312,17 +1312,19 @@ export const createAssessment = async (req: Request, res: Response) => {
     const adtImageArray = filesByField.get('adt_image') || filesByField.get('adt_images') || [];
 
     // Helper to persist a temp file and return stored relative path
-    const persistDetailFile = async (file: Express.Multer.File, index: number): Promise<string | null> => {
+    const persistDetailFile = async (file: Express.Multer.File, index: number, adtItem?: any): Promise<string | null> => {
       try {
         const tempPath = file.path;
         const ext = path.extname(file.originalname || tempPath) || '';
-        const filename = `assess-detail-${assessId}-${index}-${Date.now()}-${Math.round(Math.random()*1e6)}${ext}`;
+        const safeItem = adtItem !== undefined && adtItem !== null ? String(adtItem).replace(/[^a-zA-Z0-9_-]+/g, '').slice(0,40) : 'item';
+        const filename = `assess-${assessId}-idx${index}-itm${safeItem}-${Date.now()}-${Math.round(Math.random()*1e6)}${ext}`;
         const base = await getUploadBase();
-        const destDir = path.join(base, 'compliance', 'assessment');
+        // Store inside nested folder by assess_id for easier traceability
+        const destDir = path.join(base, 'compliance', 'assessment', String(assessId));
         await fsPromises.mkdir(destDir, { recursive: true });
         const destPath = path.join(destDir, filename);
         await safeMove(tempPath, destPath);
-        return path.posix.join('uploads', 'compliance', 'assessment', filename);
+        return path.posix.join('uploads', 'compliance', 'assessment', String(assessId), filename);
       } catch (err) {
         console.error('persistDetailFile error:', err);
         return null;
@@ -1338,21 +1340,21 @@ export const createAssessment = async (req: Request, res: Response) => {
       if (!attachedPath) {
         const specific = filesByField.get(`adt_image_${i}`);
         if (specific && specific.length > 0) {
-          attachedPath = await persistDetailFile(specific[0], i);
+          attachedPath = await persistDetailFile(specific[0], i, d.adt_item);
         }
       }
 
       // Strategy 2: array style field (same index)
       if (!attachedPath && adtImageArray.length > 0) {
         const sel = adtImageArray[i] || null;
-        if (sel) attachedPath = await persistDetailFile(sel, i);
+        if (sel) attachedPath = await persistDetailFile(sel, i, d.adt_item);
       }
 
       // Strategy 3: originalname equals provided d.adt_image (legacy behavior)
       if (!attachedPath && d.adt_image) {
         const matches = filesByOriginal.get(String(d.adt_image)) || [];
         if (matches.length > 0) {
-          attachedPath = await persistDetailFile(matches[0], i);
+          attachedPath = await persistDetailFile(matches[0], i, d.adt_item);
         }
       }
 
@@ -1360,7 +1362,7 @@ export const createAssessment = async (req: Request, res: Response) => {
       if (!attachedPath) {
         const generic = filesByField.get(`detail_${i}_image`);
         if (generic && generic.length > 0) {
-          attachedPath = await persistDetailFile(generic[0], i);
+          attachedPath = await persistDetailFile(generic[0], i, d.adt_item);
         }
       }
 
