@@ -1336,6 +1336,17 @@ export const createAssessment = async (req: Request, res: Response) => {
       d.assess_id = assessId;
       let attachedPath: string | null = null;
 
+      // Strategy 0: bracket/dot-nested fieldnames e.g. details[0][adt_image]
+      if (!attachedPath) {
+        const bracket = filesByField.get(`details[${i}][adt_image]`);
+        const dot = filesByField.get(`details.${i}.adt_image`);
+        const mixed = filesByField.get(`details[${i}].adt_image`);
+        const nested = bracket || dot || mixed;
+        if (nested && nested.length > 0) {
+          attachedPath = await persistDetailFile(nested[0], i, d.adt_item);
+        }
+      }
+
       // Strategy 1: adt_image_<index>
       if (!attachedPath) {
         const specific = filesByField.get(`adt_image_${i}`);
