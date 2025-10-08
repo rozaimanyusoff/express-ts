@@ -19,6 +19,12 @@ export const getAssets = async (req: Request, res: Response) => {
 	const hodParam = req.query.hod;
 	const registerNumberParam = req.query.register;
 	const brandParam = req.query.brand; // ?brand={brandId}
+	const qParam = req.query.q; // free-text search
+	const pageParam = req.query.page;
+	const pageSizeParam = req.query.pageSize ?? req.query.limit;
+	const offsetParam = req.query.offset; // alternative pagination
+	const sortByParam = req.query.sortBy;
+	const sortDirParam = req.query.sortDir;
 	let typeIds: number[] | undefined = undefined;
 	let status: string | undefined = undefined;
 	let classification: string | undefined = undefined;
@@ -26,6 +32,12 @@ export const getAssets = async (req: Request, res: Response) => {
 	let owner: string | string[] | undefined = undefined;
 	let registerNumber: string | undefined = undefined;
 	let brandId: number | undefined = undefined;
+	let q: string | undefined = undefined;
+	let usePaged = false;
+	let page = 1;
+	let pageSize = 25;
+	let sortBy: string | undefined = undefined;
+	let sortDir: 'asc' | 'desc' | undefined = undefined;
 	if (typeof managerParam === 'string' && managerParam !== '') {
 		manager = Number(managerParam);
 		//if (isNaN(manager)) manager = undefined;
@@ -87,8 +99,54 @@ export const getAssets = async (req: Request, res: Response) => {
 		if (!isNaN(n)) brandId = n;
 	}
 
-	// Fetch all assets and related data
-	const assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId);
+	if (typeof qParam === 'string' && qParam.trim() !== '') {
+		q = qParam.trim();
+		usePaged = true;
+	}
+	if (typeof pageParam === 'string' && pageParam.trim() !== '') {
+		const n = Number(pageParam);
+		if (!isNaN(n) && n > 0) { page = Math.floor(n); usePaged = true; }
+	}
+	if (typeof pageSizeParam === 'string' && pageSizeParam.trim() !== '') {
+		const n = Number(pageSizeParam);
+		if (!isNaN(n) && n > 0) { pageSize = Math.floor(n); usePaged = true; }
+	}
+	// Support limit/offset pair
+	if (!usePaged && typeof offsetParam === 'string' && offsetParam.trim() !== '' && typeof pageSizeParam === 'string') {
+		const limit = Number(pageSizeParam);
+		const offset = Number(offsetParam);
+		if (!isNaN(limit) && limit > 0 && !isNaN(offset) && offset >= 0) {
+			pageSize = Math.floor(limit);
+			page = Math.floor(offset / pageSize) + 1;
+			usePaged = true;
+		}
+	}
+	if (typeof sortByParam === 'string' && sortByParam.trim() !== '') { sortBy = sortByParam.trim(); usePaged = true; }
+	if (typeof sortDirParam === 'string' && sortDirParam.trim() !== '') {
+		const d = sortDirParam.toLowerCase();
+		if (d === 'asc' || d === 'desc') { sortDir = d; usePaged = true; }
+	}
+
+	// Fetch assets (paged when requested) and related data
+	let assetsRaw: any[] = [];
+	let total = 0;
+	if (usePaged) {
+		const { rows, total: t } = await assetModel.getAssetsPaged({
+			type_ids: typeIds,
+			classification,
+			status,
+			manager,
+			registerNumber,
+			owner,
+			brandId,
+			q
+		}, { page, pageSize, sortBy, sortDir: (sortDir as any) });
+		assetsRaw = rows as any[];
+		total = t;
+	} else {
+		assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId) as any[];
+		total = Array.isArray(assetsRaw) ? assetsRaw.length : 0;
+	}
 	const typesRaw = await assetModel.getTypes();
 	const categoriesRaw = await assetModel.getCategories();
 	const brandsRaw = await assetModel.getBrands();
@@ -185,10 +243,12 @@ export const getAssets = async (req: Request, res: Response) => {
 		};
 	});
 
+	const meta = { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / (pageSize || 1))) };
 	res.json({
 		status: 'success',
-		message: `Assets data retrieved successfully (${data.length} entries)`,
-		data
+		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${total} total` : ''})`,
+		data,
+		meta
 	});
 };
 

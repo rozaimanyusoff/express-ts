@@ -752,6 +752,135 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   return mapped;
 };
 
+// Server-side pagination + free-text search for assets
+export const getAssetsPaged = async (
+  filters: {
+    type_ids?: number[] | number;
+    classification?: string;
+    status?: string;
+    manager?: number;
+    registerNumber?: string;
+    owner?: string | string[];
+    brandId?: number;
+    q?: string;
+  },
+  options: {
+    page: number;
+    pageSize: number;
+    sortBy?: string;
+    sortDir?: 'asc' | 'desc';
+  }
+) => {
+  const {
+    type_ids,
+    classification,
+    status,
+    manager,
+    registerNumber,
+    owner,
+    brandId,
+    q
+  } = filters || {};
+
+  const page = Number.isFinite(options?.page) && options.page > 0 ? Math.floor(options.page) : 1;
+  const pageSize = Number.isFinite(options?.pageSize) && options.pageSize > 0 ? Math.floor(options.pageSize) : 25;
+  const offset = (page - 1) * pageSize;
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (typeof manager === 'number' && !isNaN(manager)) {
+    conditions.push('a.manager_id = ?');
+    params.push(manager);
+  }
+  if (Array.isArray(type_ids) && type_ids.length > 0) {
+    conditions.push(`a.type_id IN (${type_ids.map(() => '?').join(',')})`);
+    params.push(...type_ids);
+  } else if (typeof type_ids === 'number' && !isNaN(type_ids)) {
+    conditions.push('a.type_id = ?');
+    params.push(type_ids);
+  }
+  if (typeof classification === 'string' && classification !== '') {
+    conditions.push('a.classification = ?');
+    params.push(classification);
+  }
+  if (typeof status === 'string' && status !== '') {
+    conditions.push('a.record_status = ?');
+    params.push(status);
+  }
+  if (typeof registerNumber === 'string' && registerNumber !== '') {
+    conditions.push('a.register_number = ?');
+    params.push(registerNumber);
+  }
+  if (owner !== undefined && owner !== null && owner !== '') {
+    let ownerIds: string[] = [];
+    if (Array.isArray(owner)) {
+      ownerIds = owner.map((o: any) => String(o).trim());
+    } else if (typeof owner === 'string') {
+      ownerIds = owner.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (typeof owner === 'number') {
+      ownerIds = [String(owner)];
+    }
+    if (ownerIds.length > 0) {
+      const placeholders = ownerIds.map(() => '?').join(',');
+      conditions.push(`a.ramco_id IN (${placeholders})`);
+      params.push(...ownerIds);
+    }
+  }
+  if (typeof brandId === 'number' && !isNaN(brandId)) {
+    conditions.push('a.brand_id = ?');
+    params.push(brandId);
+  }
+  if (typeof q === 'string' && q.trim() !== '') {
+    const like = `%${q.toLowerCase()}%`;
+    conditions.push(`(
+      LOWER(a.entry_code) LIKE ? OR
+      LOWER(a.register_number) LIKE ? OR
+      LOWER(a.purpose) LIKE ? OR
+      LOWER(a.ramco_id) LIKE ? OR
+      LOWER(b.name) LIKE ? OR
+      LOWER(m.name) LIKE ?
+    )`);
+    params.push(like, like, like, like, like, like);
+  }
+
+  const whereSql = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+
+  // Joins for searching by related names (brand/model)
+  const fromSql = `FROM ${assetTable} a
+    LEFT JOIN ${brandTable} b ON b.id = a.brand_id
+    LEFT JOIN ${modelTable} m ON m.id = a.model_id`;
+
+  // Count total
+  const countSql = `SELECT COUNT(*) AS count ${fromSql}${whereSql}`;
+  const [countRows] = await pool.query(countSql, params);
+  const total = Array.isArray(countRows) && countRows.length > 0 ? Number((countRows as any)[0].count) : 0;
+
+  // Sorting allowlist
+  const sortAllowlist = new Set([
+    'id',
+    'type_id',
+    'register_number',
+    'entry_code',
+    'asset_code',
+    'purchase_date',
+    'purchase_year',
+    'record_status',
+    'classification'
+  ]);
+  let orderBy = 'a.type_id ASC, a.register_number ASC';
+  const sortBy = (options?.sortBy || '').toString();
+  const sortDir = (options?.sortDir || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  if (sortBy && sortAllowlist.has(sortBy)) {
+    orderBy = `a.${sortBy} ${sortDir}`;
+  }
+
+  const dataSql = `SELECT a.* ${fromSql}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
+  const [rows] = await pool.query(dataSql, [...params, pageSize, offset]);
+  const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
+  return { rows: mapped, total };
+};
+
 export const getAssetById = async (id: number) => {
   if (typeof id !== 'number' || isNaN(id)) {
     throw new Error('Invalid asset id');
