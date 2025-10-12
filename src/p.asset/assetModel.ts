@@ -36,8 +36,8 @@ const locationTable = `${db}.locations`;
 const vendorTable = `${db}.vendors`;
 const procurementTable = `${db}.procurements`;
 const assetPurchaseTable = `${db}.asset_purchase`;
-const assetTransferRequestTable = `${db}.asset_transfer_requests`;
-const assetTransferDetailsTable = `${db}.asset_transfer_details`;
+const assetTransferRequestTable = `${db}.transfer_request`;
+const assetTransferItemTable = `${db}.transfer_items`;
 const transferChecklistTable = `${db}.transfer_checklists`;
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
@@ -1484,55 +1484,56 @@ export const searchEmployeesAutocomplete = async (query: string) => {
 
 
 
-// ASSET TRANSFER REQUESTS CRUD
+/* ============ ASSET TRANSFER REQUESTS CRUD ============ */
 
-export const getAssetTransferRequests = async () => {
+export const getAssetTransfers = async () => {
   const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable}`);
   return rows;
 };
 
-export const getAssetTransferRequestById = async (id: number) => {
+export const getAssetTransferById = async (id: number) => {
   const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const createAssetTransferRequest = async (data: any) => {
+export const createAssetTransfer = async (data: any) => {
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferRequestTable} (request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, request_status, return_to_asset_manager,  created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-    [data.request_no, data.requestor, data.request_date, data.verifier_id, data.verified_date, data.approval_id, data.approval_date, data.asset_mgr_id, data.qa_id, data.qa_date, data.action_date, data.request_status, data.return_to_asset_manager ? 1 : 0]
+    `INSERT INTO ${assetTransferRequestTable} (transfer_date, transfer_by, costcenter_id, department_id, transfer_status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+    [data.transfer_date, data.transfer_by, data.costcenter_id, data.department_id, data.transfer_status]
   );
   return (result as any).insertId;
 };
 
-export const createAssetTransferDetail = async (data: any) => {
+export const createAssetTransferItem = async (data: any) => {
   // Ensure only primitive values are inserted
   const getId = (v: any) => (v && typeof v === 'object' && 'id' in v) ? v.id : v ?? null;
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferDetailsTable} (transfer_request_id, transfer_type, asset_type, identifier, curr_owner, curr_department, curr_district, curr_costcenter, new_owner, new_department, new_district, new_costcenter, effective_date, reasons, attachment, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    `INSERT INTO ${assetTransferItemTable} (transfer_id, effective_date, asset_id, type_id, current_owner, current_costcenter_id, current_department_id, current_location_id, new_owner, new_costcenter_id, new_department_id, new_location_id, return_to_asset_manager, reason, remarks, attachment, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [
-      data.transfer_request_id,
-      data.transfer_type,
-      data.asset_type,
-      data.identifier,
-      typeof data.curr_owner === 'object' ? data.curr_owner?.ramco_id ?? null : data.curr_owner ?? null,
-      getId(data.curr_department),
-      getId(data.curr_district),
-      getId(data.curr_costcenter),
-      typeof data.curr_owner === 'object' ? data.new_owner?.ramco_id ?? null : data.new_owner ?? null,
-      getId(data.new_department),
-      getId(data.new_district),
-      getId(data.new_costcenter),
+      data.transfer_id,
       data.effective_date,
-      data.reasons,
+      data.asset_id,
+      data.type_id,
+      data.current_owner,
+      data.current_costcenter_id,
+      data.current_department_id,
+      data.current_location_id,
+      data.new_owner,
+      data.new_costcenter_id,
+      data.new_department_id,
+      data.new_location_id,
+      data.return_to_asset_manager,
+      data.reason,
+      data.remarks,
       data.attachment
     ]
   );
   return result;
 };
 
-export const updateAssetTransferRequest = async (id: number, data: any) => {
+export const updateAssetTransfer = async (id: number, data: any) => {
   const { request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager } = data;
   const [result] = await pool.query(
     `UPDATE ${assetTransferRequestTable} SET request_no = ?, requestor = ?, request_date = ?, verifier_id = ?, verified_date = ?, approval_id = ?, approval_date = ?, asset_mgr_id = ?, qa_id = ?, qa_date = ?, action_date = ?, return_to_asset_manager = ?, updated_at = NOW() WHERE id = ?`,
@@ -1540,33 +1541,33 @@ export const updateAssetTransferRequest = async (id: number, data: any) => {
   );
   return result;
 };
-export const deleteAssetTransferRequest = async (id: number) => {
+export const deleteAssetTransfer = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
   return result;
 };
-export const deleteAssetTransferDetailsByRequestId = async (requestId: number) => {
-  const [result] = await pool.query(`DELETE FROM ${assetTransferDetailsTable} WHERE transfer_request_id = ?`, [requestId]);
+export const deleteAssetTransferItemByRequestId = async (requestId: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetTransferItemTable} WHERE transfer_id = ?`, [requestId]);
   return result;
 };
-export const getAssetTransferDetailsByRequestId = async (transfer_request_id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTransferDetailsTable} WHERE transfer_request_id = ?`, [transfer_request_id]);
+export const getAssetTransferItemByRequestId = async (transfer_id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable} WHERE transfer_id = ?`, [transfer_id]);
   return rows;
 };
 
-export const getAssetTransferRequestsWithDetails = async () => {
+export const getAssetTransferWithDetails = async () => {
   const requests = await (await pool.query(`SELECT * FROM ${assetTransferRequestTable}`))[0] as RowDataPacket[];
   if (!requests.length) return [];
   const allIds = requests.map((r: any) => r.id);
   const placeholders = allIds.map(() => '?').join(',');
   const [allDetails] = await pool.query(
-    `SELECT * FROM ${assetTransferDetailsTable} WHERE transfer_request_id IN (${placeholders})`,
+    `SELECT * FROM ${assetTransferItemTable} WHERE transfer_id IN (${placeholders})`,
     allIds
   );
-  // Group details by transfer_request_id
+  // Group details by transfer_id
   const detailsMap: Record<number, any[]> = {};
   for (const detail of allDetails as any[]) {
-    if (!detailsMap[detail.transfer_request_id]) detailsMap[detail.transfer_request_id] = [];
-    detailsMap[detail.transfer_request_id].push(detail);
+    if (!detailsMap[detail.transfer_id]) detailsMap[detail.transfer_id] = [];
+    detailsMap[detail.transfer_id].push(detail);
   }
   // Attach items to each request
   return requests.map((r: any) => ({ ...r, items: detailsMap[r.id] || [] }));

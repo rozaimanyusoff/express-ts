@@ -529,6 +529,11 @@ export const createPurchaseAssetRegistryBatch = async (
   return insertIds;
 };
 
+export const getPurchaseAssetRegistry = async (): Promise<PurchaseAssetRegistryRecord[]> => {
+  const [rows] = await pool.query(`SELECT * FROM ${purchaseAssetRegistryTable}`);
+  return rows as PurchaseAssetRegistryRecord[];
+};
+
 export const getPurchaseAssetRegistryByPrId = async (purchase_id: number): Promise<PurchaseAssetRegistryRecord[]> => {
   const [rows] = await pool.query(
     `SELECT * FROM ${purchaseAssetRegistryTable} WHERE purchase_id = ? ORDER BY id DESC`,

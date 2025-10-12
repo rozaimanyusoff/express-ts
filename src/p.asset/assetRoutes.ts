@@ -123,8 +123,8 @@ router.put('/softwares/:id', asyncHandler(assetController.updateSoftware));
 router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
 
 // ASSET TRANSFER REQUESTS
-router.get('/transfers', asyncHandler(assetController.getAssetTransferRequests));
-router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferRequestById));
+router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferById));
+router.get('/transfers', asyncHandler(assetController.getAssetTransfers)); // ?status=&requester=&supervisor=&hod=&from_date=&to_date=
 router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
 router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));

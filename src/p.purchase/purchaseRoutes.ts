@@ -26,7 +26,8 @@ router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier))
 
 // PURCHASE ASSET REGISTRY
 router.post('/registry', asyncHandler(purchaseController.createPurchaseAssetsRegistry));
-router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // ?pr_id=123
+router.get('/registry/all', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // GET all assets
+router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistryByPrId)); // ?pr_id=123
 
 // GET all purchases with optional filtering
 // Query params:

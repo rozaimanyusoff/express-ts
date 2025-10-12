@@ -1027,8 +1027,30 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
   }
 };
 
-// PURCHASE ASSET REGISTRY — list by PR id
+// PURCHASE ASSET REGISTRY — list all
 export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
+  try {
+    // Fetch all registry rows
+    const rows = await purchaseModel.getPurchaseAssetRegistry();
+
+    // Optional filter by ?type=<type_id>
+    const typeParamRaw = req.query.type;
+    let data = Array.isArray(rows) ? rows : [];
+    if (typeof typeParamRaw === 'string' && typeParamRaw.trim() !== '') {
+      const typeId = Number(typeParamRaw);
+      if (!Number.isNaN(typeId)) {
+        data = data.filter((r: any) => Number(r.type_id) === typeId);
+      }
+    }
+
+    return res.json({ status: 'success', message: 'Purchase asset registry retrieved', data });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve registry', data: null });
+  }
+}
+
+// PURCHASE ASSET REGISTRY — list by PR id
+export const getPurchaseAssetRegistryByPrId = async (req: Request, res: Response) => {
   try {
     const purchaseId = Number((req.query.pr as string) || (req.params as any).pr);
     if (!purchaseId) {

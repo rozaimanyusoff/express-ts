@@ -194,6 +194,7 @@ export const getAssets = async (req: Request, res: Response) => {
 			register_number: asset.register_number,
 			purchase_date: asset.purchase_date,
 			purchase_year: asset.purchase_year,
+			purchase_id: asset.purchase_id,
 			fuel_type: asset.fuel_type,
 			transmission: asset.transmission,
 			//unit_price: asset.unit_price,
@@ -1985,253 +1986,245 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 	});
 };
 
-// ASSET TRANSFER REQUESTS
-export const getAssetTransferRequests = async (req: Request, res: Response) => {
+/* ============ ASSET TRANSFER REQUESTS ============ */
+export const getAssetTransfers = async (req: Request, res: Response) => {
 	// Fetch all transfer requests with their items
-	const requests = await assetModel.getAssetTransferRequestsWithDetails();
+	const requests = await assetModel.getAssetTransfers();
+	const reqArr = Array.isArray(requests) ? (requests as any[]) : [];
 
-	// Collect all unique employee, department, district, and costcenter IDs from requests and items
-	const employeeRamcoIds = new Set<string>();
-	const departmentIds = new Set<number>();
-	const districtIds = new Set<number>();
-	const costcenterIds = new Set<number>();
+	// Optional filter by ?ramco=<username>; later we will include requests where
+	// (transfer_by == ramco) OR (any item.new_owner == ramco)
+	const ramcoParam = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
 
-	for (const reqObj of requests) {
-		if (reqObj.requestor) employeeRamcoIds.add(reqObj.requestor);
-		for (const item of reqObj.items || []) {
-			if (item.curr_owner) employeeRamcoIds.add(item.curr_owner);
-			if (item.new_owner) employeeRamcoIds.add(item.new_owner);
-			if (item.accepted_by) employeeRamcoIds.add(item.accepted_by);
-			if (item.curr_department) departmentIds.add(item.curr_department);
-			if (item.new_department) departmentIds.add(item.new_department);
-			if (item.curr_district) districtIds.add(item.curr_district);
-			if (item.new_district) districtIds.add(item.new_district);
-			if (item.curr_costcenter) costcenterIds.add(item.curr_costcenter);
-			if (item.new_costcenter) costcenterIds.add(item.new_costcenter);
-		}
+	// Build lookup for employees referenced by transfer_by
+	const transferBySet = new Set<string>();
+	for (const r of reqArr) {
+		if (r.transfer_by) transferBySet.add(String(r.transfer_by));
 	}
 
-	// Fetch all related objects in bulk (arrays)
-	const [employeesArr, departmentsArr, districtsArr, costcentersArr] = await Promise.all([
+	// Fetch employees, costcenters, departments for enrichment (in parallel)
+	const [employeesRaw, costcentersRaw, departmentsRaw] = await Promise.all([
 		assetModel.getEmployees(),
-		assetModel.getDepartments(),
-		assetModel.getDistricts(),
-		assetModel.getCostcenters()
+		assetModel.getCostcenters(),
+		assetModel.getDepartments()
 	]);
+	const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+	const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+	const empMap = new Map<string, any>(employees.map((e: any) => [String(e.ramco_id), e]));
+	const costcenterMap = new Map<number, any>(costcenters.map((c: any) => [Number(c.id), c]));
+	const departmentMap = new Map<number, any>(departments.map((d: any) => [Number(d.id), d]));
 
-	// Build lookup maps
-	const employeeRamcoMap = new Map<string, any>();
-	for (const emp of employeesArr as any[]) {
-		employeeRamcoMap.set(emp.ramco_id, {
-			ramco_id: emp.ramco_id,
-			name: emp.full_name,
-			cost_center: emp.costcenter_id ? { id: emp.costcenter_id, name: (costcentersArr as any[]).find((c: any) => c.id === emp.costcenter_id)?.name || null } : null,
-			department: emp.department_id ? { id: emp.department_id, name: (departmentsArr as any[]).find((d: any) => d.id === emp.department_id)?.name || null } : null,
-			district: emp.district_id ? { id: emp.district_id, name: (districtsArr as any[]).find((d: any) => d.id === emp.district_id)?.name || null } : null
-		});
+	// Get item counts per request (total_items) and cache items for minimal enrichment
+	// Build for ALL requests first so we can filter by new_owner when ramcoParam is present
+	const countsMap = new Map<number, number>();
+	const itemsMap = new Map<number, any[]>();
+	await Promise.all(
+		reqArr.map(async (r: any) => {
+			try {
+				const itemsRaw = await assetModel.getAssetTransferItemByRequestId(r.id);
+				const arr = Array.isArray(itemsRaw) ? (itemsRaw as any[]) : [];
+				countsMap.set(r.id, arr.length);
+				itemsMap.set(r.id, arr);
+			} catch {
+				countsMap.set(r.id, 0);
+				itemsMap.set(r.id, []);
+			}
+		})
+	);
+
+	// Now compute filtered set. If no ramcoParam, keep all; else include requests
+	// where transfer_by matches OR any item's new_owner matches
+	const filteredReqArr = ramcoParam
+		? reqArr.filter((r: any) => {
+			if (String(r.transfer_by) === ramcoParam) return true;
+			const itemsForReq = itemsMap.get(r.id) || [];
+			return itemsForReq.some((it: any) => String(it.new_owner) === ramcoParam);
+		})
+		: reqArr;
+
+	if (filteredReqArr.length === 0) {
+		return res.json({ status: 'success', message: 'Asset transfer requests retrieved successfully', data: [] });
 	}
-	const departmentMap = new Map<number, any>();
-	for (const d of departmentsArr as any[]) departmentMap.set(d.id, { id: d.id, name: d.name });
-	const districtMap = new Map<number, any>();
-	for (const d of districtsArr as any[]) districtMap.set(d.id, { id: d.id, name: d.name });
-	const costcenterMap = new Map<number, any>();
-	for (const c of costcentersArr as any[]) costcenterMap.set(c.id, { id: c.id, name: c.name });
 
-	// Helper to map by ramco_id for requestor, curr_owner, accepted_by
-	const mapEmployeeByRamco = (ramco_id: any) => ramco_id ? employeeRamcoMap.get(ramco_id) || null : null;
-	// Helper to map only ramco_id and name for item-level employee fields
-	const mapEmployeeShortByRamco = (ramco_id: any) => {
-		const emp = mapEmployeeByRamco(ramco_id);
-		return emp ? { ramco_id: emp.ramco_id, name: emp.name } : null;
-	};
-	const mapDepartment = (id: any) => id ? departmentMap.get(id) || null : null;
-	const mapDistrict = (id: any) => id ? districtMap.get(id) || null : null;
-	const mapCostcenter = (id: any) => id ? costcenterMap.get(id) || null : null;
-
-	// Map each request and its items to the enriched structure
-	const enrichedRequests = requests.map((reqObj: any) => {
-		return {
-			...reqObj,
-			requestor: mapEmployeeByRamco(reqObj.requestor),
-			items: (reqObj.items || []).map((item: any) => {
-				const newItem: any = {
-					...item,
-					curr_owner: mapEmployeeShortByRamco(item.curr_owner),
-					new_owner: mapEmployeeShortByRamco(item.new_owner),
-					accepted_by: mapEmployeeShortByRamco(item.accepted_by),
-					curr_department: mapDepartment(item.curr_department),
-					new_department: mapDepartment(item.new_department),
-					curr_district: mapDistrict(item.curr_district),
-					new_district: mapDistrict(item.new_district),
-					curr_costcenter: mapCostcenter(item.curr_costcenter),
-					new_costcenter: mapCostcenter(item.new_costcenter)
+	const data = filteredReqArr.map((r: any) => {
+		const emp = empMap.get(String(r.transfer_by));
+		const transfer_by_obj = emp ? {
+			ramco_id: emp.ramco_id,
+			full_name: emp.full_name || emp.name || null,
+		} : null;
+		const cc = r.costcenter_id != null ? costcenterMap.get(Number(r.costcenter_id)) : null;
+		const dept = r.department_id != null ? departmentMap.get(Number(r.department_id)) : null;
+		const costcenter = cc ? { id: Number(cc.id), name: cc.name || null } : null;
+		const department = dept ? { id: Number(dept.id), code: dept.code || null } : null;
+		// Build new_owner array from items
+		const itemsRawForReq = itemsMap.get(r.id) || [];
+		const new_owner = itemsRawForReq
+			.map((it: any, idx: number) => {
+				if (!it.new_owner) return null;
+				const newOwnerEmp = empMap.get(String(it.new_owner));
+				const entry: any = {
+					[`item_${idx + 1}`]: it.id,
+					ramco_id: newOwnerEmp?.ramco_id || String(it.new_owner),
+					full_name: newOwnerEmp?.full_name || newOwnerEmp?.name || null,
 				};
-				// Remove redundant id fields
-				delete newItem.curr_department_id;
-				delete newItem.new_department_id;
-				delete newItem.curr_district_id;
-				delete newItem.new_district_id;
-				delete newItem.curr_costcenter_id;
-				delete newItem.new_costcenter_id;
-				delete newItem.owner;
-				return newItem;
+				return entry;
 			})
+			.filter((v: any) => v !== null);
+		return {
+			id: r.id,
+			transfer_date: r.transfer_date,
+			transfer_status: r.transfer_status,
+			created_at: r.created_at,
+			updated_at: r.updated_at,
+			total_items: countsMap.get(r.id) || 0,
+			transfer_by: transfer_by_obj,
+			costcenter,
+			department,
+			new_owner,
 		};
 	});
 
 	res.json({
 		status: 'success',
 		message: 'Asset transfer requests retrieved successfully',
-		data: enrichedRequests
+		data
 	});
 };
 
-export const getAssetTransferRequestById = async (req: Request, res: Response) => {
-	const request = await assetModel.getAssetTransferRequestById(Number(req.params.id));
+export const getAssetTransferById = async (req: Request, res: Response) => {
+	const request = await assetModel.getAssetTransferById(Number(req.params.id));
 	if (!request) {
 		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
 	}
-
-	// Fetch items (details) for this request
-	const itemsRaw = await assetModel.getAssetTransferDetailsByRequestId(request.id);
-	// Cast to AssetTransferDetailItem[] for type safety
-	const items = Array.isArray(itemsRaw) ? (itemsRaw as import('./assetController').AssetTransferDetailItem[]) : [];
-
-	// Collect all unique employee, department, district, and costcenter IDs from the request and its items
-	const employeeRamcoIds = new Set<string>();
-	const departmentIds = new Set<number>();
-	const districtIds = new Set<number>();
-	const costcenterIds = new Set<number>();
-
-	if (request.requestor) employeeRamcoIds.add(request.requestor);
-	for (const item of items) {
-		if (item.curr_owner) employeeRamcoIds.add(item.curr_owner);
-		if (item.new_owner) employeeRamcoIds.add(item.new_owner);
-		if (item.accepted_by) employeeRamcoIds.add(item.accepted_by);
-		if (item.curr_department) departmentIds.add(item.curr_department);
-		if (item.new_department) departmentIds.add(item.new_department);
-		if (item.curr_district) districtIds.add(item.curr_district);
-		if (item.new_district) districtIds.add(item.new_district);
-		if (item.curr_costcenter) costcenterIds.add(item.curr_costcenter);
-		if (item.new_costcenter) costcenterIds.add(item.new_costcenter);
-	}
-
-	// Fetch all related objects in bulk (arrays)
-	const [employeesArr, departmentsArr, districtsArr, costcentersArr] = await Promise.all([
+	// Fetch items and lookup data for enrichment
+	const [itemsRaw, employeesRaw, costcentersRaw, departmentsRaw, locationsRaw] = await Promise.all([
+		assetModel.getAssetTransferItemByRequestId(request.id),
 		assetModel.getEmployees(),
+		assetModel.getCostcenters(),
 		assetModel.getDepartments(),
-		assetModel.getDistricts(),
-		assetModel.getCostcenters()
+		assetModel.getLocations()
 	]);
 
-	// Build lookup maps
-	const employeeRamcoMap = new Map<string, any>();
-	for (const emp of employeesArr as any[]) {
-		employeeRamcoMap.set(emp.ramco_id, {
-			ramco_id: emp.ramco_id,
-			name: emp.full_name,
-			cost_center: emp.costcenter_id ? { id: emp.costcenter_id, name: (costcentersArr as any[]).find((c: any) => c.id === emp.costcenter_id)?.name || null } : null,
-			department: emp.department_id ? { id: emp.department_id, name: (departmentsArr as any[]).find((d: any) => d.id === emp.department_id)?.name || null } : null,
-			district: emp.district_id ? { id: emp.district_id, name: (districtsArr as any[]).find((d: any) => d.id === emp.district_id)?.name || null } : null
-		});
-	}
-	const departmentMap = new Map<number, any>();
-	for (const d of departmentsArr as any[]) departmentMap.set(d.id, { id: d.id, name: d.name });
-	const districtMap = new Map<number, any>();
-	for (const d of districtsArr as any[]) districtMap.set(d.id, { id: d.id, name: d.name });
-	const costcenterMap = new Map<number, any>();
-	for (const c of costcentersArr as any[]) costcenterMap.set(c.id, { id: c.id, name: c.name });
+	const items = Array.isArray(itemsRaw) ? itemsRaw as any[] : [];
+	const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+	const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+	const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
 
-	// Helper to map by ramco_id for requestor, curr_owner, accepted_by
-	const mapEmployeeByRamco = (ramco_id: any) => ramco_id ? employeeRamcoMap.get(ramco_id) || null : null;
-	// Helper to map only ramco_id and name for item-level employee fields
-	const mapEmployeeShortByRamco = (ramco_id: any) => {
-		const emp = mapEmployeeByRamco(ramco_id);
-		return emp ? { ramco_id: emp.ramco_id, name: emp.name } : null;
-	};
-	const mapDepartment = (id: any) => id ? departmentMap.get(id) || null : null;
-	const mapDistrict = (id: any) => id ? districtMap.get(id) || null : null;
-	const mapCostcenter = (id: any) => id ? costcenterMap.get(id) || null : null;
+	const empMap = new Map<string, any>(employees.map((e: any) => [String(e.ramco_id), e]));
+	const costcenterMap = new Map<number, any>(costcenters.map((c: any) => [Number(c.id), c]));
+	const departmentMap = new Map<number, any>(departments.map((d: any) => [Number(d.id), d]));
+	const locationMap = new Map<number, any>(locations.map((l: any) => [Number(l.id), l]));
 
-	// Enrich the request and its items
-	const enrichedRequest = {
+	const transferByEmp = request.transfer_by ? empMap.get(String(request.transfer_by)) : null;
+	const transfer_by_user = transferByEmp ? {
+		ramco_id: transferByEmp.ramco_id,
+		full_name: transferByEmp.full_name || transferByEmp.name || null,
+	} : null;
+
+	const cc = request.costcenter_id != null ? costcenterMap.get(Number(request.costcenter_id)) : null;
+	const dept = request.department_id != null ? departmentMap.get(Number(request.department_id)) : null;
+	const costcenter = cc ? { id: Number(cc.id), name: cc.name || null } : null;
+	const department = dept ? { id: Number(dept.id), code: dept.code || null } : null;
+
+	const itemsEnriched = items.map((it: any) => {
+		const currOwner = it.current_owner ? empMap.get(String(it.current_owner)) : null;
+		const newOwner = it.new_owner ? empMap.get(String(it.new_owner)) : null;
+		const currCC = it.current_costcenter_id != null ? costcenterMap.get(Number(it.current_costcenter_id)) : null;
+		const newCC = it.new_costcenter_id != null ? costcenterMap.get(Number(it.new_costcenter_id)) : null;
+		const currDept = it.current_department_id != null ? departmentMap.get(Number(it.current_department_id)) : null;
+		const newDept = it.new_department_id != null ? departmentMap.get(Number(it.new_department_id)) : null;
+		const currLoc = it.current_location_id != null ? locationMap.get(Number(it.current_location_id)) : null;
+		const newLoc = it.new_location_id != null ? locationMap.get(Number(it.new_location_id)) : null;
+		return {
+			...it,
+			current_owner_user: currOwner ? { ramco_id: currOwner.ramco_id, full_name: currOwner.full_name || currOwner.name || null } : null,
+			new_owner_user: newOwner ? { ramco_id: newOwner.ramco_id, full_name: newOwner.full_name || newOwner.name || null } : null,
+			current_costcenter: currCC ? { id: Number(currCC.id), name: currCC.name || null } : null,
+			new_costcenter: newCC ? { id: Number(newCC.id), name: newCC.name || null } : null,
+			current_department: currDept ? { id: Number(currDept.id), code: currDept.code || null } : null,
+			new_department: newDept ? { id: Number(newDept.id), code: newDept.code || null } : null,
+			current_location: currLoc ? { id: Number(currLoc.id), name: currLoc.name || null } : null,
+			new_location: newLoc ? { id: Number(newLoc.id), name: newLoc.name || null } : null,
+		};
+	});
+
+	const data = {
 		...request,
-		requestor: mapEmployeeByRamco(request.requestor),
-		items: items.map((item: any) => {
-			const newItem: any = {
-				...item,
-				curr_owner: mapEmployeeShortByRamco(item.curr_owner),
-				new_owner: mapEmployeeShortByRamco(item.new_owner),
-				accepted_by: mapEmployeeShortByRamco(item.accepted_by),
-				curr_department: mapDepartment(item.curr_department),
-				new_department: mapDepartment(item.new_department),
-				curr_district: mapDistrict(item.curr_district),
-				new_district: mapDistrict(item.new_district),
-				curr_costcenter: mapCostcenter(item.curr_costcenter),
-				new_costcenter: mapCostcenter(item.new_costcenter)
-			};
-			// If transfer_type is Employee, resolve identifier as employee object
-			if (item.transfer_type === 'Employee' && item.identifier) {
-				newItem.identifier = mapEmployeeShortByRamco(item.identifier);
-			}
-			// Remove redundant id fields
-			delete newItem.curr_department_id;
-			delete newItem.new_department_id;
-			delete newItem.curr_district_id;
-			delete newItem.new_district_id;
-			delete newItem.curr_costcenter_id;
-			delete newItem.new_costcenter_id;
-			delete newItem.owner;
-			return newItem;
-		})
+		total_items: itemsEnriched.length,
+		transfer_by_user,
+		costcenter,
+		department,
+		items: itemsEnriched,
 	};
 
 	res.json({
 		status: 'success',
 		message: 'Asset transfer request data retrieved successfully',
-		data: enrichedRequest
+		data
 	});
 };
 
 export const createAssetTransfer = async (req: Request, res: Response) => {
-	// Accepts new frontend payload: {requestor, request_no, request_date, request_status, details: [...]}
-	const { requestor, request_no, request_date, request_status, details } = req.body;
-	if (!requestor || !Array.isArray(details) || details.length === 0) {
-		return res.status(400).json({ status: 'error', message: 'Invalid request data' });
+	// Accepts payload:
+	// { transfer_by, transfer_date, costcenter_id, department_id, transfer_status, details: JSON|string }
+	const body: any = req.body || {};
+	const transfer_by = String(body.transfer_by || '').trim();
+	const transfer_date = body.transfer_date || new Date();
+	const costcenter_id = body.costcenter_id != null ? Number(body.costcenter_id) : null;
+	const department_id = body.department_id != null ? Number(body.department_id) : null;
+	const transfer_status = String(body.transfer_status || 'submitted');
+
+	// Parse details which may arrive as a JSON string
+	let details: any[] = [];
+	if (Array.isArray(body.details)) {
+		details = body.details;
+	} else if (typeof body.details === 'string') {
+		try { details = JSON.parse(body.details); } catch { details = []; }
 	}
-	// Generate request_no if not provided
-	const finalRequestNo = request_no && request_no.trim() ? request_no : await assetModel.generateNextRequestNo();
-	// Use provided request_date or today
-	const finalRequestDate = request_date || new Date();
-	// Use provided request_status or default
-	const finalRequestStatus = request_status || 'submitted';
-	// Create the transfer request and get its ID
-	const insertId = await assetModel.createAssetTransferRequest({
-		request_no: finalRequestNo,
-		requestor,
-		request_date: finalRequestDate,
-		request_status: finalRequestStatus,
-		return_to_asset_manager: 0
+
+	if (!transfer_by || !Array.isArray(details) || details.length === 0) {
+		return res.status(400).json({ status: 'error', message: 'Invalid request data: missing transfer_by or details' });
+	}
+
+	// Create the transfer request and get its ID (aligns with model signature)
+	const insertId = await assetModel.createAssetTransfer({
+		transfer_by,
+		transfer_date,
+		costcenter_id,
+		department_id,
+		transfer_status
 	});
-	// Insert each detail, mapping nested objects to IDs
-	for (const detail of details) {
-		await assetModel.createAssetTransferDetail({
-			...detail,
-			transfer_request_id: insertId,
-			curr_department: detail.curr_department?.id ?? null,
-			curr_district: detail.curr_district?.id ?? null,
-			curr_costcenter: detail.curr_costcenter?.id ?? null,
-			new_department: detail.new_department?.id ?? null,
-			new_district: detail.new_district?.id ?? null,
-			new_costcenter: detail.new_costcenter?.id ?? null
+
+	// Insert each detail row
+	for (const dRaw of details) {
+		const d = dRaw || {};
+		await assetModel.createAssetTransferItem({
+			transfer_id: insertId,
+			effective_date: d.effective_date || null,
+			asset_id: Number(d.asset_id) || null,
+			type_id: Number(d.type_id) || null,
+			current_owner: d.current_owner || null,
+			current_costcenter_id: d.current_costcenter_id != null ? Number(d.current_costcenter_id) : null,
+			current_department_id: d.current_department_id != null ? Number(d.current_department_id) : null,
+			current_location_id: d.current_location_id != null ? Number(d.current_location_id) : null,
+			new_owner: d.new_owner || null,
+			new_costcenter_id: d.new_costcenter_id != null ? Number(d.new_costcenter_id) : null,
+			new_department_id: d.new_department_id != null ? Number(d.new_department_id) : null,
+			new_location_id: d.new_location_id != null ? Number(d.new_location_id) : null,
+			return_to_asset_manager: d.return_to_asset_manager ? 1 : 0,
+			reason: d.reason || null,
+			remarks: d.remarks || null,
+			attachment: d.attachment || null
 		});
 	}
 
 	// --- EMAIL NOTIFICATION LOGIC ---
 	try {
 		// Fetch the full request and its items for email
-		const request = await assetModel.getAssetTransferRequestById(insertId);
-		const itemsRaw = await assetModel.getAssetTransferDetailsByRequestId(insertId);
+		const request = await assetModel.getAssetTransferById(insertId);
+		const itemsRaw = await assetModel.getAssetTransferItemByRequestId(insertId);
 		const items = Array.isArray(itemsRaw) ? itemsRaw : [];
 		// Fetch all employees, costcenters, departments, districts for mapping
 		const [employees, costcenters, departments, districts] = await Promise.all([
@@ -2291,7 +2284,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			};
 		});
 		// Fetch requestor info
-		const requestorObj = await assetModel.getEmployeeByRamco(requestor);
+	const requestorObj = await assetModel.getEmployeeByRamco(transfer_by);
 		// Find supervisor by requestor's wk_spv_id
 		let supervisorObj = null;
 		if (requestorObj && requestorObj.wk_spv_id) {
@@ -2339,8 +2332,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 	res.status(201).json({
 		status: 'success',
 		message: 'Asset transfer request created successfully',
-		request_id: insertId,
-		request_no: finalRequestNo
+		request_id: insertId
 	});
 };
 
@@ -2351,7 +2343,7 @@ export const updateAssetTransfer = async (req: Request, res: Response) => {
 		return res.status(400).json({ status: 'error', message: 'Invalid request data' });
 	}
 	// Validate request exists
-	const request = await assetModel.getAssetTransferRequestById(requestId);
+	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
 		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
 	}
@@ -2377,7 +2369,7 @@ export const updateAssetTransfer = async (req: Request, res: Response) => {
 		}
 	}
 	// Update the transfer request
-	const result = await assetModel.updateAssetTransferRequest(requestId, items);
+	const result = await assetModel.updateAssetTransfer(requestId, items);
 	res.json({
 		status: 'success',
 		message: 'Asset transfer request updated successfully',
@@ -2391,12 +2383,12 @@ export const deleteAssetTransfer = async (req: Request, res: Response) => {
 		return res.status(400).json({ status: 'error', message: 'Invalid request ID' });
 	}
 	// Validate request exists
-	const request = await assetModel.getAssetTransferRequestById(requestId);
+	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
 		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
 	}
 	// Delete the transfer request
-	await assetModel.deleteAssetTransferRequest(requestId);
+	await assetModel.deleteAssetTransfer(requestId);
 	res.json({
 		status: 'success',
 		message: 'Asset transfer request deleted successfully'
@@ -2436,13 +2428,13 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 		return res.status(400).json({ status: 'error', message: 'Invalid request data' });
 	}
 	// Fetch the request
-	const request = await assetModel.getAssetTransferRequestById(requestId);
+	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
 		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
 	}
 	// Update approval fields
 	const now = new Date();
-	await assetModel.updateAssetTransferRequest(requestId, {
+	await assetModel.updateAssetTransfer(requestId, {
 		...request,
 		approval_id: supervisorId,
 		approval_date: now,
@@ -2452,7 +2444,7 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
 	const supervisor = await assetModel.getEmployeeByRamco(supervisorId);
 	// Fetch transfer items
-	const itemsRaw = await assetModel.getAssetTransferDetailsByRequestId(requestId);
+	const itemsRaw = await assetModel.getAssetTransferItemByRequestId(requestId);
 	const items = Array.isArray(itemsRaw)
 		? itemsRaw
 			.filter(item => item && typeof item === 'object' && 'transfer_type' in item && 'identifier' in item)
@@ -2504,7 +2496,7 @@ export const approveAssetTransferByEmail = async (req: Request, res: Response) =
 		return res.status(400).send('Invalid approval link.');
 	}
 	// Fetch the request
-	const request = await assetModel.getAssetTransferRequestById(Number(id));
+	const request = await assetModel.getAssetTransferById(Number(id));
 	if (!request) return res.status(404).send('Request not found.');
 	// Fetch requestor's employee record to get supervisor
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
@@ -2525,7 +2517,7 @@ export const rejectAssetTransferByEmail = async (req: Request, res: Response) =>
 		return res.status(400).send('Invalid rejection link.');
 	}
 	// Fetch the request
-	const request = await assetModel.getAssetTransferRequestById(Number(id));
+	const request = await assetModel.getAssetTransferById(Number(id));
 	if (!request) return res.status(404).send('Request not found.');
 	// Fetch requestor's employee record to get supervisor
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
