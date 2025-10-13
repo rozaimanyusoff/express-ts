@@ -37,25 +37,11 @@ router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController
 
 // legacy recommend/approve routes removed; use PUT /request/:id/authorize?action={recommend|approve}
 
-/* ========== ADD MORE ROUTES HERE ========== */
-
-// Placeholder routes - will be implemented based on your database structure
-// Examples:
-// router.get('/schedules', asyncHandler(maintenanceController.getMaintenanceSchedules));
-// router.get('/schedules/:id', asyncHandler(maintenanceController.getMaintenanceScheduleById));
-// router.post('/schedules', asyncHandler(maintenanceController.createMaintenanceSchedule));
-// router.put('/schedules/:id', asyncHandler(maintenanceController.updateMaintenanceSchedule));
-// router.delete('/schedules/:id', asyncHandler(maintenanceController.deleteMaintenanceSchedule));
-
-// router.get('/technicians', asyncHandler(maintenanceController.getTechnicians));
-// router.get('/technicians/:id', asyncHandler(maintenanceController.getTechnicianById));
-// router.post('/technicians', asyncHandler(maintenanceController.createTechnician));
-
-// router.get('/assets/:assetId/maintenance', asyncHandler(maintenanceController.getMaintenanceByAsset));
-// router.get('/reports/summary', asyncHandler(maintenanceController.getMaintenanceSummary));
-// router.get('/reports/filter', asyncHandler(maintenanceController.getMaintenanceByDateRange));
-
-// router.get('/search', asyncHandler(maintenanceController.searchMaintenance));
-// router.get('/filter', asyncHandler(maintenanceController.filterMaintenance));
+/* ============= POOL CARS ============== */
+router.get('/poolcars/:id', asyncHandler(maintenanceController.getPoolCarById));
+router.get('/poolcars', asyncHandler(maintenanceController.getPoolCars));
+router.post('/poolcars', asyncHandler(maintenanceController.createPoolCar));
+router.put('/poolcars/:id', asyncHandler(maintenanceController.updatePoolCar));
+router.delete('/poolcars/:id', asyncHandler(maintenanceController.deletePoolCar));
 
 export default router;

@@ -1470,11 +1470,233 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 	}
 };
 
-/* ============== ADD MORE CONTROLLERS HERE =============== */
+/* ================ POOLCAR CONTROLLERS ================ */
 
-// Placeholder for additional controllers - will be implemented based on your requirements
-// Example:
-// export const getMaintenanceSchedules = async (req: Request, res: Response) => { ... };
-// export const getTechnicians = async (req: Request, res: Response) => { ... };
-// export const getMaintenanceByAsset = async (req: Request, res: Response) => { ... };
-// export const getMaintenanceByDateRange = async (req: Request, res: Response) => { ... };
+export const getPoolCars = async (req: Request, res: Response) => {
+	try {
+		const cars = await maintenanceModel.getPoolCars();
+		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
+
+		// Lookups for enrichment
+		const [employeesRaw, departmentsRaw, locationsRaw, typesRaw, assetsRaw] = await Promise.all([
+			assetModel.getEmployees(),
+			(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+			assetModel.getLocations(),
+			assetModel.getTypes(),
+			assetModel.getAssets(),
+		]);
+		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
+	const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+	const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+		const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
+		const locMap = new Map(locations.map((l: any) => [Number(l.id), l]));
+	const typeMap = new Map(types.map((t: any) => [Number(t.id), t]));
+	const assetMap = new Map(assets.map((a: any) => [Number(a.id), a]));
+
+		// Filter by ?ramco on pcar_empid if provided
+		const filtered = (Array.isArray(cars) ? cars as any[] : []).filter((c: any) => {
+			if (!ramco) return true;
+			return String(c.pcar_empid) === ramco || String(c.pcar_driver) === ramco || String(c.pass) === ramco;
+		});
+
+		// Enrich fields and exclude nulls
+		const data = filtered.map((c: any) => {
+			const obj: any = { ...c };
+			// Enrich employee-related by replacing original fields
+			if (c.pcar_empid && empMap.has(String(c.pcar_empid))) {
+				const e = empMap.get(String(c.pcar_empid));
+				obj.pcar_empid = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			}
+			if (c.pcar_driver && empMap.has(String(c.pcar_driver))) {
+				const e = empMap.get(String(c.pcar_driver));
+				obj.pcar_driver = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			}
+			// Keep pass as-is (string). Do not add extra passenger object.
+
+			// Enrich department/location/type and asset
+			if (c.dept_id != null && deptMap.has(Number(c.dept_id))) {
+				const d = deptMap.get(Number(c.dept_id));
+				obj.department = { id: Number(d.id), code: d.code || null };
+			}
+			if (c.loc_id != null && locMap.has(Number(c.loc_id))) {
+				const l = locMap.get(Number(c.loc_id));
+				obj.location = { id: Number(l.id), name: l.name || null };
+			}
+			if (c.pcar_type != null && typeMap.has(Number(c.pcar_type))) {
+				const t = typeMap.get(Number(c.pcar_type));
+				obj.pcar_type = { id: Number(t.id), name: t.name || null };
+			}
+			if (c.asset_id && assetMap.has(Number(c.asset_id))) {
+				const a = assetMap.get(Number(c.asset_id));
+				obj.asset = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
+			}
+			// Recommendation/approval users
+			if (c.recommendation && empMap.has(String(c.recommendation))) {
+				const e = empMap.get(String(c.recommendation));
+				obj.recommendation = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			}
+			if (c.approval && empMap.has(String(c.approval))) {
+				const e = empMap.get(String(c.approval));
+				obj.approval = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			}
+			// Remove null fields as requested (exclude nulls)
+			Object.keys(obj).forEach((k) => {
+				if (obj[k] === null) delete obj[k];
+			});
+			return obj;
+		});
+
+		res.json({
+			status: 'success',
+			message: 'Pool car data retrieved successfully',
+			data
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const getPoolCarById = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const car = await maintenanceModel.getPoolCarById(Number(id));
+
+		if (!car) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Pool car not found',
+				data: null
+			});
+		}
+		// Lookups for enrichment
+		const [employeesRaw, departmentsRaw, locationsRaw, typesRaw, assetsRaw] = await Promise.all([
+			assetModel.getEmployees(),
+			(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+			assetModel.getLocations(),
+			assetModel.getTypes(),
+			assetModel.getAssets(),
+		]);
+		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
+		const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+		const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+		const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
+		const locMap = new Map(locations.map((l: any) => [Number(l.id), l]));
+		const typeMap = new Map(types.map((t: any) => [Number(t.id), t]));
+		const assetMap = new Map(assets.map((a: any) => [Number(a.id), a]));
+
+		const obj: any = { ...car };
+		if (car.pcar_empid && empMap.has(String(car.pcar_empid))) {
+			const e = empMap.get(String(car.pcar_empid));
+			obj.pcar_empid = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+		}
+		if (car.pcar_driver && empMap.has(String(car.pcar_driver))) {
+			const e = empMap.get(String(car.pcar_driver));
+			obj.pcar_driver = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+		}
+		if (car.dept_id != null && deptMap.has(Number(car.dept_id))) {
+			const d = deptMap.get(Number(car.dept_id));
+			obj.department = { id: Number(d.id), code: d.code || null };
+		}
+		if (car.loc_id != null && locMap.has(Number(car.loc_id))) {
+			const l = locMap.get(Number(car.loc_id));
+			obj.location = { id: Number(l.id), name: l.name || null };
+		}
+		if (car.pcar_type != null && typeMap.has(Number(car.pcar_type))) {
+			const t = typeMap.get(Number(car.pcar_type));
+			obj.pcar_type = { id: Number(t.id), name: t.name || null };
+		}
+		if (car.asset_id && assetMap.has(Number(car.asset_id))) {
+			const a = assetMap.get(Number(car.asset_id));
+			obj.asset = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
+		}
+		if (car.recommendation && empMap.has(String(car.recommendation))) {
+			const e = empMap.get(String(car.recommendation));
+			obj.recommendation = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+		}
+		if (car.approval && empMap.has(String(car.approval))) {
+			const e = empMap.get(String(car.approval));
+			obj.approval = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+		}
+		Object.keys(obj).forEach((k) => { if (obj[k] === null) delete obj[k]; });
+
+		res.json({
+			status: 'success',
+			message: 'Pool car data retrieved successfully',
+			data: obj
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const createPoolCar = async (req: Request, res: Response) => {
+	try {
+		const carData = req.body;
+		const result = await maintenanceModel.createPoolCar(carData);
+
+		res.status(201).json({
+			status: 'success',
+			message: 'Pool car created successfully',
+			data: result
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const updatePoolCar = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const carData = req.body;
+		const result = await maintenanceModel.updatePoolCar(Number(id), carData);
+
+		res.json({
+			status: 'success',
+			message: 'Pool car updated successfully',
+			data: result
+		});
+	}	 catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const deletePoolCar = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const result = await maintenanceModel.deletePoolCar(Number(id));
+
+		res.json({
+			status: 'success',
+			message: 'Pool car deleted successfully',
+			data: result
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};

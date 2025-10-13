@@ -12,6 +12,8 @@ const roadtaxTable = `${dbMaintenance}.roadtax`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
+const poolCarTable = `${dbMaintenance}.poolcar`;
+
 /* =========== INTERFACES =========== */
 
 // Define your interfaces here when you provide the database structure
@@ -449,3 +451,27 @@ export async function getRoadtaxCountsByInsurer() {
     `);
     return rows as RowDataPacket[];
 }
+
+
+/* ================= POOLCAR APPS ================= */
+
+export const getPoolCars = async () => {
+    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} ORDER BY pcar_id DESC`);
+    return rows as RowDataPacket[];
+};
+export const getPoolCarById = async (id: number) => {
+    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE id = ?`, [id]);
+    return (rows as RowDataPacket[])[0];
+};
+export const createPoolCar = async (data: any) => {
+    const [result] = await pool2.query(`INSERT INTO ${poolCarTable} SET ?`, [data]);
+    return (result as ResultSetHeader).insertId;
+};
+export const updatePoolCar = async (id: number, data: any) => {
+    const [result] = await pool2.query(`UPDATE ${poolCarTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+export const deletePoolCar = async (id: number) => {
+    const [result] = await pool2.query(`DELETE FROM ${poolCarTable} WHERE id = ?`, [id]);
+    return result;
+};
