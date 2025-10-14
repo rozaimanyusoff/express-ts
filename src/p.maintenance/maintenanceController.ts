@@ -1826,6 +1826,36 @@ export const verifyPoolCar = async (req: Request, res: Response) => {
 	}
 };
 
+	// GET variant for email link clicks - performs verification and returns a simple HTML page
+	export const verifyPoolCarGet = async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params;
+			const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
+			const decision = typeof req.query.decision === 'string' ? req.query.decision : undefined;
+			if (!ramco || !decision) {
+				res.status(400).send('<!doctype html><html><body><h3>Invalid verification link</h3><p>Missing ramco or decision.</p></body></html>');
+				return;
+			}
+			const recommendation_stat = decision === 'approved' ? 1 : decision === 'rejected' ? 2 : 0;
+			if (!recommendation_stat) {
+				res.status(400).send('<!doctype html><html><body><h3>Invalid decision</h3><p>Use approved or rejected.</p></body></html>');
+				return;
+			}
+			const recommendation_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
+			await maintenanceModel.updatePoolCar(Number(id), { recommendation: ramco, recommendation_stat, recommendation_date });
+			const title = decision === 'approved' ? 'Approved' : 'Rejected';
+			res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Pool Car ${title}</title>
+				<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#f9fafb;color:#111827;padding:24px} .card{max-width:680px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.06)} .bar{height:6px;background:linear-gradient(90deg,#22c55e,#16a34a,#065f46);border-top-left-radius:8px;border-top-right-radius:8px} .content{padding:20px 24px} .muted{color:#6b7280} .ok{color:#065f46;font-weight:600}</style></head>
+				<body><div class="card"><div class="bar"></div><div class="content">
+				<h2 style="margin:0 0 8px;">Verification ${title}</h2>
+				<p class="muted">Your action has been recorded for request #${Number(id)}.</p>
+				<p class="ok">ADMS4</p>
+				</div></div></body></html>`);
+		} catch (error) {
+			res.status(500).send('<!doctype html><html><body><h3>Server error</h3><p>Please try again later.</p></body></html>');
+		}
+	};
+
 export const deletePoolCar = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;

@@ -16,6 +16,32 @@ type PoolCarDetails = {
 
 const fmt = (v: any) => (v === null || v === undefined || v === '' ? '-' : String(v));
 
+function parseDateLocal(s?: string | null): Date | null {
+  if (!s || typeof s !== 'string') return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const [_, Y, M, D, h, m2, s2] = m;
+    return new Date(Number(Y), Number(M) - 1, Number(D), Number(h), Number(m2), s2 ? Number(s2) : 0);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatDateDMY12h(s?: string | null): string {
+  const d = parseDateLocal(s);
+  if (!d) return '-';
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  const mm = minutes < 10 ? `0${minutes}` : String(minutes);
+  return `${day}/${month}/${year} ${hours}:${mm} ${ampm}`;
+}
+
 export default function poolCarSupervisorEmail(details: PoolCarDetails) {
   const {
     id,
@@ -39,7 +65,7 @@ export default function poolCarSupervisorEmail(details: PoolCarDetails) {
   return `
   <div style="background:#f9fafb; padding:24px;">
     <div style="max-width:680px; margin:0 auto; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#111827;">
-      <div style="background:#16a34a; height:6px; border-top-left-radius:8px; border-top-right-radius:8px;"></div>
+      <div style="background:linear-gradient(90deg, #22c55e, #16a34a, #065f46); height:6px; border-top-left-radius:8px; border-top-right-radius:8px;"></div>
       <div style="background:#ffffff; padding:20px 24px; border-bottom-left-radius:8px; border-bottom-right-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
         <h2 style="margin:0 0 4px; font-size:20px;">Verify Pool Car Request <span style="color:#065f46;">(ID #${id})</span></h2>
         <p style="margin:0 0 16px; color:#374151;">Please review and verify the following pool car application:</p>
@@ -52,7 +78,7 @@ export default function poolCarSupervisorEmail(details: PoolCarDetails) {
             </tr>
             <tr>
               <td style="color:#6b7280;">Application Date</td>
-              <td>${fmt(pcar_datererq)}</td>
+              <td style="color:#065f46; font-weight:600;">${formatDateDMY12h(pcar_datererq)}</td>
             </tr>
             <tr>
               <td style="color:#6b7280;">Applicant</td>
@@ -64,7 +90,7 @@ export default function poolCarSupervisorEmail(details: PoolCarDetails) {
             </tr>
             <tr>
               <td style="color:#6b7280;">Trip From / To</td>
-              <td>${fmt(date_from)} → ${fmt(date_to)}</td>
+              <td style="color:#065f46; font-weight:600;">${formatDateDMY12h(date_from)} → ${formatDateDMY12h(date_to)}</td>
             </tr>
             <tr>
               <td style="color:#6b7280;">Duration</td>
@@ -79,6 +105,7 @@ export default function poolCarSupervisorEmail(details: PoolCarDetails) {
         </div>
 
         <p style="margin-top:12px; color:#6b7280; font-size:12px;">These buttons will perform verification via the backend endpoint.</p>
+        <div style="margin-top:16px; border-top:1px solid #e5e7eb; padding-top:12px; color:#065f46; font-weight:600;">ADMS4</div>
       </div>
     </div>
   </div>`;

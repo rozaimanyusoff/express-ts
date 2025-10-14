@@ -38,11 +38,12 @@ router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController
 // legacy recommend/approve routes removed; use PUT /request/:id/authorize?action={recommend|approve}
 
 /* ============= POOL CARS ============== */
+router.put('/poolcars/:id/verify', asyncHandler(maintenanceController.verifyPoolCar));
+router.get('/poolcars/:id/verify', asyncHandler(maintenanceController.verifyPoolCarGet));
 router.get('/poolcars/:id', asyncHandler(maintenanceController.getPoolCarById));
 router.get('/poolcars', asyncHandler(maintenanceController.getPoolCars));
 router.post('/poolcars', asyncHandler(maintenanceController.createPoolCar));
 router.put('/poolcars/:id', asyncHandler(maintenanceController.updatePoolCar));
-router.put('/poolcars/:id/verify', asyncHandler(maintenanceController.verifyPoolCar));
 router.post('/poolcars/:id/resendmail', asyncHandler(maintenanceController.resendPoolCarMail));
 router.delete('/poolcars/:id', asyncHandler(maintenanceController.deletePoolCar));
 
