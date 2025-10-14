@@ -7,6 +7,15 @@ import * as billingModel from '../p.billing/billingModel';
 import * as crypto from 'crypto';
 import * as mailer from '../utils/mailer';
 import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceRequest';
+import poolCarApplicantEmail from '../utils/emailTemplates/poolCarApplicant';
+import poolCarSupervisorEmail from '../utils/emailTemplates/poolCarSupervisor';
+import { getSupervisorBySubordinate } from '../utils/employeeHelper';
+
+// Admin CC list for pool car submission notifications (comma-separated in env or define directly)
+const POOLCAR_ADMIN_CC: string[] = (process.env.POOLCAR_ADMIN_CC || '')
+	.split(',')
+	.map((s) => s.trim())
+	.filter(Boolean);
 
 /* ============== MAINTENANCE RECORDS MANAGEMENT =============== */
 
@@ -1472,6 +1481,42 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 
 /* ================ POOLCAR CONTROLLERS ================ */
 
+// Normalize payload for poolcar create/update. Whitelist known fields and map to DB columns.
+const mapPoolCarPayload = (body: any) => {
+	const data: any = {};
+	// Direct mappings (whitelist)
+	const directKeys = [
+		'ctc_m',
+		'dept_id',
+		'loc_id',
+		'pcar_booktype',
+		'pcar_datereq',
+		'pcar_day',
+		'pcar_dest',
+		'pcar_driver',
+		'pcar_empid',
+		'pcar_hour',
+		'pcar_opt',
+		'pcar_purp',
+		'pcar_type',
+		'pcar_datefr',
+		'pcar_dateto',
+		'asset_id',
+		'recommendation',
+		'approval'
+	];
+	for (const k of directKeys) {
+		if (Object.prototype.hasOwnProperty.call(body, k) && body[k] !== undefined) {
+			data[k] = body[k];
+		}
+	}
+	// Remap pcar_pass -> pass (DB column is named `pass`)
+	if (Object.prototype.hasOwnProperty.call(body, 'pcar_pass') && body.pcar_pass !== undefined) {
+		data.pass = body.pcar_pass;
+	}
+	return data;
+};
+
 export const getPoolCars = async (req: Request, res: Response) => {
 	try {
 		const cars = await maintenanceModel.getPoolCars();
@@ -1645,8 +1690,72 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 
 export const createPoolCar = async (req: Request, res: Response) => {
 	try {
-		const carData = req.body;
+		const carData = mapPoolCarPayload(req.body);
 		const result = await maintenanceModel.createPoolCar(carData);
+
+		// Send notifications via email to applicant and supervisor
+		try {
+			const id = Number(result);
+			const subject = `Pool Car Request #${id}`;
+			const applicantRamco = String(carData.pcar_empid || '');
+			const applicant = applicantRamco ? await assetModel.getEmployeeByRamco(applicantRamco) : null;
+			const applicantEmail = applicant?.email || null;
+			const backendUrl = process.env.BACKEND_URL || process.env.API_BASE_URL || '';
+
+					// Resolve driver email if different
+					const driverRamco = String(carData.pcar_driver || '');
+					const isSameApplicantDriver = applicantRamco && driverRamco && applicantRamco === driverRamco;
+					const driver = !isSameApplicantDriver && driverRamco ? await assetModel.getEmployeeByRamco(driverRamco) : null;
+					const driverEmail = driver?.email || null;
+
+							// Applicant email (CC driver if different)
+					if (applicantEmail) {
+				const html = poolCarApplicantEmail({
+					id,
+					subject,
+									pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
+									pcar_empid: applicantRamco,
+									applicant_name: applicant?.full_name || applicant?.name || null,
+					pcar_dest: carData.pcar_dest || null,
+					pcar_purp: carData.pcar_purp || null,
+									date_from: carData.pcard_datefr || carData.pcar_datefr || null,
+									date_to: carData.pcard_dateto || carData.pcar_dateto || null,
+					pcar_day: carData.pcar_day ?? null,
+					pcar_hour: carData.pcar_hour ?? null,
+				});
+						const ccList: string[] = [];
+						if (!isSameApplicantDriver && driverEmail) ccList.push(driverEmail);
+						if (POOLCAR_ADMIN_CC.length) ccList.push(...POOLCAR_ADMIN_CC);
+						const cc = ccList.length ? ccList.join(',') : undefined;
+						await mailer.sendMail(applicantEmail, subject, html, cc ? { cc } : undefined);
+			}
+
+			// Supervisor email
+			if (applicantRamco) {
+				const supervisor = await getSupervisorBySubordinate(applicantRamco);
+						if (supervisor && supervisor.email) {
+								const html = poolCarSupervisorEmail({
+						id,
+						subject,
+									pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
+									pcar_empid: applicantRamco,
+									applicant_name: applicant?.full_name || applicant?.name || null,
+						pcar_dest: carData.pcar_dest || null,
+						pcar_purp: carData.pcar_purp || null,
+									date_from: carData.pcard_datefr || carData.pcar_datefr || null,
+									date_to: carData.pcard_dateto || carData.pcar_dateto || null,
+						pcar_day: carData.pcar_day ?? null,
+						pcar_hour: carData.pcar_hour ?? null,
+						backendUrl,
+						supervisor_id: applicant?.supervisor_id || ''
+					});
+							const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
+							await mailer.sendMail(supervisor.email, `${subject} — Verification Required`, html, cc ? { cc } : undefined);
+				}
+			}
+		} catch (mailErr) {
+			console.error('createPoolCar: email notification error', mailErr);
+		}
 
 		res.status(201).json({
 			status: 'success',
@@ -1665,7 +1774,7 @@ export const createPoolCar = async (req: Request, res: Response) => {
 export const updatePoolCar = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
-		const carData = req.body;
+		const carData = mapPoolCarPayload(req.body);
 		const result = await maintenanceModel.updatePoolCar(Number(id), carData);
 
 		res.json({
@@ -1679,6 +1788,41 @@ export const updatePoolCar = async (req: Request, res: Response) => {
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			data: null
 		});
+	}
+};
+
+// Supervisor verification endpoint (Approve/Reject)
+export const verifyPoolCar = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
+		// Allow decision via query or body
+		const decision = (typeof req.query.decision === 'string' ? req.query.decision : req.body?.decision) as string | undefined;
+		const payload = req.body || {};
+
+		if (!ramco) {
+			return res.status(400).json({ status: 'error', message: 'Missing supervisor ramco in query ?ramco=' });
+		}
+		if (!decision) {
+			return res.status(400).json({ status: 'error', message: 'Missing decision (approved|rejected)' });
+		}
+		const now = new Date();
+		const recommendation_stat = decision === 'approved' ? 1 : decision === 'rejected' ? 2 : 0;
+		if (!recommendation_stat) {
+			return res.status(400).json({ status: 'error', message: 'Invalid decision value' });
+		}
+
+		const update: any = {
+			recommendation: ramco,
+			recommendation_stat,
+			recommendation_date: payload.recommendation_date || now.toISOString().slice(0, 19).replace('T', ' ')
+		};
+
+		await maintenanceModel.updatePoolCar(Number(id), update);
+
+		res.json({ status: 'success', message: 'Verification updated', data: { id: Number(id), ...update } });
+	} catch (error) {
+		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
 	}
 };
 
@@ -1700,3 +1844,91 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 		});
 	}
 };
+
+	// Resend applicant and supervisor emails for a pool car application (admin utility)
+	export const resendPoolCarMail = async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params;
+			const car = await maintenanceModel.getPoolCarById(Number(id));
+			if (!car) {
+				return res.status(404).json({ status: 'error', message: 'Pool car not found', data: null });
+			}
+
+			const idNum = Number(id);
+			const subject = `Pool Car Request #${idNum}`;
+			const applicantRamco = String(car.pcar_empid || '');
+			const driverRamco = String((car as any).pcar_driver || '');
+			const isSameApplicantDriver = applicantRamco && driverRamco && applicantRamco === driverRamco;
+			const applicant = applicantRamco ? await assetModel.getEmployeeByRamco(applicantRamco) : null;
+			const applicantEmail = applicant?.email || null;
+			const driver = !isSameApplicantDriver && driverRamco ? await assetModel.getEmployeeByRamco(driverRamco) : null;
+			const driverEmail = driver?.email || null;
+			const backendUrl = process.env.BACKEND_URL || process.env.API_BASE_URL || '';
+
+			const appDate = (car as any).pcar_datererq || (car as any).pcar_datereq || null;
+			const dateFrom = (car as any).pcard_datefr || (car as any).pcar_datefr || null;
+			const dateTo = (car as any).pcard_dateto || (car as any).pcar_dateto || null;
+
+			let sentApplicant = false;
+			let sentSupervisor = false;
+
+			try {
+								if (applicantEmail) {
+					const htmlApplicant = poolCarApplicantEmail({
+						id: idNum,
+						subject,
+						pcar_datererq: appDate,
+										pcar_empid: applicantRamco,
+										applicant_name: applicant?.full_name || applicant?.name || null,
+						pcar_dest: (car as any).pcar_dest || null,
+						pcar_purp: (car as any).pcar_purp || null,
+						date_from: dateFrom,
+						date_to: dateTo,
+						pcar_day: (car as any).pcar_day ?? null,
+						pcar_hour: (car as any).pcar_hour ?? null,
+					});
+							const ccList: string[] = [];
+							if (!isSameApplicantDriver && driverEmail) ccList.push(driverEmail);
+							if (POOLCAR_ADMIN_CC.length) ccList.push(...POOLCAR_ADMIN_CC);
+							const cc = ccList.length ? ccList.join(',') : undefined;
+							await mailer.sendMail(applicantEmail, subject, htmlApplicant, cc ? { cc } : undefined);
+					sentApplicant = true;
+				}
+
+				if (applicantRamco) {
+					const supervisor = await getSupervisorBySubordinate(applicantRamco);
+					const supervisorId = (applicant as any)?.supervisor_id || '';
+					if (supervisor && supervisor.email) {
+									const htmlSupervisor = poolCarSupervisorEmail({
+							id: idNum,
+							subject,
+							pcar_datererq: appDate,
+										pcar_empid: applicantRamco,
+										applicant_name: applicant?.full_name || applicant?.name || null,
+							pcar_dest: (car as any).pcar_dest || null,
+							pcar_purp: (car as any).pcar_purp || null,
+							date_from: dateFrom,
+							date_to: dateTo,
+							pcar_day: (car as any).pcar_day ?? null,
+							pcar_hour: (car as any).pcar_hour ?? null,
+							backendUrl,
+							supervisor_id: supervisorId
+						});
+									const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
+									await mailer.sendMail(supervisor.email, `${subject} — Verification Required`, htmlSupervisor, cc ? { cc } : undefined);
+						sentSupervisor = true;
+					}
+				}
+			} catch (mailErr) {
+				console.error('resendPoolCarMail: email error', mailErr);
+			}
+
+			return res.json({
+				status: 'success',
+				message: 'Resend email process completed',
+				data: { id: idNum, sentApplicant, sentSupervisor }
+			});
+		} catch (error) {
+			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		}
+	};

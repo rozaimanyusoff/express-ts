@@ -1960,7 +1960,18 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
-	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
+	const location = emp.location_id ? await assetModel.getLocationById(emp.location_id) : null;
+
+	// Limit nested objects to specific fields as requested
+	const departmentResp = department
+		? { id: department.id, code: (department as any).code ?? null, name: department.name ?? null }
+		: null;
+	const costcenterResp = costcenter
+		? { id: costcenter.id, name: costcenter.name ?? null }
+		: null;
+	const locationResp = location
+		? { id: location.id, name: location.name ?? null, code: (location as any).code ?? null }
+		: null;
 	res.json({
 		status: 'success',
 		message: 'Employee data retrieved successfully',
@@ -1979,9 +1990,9 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 			employment_status: emp.employment_status,
 			grade: emp.grade,
 			position,
-			department,
-			costcenter,
-			district
+			department: departmentResp,
+			costcenter: costcenterResp,
+			location: locationResp
 		}
 	});
 };

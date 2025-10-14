@@ -12,7 +12,7 @@ const roadtaxTable = `${dbMaintenance}.roadtax`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
-const poolCarTable = `${dbMaintenance}.poolcar`;
+const poolCarTable = `${dbMaintenance}.poolcar2`;
 
 /* =========== INTERFACES =========== */
 
@@ -460,7 +460,7 @@ export const getPoolCars = async () => {
     return rows as RowDataPacket[];
 };
 export const getPoolCarById = async (id: number) => {
-    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE id = ?`, [id]);
+    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
     return (rows as RowDataPacket[])[0];
 };
 export const createPoolCar = async (data: any) => {
@@ -468,10 +468,10 @@ export const createPoolCar = async (data: any) => {
     return (result as ResultSetHeader).insertId;
 };
 export const updatePoolCar = async (id: number, data: any) => {
-    const [result] = await pool2.query(`UPDATE ${poolCarTable} SET ? WHERE id = ?`, [data, id]);
+    const [result] = await pool2.query(`UPDATE ${poolCarTable} SET ? WHERE pcar_id = ?`, [data, id]);
     return result;
 };
 export const deletePoolCar = async (id: number) => {
-    const [result] = await pool2.query(`DELETE FROM ${poolCarTable} WHERE id = ?`, [id]);
+    const [result] = await pool2.query(`DELETE FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
     return result;
 };

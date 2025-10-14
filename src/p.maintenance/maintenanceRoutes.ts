@@ -42,6 +42,8 @@ router.get('/poolcars/:id', asyncHandler(maintenanceController.getPoolCarById));
 router.get('/poolcars', asyncHandler(maintenanceController.getPoolCars));
 router.post('/poolcars', asyncHandler(maintenanceController.createPoolCar));
 router.put('/poolcars/:id', asyncHandler(maintenanceController.updatePoolCar));
+router.put('/poolcars/:id/verify', asyncHandler(maintenanceController.verifyPoolCar));
+router.post('/poolcars/:id/resendmail', asyncHandler(maintenanceController.resendPoolCarMail));
 router.delete('/poolcars/:id', asyncHandler(maintenanceController.deletePoolCar));
 
 export default router;
