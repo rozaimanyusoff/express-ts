@@ -691,7 +691,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -713,6 +713,10 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (typeof status === 'string' && status !== '') {
     conditions.push('record_status = ?');
     params.push(status);
+  }
+  if (typeof purpose === 'string' && purpose !== '') {
+    conditions.push('purpose = ?');
+    params.push(purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
     conditions.push('register_number = ?');
@@ -763,6 +767,7 @@ export const getAssetsPaged = async (
     owner?: string | string[];
     brandId?: number;
     q?: string;
+    purpose?: string;
   },
   options: {
     page: number;
@@ -779,7 +784,8 @@ export const getAssetsPaged = async (
     registerNumber,
     owner,
     brandId,
-    q
+    q,
+    purpose
   } = filters || {};
 
   const page = Number.isFinite(options?.page) && options.page > 0 ? Math.floor(options.page) : 1;
@@ -807,6 +813,10 @@ export const getAssetsPaged = async (
   if (typeof status === 'string' && status !== '') {
     conditions.push('a.record_status = ?');
     params.push(status);
+  }
+  if (typeof purpose === 'string' && purpose !== '') {
+    conditions.push('a.purpose = ?');
+    params.push(purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
     conditions.push('a.register_number = ?');

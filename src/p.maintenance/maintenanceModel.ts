@@ -3,6 +3,7 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Database and table declarations
 const dbMaintenance = 'applications';
+const dbAssets = 'assets';
 // Add your table declarations here when you provide the database structure
 // Example:
 const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
@@ -13,6 +14,9 @@ const roadtaxTable = `${dbMaintenance}.roadtax`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
 const poolCarTable = `${dbMaintenance}.poolcar2`;
+
+const tngTable = `${dbAssets}.touchngo`;
+const tngDetailTable = `${dbAssets}.touchngo_det`;
 
 /* =========== INTERFACES =========== */
 
@@ -473,5 +477,119 @@ export const updatePoolCar = async (id: number, data: any) => {
 };
 export const deletePoolCar = async (id: number) => {
     const [result] = await pool2.query(`DELETE FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
+    return result;
+};
+
+//admin need to get poolcar status whether is available or hired. hired means the poolcar is taken by user and not yet return from last assigned by last application. poolcar identified by asset_id or vehicle_id.
+export const getAvailablePoolCars = async () => {
+    // Determine status per unique vehicle (identified by asset_id when present, otherwise vehicle_id)
+    // Status rules:
+    //  - 'hired'   if the latest record for the vehicle has approval_stat = 1 AND no return date
+    //  - 'pending' if the latest record has approval_stat NULL/0 AND no return date (requested but not approved)
+    //  - 'available' otherwise (including when last record is returned or rejected/cancelled)
+    const sql = `
+        SELECT 
+            t.asset_id,
+            t.pcar_id,
+            t.pcar_retdate,
+            t.approval_stat,
+            -- count of hired applications for this vehicle within last 30 days
+            (
+                SELECT COUNT(1)
+                FROM ${poolCarTable} h
+                WHERE 
+                    (
+                        (t.asset_id IS NOT NULL AND t.asset_id > 0 AND h.asset_id = t.asset_id)
+                        OR (t.vehicle_id IS NOT NULL AND t.vehicle_id > 0 AND h.vehicle_id = t.vehicle_id)
+                    )
+                    AND h.approval_stat = 1
+                    AND DATE(
+                        CASE
+                            WHEN h.approval_date IS NOT NULL AND YEAR(h.approval_date) >= 2000 THEN h.approval_date
+                            WHEN h.pcar_datereq IS NOT NULL AND YEAR(h.pcar_datereq) >= 2000 THEN h.pcar_datereq
+                            WHEN h.pcar_datefr IS NOT NULL AND YEAR(h.pcar_datefr) >= 2000 THEN h.pcar_datefr
+                            ELSE NULL
+                        END
+                    ) >= (CURDATE() - INTERVAL 30 DAY)
+            ) AS hired_last_30d,
+            CASE 
+                WHEN t.approval_stat = 1 AND t.pcar_retdate IS NULL THEN 'hired'
+                WHEN (t.approval_stat IS NULL OR t.approval_stat = 0) AND t.pcar_retdate IS NULL THEN 'pending'
+                ELSE 'available'
+            END AS status
+        FROM ${poolCarTable} t
+        JOIN (
+            SELECT 
+                CASE 
+                    WHEN asset_id IS NOT NULL AND asset_id > 0 THEN CONCAT('A:', asset_id)
+                    WHEN vehicle_id IS NOT NULL AND vehicle_id > 0 THEN CONCAT('V:', vehicle_id)
+                    ELSE NULL
+                END AS vehicle_key,
+                MAX(pcar_id) AS max_id
+            FROM ${poolCarTable}
+            WHERE (asset_id IS NOT NULL AND asset_id > 0) OR (vehicle_id IS NOT NULL AND vehicle_id > 0)
+            GROUP BY CASE 
+                WHEN asset_id IS NOT NULL AND asset_id > 0 THEN CONCAT('A:', asset_id)
+                WHEN vehicle_id IS NOT NULL AND vehicle_id > 0 THEN CONCAT('V:', vehicle_id)
+                ELSE NULL END
+        ) x
+        ON (
+            (CASE 
+                WHEN t.asset_id IS NOT NULL AND t.asset_id > 0 THEN CONCAT('A:', t.asset_id)
+                WHEN t.vehicle_id IS NOT NULL AND t.vehicle_id > 0 THEN CONCAT('V:', t.vehicle_id)
+                ELSE NULL END) = x.vehicle_key
+            AND t.pcar_id = x.max_id
+        )
+        -- Exclude 'pending' rows (awaiting approval with no return yet)
+        WHERE NOT ((t.approval_stat IS NULL OR t.approval_stat = 0) AND t.pcar_retdate IS NULL)
+        ORDER BY t.pcar_id DESC`;
+    const [rows] = await pool2.query(sql);
+    return rows as RowDataPacket[];
+};
+
+
+
+/* ============= TOUCH & GO ================== */
+//CRUD model for touch n go data. has parent tngTable and child tngDetailTable that linked with tng_id
+export const getTngRecords = async () => {
+    const [rows] = await pool2.query(`SELECT * FROM ${tngTable} ORDER BY tng_id DESC`);
+    return rows as RowDataPacket[];
+};
+export const getTngRecordById = async (id: number) => {
+    const [rows] = await pool2.query(`SELECT * FROM ${tngTable} WHERE tng_id = ?`, [id]);
+    return (rows as RowDataPacket[])[0];
+};
+export const createTngRecord = async (data: any) => {
+    const [result] = await pool2.query(`INSERT INTO ${tngTable} SET ?`, [data]);
+    return (result as ResultSetHeader).insertId;
+};
+export const updateTngRecord = async (id: number, data: any) => {
+    const [result] = await pool2.query(`UPDATE ${tngTable} SET ? WHERE tng_id = ?`, [data, id]);
+    return result;
+};
+export const deleteTngRecord = async (id: number) => {
+    const [result] = await pool2.query(`DELETE FROM ${tngTable} WHERE tng_id = ?`, [id]);
+    return result;
+};
+
+// CRUD for touch n go details
+export const getTngDetailsByTngId = async (tngId: number) => {
+    const [rows] = await pool2.query(`SELECT * FROM ${tngDetailTable} WHERE tng_id = ? ORDER BY tngd_id ASC`, [tngId]);
+    return rows as RowDataPacket[];
+};
+export const getTngDetailById = async (id: number) => {
+    const [rows] = await pool2.query(`SELECT * FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
+    return (rows as RowDataPacket[])[0];
+};
+export const createTngDetail = async (data: any) => {
+    const [result] = await pool2.query(`INSERT INTO ${tngDetailTable} SET ?`, [data]);
+    return (result as ResultSetHeader).insertId;
+};
+export const updateTngDetail = async (id: number, data: any) => {
+    const [result] = await pool2.query(`UPDATE ${tngDetailTable} SET ? WHERE tngd_id = ?`, [data, id]);
+    return result;
+};
+export const deleteTngDetail = async (id: number) => {
+    const [result] = await pool2.query(`DELETE FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
     return result;
 };

@@ -1672,6 +1672,20 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 			const e = empMap.get(String(car.approval));
 			obj.approval = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
 		}
+		// Build passenger array from concatenated RAMCO IDs in 'pass' (e.g., "012345, 23456")
+		const passStr = typeof car.pass === 'string' ? car.pass : (car.pass != null ? String(car.pass) : '');
+		if (passStr && passStr.trim() !== '') {
+			const ids = passStr
+				.split(/[,;\s]+/)
+				.map((s: string) => s.trim())
+				.filter((s: string) => s.length > 0);
+			const unique = Array.from(new Set(ids));
+			const passenger = unique.map((rid: string) => {
+				const emp = empMap.get(rid);
+				return { ramco_id: rid, full_name: emp ? (emp.full_name || emp.name || null) : null };
+			});
+			if (passenger.length > 0) obj.passenger = passenger;
+		}
 		Object.keys(obj).forEach((k) => { if (obj[k] === null) delete obj[k]; });
 
 		res.json({
@@ -1962,3 +1976,133 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
 		}
 	};
+
+	// Helper to get available pool car types for dropdowns
+	export const getAvailablePoolCars = async (req: Request, res: Response) => {
+		try {
+			const cars = await maintenanceModel.getAvailablePoolCars();
+			res.json({ status: 'success', message: 'Available pool cars retrieved', data: cars });
+		} catch (error) {
+			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		}
+	};
+
+
+
+/* ================= TOUCH N GO ================= */
+export const getTouchNGoCards = async (req: Request, res: Response) => {
+	try {
+		const cards = await maintenanceModel.getTngRecords();
+		res.json({
+			status: 'success',
+			message: 'Touch N Go cards retrieved successfully',
+			data: cards
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+}
+
+export const getTouchNGoCardById = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const cardId = Number(id);
+		if (Number.isNaN(cardId)) {
+			return res.status(400).json({ status: 'error', message: 'Invalid card id', data: null });
+		}
+		const card = await maintenanceModel.getTngRecordById(cardId);
+		if (!card) {
+			return res.status(404).json({ status: 'error', message: 'Touch N Go card not found', data: null });
+		}
+		// fetch usage / details
+		let usage = [] as any[];
+		try {
+			usage = await maintenanceModel.getTngDetailsByTngId(cardId);
+		} catch (e) {
+			usage = [];
+		}
+		// Attempt to sort usage by a likely date column if present
+		const dateCols = ['txn_date', 'trans_date', 'transaction_date', 'date_used', 'created_at'];
+		const detectedDateCol = usage.length ? dateCols.find(c => Object.prototype.hasOwnProperty.call(usage[0], c)) : undefined;
+		if (detectedDateCol) {
+			usage.sort((a, b) => {
+				const da = new Date(a[detectedDateCol]);
+				const db = new Date(b[detectedDateCol]);
+				return db.getTime() - da.getTime();
+			});
+		}
+		const enriched = {
+			...card,
+			usage_count: usage.length,
+			usage
+		};
+		res.json({ status: 'success', message: 'Touch N Go card retrieved successfully', data: enriched });
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const createTouchNGoCard = async (req: Request, res: Response) => {
+	try {
+		const cardData = req.body || {};
+		const result = await maintenanceModel.createTngRecord(cardData);
+
+		res.status(201).json({
+			status: 'success',
+			message: 'Touch N Go card created successfully',
+			data: result
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+
+export const updateTouchNGoCard = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const cardData = req.body || {};
+		const result = await maintenanceModel.updateTngRecord(Number(id), cardData);
+
+		res.json({
+			status: 'success',
+			message: 'Touch N Go card updated successfully',
+			data: result
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};
+export const deleteTouchNGoCard = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const result = await maintenanceModel.deleteTngRecord(Number(id));
+
+		res.json({
+			status: 'success',
+			message: 'Touch N Go card deleted successfully',
+			data: result
+		});
+	} catch (error) {
+		res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
+};

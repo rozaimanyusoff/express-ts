@@ -12,6 +12,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	// Support ?type=[type_id] and ?status=[status] params
 	const typeIdParam = req.query.type;
 	const statusParam = req.query.status;
+	const purposeParam = req.query.purpose;
 	const classificationParam = req.query.classification;
 	const managerParam = req.query.manager;
 	const ownerParam = req.query.owner;
@@ -27,6 +28,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	const sortDirParam = req.query.sortDir;
 	let typeIds: number[] | undefined = undefined;
 	let status: string | undefined = undefined;
+	let purpose: string | undefined = undefined;
 	let classification: string | undefined = undefined;
 	let manager: number | undefined = undefined;
 	let owner: string | string[] | undefined = undefined;
@@ -91,6 +93,9 @@ export const getAssets = async (req: Request, res: Response) => {
 	if (typeof statusParam === 'string' && statusParam !== '') {
 		status = statusParam;
 	}
+	if (typeof purposeParam === 'string' && purposeParam !== '') {
+		purpose = purposeParam.trim();
+	}
 	if (typeof registerNumberParam === 'string' && registerNumberParam !== '') {
 		registerNumber = registerNumberParam;
 	}
@@ -135,6 +140,7 @@ export const getAssets = async (req: Request, res: Response) => {
 			type_ids: typeIds,
 			classification,
 			status,
+			purpose,
 			manager,
 			registerNumber,
 			owner,
@@ -144,7 +150,7 @@ export const getAssets = async (req: Request, res: Response) => {
 		assetsRaw = rows as any[];
 		total = t;
 	} else {
-		assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId) as any[];
+		assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId, purpose) as any[];
 		total = Array.isArray(assetsRaw) ? assetsRaw.length : 0;
 	}
 	const typesRaw = await assetModel.getTypes();
