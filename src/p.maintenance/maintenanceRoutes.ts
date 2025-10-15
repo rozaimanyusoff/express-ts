@@ -46,14 +46,16 @@ router.get('/poolcars/:id', asyncHandler(maintenanceController.getPoolCarById));
 router.get('/poolcars', asyncHandler(maintenanceController.getPoolCars));
 router.post('/poolcars', asyncHandler(maintenanceController.createPoolCar));
 router.put('/poolcars/:id', asyncHandler(maintenanceController.updatePoolCar));
+router.put('/poolcars/:id/admin', asyncHandler(maintenanceController.updateAdminPoolCar));
 router.post('/poolcars/:id/resendmail', asyncHandler(maintenanceController.resendPoolCarMail));
 router.delete('/poolcars/:id', asyncHandler(maintenanceController.deletePoolCar));
 
 
 /* ============== TOUCH N GO CARDS ============== */
 router.get('/tng/:id', asyncHandler(maintenanceController.getTouchNGoCardById));
+router.get('/tng', asyncHandler(maintenanceController.getTouchNGoCards));
 router.post('/tng', asyncHandler(maintenanceController.createTouchNGoCard));
 router.put('/tng/:id', asyncHandler(maintenanceController.updateTouchNGoCard));
 router.delete('/tng/:id', asyncHandler(maintenanceController.deleteTouchNGoCard));
-router.get('/tng', asyncHandler(maintenanceController.getTouchNGoCards));
+
 export default router;

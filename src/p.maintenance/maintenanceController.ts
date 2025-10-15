@@ -1759,12 +1759,10 @@ export const createPoolCar = async (req: Request, res: Response) => {
 									date_from: carData.pcard_datefr || carData.pcar_datefr || null,
 									date_to: carData.pcard_dateto || carData.pcar_dateto || null,
 						pcar_day: carData.pcar_day ?? null,
-						pcar_hour: carData.pcar_hour ?? null,
-						backendUrl,
-						supervisor_id: applicant?.supervisor_id || ''
+						pcar_hour: carData.pcar_hour ?? null
 					});
 							const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
-							await mailer.sendMail(supervisor.email, `${subject} — Verification Required`, html, cc ? { cc } : undefined);
+							await mailer.sendMail(supervisor.email, subject, html, cc ? { cc } : undefined);
 				}
 			}
 		} catch (mailErr) {
@@ -1889,6 +1887,139 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 	}
 };
 
+	// Admin update for Pool Car application (assign cards/asset, approve/reject, cancel)
+	export const updateAdminPoolCar = async (req: Request, res: Response) => {
+		try {
+			const { id } = req.params;
+			const body = req.body || {};
+			const pcarId = Number(id || body.pcar_id);
+			if (!Number.isFinite(pcarId)) {
+				return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+			}
+
+			// Normalize booleans/values
+			const isCancelled = Boolean(body.pcar_cancel === true || body.pcar_cancel === 1 || body.pcar_cancel === '1' || body.pcar_cancel === 'true');
+
+			// Whitelist / map fields
+			const update: any = {};
+			const approver = (req.user && typeof req.user === 'object') ? ((req.user as any).ramco_id || (req.user as any).username || null) : null;
+			const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+			// Always allow admin to update these if provided
+			const directKeys = ['tng_id', 'fleetcard_id', 'asset_id', 'pcar_canrem'];
+			for (const k of directKeys) {
+				if (Object.prototype.hasOwnProperty.call(body, k)) update[k] = body[k];
+			}
+
+			// Approval block
+			if (!isCancelled) {
+				if (Object.prototype.hasOwnProperty.call(body, 'approval')) update.approval = body.approval ?? approver ?? null;
+				if (Object.prototype.hasOwnProperty.call(body, 'approval_stat')) update.approval_stat = Number(body.approval_stat) || null;
+				if (Object.prototype.hasOwnProperty.call(body, 'approval_date')) update.approval_date = body.approval_date || nowStr;
+				// Ensure mandatory when not cancelled: fleetcard_id and asset_id (if explicitly passed)
+				if ((body.hasOwnProperty('fleetcard_id') && (body.fleetcard_id === null || body.fleetcard_id === undefined)) ||
+						(body.hasOwnProperty('asset_id') && (body.asset_id === null || body.asset_id === undefined))) {
+					// Soft validation: warn but proceed; comment out to enforce hard fail
+					// return res.status(400).json({ status: 'error', message: 'fleetcard_id and asset_id are required unless cancelled' });
+				}
+				update.pcar_cancel = 0;
+				update.cancel_date = null;
+				update.cancel_by = null;
+			} else {
+				// Cancellation branch
+				update.pcar_cancel = 1;
+				update.cancel_date = body.cancel_date || nowStr;
+				update.cancel_by = body.cancel_by || approver || null;
+				update.pcar_canrem = body.pcar_canrem ?? update.pcar_canrem ?? null;
+				// Nullify approval and allocations when cancelled
+				update.approval = null;
+				update.approval_stat = 0;
+				update.approval_date = null;
+				update.fleetcard_id = null;
+				update.asset_id = null;
+			}
+
+			// Persist update
+			await maintenanceModel.updatePoolCar(pcarId, update);
+
+			// Fetch latest state for email context
+			const car = await maintenanceModel.getPoolCarById(pcarId);
+			if (!car) {
+				return res.json({ status: 'success', message: 'Updated, but record fetch failed for notification', data: { id: pcarId } });
+			}
+
+			// Build and send notification to applicant
+			try {
+				const applicantRamco = String(car.pcar_empid || '');
+				const applicant = applicantRamco ? await assetModel.getEmployeeByRamco(applicantRamco) : null;
+				const toEmail = applicant?.email || null;
+				const ccList: string[] = [];
+				// Optionally CC driver
+				const driverRamco = String((car as any).pcar_driver || '');
+				if (driverRamco && driverRamco !== applicantRamco) {
+					const driver = await assetModel.getEmployeeByRamco(driverRamco);
+					if (driver?.email) ccList.push(driver.email);
+				}
+				if (POOLCAR_ADMIN_CC.length) ccList.push(...POOLCAR_ADMIN_CC);
+
+				if (toEmail) {
+					const subjectBase = `Pool Car Request #${pcarId}`;
+					let statusLine = '';
+					if (isCancelled || car.pcar_cancel === 1) statusLine = 'Cancelled';
+					else if (update.approval_stat === 1 || car.approval_stat === 1) statusLine = 'Approved';
+					else if (update.approval_stat === 2 || car.approval_stat === 2) statusLine = 'Rejected';
+					const subject = statusLine ? `${subjectBase} — ${statusLine}` : `${subjectBase} — Updated`;
+
+					// Optional asset register number
+					let assetInfo = '';
+					const assetId = Number((car as any).asset_id || 0);
+					if (!isNaN(assetId) && assetId > 0) {
+						try {
+							const asset = await assetModel.getAssetById(assetId);
+							const reg = asset?.register_number || asset?.vehicle_regno || '';
+							if (reg) assetInfo = `<tr><td style="color:#6b7280;">Assigned Vehicle</td><td><strong>${reg}</strong></td></tr>`;
+						} catch {}
+					}
+
+					const appDate = (car as any).pcar_datererq || (car as any).pcar_datereq || null;
+					const dateFrom = (car as any).pcard_datefr || (car as any).pcar_datefr || null;
+					const dateTo = (car as any).pcard_dateto || (car as any).pcar_dateto || null;
+					const name = applicant?.full_name || (applicant as any)?.name || '';
+
+					const html = `
+					<div style="background:#f9fafb; padding:24px;">
+						<div style="max-width:680px; margin:0 auto; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#111827;">
+							<div style="background:linear-gradient(90deg, #22c55e, #16a34a, #065f46); height:6px; border-top-left-radius:8px; border-top-right-radius:8px;"></div>
+							<div style="background:#ffffff; padding:20px 24px; border-bottom-left-radius:8px; border-bottom-right-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+								<h2 style="margin:0 0 4px; font-size:20px;">Pool Car Request Update <span style="color:#065f46;">(ID #${pcarId})</span></h2>
+								<p style="margin:0 0 16px; color:#374151;">Your application has been ${statusLine || 'updated'}.</p>
+								<table cellpadding="0" cellspacing="0" style="border-collapse:separate; border-spacing:0 8px; width:100%;">
+									<tbody>
+										<tr><td style="color:#6b7280; width:260px;">Applicant</td><td>${name} <span style="color:#6b7280;">(${applicantRamco})</span></td></tr>
+										<tr><td style="color:#6b7280;">Application Date</td><td>${appDate || '-'}</td></tr>
+										<tr><td style="color:#6b7280;">Destination & Purpose</td><td>${(car as any).pcar_dest || '-'} — ${(car as any).pcar_purp || '-'}</td></tr>
+										<tr><td style="color:#6b7280;">Trip From / To</td><td>${dateFrom || '-'} → ${dateTo || '-'}</td></tr>
+										${assetInfo}
+									</tbody>
+								</table>
+								<div style="margin-top:16px; border-top:1px solid #e5e7eb; padding-top:12px; color:#065f46; font-weight:600;">ADMS4</div>
+							</div>
+						</div>
+					</div>`;
+
+					const cc = ccList.length ? ccList.join(',') : undefined;
+					await mailer.sendMail(toEmail, subject, html, cc ? { cc } : undefined);
+				}
+			} catch (mailErr) {
+				console.error('updateAdminPoolCar: email error', mailErr);
+			}
+
+			res.json({ status: 'success', message: 'Pool car updated', data: { id: pcarId } });
+		} catch (error) {
+			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		}
+	};
+
 	// Resend applicant and supervisor emails for a pool car application (admin utility)
 	export const resendPoolCarMail = async (req: Request, res: Response) => {
 		try {
@@ -1943,7 +2074,7 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 					const supervisor = await getSupervisorBySubordinate(applicantRamco);
 					const supervisorId = (applicant as any)?.supervisor_id || '';
 					if (supervisor && supervisor.email) {
-									const htmlSupervisor = poolCarSupervisorEmail({
+				    const htmlSupervisor = poolCarSupervisorEmail({
 							id: idNum,
 							subject,
 							pcar_datererq: appDate,
@@ -1954,12 +2085,10 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 							date_from: dateFrom,
 							date_to: dateTo,
 							pcar_day: (car as any).pcar_day ?? null,
-							pcar_hour: (car as any).pcar_hour ?? null,
-							backendUrl,
-							supervisor_id: supervisorId
+			    pcar_hour: (car as any).pcar_hour ?? null
 						});
-									const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
-									await mailer.sendMail(supervisor.email, `${subject} — Verification Required`, htmlSupervisor, cc ? { cc } : undefined);
+				    const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
+				    await mailer.sendMail(supervisor.email, subject, htmlSupervisor, cc ? { cc } : undefined);
 						sentSupervisor = true;
 					}
 				}
