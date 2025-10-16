@@ -40,38 +40,49 @@ const tngDetailTable = `${dbAssets}.touchngo_det`;
 // Placeholder CRUD functions - will be implemented based on your database structure
 
 // Example placeholder functions:
-export const getVehicleMtnRequests = async (status?: string) => {
-	let query = `SELECT * FROM ${vehicleMaintenanceTable}`;
-	const params: any[] = [];
+export const getVehicleMtnRequests = async (status?: string, ramco?: string) => {
+    let query = `SELECT * FROM ${vehicleMaintenanceTable}`;
+    const params: any[] = [];
+    const conditions: string[] = [];
 
-	// Add status filtering if provided
-	if (status) {
-		switch (status.toLowerCase()) {
-			case 'pending':
-				query += ` WHERE (verification_stat IS NULL OR verification_stat = 0)`;
-				break;
-			case 'verified':
-				query += ` WHERE verification_stat = 1 AND (recommendation_stat IS NULL OR recommendation_stat = 0)`;
-				break;
-			case 'recommended':
-				query += ` WHERE verification_stat = 1 AND recommendation_stat = 1 AND (approval_stat IS NULL OR approval_stat = 0)`;
-				break;
-			case 'approved':
-				query += ` WHERE verification_stat = 1 AND recommendation_stat = 1 AND approval_stat = 1`;
-				break;
-		}
-	}
+    // Add status filtering if provided
+    if (status) {
+        switch (status.toLowerCase()) {
+            case 'pending':
+                conditions.push(`(verification_stat IS NULL OR verification_stat = 0)`);
+                break;
+            case 'verified':
+                conditions.push(`verification_stat = 1 AND (recommendation_stat IS NULL OR recommendation_stat = 0)`);
+                break;
+            case 'recommended':
+                conditions.push(`verification_stat = 1 AND recommendation_stat = 1 AND (approval_stat IS NULL OR approval_stat = 0)`);
+                break;
+            case 'approved':
+                conditions.push(`verification_stat = 1 AND recommendation_stat = 1 AND approval_stat = 1`);
+                break;
+        }
+    }
 
-	query += ` ORDER BY req_id DESC`;
+    // Add ramco (requester) filter if provided
+    if (ramco && String(ramco).trim() !== '') {
+        conditions.push(`ramco_id = ?`);
+        params.push(String(ramco).trim());
+    }
 
-	const [rows] = await pool2.query(query, params);
-	const records = rows as any[];
+    if (conditions.length > 0) {
+        query += ` WHERE ` + conditions.join(' AND ');
+    }
 
-	// Add computed status field to each record
-	return records.map(record => ({
-		...record,
-		status: getRequestStatus(record)
-	}));
+    query += ` ORDER BY req_id DESC`;
+
+    const [rows] = await pool2.query(query, params);
+    const records = rows as any[];
+
+    // Add computed status field to each record
+    return records.map(record => ({
+        ...record,
+        status: getRequestStatus(record)
+    }));
 };
 
 // Helper function to determine status based on verification, recommendation, and approval stats

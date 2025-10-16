@@ -242,8 +242,9 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 	try {
 		// Support ?status={status} param (optional) - values: pending, verified, recommended, approved
 		const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco : undefined;
 
-		const records = await maintenanceModel.getVehicleMtnRequests(status);
+		const records = await maintenanceModel.getVehicleMtnRequests(status, ramco);
 
 		// Fetch all lookup data in parallel
 		const [assetsRaw, costcentersRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
@@ -328,9 +329,10 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 			};
 		});
 
+		const total = resolvedRecords.length;
 		res.json({
 			status: 'success',
-			message: 'Maintenance records data retrieved successfully',
+			message: `Maintenance records data retrieved successfully (total: ${total})`,
 			data: resolvedRecords
 		});
 	} catch (error) {
@@ -348,12 +350,13 @@ async function resolveVehicleMtnRecord(id: number) {
 	if (!record) return null;
 
 	// Fetch all lookup data in parallel
-	const [assetsRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, locationsRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
+	const [assetsRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, departmentsRaw, locationsRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
 		assetModel.getAssets(),
 		assetModel.getCategories(),
 		assetModel.getBrands(),
 		assetModel.getModels(),
 		assetModel.getCostcenters(),
+		(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
 		assetModel.getLocations(),
 		billingModel.getWorkshops(),
 		assetModel.getEmployees(),
@@ -365,6 +368,7 @@ async function resolveVehicleMtnRecord(id: number) {
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+	const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
 	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -376,6 +380,7 @@ async function resolveVehicleMtnRecord(id: number) {
 	const modelMap = new Map(models.map((m: any) => [m.id, m]));
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const locationMap = new Map(locations.map((loc: any) => [loc.id, loc]));
+	const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
 	const wsMap = new Map(workshops.map((ws: any) => [ws.ws_id, ws]));
 	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 	const svcTypeMap = new Map(svcTypes.map((svc: any) => [svc.svcTypeId, svc]));
@@ -424,24 +429,22 @@ async function resolveVehicleMtnRecord(id: number) {
 				brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
 				model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
 				costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
+				department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)) as any)?.name } : null,
 				location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
 			};
 		})() : null,
 		requester: employeeMap.has((record as any).ramco_id) ? {
 			ramco_id: (record as any).ramco_id,
 			name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
-			email: (employeeMap.get((record as any).ramco_id) as any)?.email,
 			contact: (employeeMap.get((record as any).ramco_id) as any)?.contact
 		} : null,
 		recommendation_by: employeeMap.has((record as any).recommendation) ? {
 			ramco_id: (record as any).recommendation,
-			name: (employeeMap.get((record as any).recommendation) as any)?.full_name,
-			email: (employeeMap.get((record as any).recommendation) as any)?.email
+			name: (employeeMap.get((record as any).recommendation) as any)?.full_name
 		} : null,
 		approval_by: employeeMap.has((record as any).approval) ? {
 			ramco_id: (record as any).approval,
-			name: (employeeMap.get((record as any).approval) as any)?.full_name,
-			email: (employeeMap.get((record as any).approval) as any)?.email
+			name: (employeeMap.get((record as any).approval) as any)?.full_name
 		} : null,
 		workshop: wsMap.has((record as any).ws_id) ? {
 			id: (record as any).ws_id,
@@ -466,12 +469,13 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		}
 
 		// Fetch all lookup data in parallel
-		const [assetsRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, locationsRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
+		const [assetsRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, departmentsRaw, locationsRaw, workshopsRaw, employeesRaw, svcTypeRaw] = await Promise.all([
 			assetModel.getAssets(),
 			assetModel.getCategories(),
 			assetModel.getBrands(),
 			assetModel.getModels(),
 			assetModel.getCostcenters(),
+			(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
 			assetModel.getLocations(),
 			billingModel.getWorkshops(),
 			assetModel.getEmployees(),
@@ -484,6 +488,7 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 		const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
 		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 		const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
 		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -496,6 +501,7 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const modelMap = new Map(models.map((m: any) => [m.id, m]));
 		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map(locations.map((loc: any) => [loc.id, loc]));
+		const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
 		const wsMap = new Map(workshops.map((ws: any) => [ws.ws_id, ws]));
 		const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 		const svcTypeMap = new Map(svcTypes.map((svc: any) => [svc.svcTypeId, svc]));
@@ -517,6 +523,9 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 			req_id: (record as any).req_id,
 			req_date: (record as any).req_date,
 			svc_type: svcTypeArray,
+			odo_start: (record as any).odo_start,
+			odo_end: (record as any).odo_end,
+			// Use asset_id (vehicle_id is deprecated)
 			req_comment: (record as any).req_comment,
 			upload_date: (record as any).upload_date,
 			verification_date: (record as any).verification_date,
@@ -547,24 +556,22 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 					brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
 					model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
 					costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
+					department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)) as any)?.name } : null,
 					location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
 				};
 			})() : null,
 			requester: employeeMap.has((record as any).ramco_id) ? {
 				ramco_id: (record as any).ramco_id,
 				name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
-				email: (employeeMap.get((record as any).ramco_id) as any)?.email,
 				contact: (employeeMap.get((record as any).ramco_id) as any)?.contact
 			} : null,
 			recommendation_by: employeeMap.has((record as any).recommendation) ? {
 				ramco_id: (record as any).recommendation,
-				name: (employeeMap.get((record as any).recommendation) as any)?.full_name,
-				email: (employeeMap.get((record as any).recommendation) as any)?.email
+				name: (employeeMap.get((record as any).recommendation) as any)?.full_name
 			} : null,
 			approval_by: employeeMap.has((record as any).approval) ? {
 				ramco_id: (record as any).approval,
-				name: (employeeMap.get((record as any).approval) as any)?.full_name,
-				email: (employeeMap.get((record as any).approval) as any)?.email
+				name: (employeeMap.get((record as any).approval) as any)?.full_name
 			} : null,
 			workshop: wsMap.has((record as any).ws_id) ? {
 				id: (record as any).ws_id,
