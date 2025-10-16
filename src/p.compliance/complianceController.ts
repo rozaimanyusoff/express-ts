@@ -12,7 +12,8 @@ import { promises as fsPromises } from 'fs';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
 import * as adminNotificationModel from '../p.admin/notificationModel';
 
-const summonAdminMail = 'admin@example.com';
+// Optional admin CC for summon notifications
+const ADMIN_EMAIL_ENV = (process.env.ADMIN_EMAIL || '').trim();
 
 
 // Helper to normalize a temp file path into stored relative path
@@ -307,8 +308,11 @@ export const createSummon = async (req: Request, res: Response) => {
         const ramco = r?.ramco_id || null;
         let emp: any = null;
         if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
-        const toEmail = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
-        if (!toEmail) return;
+  const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+  const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
+  const adminCc = isValidEmail(ADMIN_EMAIL_ENV) ? ADMIN_EMAIL_ENV : undefined;
+  const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
+  if (!toEmail) return; // no valid recipient
 
         const html = renderSummonNotification({
           driverName: localTestName || (emp?.full_name || emp?.name) || null,
@@ -321,7 +325,8 @@ export const createSummon = async (req: Request, res: Response) => {
         });
 
         try {
-          await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, { cc: summonAdminMail });
+          const mailOpts = adminCc ? { cc: adminCc } : undefined;
+          await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, mailOpts);
           await complianceModel.updateSummon(id, { emailStat: 1 }).catch(() => { });
         } catch (mailErr) {
           console.error('createSummon: mail send error', mailErr, 'to', toEmail);
@@ -479,8 +484,11 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
     const ramco = r?.ramco_id || null;
     let emp: any = null;
     if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
-    const toEmail = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
-    if (!toEmail) return res.status(400).json({ status: 'error', message: 'Recipient email not found', data: null });
+  const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+  const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
+  const adminCc = (ADMIN_EMAIL_ENV && isValidEmail(ADMIN_EMAIL_ENV)) ? ADMIN_EMAIL_ENV : undefined;
+  const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
+  if (!toEmail) return res.status(400).json({ status: 'error', message: 'Recipient email not found', data: null });
 
     const html = renderSummonNotification({
       driverName: localTestName || (emp?.full_name || emp?.name) || null,
@@ -493,7 +501,8 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
     });
 
     try {
-      await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html);
+      const mailOpts = adminCc ? { cc: adminCc } : undefined;
+      await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, mailOpts);
       // mark emailStat = 1 (best-effort)
       await complianceModel.updateSummon(id, { emailStat: 1 }).catch(() => { });
       return res.json({ status: 'success', message: 'Notification sent', data: { id, sentTo: toEmail, testMode: !!localTestEmail } });
