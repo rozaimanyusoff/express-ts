@@ -23,18 +23,21 @@ This document outlines prioritized, concrete improvements for the API’s securi
   - `src/app.ts`
   - `src/p.auth/adms/authController.ts`
 
-- Issues
-  - `JWT_SECRET` has an insecure default fallback.
-  - Verification does not restrict algorithms.
-  - 400 is returned for invalid tokens instead of 401.
-  - Session enforcement is only done at login time; not re-checked per request.
-  - Many non-auth routers are mounted without `tokenValidator`.
+- Implemented
+  - Hardened `tokenValidator`:
+    - No insecure fallback secret; responds 500 if `JWT_SECRET` is not set.
+    - Restricts verification to `HS256` algorithms only.
+    - Returns 401 consistently on invalid/expired tokens.
+    - Optional per-request DB session validation when `SINGLE_SESSION_ENFORCEMENT=true`.
+
+- Issues (remaining)
+  - Many non-auth routers are mounted without `tokenValidator` by default.
 
 - Recommendations
   - Fail fast if `process.env.JWT_SECRET` is missing; never default to a literal.
   - Restrict algorithms on `jwt.verify` (e.g., `['HS256']`). Optionally validate `iss`/`aud` claims.
   - Return 401 on invalid/expired tokens with a consistent body (do not leak specifics).
-  - Optionally verify DB session token in `tokenValidator` (compare `decoded.session` with stored session). If single-session enforcement is enabled, reject mismatches.
+  - Verify DB session token in `tokenValidator` (compare `decoded.session` with stored session) when single-session enforcement is enabled. This is implemented.
   - Default-protect all `/api` routes: mount `tokenValidator` on `/api`, then explicitly allowlist public routes (login, register, reset flows, activation, refresh-token, email action links that must be public, etc.).
 
 - Example approach (pseudocode)
@@ -132,10 +135,14 @@ This document outlines prioritized, concrete improvements for the API’s securi
   - `src/middlewares/rateLimiter.ts`
   - `src/app.ts`
 
+- Implemented
+  - Per-route client keying for auth limiter: key = first X-Forwarded-For IP + user-agent + route path.
+  - Cleanup cycle for expired blocks and clear-on-success after login.
+  - Optional `app.set('trust proxy', 1)` under `TRUST_PROXY=true` for correct IP extraction behind proxies.
+
 - Issues
-  - Global rate limiter is commented out.
-  - IP extraction concatenates the entire `x-forwarded-for` header and not the first IP.
-  - In-memory block map won’t work across processes or survive restarts.
+  - Global rate limiter remains disabled.
+  - In-memory store is not shared across instances and won’t survive restarts.
 
 - Recommendations
   - Enable a modest global rate limiter (e.g., 100–300 req/15 min) in addition to strict auth endpoints limits.
@@ -261,10 +268,10 @@ This document outlines prioritized, concrete improvements for the API’s securi
 ## Suggested Next Steps (Walkthrough Plan)
 
 1) Guard `/api` by default, allowlist public routes in `authRoutes`.
-2) Harden `tokenValidator` (no fallback secret, restrict algs, 401 on invalid, optional session check).
+2) [Done] Harden `tokenValidator` (no fallback secret, restrict algs, 401 on invalid, optional session check).
 3) Align CORS across API, `/uploads`, and Socket.IO using env-driven origins.
 4) Tighten Helmet: remove deprecated options, add HSTS/COOP/COEP, plan nonce rollout to drop `unsafe-inline`.
-5) Enable a small global rate limiter; fix IP parsing; add `app.set('trust proxy', true)` as needed.
+5) Enable a small global rate limiter; fix IP parsing; add `app.set('trust proxy', true)` as needed. [Partially done: trust proxy toggle, per-route keys, clear-on-success]
 6) Migrate profile upload to `createUploader` with size/MIME limits; serve uploads from configured base with strict options.
 7) Improve error handler logging and `headersSent` handling.
 8) (Optional) Implement proper refresh tokens with cookie storage and rotation.
