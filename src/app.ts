@@ -27,6 +27,11 @@ import { getUploadBaseSync } from './utils/uploadUtil';
 
 const app: Express = express();
 
+// Optionally trust proxy (needed if running behind Nginx/Load Balancer for correct client IPs)
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
 app.use(urlencoded({ extended: true, limit: '10mb' }));
 app.use(json({ limit: '10mb' }));
 app.use(corsMiddleware);

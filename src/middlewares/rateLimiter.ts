@@ -11,20 +11,42 @@ const WINDOW_MS = 15 * 60 * 1000; // 15 minutes window duration. allow 5 attempt
 // and to block IP+userAgent for a certain period of time if the limit is exceeded
 // This middleware uses express-rate-limit and a custom in-memory store
 
+// Helper: build a stable client key (IP + user-agent)
+export function getClientKey(req: Request): string {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = `${req.baseUrl || ''}${req.path || ''}`;
+    return `${ip}|${userAgent}|${routeId}`;
+}
+
+// Allow other modules to clear a client block (e.g., upon successful login)
+export function clearClientBlock(req: Request) {
+    const key = getClientKey(req);
+    blockedMap.delete(key);
+}
+
+// Periodic cleanup of expired blocks to avoid memory leaks
+const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, info] of blockedMap.entries()) {
+        if (info.blockedUntil <= now) blockedMap.delete(key);
+    }
+}, CLEANUP_INTERVAL).unref?.();
+
 const rateLimiter = rateLimit({
     windowMs: WINDOW_MS,
     max: MAX_ATTEMPTS,
-    keyGenerator: (req: Request) => {
-        const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
-        const userAgent = req.headers['user-agent'] || '';
-        return `${ip}|${userAgent}`;
-    },
+    keyGenerator: (req: Request) => getClientKey(req),
     handler: async (req: Request, res: Response, next: NextFunction) => {
-        const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
-        const userAgent = req.headers['user-agent'] || '';
-        const key = `${ip}|${userAgent}`;
+        const key = getClientKey(req);
         const now = Date.now();
         blockedMap.set(key, { blockedUntil: now + BLOCK_DURATION });
+    const [ip, userAgent] = key.split('|');
         await logAuthActivity(0, 'other', 'fail', { reason: 'rate_limit_block', ip, userAgent }, req).catch(() => {});
         res.status(429).json({
             status: 'error',
@@ -38,11 +60,10 @@ const rateLimiter = rateLimit({
 
 // Middleware to check if IP+userAgent is blocked
 function ipBlocker(req: Request, res: Response, next: NextFunction) {
-    const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
-    const userAgent = req.headers['user-agent'] || '';
-    const key = `${ip}|${userAgent}`;
+    const key = getClientKey(req);
     const block = blockedMap.get(key);
     if (block && block.blockedUntil > Date.now()) {
+    const [ip, userAgent] = key.split('|');
         logAuthActivity(0, 'other', 'fail', { reason: 'ip_blocked', ip, userAgent }, req).catch(() => {});
         res.status(429).json({
             status: 'error',

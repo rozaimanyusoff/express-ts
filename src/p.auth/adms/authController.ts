@@ -20,6 +20,7 @@ import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChan
 import { v4 as uuidv4 } from 'uuid';
 import * as assetModel from '../../p.asset/assetModel';
 import {pool} from '../../utils/db';
+import { clearClientBlock } from '../../middlewares/rateLimiter';
 
 dotenv.config();
 
@@ -393,8 +394,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const sessionToken = uuidv4();
         await userModel.setUserSessionToken(result.user.id, sessionToken);
 
-        await userModel.updateLastLogin(result.user.id);
+    await userModel.updateLastLogin(result.user.id);
         await logModel.logAuthActivity(result.user.id, 'login', 'success', {}, req);
+
+    // On successful login, clear any lingering rate-limit/ip block for this client
+    try { clearClientBlock(req); } catch (_) { /* noop */ }
 
         const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
         const userAgent = req.headers['user-agent'] || null;
