@@ -507,7 +507,7 @@ export async function updateUserTask(userId: number, taskId: number, updates: { 
     return result;
 }
 
-/* ======= APPROVAL LEVELS CRUD =======
+/* ======= WORKFLOWS CRUD =======
 id INT AUTO_INCREMENT PRIMARY KEY,
     module_name VARCHAR(100) NOT NULL,        -- e.g., 'billing', 'purchase_order'
     level_order INT NOT NULL,                 -- sequence (1=lowest, N=highest)
@@ -518,26 +518,89 @@ id INT AUTO_INCREMENT PRIMARY KEY,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 */
-export const createApprovalLevel = async (data: any): Promise<number> => {
-    const [result] = await pool.query(`
-        INSERT INTO ${approvalLevelsTable} (module_name, level_order, ramco_id, level_name, description, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`, 
-        [data.module_name, data.level_order, data.employee_ramco_id, data.level_name, data.description, data.is_active]
-    );
-    return (result as ResultSetHeader).insertId;
+export const createWorkflow = async (data: any): Promise<number> => {
+    // Expected payload:
+    // {
+    //   module_name: string,
+    //   description?: string,
+    //   is_active?: boolean,
+    //   employees: Array<{ employee_ramco_id: string; authorize_level: string }>
+    // }
+    const conn = await pool.getConnection();
+    try {
+        const moduleName = String(data?.module_name || '').trim();
+        if (!moduleName) throw new Error('module_name is required');
+        const description = data?.description ?? null;
+        const isActive = data?.is_active === false ? 0 : 1;
+        const employees = Array.isArray(data?.employees) ? data.employees : [];
+        if (employees.length === 0) throw new Error('employees array is required');
+
+        // Map common authorize levels to stable ordering; fallback to index order
+        const orderMap: Record<string, number> = {
+            verify: 1,
+            recommend: 2,
+            approval: 3
+        };
+
+        // Build rows to insert
+        const rows = employees.map((e: any, idx: number) => {
+            const levelName = String(e?.authorize_level || '').trim();
+            const levelOrder = orderMap[levelName.toLowerCase()] ?? (idx + 1);
+            const ramcoId = String(e?.employee_ramco_id || '').trim();
+            if (!ramcoId) throw new Error(`employees[${idx}].employee_ramco_id is required`);
+            return {
+                module_name: moduleName,
+                level_order: levelOrder,
+                ramco_id: ramcoId,
+                level_name: levelName || `Level ${levelOrder}`,
+                description,
+                is_active: isActive
+            };
+        });
+
+        await conn.beginTransaction();
+
+        const placeholders = rows.map(() => '(?, ?, ?, ?, ?, ?, NOW(), NOW())').join(',');
+        const params: any[] = [];
+        for (const r of rows) {
+            params.push(r.module_name, r.level_order, r.ramco_id, r.level_name, r.description, r.is_active);
+        }
+
+        const [result] = await conn.query(
+            `INSERT INTO ${approvalLevelsTable} (module_name, level_order, ramco_id, level_name, description, is_active, created_at, updated_at)
+             VALUES ${placeholders}`,
+            params
+        );
+
+        await conn.commit();
+
+        const res = result as ResultSetHeader & { affectedRows?: number };
+        const firstId = Number(res.insertId) || 0;
+        const count = Number((res as any).affectedRows) || rows.length;
+        // MySQL returns the first insertId for multi-row insert; derive the IDs range if available
+        // Note: This assumes AUTO_INCREMENT increments by 1.
+        const workflowIds = firstId > 0 ? Array.from({ length: count }, (_, i) => firstId + i) : [];
+        // Return number of created rows (controller may choose to expose IDs)
+        return count as unknown as number;
+    } catch (err) {
+        try { await conn.rollback(); } catch {}
+        throw err;
+    } finally {
+        conn.release();
+    }
 };
 
-export const getApprovalLevels = async () => {
+export const getWorkflows = async () => {
     const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable}`);
     return rows;
 };
 
-export const getApprovalLevelById = async (id: number) => {
+export const getWorkflowById = async (id: number) => {
     const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable} WHERE id = ?`, [id]) as [any[], any];
     return rows[0] || null;
 };
 
-export const updateApprovalLevel = async (id: number, data: any): Promise<void> => {
+export const updateWorkflow = async (id: number, data: any): Promise<void> => {
     const [result] = await pool.query(`
         UPDATE ${approvalLevelsTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, updated_at = NOW()
         WHERE id = ?`, 
@@ -545,9 +608,49 @@ export const updateApprovalLevel = async (id: number, data: any): Promise<void> 
     );
 };
 
-export const deleteApprovalLevel = async (id: number) => {
+export const deleteWorkflow = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${approvalLevelsTable} WHERE id = ?`, [id]);
     return result;
+};
+
+// Reorder workflows: accepts either array of ids (implied order) or array of { id, level_order }
+export const reorderWorkflows = async (payload: { module_name?: string; items: Array<number | { id: number; level_order: number }> }): Promise<number> => {
+    if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) {
+        throw new Error('items array is required');
+    }
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // Normalize to {id, level_order}
+        let normalized: Array<{ id: number; level_order: number }> = [];
+        if (typeof payload.items[0] === 'number') {
+            normalized = (payload.items as number[]).map((id, idx) => ({ id, level_order: idx + 1 }));
+        } else {
+            normalized = (payload.items as Array<{ id: number; level_order: number }>).map(x => ({ id: Number(x.id), level_order: Number(x.level_order) }))
+                .filter(x => Number.isFinite(x.id) && Number.isFinite(x.level_order));
+        }
+        if (normalized.length === 0) throw new Error('No valid items to reorder');
+
+        let updated = 0;
+        for (const item of normalized) {
+            if (payload.module_name) {
+                const [res] = await conn.query(`UPDATE ${approvalLevelsTable} SET level_order = ?, updated_at = NOW() WHERE id = ? AND module_name = ?`, [item.level_order, item.id, payload.module_name]);
+                updated += (res as ResultSetHeader).affectedRows || 0;
+            } else {
+                const [res] = await conn.query(`UPDATE ${approvalLevelsTable} SET level_order = ?, updated_at = NOW() WHERE id = ?`, [item.level_order, item.id]);
+                updated += (res as ResultSetHeader).affectedRows || 0;
+            }
+        }
+
+        await conn.commit();
+        return updated;
+    } catch (err) {
+        try { await conn.rollback(); } catch {}
+        throw err;
+    } finally {
+        conn.release();
+    }
 };
 
 

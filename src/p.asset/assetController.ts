@@ -28,7 +28,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	const sortDirParam = req.query.sortDir;
 	let typeIds: number[] | undefined = undefined;
 	let status: string | undefined = undefined;
-	let purpose: string | undefined = undefined;
+	let purpose: string | string[] | undefined = undefined;
 	let classification: string | undefined = undefined;
 	let manager: number | undefined = undefined;
 	let owner: string | string[] | undefined = undefined;
@@ -94,7 +94,9 @@ export const getAssets = async (req: Request, res: Response) => {
 		status = statusParam;
 	}
 	if (typeof purposeParam === 'string' && purposeParam !== '') {
-		purpose = purposeParam.trim();
+		// Support comma-separated list of purposes: ?purpose=pool,project
+		const parts = purposeParam.split(',').map(s => s.trim()).filter(Boolean);
+		purpose = parts.length > 1 ? parts : (parts[0] || undefined);
 	}
 	if (typeof registerNumberParam === 'string' && registerNumberParam !== '') {
 		registerNumber = registerNumberParam;

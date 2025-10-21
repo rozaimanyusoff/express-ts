@@ -36,6 +36,8 @@ router.get('/mtn/parts/search', asyncHandler(billingController.searchServicePart
 
 router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnBillingByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id} -- EXCEL GENERATED REPORT
 router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
+// Find maintenance billings by request id (svc_order)
+router.get('/mtn/request/:svc_order', asyncHandler(billingController.getVehicleMtnBillingByRequestId));
 router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
 // Check invoice number existence for maintenance billings

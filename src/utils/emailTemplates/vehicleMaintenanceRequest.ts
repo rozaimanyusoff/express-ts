@@ -10,7 +10,8 @@ export default function vehicleMaintenanceEmail(data: any): string {
     workshopRecommendation,
     recentRequests = [],
     annualSummary = [],
-    footerName = 'ADMS3'
+    footerName = 'ADMS3',
+    ctaHtml = ''
   } = data || {};
 
   // recentRequests removed from template per requirements
@@ -42,7 +43,7 @@ export default function vehicleMaintenanceEmail(data: any): string {
     <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
       <tr>
         <td align="center" style="padding:28px 12px">
-          <table width="680" cellpadding="0" cellspacing="0" role="presentation" style="background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 6px 20px rgba(17,24,39,0.08);">
+          <table width="500" cellpadding="0" cellspacing="0" role="presentation" style="max-width:500px; background:#ffffff; border-radius:10px; overflow:hidden; box-shadow:0 6px 20px rgba(17,24,39,0.08);">
 
             <!-- Header -->
             <tr>
@@ -65,7 +66,7 @@ export default function vehicleMaintenanceEmail(data: any): string {
             <!-- Details panel -->
             <tr>
               <td style="padding:0 22px 18px 22px;">
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:6px; overflow:hidden; border:1px solid rgba(37,56,88,0.06)">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-radius:6px; overflow:hidden; border:1px solid rgba(37,56,88,0.06); table-layout:fixed;">
 
                   <tr style="background:linear-gradient(90deg,#e6f0ff,#eef6ff);">
                     <td style="padding:14px 16px; font-weight:700; color:#0b3a8c; font-size:16px">Request Summary</td>
@@ -74,9 +75,9 @@ export default function vehicleMaintenanceEmail(data: any): string {
 
                   <tr>
                     <td colspan="2" style="padding:12px 16px 18px 16px; background:#fbfdff;">
-                      <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="table-layout:fixed;">
                         <tr>
-                          <td style="width:48%; vertical-align:top; padding-right:12px">
+                          <td style="width:48%; vertical-align:top; padding-right:12px; word-break:break-word; overflow-wrap:anywhere; white-space:normal;">
                             <div style="font-size:13px;color:#223; margin-bottom:8px"><strong>Applicant</strong></div>
                             <div style="font-size:14px;color:#243b55">${applicant || '-'}</div>
 
@@ -87,7 +88,7 @@ export default function vehicleMaintenanceEmail(data: any): string {
                             <div style="font-size:14px;color:#243b55">${vehicleInfo || '-'}</div>
 
                           </td>
-                          <td style="width:52%; vertical-align:top; padding-left:12px; border-left:1px dashed rgba(0,0,0,0.04)">
+                          <td style="width:52%; vertical-align:top; padding-left:12px; border-left:1px dashed rgba(0,0,0,0.04); word-break:break-word; overflow-wrap:anywhere; white-space:normal;">
                             <div style="font-size:13px;color:#223; margin-bottom:8px"><strong>Request Type</strong></div>
                             <div style="font-size:14px;color:#243b55">${requestType || '-'}</div>
                           </td>
@@ -104,21 +105,21 @@ export default function vehicleMaintenanceEmail(data: any): string {
             <tr>
               <td style="padding:0 22px 12px 22px">
                 <div style="background:#0052ca; color:#fff; padding:10px 12px; border-radius:6px; font-weight:700; width:96%">Recent Requests (Last 5)</div>
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fbfdff; border:1px solid rgba(0,0,0,0.04); margin-top:6px; border-radius:6px; overflow:hidden">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fbfdff; border:1px solid rgba(0,0,0,0.04); margin-top:6px; border-radius:6px; overflow:hidden; table-layout:fixed;">
                   <tr style="background:#f6f9ff; font-weight:700;">
-                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:15%">Req ID</td>
-                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:18%">Date</td>
-                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:32%">Type</td>
-                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:20%">Comment</td>
-                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:15%">Workshop</td>
+                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:15%;">Req ID</td>
+                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:18%;">Date</td>
+                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:32%;">Type</td>
+                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:20%;">Comment</td>
+                    <td style="padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.06); width:15%;">Workshop</td>
                   </tr>
                   ${(recentRequests || []).length ? (recentRequests || []).map((r: any) => `
                     <tr>
-                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06)">#${r.req_id}</td>
-                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">${r.date || ''}</td>
-                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">${r.requestType || ''}</td>
-                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">${(r.comment || '').substring(0, 60)}</td>
-                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">${r.workshop || ''}</td>
+                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); word-break:break-word; overflow-wrap:anywhere;">#${r.req_id}</td>
+                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); word-break:break-word; overflow-wrap:anywhere;">${r.date || ''}</td>
+                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); word-break:break-word; overflow-wrap:anywhere;">${r.requestType || ''}</td>
+                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); word-break:break-word; overflow-wrap:anywhere;">${(r.comment || '').substring(0, 60)}</td>
+                      <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); word-break:break-word; overflow-wrap:anywhere;">${r.workshop || ''}</td>
                     </tr>
                   `).join('\n') : '<tr><td colspan="5" style="padding:8px">No recent requests</td></tr>'}
                 </table>
@@ -129,11 +130,22 @@ export default function vehicleMaintenanceEmail(data: any): string {
             <tr>
               <td style="padding:0 22px 22px 22px">
                 <div style="background:#0052cc; color:#fff; padding:10px 12px; border-radius:6px; font-weight:700; width:96%">Annual Service Summary (Last 5 years)</div>
-                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fbfdff; border:1px solid rgba(0,82,204,0.06); margin-top:6px; border-radius:6px; overflow:hidden">
+                <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fbfdff; border:1px solid rgba(0,82,204,0.06); margin-top:6px; border-radius:6px; overflow:hidden; table-layout:fixed;">
                   ${summaryHtml}
                 </table>
               </td>
             </tr>
+
+            ${ctaHtml ? `
+            <!-- Action Buttons -->
+            <tr>
+              <td style="padding:0 22px 22px 22px">
+                <div style="max-width:100%; word-break:break-all; overflow-wrap:anywhere; white-space:normal;">
+                  ${ctaHtml}
+                </div>
+              </td>
+            </tr>
+            ` : ''}
 
             <!-- Footer -->
             <tr>

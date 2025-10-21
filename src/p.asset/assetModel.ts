@@ -691,7 +691,7 @@ export const deleteProcurement = async (id: number) => {
 };
 
 // ASSETS GETTERS
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string) => {
+export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
@@ -717,6 +717,10 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   if (typeof purpose === 'string' && purpose !== '') {
     conditions.push('purpose = ?');
     params.push(purpose);
+  } else if (Array.isArray(purpose) && purpose.length > 0) {
+    const placeholders = purpose.map(() => '?').join(',');
+    conditions.push(`purpose IN (${placeholders})`);
+    params.push(...purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
     conditions.push('register_number = ?');
@@ -767,7 +771,7 @@ export const getAssetsPaged = async (
     owner?: string | string[];
     brandId?: number;
     q?: string;
-    purpose?: string;
+  purpose?: string | string[];
   },
   options: {
     page: number;
@@ -817,6 +821,10 @@ export const getAssetsPaged = async (
   if (typeof purpose === 'string' && purpose !== '') {
     conditions.push('a.purpose = ?');
     params.push(purpose);
+  } else if (Array.isArray(purpose) && purpose.length > 0) {
+    const placeholders = purpose.map(() => '?').join(',');
+    conditions.push(`a.purpose IN (${placeholders})`);
+    params.push(...purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
     conditions.push('a.register_number = ?');

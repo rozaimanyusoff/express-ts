@@ -218,6 +218,16 @@ export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaint
   return VehicleMaintenance || null;
 };
 
+// Fetch vehicle maintenance billings by request id (svc_order)
+export const getVehicleMtnBillingByRequestId = async (svc_order: string): Promise<VehicleMaintenance[]> => {
+  if (!svc_order || String(svc_order).trim() === '') return [];
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE svc_order = ? ORDER BY inv_date DESC, inv_id DESC`,
+    [svc_order]
+  );
+  return rows as VehicleMaintenance[];
+};
+
 export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
   // Prefer data.upload if provided by controller; fall back to data.attachment for compatibility
   const uploadValue = (data as any).upload ?? (data as any).attachment ?? null;

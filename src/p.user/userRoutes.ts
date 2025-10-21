@@ -22,12 +22,13 @@ router.get('/user/:userId/logs-auth', tokenValidator, asyncHandler(userControlle
 router.get("/logs", asyncHandler(userController.getAllAuthLogs)); // Assuming this is for admin to view all auth logs
 router.get("/pending", asyncHandler(userController.getAllPendingUser));
 
-/* ===== APPROVAL LEVELS ===== */
-router.get("/approvals/:id", asyncHandler(userController.getApprovalLevelById));
-router.get("/approvals", asyncHandler(userController.getApprovalLevels));
-router.post("/approvals", asyncHandler(userController.createApprovalLevel));
-router.put("/approvals/:id", asyncHandler(userController.updateApprovalLevel));
-router.delete("/approvals/:id", asyncHandler(userController.deleteApprovalLevel));
+/* ===== WORKFLOWS ===== */
+router.get("/workflows/:id", asyncHandler(userController.getWorkflowById));
+router.get("/workflows", asyncHandler(userController.getWorkflows));
+router.post("/workflows", asyncHandler(userController.createWorkflow));
+router.post("/workflows/reorder", asyncHandler(userController.reorderWorkflows));
+router.put("/workflows/:id", asyncHandler(userController.updateWorkflow));
+router.delete("/workflows/:id", asyncHandler(userController.deleteWorkflow));
 
 // MODULES
 router.get('/modules', asyncHandler(userController.getModules));

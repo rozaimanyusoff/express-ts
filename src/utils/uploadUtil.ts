@@ -72,6 +72,35 @@ export const toPublicUrl = (stored: string | null | undefined): string | null =>
   return `${baseUrl}/${p}`;
 };
 
+// Create a filesystem- and DB-safe ASCII filename.
+// - Normalize Unicode (NFKD) and strip diacritics/combining marks
+// - Replace whitespace (incl. NBSP and narrow NBSP) with single hyphen
+// - Remove disallowed chars, collapse multiple hyphens, lowercase
+// - Preserve last extension; truncate long base names
+export const sanitizeFilename = (name: string, maxLen = 120): string => {
+  if (!name || typeof name !== 'string') return 'file';
+  // Keep only basename and remove any path separators just in case
+  let base = path.basename(name).replace(/[\\/]/g, '');
+  // Unicode normalize and strip diacritics
+  base = base.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  // Replace various whitespaces (space, NBSP, narrow NBSP, etc.) with hyphen
+  base = base.replace(/[\s\u00A0\u202F]+/g, '-');
+  // Remove any character not in allowed set
+  base = base.replace(/[^A-Za-z0-9._-]/g, '-');
+  // Collapse multiple hyphens
+  base = base.replace(/-+/g, '-');
+  // Trim leading/trailing dots or hyphens
+  base = base.replace(/^[.-]+/, '').replace(/[.-]+$/, '');
+  // Lowercase for consistency
+  base = base.toLowerCase();
+  if (!base) base = 'file';
+  // Preserve extension and truncate base if too long
+  const ext = path.extname(base);
+  const nameOnly = ext ? base.slice(0, -ext.length) : base;
+  const safeNameOnly = nameOnly.slice(0, Math.max(1, maxLen - ext.length));
+  return safeNameOnly + ext;
+};
+
 // Safe move that handles cross-device renames by falling back to copy+unlink
 export const safeMove = async (src: string, dest: string) => {
   try {

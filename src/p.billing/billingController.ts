@@ -16,6 +16,16 @@ import { toPublicUrl } from '../utils/uploadUtil';
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 	// Accept optional filters: year or from/to (svc_date). Default to current year.
 	const { year, from, to } = req.query as any;
+	// Optional asset filter: ?asset={asset_id} (supports comma-separated values)
+	const assetParam = (req.query as any).asset;
+	let assetFilterIds: number[] = [];
+	if (assetParam !== undefined && assetParam !== null && String(assetParam).trim() !== '') {
+		const tokens = String(assetParam)
+			.split(',')
+			.map((s: string) => Number(s.trim()))
+			.filter((n: number) => Number.isFinite(n) && n > 0);
+		assetFilterIds = Array.from(new Set(tokens));
+	}
 	let startDate: string | undefined;
 	let endDate: string | undefined;
 
@@ -23,7 +33,14 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		startDate = from;
 		endDate = to;
 		// single range fetch
-		const vehicleMtn = await billingModel.getVehicleMtnBillingByDate(startDate as string, endDate as string);
+		let vehicleMtn = await billingModel.getVehicleMtnBillingByDate(startDate as string, endDate as string);
+		// Apply asset filter when provided (match by asset_id, fallback to vehicle_id if present)
+		if (assetFilterIds.length > 0) {
+			vehicleMtn = (vehicleMtn || []).filter((b: any) => {
+				const aid = b?.asset_id ?? b?.vehicle_id;
+				return aid !== undefined && assetFilterIds.includes(Number(aid));
+			});
+		}
 		// continue with vehicleMtn
 		// Fetch lookup lists after
 		const workshops = await billingModel.getWorkshops() as any[];
@@ -100,6 +117,16 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const s = dayjs().year(y).startOf('year').toISOString();
 		const e = dayjs().year(y).endOf('year').toISOString();
 		vehicleMtn = Array.isArray(await billingModel.getVehicleMtnBillingByDate(s, e)) ? await billingModel.getVehicleMtnBillingByDate(s, e) : [];
+	}
+
+	// Apply asset filter globally for non-range branches
+	if (!from || !to) {
+		if (assetFilterIds.length > 0) {
+			vehicleMtn = (vehicleMtn || []).filter((b: any) => {
+				const aid = b?.asset_id ?? b?.vehicle_id;
+				return aid !== undefined && assetFilterIds.includes(Number(aid));
+			});
+		}
 	}
 
 	// Fetch lookup lists
@@ -224,6 +251,82 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	};
 
 	res.json({ status: 'success', message: 'Vehicle maintenance billing retrieved successfully', data: structuredBilling });
+};
+
+// Get maintenance billings by request id (svc_order)
+export const getVehicleMtnBillingByRequestId = async (req: Request, res: Response) => {
+	const svc_order = String(req.params.svc_order || '').trim();
+	if (!svc_order) return res.status(400).json({ status: 'error', message: 'svc_order is required' });
+
+	const billings = await billingModel.getVehicleMtnBillingByRequestId(svc_order);
+
+	// Fetch lookups similar to list endpoint for enrichment
+			const [workshopsRaw, assetsRaw, costcentersRaw, locationsRaw] = await Promise.all([
+				billingModel.getWorkshops(),
+				assetsModel.getAssets(),
+				assetsModel.getCostcenters(),
+				assetsModel.getLocations()
+			]);
+
+			const workshops = Array.isArray(workshopsRaw) ? (workshopsRaw as any[]) : [];
+			const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+			const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+			const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+
+			const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+			const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+			const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
+			const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
+
+	// Fetch parts for all invoices in one go
+	const invIds = Array.from(new Set((billings || []).map((b: any) => Number(b.inv_id)).filter((n: number) => Number.isFinite(n))));
+	const partsByInvId = new Map<number, any[]>();
+	const allPartsArrays = await Promise.all(invIds.map((id) => billingModel.getVehicleMtnBillingParts(id)));
+	for (let i = 0; i < invIds.length; i++) {
+		partsByInvId.set(invIds[i], Array.isArray(allPartsArrays[i]) ? allPartsArrays[i] : []);
+	}
+	// Build autopart lookup (unique ids across all invoices)
+	const autopartIds = Array.from(new Set(
+		([] as any[]).concat(...(Array.from(partsByInvId.values()))).map((p: any) => Number(p.autopart_id)).filter((n: number) => Number.isFinite(n))
+	));
+	const autopartsLookup = autopartIds.length ? await billingModel.getServicePartsByIds(autopartIds) : [];
+	const autopartsMap = new Map((autopartsLookup || []).map((a: any) => [Number(a.autopart_id), a]));
+
+	const data = (billings || []).map((b: any) => {
+		const asset_id = b.asset_id;
+		const cc_id = b.cc_id ?? b.costcenter_id;
+		const loc_id = b.loc_id ?? b.location_id;
+		const invParts = partsByInvId.get(Number(b.inv_id)) || [];
+		const enrichedParts = (invParts || []).map((p: any) => {
+			const ap = autopartsMap.get(Number(p.autopart_id));
+			const part_name = p.part_name || (ap ? ap.part_name : null) || (ap ? ap.part_name : null);
+			return { ...p, part_name };
+		});
+		return {
+			inv_id: b.inv_id,
+			inv_no: b.inv_no,
+			inv_date: b.inv_date,
+			svc_order: b.svc_order,
+			asset: assetMap.has(asset_id) ? {
+				id: asset_id,
+				register_number: (assetMap.get(asset_id) as any)?.register_number,
+				fuel_type: (assetMap.get(asset_id) as any)?.fuel_type,
+				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
+				location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
+			} : null,
+			workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id) as any)?.ws_name } : null,
+			svc_date: b.svc_date,
+			svc_odo: b.svc_odo,
+			inv_total: b.inv_total,
+			inv_stat: b.inv_stat,
+			inv_remarks: b.inv_remarks,
+			running_no: b.running_no,
+					upload_url: toPublicUrl((b as any).upload ?? (b as any).attachment ?? null),
+					parts: enrichedParts
+		};
+	});
+
+	return res.json({ status: 'success', message: `Vehicle maintenance billings for request ${svc_order} retrieved successfully`, data });
 };
 
 // This function might be unused due to no manual entry for vehicle maintenance invoicing process except updating

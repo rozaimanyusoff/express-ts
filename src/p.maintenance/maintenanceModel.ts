@@ -6,7 +6,7 @@ const dbMaintenance = 'applications';
 const dbAssets = 'assets';
 // Add your table declarations here when you provide the database structure
 // Example:
-const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
+const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc2`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
 const fleetInsuranceTable = `${dbMaintenance}.fleet_insurance`;
 const roadtaxTable = `${dbMaintenance}.roadtax`;
@@ -40,26 +40,56 @@ const tngDetailTable = `${dbAssets}.touchngo_det`;
 // Placeholder CRUD functions - will be implemented based on your database structure
 
 // Example placeholder functions:
-export const getVehicleMtnRequests = async (status?: string, ramco?: string) => {
+export const getVehicleMtnRequests = async (status?: string, ramco?: string, years?: number[], pendingStatus?: string) => {
     let query = `SELECT * FROM ${vehicleMaintenanceTable}`;
     const params: any[] = [];
     const conditions: string[] = [];
 
-    // Add status filtering if provided
+    // Add status filtering if provided (finalized states only)
     if (status) {
-        switch (status.toLowerCase()) {
-            case 'pending':
-                conditions.push(`(verification_stat IS NULL OR verification_stat = 0)`);
-                break;
-            case 'verified':
-                conditions.push(`verification_stat = 1 AND (recommendation_stat IS NULL OR recommendation_stat = 0)`);
+        const s = status.toLowerCase();
+        switch (s) {
+            case 'approved':
+                // Approved: verification_stat=1, recommendation_stat=1, approval_stat=1
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=1)`);
                 break;
             case 'recommended':
-                conditions.push(`verification_stat = 1 AND recommendation_stat = 1 AND (approval_stat IS NULL OR approval_stat = 0)`);
+                // Recommended: verification_stat=1, recommendation_stat=1, approval_stat=0
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
                 break;
-            case 'approved':
-                conditions.push(`verification_stat = 1 AND recommendation_stat = 1 AND approval_stat = 1`);
+            case 'verified':
+                // Verified: verification_stat=1, recommendation_stat=0, approval_stat=0
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
                 break;
+            case 'cancelled':
+                // cancelled by driver
+                conditions.push(`IFNULL(drv_stat,0) = 2`);
+                break;
+            case 'rejected':
+                // any rejection
+                conditions.push(`(IFNULL(verification_stat,0)=2 OR IFNULL(recommendation_stat,0)=2 OR IFNULL(approval_stat,0)=2)`);
+                break;
+        }
+    }
+
+    // Add pendingstatus filtering when provided (verified|recommended|approved pending phases)
+    if (pendingStatus) {
+        const p = pendingStatus.toLowerCase();
+        const is = (val: string) => p === val;
+        const synonyms = {
+            verified: ['verified', 'verification'],
+            recommended: ['recommended', 'recommendation'],
+            approved: ['approved', 'approval']
+        } as const;
+        if (synonyms.verified.includes(p as any)) {
+            // Pending verification: all 0
+            conditions.push(`(IFNULL(verification_stat,0)=0 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
+        } else if (synonyms.recommended.includes(p as any)) {
+            // Pending recommendation: verification not 0/2; recommendation and approval 0
+            conditions.push(`(IFNULL(verification_stat,0) NOT IN (0,2) AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
+        } else if (synonyms.approved.includes(p as any)) {
+            // Pending approval: verification and recommendation not 0/2; approval 0
+            conditions.push(`(IFNULL(verification_stat,0) NOT IN (0,2) AND IFNULL(recommendation_stat,0) NOT IN (0,2) AND IFNULL(approval_stat,0)=0)`);
         }
     }
 
@@ -67,6 +97,13 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string) => 
     if (ramco && String(ramco).trim() !== '') {
         conditions.push(`ramco_id = ?`);
         params.push(String(ramco).trim());
+    }
+
+    // Add year filter if provided (YEAR(req_date) IN (...))
+    if (Array.isArray(years) && years.length > 0) {
+        const placeholders = years.map(() => '?').join(',');
+        conditions.push(`YEAR(req_date) IN (${placeholders})`);
+        params.push(...years);
     }
 
     if (conditions.length > 0) {
@@ -81,56 +118,156 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string) => 
     // Add computed status field to each record
     return records.map(record => ({
         ...record,
-        status: getRequestStatus(record)
+        status: getRequestStatus(record),
+        application_status: getApplicationStatus(record)
     }));
 };
 
-// Helper function to determine status based on verification, recommendation, and approval stats
+// Helper function to determine status based on verification, recommendation, approval and driver stats
 const getRequestStatus = (record: any): string => {
-	const { verification_stat, recommendation_stat, approval_stat } = record;
+    const v = Number(record?.verification_stat ?? 0);
+    const r = Number(record?.recommendation_stat ?? 0);
+    const a = Number(record?.approval_stat ?? 0);
+    const d = Number(record?.drv_stat ?? 0);
 
-	if (approval_stat === 1) {
-		return 'approved';
-	} else if (recommendation_stat === 1) {
-		return 'recommended';
-	} else if (verification_stat === 1) {
-		return 'verified';
-	} else {
-		return 'pending';
-	}
+    // Cancelled by driver takes precedence
+    if (d === 2) return 'cancelled';
+    // Any rejection on the flow (except driver cancellation) is 'rejected'
+    if (v === 2 || r === 2 || a === 2) return 'rejected';
+    // Approved when all stages are positively confirmed and not cancelled
+    if (v === 1 && r === 1 && a === 1) return 'approved';
+    // Pending phases
+    if (v === 0 && r === 0 && a === 0) return 'pending verification';
+    if (v === 1 && r === 0 && a === 0) return 'pending recommendation';
+    if (v === 1 && r === 1 && a === 0) return 'pending approval';
+    // Default fallback
+    return 'pending';
+};
+
+// Detailed application status including rejections/cancellation
+const getApplicationStatus = (record: any): string => {
+    const v = Number(record?.verification_stat ?? null);
+    const r = Number(record?.recommendation_stat ?? null);
+    const a = Number(record?.approval_stat ?? null);
+    const d = Number(record?.drv_stat ?? null);
+    if (d === 2) return 'cancelled';
+    if (a === 2) return 'approval_rejected';
+    if (r === 2) return 'recommendation_rejected';
+    if (v === 2) return 'verification_rejected';
+    if (a === 1) return 'approved';
+    if (r === 1) return 'recommended';
+    if (v === 1) return 'verified';
+    if (d === 1) return 'accepted';
+    return 'pending';
 };
 
 export const getVehicleMtnRequestById = async (id: number) => {
 	const [rows] = await pool2.query(`SELECT * FROM ${vehicleMaintenanceTable} WHERE req_id = ?`, [id]);
 	const record = (rows as RowDataPacket[])[0];
 
-	if (record) {
-		return {
-			...record,
-			status: getRequestStatus(record)
-		};
-	}
+    if (record) {
+        return {
+            ...record,
+            status: getRequestStatus(record),
+            application_status: getApplicationStatus(record)
+        };
+    }
 
 	return record;
 };
 
 // Create a new vehicle maintenance request from user application form
 export const createVehicleMtnRequest = async (data: any) => {
-	const [result] = await pool2.query(`
-		INSERT INTO ${vehicleMaintenanceTable} (req_date, ramco_id, costcenter_id, location_id, ctc_m, vehicle_id, register_number, entry_code, asset_id, odo_start, odo_end, req_comment, svc_opt
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-		[data.req_date, data.ramco_id, data.costcenter_id, data.location_id, data.ctc_m, data.vehicle_id, data.register_number, data.entry_code, data.asset_id, data.odo_start, data.odo_end, data.req_comment, data.svc_opt]
-	);
-	return (result as ResultSetHeader).insertId;
+    // Map data to DB columns. Some schemas use vehicle_id separately; we prefer asset_id and mirror vehicle_id when provided.
+    const req_date = data.req_date ?? null;
+    const ramco_id = data.ramco_id ?? null;
+    const costcenter_id = data.costcenter_id ?? data.cc_id ?? null;
+    const location_id = data.location_id ?? data.loc_id ?? null;
+    const contact = data.ctc_m ?? null;
+    const asset_id = data.asset_id ?? null;
+    const vehicle_id = data.vehicle_id ?? data.asset_id ?? null;
+    const register_number = data.register_number ?? '';
+    const entry_code = data.entry_code ?? '';
+    const odo_start = data.odo_start ?? null;
+    const odo_end = data.odo_end ?? null;
+    const req_comment = data.req_comment ?? '';
+    const svc_opt = data.svc_opt ?? '';
+    const extra_mileage = (data.extra_mileage !== undefined && data.extra_mileage !== null && Number(data.extra_mileage) > 0) ? Number(data.extra_mileage) : null;
+    const late_notice = data.late_notice ?? ((extra_mileage && extra_mileage > 500) ? ' - ' : null);
+    const late_notice_date = data.late_notice_date ?? (late_notice ? (req_date ?? null) : null);
+    const req_upload = data.req_upload_path ?? null; // normalized DB path from controller (uploads/vehiclemtn2/<filename>)
+
+    const [result] = await pool2.query(
+        `INSERT INTO ${vehicleMaintenanceTable}
+         (req_date, ramco_id, costcenter_id, location_id, ctc_m, vehicle_id, register_number, entry_code, asset_id, odo_start, odo_end, req_comment, svc_opt, extra_mileage, late_notice, late_notice_date, req_upload)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [req_date, ramco_id, costcenter_id, location_id, contact, vehicle_id, register_number, entry_code, asset_id, odo_start, odo_end, req_comment, svc_opt, extra_mileage, late_notice, late_notice_date, req_upload]
+    );
+    return (result as ResultSetHeader).insertId;
 };
 
 // Coordinator updates the vehicle maintenance request
 export const updateVehicleMtnRequest = async (id: number, data: any) => {
-	const [result] = await pool2.query(
-		`UPDATE ${vehicleMaintenanceTable} SET verification_comment=?, verification_stat=?, verification_date=?, rejection_comment=?, ws_id=?, major_opt=?, major_svc_comment=? WHERE req_id = ?`, 
-		[data.coordinator_comment, data.service_confirmation, data.verification_date, data.rejection_comment, data.workshop_id, data.major_service_options, data.major_service_comment, id]
-	);
-	return result;
+    // Build dynamic SET clauses to support various updates (verification, workshop, cancellation, etc.)
+    const sets: string[] = [];
+    const params: any[] = [];
+
+    const map: Record<string, string> = {
+        coordinator_comment: 'verification_comment',
+        service_confirmation: 'verification_stat',
+        verification_date: 'verification_date',
+        rejection_comment: 'rejection_comment',
+        workshop_id: 'ws_id',
+        major_service_options: 'major_opt',
+        major_service_comment: 'major_svc_comment',
+        // cancellation fields
+        drv_stat: 'drv_stat',
+        drv_cancel_comment: 'drv_cancel_comment',
+        drv_date: 'drv_date'
+    };
+
+    for (const [key, column] of Object.entries(map)) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            sets.push(`${column} = ?`);
+            params.push((data as any)[key]);
+        }
+    }
+
+    // Allow direct column updates if controller sends DB column names (defensive flexibility)
+    const directKeys = [
+        'verification_comment','verification_stat','verification_date','rejection_comment','ws_id','major_opt','major_svc_comment',
+        // driver cancellation
+        'drv_stat','drv_cancel_comment','drv_date',
+        // recommendation workflow
+        'recommendation','recommendation_stat','recommendation_date',
+        // approval workflow
+        'approval','approval_stat','approval_date'
+    ];
+    for (const col of directKeys) {
+        if (Object.prototype.hasOwnProperty.call(data, col) && !sets.find(s => s.startsWith(`${col} =`))) {
+            sets.push(`${col} = ?`);
+            params.push((data as any)[col]);
+        }
+    }
+
+        if (sets.length === 0) {
+            // Nothing to update; return a ResultSetHeader-shaped object
+            const noop: ResultSetHeader = {
+                fieldCount: 0,
+                affectedRows: 0,
+                insertId: 0,
+                info: 'No fields to update',
+                serverStatus: 0,
+                warningStatus: 0,
+                changedRows: 0
+            } as ResultSetHeader;
+            return noop;
+        }
+
+    const sql = `UPDATE ${vehicleMaintenanceTable} SET ${sets.join(', ')} WHERE req_id = ?`;
+    params.push(id);
+    const [result] = await pool2.query(sql, params);
+    return result as ResultSetHeader;
 };
 
 export const deleteVehicleMtnRequest = async (id: number) => {
@@ -153,6 +290,15 @@ export const approveVehicleMtnRequest = async (id: number, ramco_id: string | nu
 	const [result] = await pool2.query(`
 		UPDATE ${vehicleMaintenanceTable} SET approval = ?, approval_stat = ?, approval_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
 	return result;
+};
+
+// Update uploaded request form path after we know the req_id and renamed file
+export const updateVehicleMtnUpload = async (req_id: number, dbPath: string) => {
+    const [result] = await pool2.query(
+        `UPDATE ${vehicleMaintenanceTable} SET req_upload = ? WHERE req_id = ?`,
+        [dbPath, req_id]
+    );
+    return result as ResultSetHeader;
 };
 
 // Force invoice creation for approved maintenance record - used when the requestor claimed already upload the form but the maintenance request is still pending for invoicing

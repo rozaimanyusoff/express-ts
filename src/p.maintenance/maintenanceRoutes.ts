@@ -2,18 +2,49 @@
 import { Router } from 'express';
 import * as maintenanceController from './maintenanceController';
 import asyncHandler from '../utils/asyncHandler';
+import { createUploader } from '../utils/fileUploader';
 
 const router = Router();
+const mtnUploader = createUploader('admin/vehiclemtn2');
 
 // ========== MAINTENANCE RECORDS CRUD ==========
 router.get('/request/record/:asset_id', asyncHandler(maintenanceController.getVehicleMtnRequestByAssetId)); // Get maintenance records by vehicle ID including invoice details
 router.get('/request/:id', asyncHandler(maintenanceController.getVehicleMtnRequestById));
 
 router.get('/request', asyncHandler(maintenanceController.getVehicleMtnRequests)); // ?status={pending|verified|recommended|approved}
-router.post('/request', asyncHandler(maintenanceController.createVehicleMtnRequest));
+router.post('/request', mtnUploader.single('req_upload'), asyncHandler(maintenanceController.createVehicleMtnRequest));
 router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
+router.put('/request/:id/admin', asyncHandler(maintenanceController.adminUpdateVehicleMtnRequest));
+// Recommend / Approve single endpoints (actor ramco from ?authorize or body)
+router.put('/request/:id/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestSingle));
+router.put('/request/:id/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestSingle));
+// Bulk endpoints
+router.put('/request/bulk/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestBulk));
+router.put('/request/bulk/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestBulk));
+router.put('/request/:id/cancel', asyncHandler(maintenanceController.cancelVehicleMtnRequest));
 router.delete('/request/:id', asyncHandler(maintenanceController.deleteVehicleMtnRequest));
 router.put('/request/:id/authorize', asyncHandler(maintenanceController.authorizeVehicleMtnRequest));
+// Authorize via secure email link (GET)
+router.get('/request/:id/authorize-link', asyncHandler(maintenanceController.authorizeViaEmailLink));
+// Force invoice creation for approved maintenance record
+router.post('/request/:requestId/forceinvoice', asyncHandler(maintenanceController.pushVehicleMtnToBilling));
+
+// Resend portal link to requester
+router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
+// Resend to recommender/approver (use ?level=recommend|approval)
+router.post('/request/:requestId/resendWorkflowMail', asyncHandler(maintenanceController.resendWorkflowMail));
+// Convenience routes for frontend: explicit resend endpoints
+router.post('/request/:requestId/resend/recommend', (req, res, next) => {
+	// inject level=recommend and delegate
+	(req.query as any).level = 'recommend';
+	return (asyncHandler(maintenanceController.resendWorkflowMail) as any)(req, res, next);
+});
+router.post('/request/:requestId/resend/approval', (req, res, next) => {
+	// inject level=approval and delegate
+	(req.query as any).level = 'approval';
+	return (asyncHandler(maintenanceController.resendWorkflowMail) as any)(req, res, next);
+});
+
 
 // ========== FLEET INSURANCE + ROADTAX ==========
 router.post('/insurance', asyncHandler(maintenanceController.createFleetInsurance));
@@ -29,11 +60,6 @@ router.delete('/types/:id', asyncHandler(maintenanceController.deleteServiceType
 
 /* ========== ADDITIONAL MAINTENANCE ROUTES ========== */
 
-// Force invoice creation for approved maintenance record
-router.post('/request/:requestId/forceinvoice', asyncHandler(maintenanceController.pushVehicleMtnToBilling));
-
-// Resend portal link to requester
-router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
 
 // legacy recommend/approve routes removed; use PUT /request/:id/authorize?action={recommend|approve}
 
