@@ -13,6 +13,7 @@ import { sendMail } from '../../utils/mailer';
 import os from 'os';
 import { URL } from 'url';
 import buildNavigationTree from '../../utils/navBuilder';
+import { toPublicUrl } from '../../utils/uploadUtil';
 import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
 import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
 import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
@@ -451,6 +452,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
         // Fetch user profile
         const userProfile = await userModel.getUserProfile(result.user.id);
+        const avatarUrl = toPublicUrl((result.user as any).avatar || null);
         return res.status(200).json({
             status: 'success',
             message: 'Login successful',
@@ -462,6 +464,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
                     username: result.user.username,
                     contact: result.user.contact,
                     name: result.user.fname,
+                    avatar: avatarUrl,
                     userType: result.user.user_type,
                     status: result.user.status,
                     lastNav: result.user.last_nav,

@@ -6,9 +6,10 @@ import multer from 'multer';
 
 const upload = multer();
 const router = Router();
+// Supports updating avatar via multipart/form-data with field name 'avatar'
+router.put("/:id", tokenValidator, upload.single('avatar'), asyncHandler(userController.updateUser1));
 router.get("/", asyncHandler(userController.getAllUser));
 router.put('/update-profile', tokenValidator, upload.single('profileImage'), asyncHandler(userController.updateUserProfile));
-router.put("/:id", asyncHandler(userController.updateUser1));
 router.put("/assign", asyncHandler(userController.assignUserToGroups1));
 router.post("/reset-password", asyncHandler(userController.adminResetPasswords));
 router.post("/change-groups", asyncHandler(userController.changeUsersGroups));

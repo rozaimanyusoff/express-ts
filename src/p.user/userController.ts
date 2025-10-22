@@ -10,6 +10,9 @@ import * as groupModel from '../p.group/groupModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
 import * as logModel from '../p.admin/logModel';
 import * as assetModel from '../p.asset/assetModel';
+import path from 'path';
+import { promises as fsPromises } from 'fs';
+import { buildStoragePath, toDbPath, sanitizeFilename } from '../utils/uploadUtil';
 
 dotenv.config({ path: '.env.local' });
 
@@ -139,7 +142,7 @@ export const getAllPendingUser = async (_req: Request, res: Response): Promise<R
 // Update user and assign groups
 export const updateUser1 = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
-  const { user_type, role, usergroups, status } = req.body;
+  const { user_type, role, usergroups, status, fname, email, last_nav } = req.body as any;
 
   try {
     // Validate user ID
@@ -148,18 +151,55 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
       return res.status(400).json({ message: 'Invalid user ID' });
     }
 
-    // Update the user details
-    await userModel.updateUser(userId, { user_type, role, status } as any);
+    // If avatar file provided (multipart/form-data with field 'avatar'), handle avatar upload first
+    const file = (req as any).file as Express.Multer.File | undefined;
+    // Optional contact update (can be 'null' string from multipart)
+    const contactRaw = (req.body && Object.prototype.hasOwnProperty.call(req.body, 'contact')) ? req.body.contact : undefined;
+    const contact = contactRaw === undefined ? undefined : (contactRaw === null || String(contactRaw).toLowerCase() === 'null' || String(contactRaw).trim() === '' ? null : String(contactRaw));
 
-    // Handle user groups
-    if (!Array.isArray(usergroups) || usergroups.length === 0) {
-      return res.status(400).json({ message: 'Invalid or empty usergroups' });
+    if (file) {
+      // Only allow common image uploads
+      const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+      const original = file.originalname || 'avatar.png';
+      const safeName = sanitizeFilename(original);
+      const ext = path.extname(safeName).toLowerCase();
+      if (!allowed.includes(ext)) {
+        return res.status(400).json({ status: 'error', message: 'Unsupported avatar file type' });
+      }
+      const filename = `${userId}-${safeName}`; // <id-filename>
+      const destAbs = await buildStoragePath('profile/avatar', filename);
+      await fsPromises.mkdir(path.dirname(destAbs), { recursive: true });
+      await fsPromises.writeFile(destAbs, file.buffer);
+      const storedRel = toDbPath('profile/avatar', filename); // e.g., uploads/profile/avatar/<id-filename>
+
+      await userModel.updateUserAvatar(userId, storedRel, contact);
+      return res.status(200).json({ status: 'success', message: 'User avatar updated', data: { id: userId, avatar: storedRel } });
     }
 
-    // Assign user to groups
-    await userModel.assignUserToGroups(userId, usergroups);
+    // If only contact provided (no file), allow updating contact alone via the same endpoint
+    if (contact !== undefined) {
+      await userModel.updateUserAvatar(userId, undefined, contact);
+      return res.status(200).json({ status: 'success', message: 'User contact updated', data: { id: userId, contact } });
+    }
 
-    return res.status(200).json({ message: 'User updated successfully' });
+    // Flexible partial update for basic fields when no avatar/contact change provided
+    const baseUpdate: any = {};
+    if (user_type !== undefined) baseUpdate.user_type = user_type;
+    if (role !== undefined) baseUpdate.role = role;
+    if (status !== undefined) baseUpdate.status = status;
+    if (fname !== undefined) baseUpdate.fname = fname;
+    if (email !== undefined) baseUpdate.email = email;
+    if (last_nav !== undefined) baseUpdate.last_nav = last_nav;
+    if (Object.keys(baseUpdate).length > 0) {
+      await userModel.updateUserFields(userId, baseUpdate);
+    }
+
+    // Assign user to groups only if provided
+    if (Array.isArray(usergroups)) {
+      await userModel.assignUserToGroups(userId, usergroups);
+    }
+
+    return res.status(200).json({ status: 'success', message: 'User updated successfully' });
   } catch (error: any) {
     console.error('Error updating user:', error);
     return res.status(500).json({ message: 'Error updating user', error: error.message });

@@ -40,6 +40,7 @@ export interface Users {
     usergroups: string | null; // comma-separated group IDs
     reset_token: string | null;
     activated_at: Date | null;
+    avatar?: string | null;
 }
 
 // UserProfile interface and profile helpers
@@ -239,6 +240,7 @@ export const verifyLoginCredentials = async (
             usergroups: user.usergroups || null, // Map usergroups as a string
             reset_token: user.reset_token,
             activated_at: user.activated_at ? new Date(user.activated_at) : null,
+            avatar: user.avatar || null,
         };
 
         return {
@@ -317,15 +319,40 @@ export const reactivateUser = async (userId: number): Promise<void> => {
 
 // Update user by admin
 export const updateUser = async (userId: number, { user_type, role, status }: Users): Promise<void> => {
+    // Backward-compatible wrapper around updateUserFields
+    await updateUserFields(userId, { user_type, role, status });
+};
+
+// Allow controllers to update any subset of allowed fields dynamically
+export type UpdatableUserFields = Partial<{
+    user_type: number | null;
+    role: number | null;
+    status: number | null;
+    contact: string | null;
+    avatar: string | null;
+    fname: string | null;
+    email: string | null;
+    last_nav: string | null;
+}>;
+
+export const updateUserFields = async (userId: number, fields: UpdatableUserFields): Promise<number> => {
     try {
-        const query = `
-      UPDATE ${usersTable}
-      SET user_type = ?, role = ?, status = ?
-      WHERE id = ?
-    `;
-        await pool.query(query, [user_type, role, status, userId]);
+        const keys = Object.keys(fields) as (keyof UpdatableUserFields)[];
+        const updates: string[] = [];
+        const values: any[] = [];
+        for (const k of keys) {
+            if (fields[k] !== undefined) {
+                updates.push(`${k} = ?`);
+                values.push((fields as any)[k]);
+            }
+        }
+        if (updates.length === 0) return 0;
+        values.push(userId);
+        const sql = `UPDATE ${usersTable} SET ${updates.join(', ')} WHERE id = ?`;
+        const [res]: any = await pool.query(sql, values);
+        return res?.affectedRows || 0;
     } catch (error) {
-        logger.error(`Database error in updateUser: ${error}`);
+        logger.error(`Database error in updateUserFields: ${error}`);
         throw error;
     }
 };
@@ -344,6 +371,18 @@ export const updateUserRole = async (userId: number, role: number): Promise<void
         throw error;
     }
 }
+
+// Update user's avatar (and optionally contact)
+export const updateUserAvatar = async (userId: number, avatarPath?: string | null, contact?: string | null): Promise<void> => {
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (avatarPath !== undefined) { fields.push('avatar = ?'); values.push(avatarPath); }
+    if (contact !== undefined) { fields.push('contact = ?'); values.push(contact); }
+    if (fields.length === 0) return; // nothing to update
+    values.push(userId);
+    const sql = `UPDATE ${usersTable} SET ${fields.join(', ')} WHERE id = ?`;
+    await pool.query(sql, values);
+};
 
 // Assign user to groups
 export const assignUserToGroups = async (userId: number, groups: number[]): Promise<void> => {
