@@ -1262,24 +1262,84 @@ function mapDataTypeToSql(dataType: string): string {
   }
 }
 
-function mapTypeIdToSpecTable(type_id: number): string | null {
-  // New convention: per-type spec tables are named '{type_id}_specs' within the assets schema
-  // e.g. assets.1_specs, assets.2_specs
+// Prefer legacy spec schema if provided (many existing installs keep specs in `assetdata`)
+const SPEC_SCHEMA = process.env.ASSET_SPEC_SCHEMA || 'assetdata';
+
+function mapTypeIdToSpecTables(type_id: number): string[] {
+  // Per-type spec tables are named '{type_id}_specs'. Try candidate schemas in order.
+  // 1) SPEC_SCHEMA env or 'assetdata' (legacy), 2) current db schema, 3) hardcoded 'assetdata' as fallback if different
+  if (!Number.isFinite(type_id) || type_id <= 0) return [];
+  const candidates = new Set<string>();
+  candidates.add(`${SPEC_SCHEMA}.${type_id}_specs`);
+  candidates.add(`${db}.${type_id}_specs`);
+  if (SPEC_SCHEMA !== 'assetdata') candidates.add(`assetdata.${type_id}_specs`);
+  return Array.from(candidates);
+}
+
+function getPrimarySpecTableName(type_id: number): string | null {
   if (!Number.isFinite(type_id) || type_id <= 0) return null;
-  return `${db}.${type_id}_specs`;
+  return `${SPEC_SCHEMA}.${type_id}_specs`;
+}
+
+function quoteFullTableName(fullTableName: string): string {
+  const parts = String(fullTableName).split('.');
+  const schema = parts.length > 1 ? parts[0] : SPEC_SCHEMA;
+  const table = parts.length > 1 ? parts[1] : parts[0];
+  return `\`${schema}\`.\`${table}\``;
 }
 
 // Generic spec fetcher for per-type spec tables named '{type_id}_specs'
 export const getSpecsForAsset = async (type_id: number, asset_id: number) => {
-  const table = mapTypeIdToSpecTable(type_id);
-  if (!table) return [] as any[];
+  const tables = mapTypeIdToSpecTables(type_id);
+  if (!tables.length) return [] as any[];
+
+  // Load asset details to try alternate matching keys when asset_id doesn't exist in the spec table
+  let assetRow: any = null;
   try {
-    const [rows] = await pool.query(`SELECT * FROM ${table} WHERE asset_id = ?`, [asset_id]);
-    return rows as any[];
-  } catch (err) {
-    // Table may not exist yet; return empty array to avoid throwing from model layer
-    return [] as any[];
+    assetRow = await getAssetById(asset_id);
+  } catch (_) {
+    // ignore; we'll still try by asset_id
   }
+
+  // Build list of candidate predicates in order of likelihood
+  const predicates: Array<{ sql: string; params: any[] }> = [];
+  // 1) Primary by asset_id
+  predicates.push({ sql: `asset_id = ?`, params: [asset_id] });
+  if (assetRow) {
+    // 2) By asset_code if available
+    const assetCode = assetRow.asset_code || assetRow.entry_code || null;
+    if (assetCode) {
+      predicates.push({ sql: `asset_code = ?`, params: [assetCode] });
+    }
+    // 3) By register_number
+    if (assetRow.register_number) {
+      predicates.push({ sql: `register_number = ?`, params: [assetRow.register_number] });
+    }
+    // 4) By vehicle_id if present on asset row
+    const vehicleId = assetRow.vehicle_id || null;
+    if (vehicleId) {
+      predicates.push({ sql: `vehicle_id = ?`, params: [vehicleId] });
+    }
+  }
+
+  for (const table of tables) {
+    const qTable = quoteFullTableName(table);
+    for (const pred of predicates) {
+      try {
+        const [rows] = await pool.query(`SELECT * FROM ${qTable} WHERE ${pred.sql} LIMIT 1`, pred.params);
+        if (Array.isArray(rows) && rows.length > 0) {
+          // Fetch full row(s) once we know a predicate works (remove LIMIT 1)
+          const [allRows] = await pool.query(`SELECT * FROM ${qTable} WHERE ${pred.sql}`, pred.params);
+          return allRows as any[];
+        }
+      } catch (_err) {
+        // Column might not exist in this table; try next predicate
+      }
+    }
+  }
+
+  // Not found
+  return [] as any[];
 };
 
 export const getSpecPropertiesByType = async (type_id: number) => {
@@ -1298,12 +1358,12 @@ export const getSpecPropertyById = async (id: number) => {
 };
 
 export const createSpecProperty = async (data: any) => {
-  const { type_id, name, label, data_type, nullable = 1, default_value = null, options = null, created_by = null, column_name } = data;
+  const { type_id, name, label, data_type, nullable = 1, default_value = null, visible_on_form = 1, options = null, created_by = null, column_name } = data;
   const col = column_name ? sanitizeColumnName(column_name) : sanitizeColumnName(name);
   // Insert metadata record
   const [result] = await pool.query(
-    `INSERT INTO ${assetSpecsTable} (type_id, name, column_name, label, data_type, nullable, default_value, options, created_by, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [type_id, name, col, label, data_type, nullable ? 1 : 0, default_value, options ? JSON.stringify(options) : null, created_by]
+    `INSERT INTO ${assetSpecsTable} (type_id, name, column_name, label, data_type, nullable, default_value, visible_on_form, options, created_by, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+    [type_id, name, col, label, data_type, nullable ? 1 : 0, default_value, visible_on_form ? 1 : 0, options ? JSON.stringify(options) : null, created_by]
   );
   const insertId = (result as any).insertId;
   // Fetch the inserted row and attempt to apply it immediately (best-effort)
@@ -1337,8 +1397,9 @@ async function columnExistsInTable(fullTableName: string, columnName: string) {
 
 export const applySpecPropertyToType = async (specProperty: any) => {
   // specProperty is a row from spec_properties table (must include type_id, column_name, data_type, nullable, default_value)
-  const tableName = mapTypeIdToSpecTable(Number(specProperty.type_id));
+  const tableName = getPrimarySpecTableName(Number(specProperty.type_id));
   if (!tableName) throw new Error(`No spec table mapped for type_id ${specProperty.type_id}`);
+  const qTable = quoteFullTableName(tableName);
   const column = sanitizeColumnName(specProperty.column_name);
   if (!/^[a-z][a-z0-9_]{0,119}$/.test(column)) throw new Error('Invalid column name');
   const sqlType = mapDataTypeToSql(specProperty.data_type);
@@ -1348,14 +1409,17 @@ export const applySpecPropertyToType = async (specProperty: any) => {
     : '';
 
   try {
+    // Ensure per-type spec table exists with a minimal schema
+    await ensureSpecTableExists(tableName);
+
     const exists = await columnExistsInTable(tableName, column);
     const columnDef = `${sqlType} ${nullable} ${defaultClause}`.trim();
     if (exists) {
       // Modify existing column to match new definition
-      await pool.query(`ALTER TABLE ${tableName} MODIFY COLUMN \`${column}\` ${columnDef}`);
+      await pool.query(`ALTER TABLE ${qTable} MODIFY COLUMN \`${column}\` ${columnDef}`);
     } else {
       // Add new column
-      await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${column}\` ${columnDef}`);
+      await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${column}\` ${columnDef}`);
     }
     // mark active
     await pool.query(`UPDATE ${assetSpecsTable} SET is_active = 1, updated_at = NOW() WHERE id = ?`, [specProperty.id]);
@@ -1364,6 +1428,26 @@ export const applySpecPropertyToType = async (specProperty: any) => {
     return { ok: false, error: (err as Error).message };
   }
 };
+
+// Ensure the given spec table exists; create if missing with a basic structure
+async function ensureSpecTableExists(fullTableName: string) {
+  // Split schema and table
+  const parts = String(fullTableName).split('.');
+  const schema = parts.length > 1 ? parts[0] : SPEC_SCHEMA;
+  const table = parts.length > 1 ? parts[1] : parts[0];
+  // Create table if not exists with minimal columns
+  // We don't attempt to create schema; assume it exists or is managed outside
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS \`${schema}\`.\`${table}\` (
+      id INT NOT NULL AUTO_INCREMENT,
+      asset_id INT NULL,
+      created_at DATETIME NULL,
+      updated_at DATETIME NULL,
+      PRIMARY KEY (id),
+      INDEX idx_asset_id (asset_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
 
 export const updateSpecProperty = async (id: number, data: any) => {
   // Fetch current row to diff changes
@@ -1389,8 +1473,9 @@ export const updateSpecProperty = async (id: number, data: any) => {
   // Fetch updated row
   const updated = await getSpecPropertyById(id);
   try {
-    const tableName = mapTypeIdToSpecTable(Number(updated.type_id));
+  const tableName = getPrimarySpecTableName(Number(updated.type_id));
     if (tableName) {
+      const qTable = quoteFullTableName(tableName);
       // If column name changed and the column existed before, rename it
       const oldCol = existing.column_name;
       const newCol = updated.column_name;
@@ -1405,19 +1490,19 @@ export const updateSpecProperty = async (id: number, data: any) => {
         // Only attempt rename if old column exists
         const existsOld = await columnExistsInTable(tableName, oldCol);
         if (existsOld) {
-          await pool.query(`ALTER TABLE ${tableName} CHANGE \`${oldCol}\` \`${newCol}\` ${columnDef}`);
+          await pool.query(`ALTER TABLE ${qTable} CHANGE \`${oldCol}\` \`${newCol}\` ${columnDef}`);
         } else {
           // Old column missing: try adding the new column
-          await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
         }
       } else {
         // Column name unchanged: modify type/null/default if column exists
         const exists = await columnExistsInTable(tableName, newCol);
         if (exists) {
-          await pool.query(`ALTER TABLE ${tableName} MODIFY COLUMN \`${newCol}\` ${columnDef}`);
+          await pool.query(`ALTER TABLE ${qTable} MODIFY COLUMN \`${newCol}\` ${columnDef}`);
         } else if (updated.is_active) {
           // column missing but metadata indicates active => try to create
-          await pool.query(`ALTER TABLE ${tableName} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
         }
       }
     }
@@ -1432,12 +1517,13 @@ export const deleteSpecProperty = async (id: number, dropColumn: boolean = false
   const spec = await getSpecPropertyById(id);
   if (!spec) throw new Error('Spec property not found');
   if (dropColumn) {
-    const tableName = mapTypeIdToSpecTable(Number(spec.type_id));
+  const tableName = getPrimarySpecTableName(Number(spec.type_id));
     if (!tableName) throw new Error(`No spec table mapped for type_id ${spec.type_id}`);
+    const qTable = quoteFullTableName(tableName);
     const column = spec.column_name;
     // Drop column if exists
     try {
-      await pool.query(`ALTER TABLE ${tableName} DROP COLUMN \`${column}\``);
+      await pool.query(`ALTER TABLE ${qTable} DROP COLUMN \`${column}\``);
     } catch (err) {
       // continue; still allow metadata cleanup
     }

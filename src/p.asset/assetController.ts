@@ -384,7 +384,6 @@ export const getAssetById = async (req: Request, res: Response) => {
 	});
 };
 
-// ASSETS CRUD
 export const createAsset = async (req: Request, res: Response) => {
 	const assetData = req.body;
 	const result = await assetModel.createAsset(assetData);
@@ -478,8 +477,32 @@ export const getTypes = async (req: Request, res: Response) => {
 export const getSpecProperties = async (req: Request, res: Response) => {
 	const typeParam = req.query.type || req.params.type_id;
 	if (typeParam === undefined || typeParam === null || String(typeParam).trim() === '') {
-		const rows = await assetModel.getAllSpecProperties();
-		return res.json({ status: 'success', message: 'All spec properties retrieved', data: rows });
+		// Return grouped by type with type_name and properties[]
+		const rowsRaw = await assetModel.getAllSpecProperties();
+		const typesRaw = await assetModel.getTypes();
+		const rows = Array.isArray(rowsRaw) ? rowsRaw as any[] : [];
+		const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
+		const typeNameMap = new Map<number, string>();
+		for (const t of types) {
+			if (t && typeof t.id === 'number') {
+				typeNameMap.set(t.id, t.name || null);
+			}
+		}
+		const grouped: any[] = [];
+		const groupMap = new Map<number, { type_id: number; type_name: string | null; properties: any[] }>();
+		for (const r of rows) {
+			const tid = Number(r.type_id);
+			if (!Number.isFinite(tid)) continue;
+			if (!groupMap.has(tid)) {
+				const group = { type_id: tid, type_name: typeNameMap.get(tid) ?? null, properties: [] as any[] };
+				groupMap.set(tid, group);
+				grouped.push(group);
+			}
+			// Exclude type_id inside individual property
+			const { type_id, ...prop } = r as any;
+			groupMap.get(tid)!.properties.push(prop);
+		}
+		return res.json({ status: 'success', message: 'All spec properties retrieved', data: grouped });
 	}
 	const typeId = Number(typeParam);
 	if (!typeId || isNaN(typeId)) return res.status(400).json({ status: 'error', message: 'type_id is invalid' });
