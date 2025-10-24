@@ -42,655 +42,9 @@ const transferChecklistTable = `${db}.transfer_checklists`;
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
 
-// TYPES CRUD
-export const createType = async (data: any) => {
-  const { name, description, image, ramco_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)`,
-    [name, description, image, ramco_id]
-  );
-  return result;
-};
 
-export const getTypes = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${typeTable}`);
-  return rows;
-};
 
-export const getTypeById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateType = async (id: number, data: any) => {
-  const { name, description, image, ramco_id } = data;
-  const [result] = await pool.query(
-    `UPDATE ${typeTable} SET name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
-    [name, description, image, ramco_id, id]
-  );
-  return result;
-};
-
-export const deleteType = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${typeTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// CATEGORIES CRUD
-
-export const createCategory = async (data: any) => {
-  const { name, type_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${categoryTable} (name, type_id, manager_id) VALUES (?, ?, ?)`,
-    [name, type_id, type_id]
-  );
-  return result;
-};
-
-export const getCategories = async (manager?: string | number | string[]) => {
-  // Normalize manager input into a deduplicated array of string ids
-  let managerIds: string[] = [];
-  if (manager !== undefined && manager !== null && manager !== '') {
-    if (Array.isArray(manager)) {
-      managerIds = manager.map(m => String(m).trim()).filter(Boolean);
-    } else if (typeof manager === 'string') {
-      managerIds = manager.split(',').map(s => s.trim()).filter(Boolean);
-    } else {
-      managerIds = [String(manager)];
-    }
-  }
-
-  // If no manager filter provided, return all categories
-  if (managerIds.length === 0) {
-    const [rows] = await pool.query(`SELECT * FROM ${categoryTable} ORDER BY name`);
-    return rows;
-  }
-
-  // Filter directly on the categories table by manager_id (no JOINs)
-  // Deduplicate managerIds to avoid redundant placeholders
-  managerIds = Array.from(new Set(managerIds));
-  const placeholders = managerIds.map(() => '?').join(',');
-  const sql = `SELECT * FROM ${categoryTable} WHERE manager_id IN (${placeholders}) ORDER BY name`;
-  const [rows] = await pool.query(sql, managerIds);
-  return rows;
-};
-
-export const getCategoryById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateCategory = async (id: number, data: any) => {
-  const { name, image, type_id } = data;
-  const sets: string[] = [];
-  const params: any[] = [];
-  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
-  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
-  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
-  const sql = `UPDATE ${categoryTable} SET ${sets.join(', ')} WHERE id = ?`;
-  params.push(id);
-  const [result] = await pool.query(sql, params);
-  return result;
-};
-
-export const deleteCategory = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${categoryTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// BRANDS CRUD
-
-export const createBrand = async (data: any) => {
-  const { name, logo, type_id, category_ids } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${brandTable} (name, image${type_id ? ', type_id' : ''}) VALUES (?, ?${type_id ? ', ?' : ''})`,
-    type_id ? [name, logo, type_id] : [name, logo]
-  );
-  const insertId = (result as any).insertId as number | undefined;
-  if (insertId && Array.isArray(category_ids) && category_ids.length > 0) {
-    for (const category_id of category_ids) {
-      await pool.query(
-        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
-        [insertId, category_id]
-      );
-    }
-  }
-  return result;
-};
-
-export const getBrands = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${brandTable}`);
-  return rows;
-};
-
-export const getBrandById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateBrand = async (id: number, data: any) => {
-  const { name, logo, type_id, category_ids } = data;
-  const sets: string[] = [];
-  const params: any[] = [];
-  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
-  if (logo !== undefined) { sets.push('image = ?'); params.push(logo); }
-  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
-  if (sets.length > 0) {
-    const sql = `UPDATE ${brandTable} SET ${sets.join(', ')} WHERE id = ?`;
-    params.push(id);
-    await pool.query(sql, params);
-  }
-  // Reset brand-category associations if category_ids provided
-  if (Array.isArray(category_ids)) {
-    await pool.query(`DELETE FROM ${brandCategoryTable} WHERE brand_id = ?`, [id]);
-    for (const category_id of category_ids) {
-      await pool.query(
-        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
-        [id, category_id]
-      );
-    }
-  }
-  return { ok: true } as any;
-};
-
-export const deleteBrand = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${brandTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// MODELS CRUD
-
-export const createModel = async (data: any) => {
-  const { name, image, brand_id, category_id, type_id, specification, generation, status } = data;
-  // Check for duplicate by name and type_id
-  const [dupRows] = await pool.query(
-    `SELECT id FROM ${modelTable} WHERE name = ? AND type_id = ?`,
-    [name, type_id]
-  );
-  if (Array.isArray(dupRows) && dupRows.length > 0) {
-    throw new Error('Model with the same name and type already exists');
-  }
-  const [result] = await pool.query(
-    `INSERT INTO ${modelTable} (name, image, brand_id, category_id, type_id, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, image, brand_id, category_id, type_id, specification, generation, status]
-  );
-  return result;
-};
-
-export const getModels = async (typeId?: number, brandIds?: number[]) => {
-  // Build SQL with optional filters
-  const where: string[] = [];
-  const params: any[] = [];
-  if (typeof typeId === 'number') {
-    where.push('type_id = ?');
-    params.push(typeId);
-  }
-  if (Array.isArray(brandIds) && brandIds.length > 0) {
-    const placeholders = brandIds.map(() => '?').join(',');
-    where.push(`brand_id IN (${placeholders})`);
-    params.push(...brandIds);
-  }
-  const sql = `SELECT * FROM ${modelTable}` + (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '');
-  const [rows] = await pool.query(sql, params);
-  return rows;
-};
-
-export const getModelById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateModel = async (id: number, data: any) => {
-  const { name, image, brand_id, category_id, type_id, item_code, specification, generation, status } = data;
-  const sets: string[] = [];
-  const params: any[] = [];
-  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
-  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
-  if (brand_id !== undefined) { sets.push('brand_id = ?'); params.push(brand_id); }
-  if (category_id !== undefined) { sets.push('category_id = ?'); params.push(category_id); }
-  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
-  if (item_code !== undefined) { sets.push('item_code = ?'); params.push(item_code); }
-  if (specification !== undefined) { sets.push('specification = ?'); params.push(specification); }
-  if (generation !== undefined) { sets.push('generation = ?'); params.push(generation); }
-  if (status !== undefined) { sets.push('status = ?'); params.push(status); }
-  if (sets.length === 0) return { affectedRows: 0 } as any;
-  params.push(id);
-  const sql = `UPDATE ${modelTable} SET ${sets.join(', ')} WHERE id = ?`;
-  const [result] = await pool.query(sql, params);
-  return result;
-};
-
-export const deleteModel = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${modelTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-export const getModelsByBrand = async (brand_id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE brand_id = ?`, [brand_id]);
-  return rows;
-};
-
-// DEPARTMENTS CRUD
-export const createDepartment = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${departmentTable} (name) VALUES (?)`, [name]);
-  return result;
-};
-
-export const getDepartments = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${departmentTable}`);
-  return rows;
-};
-
-export const getDepartmentById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${departmentTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateDepartment = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${departmentTable} SET name = ? WHERE id = ?`, [name, id]);
-  return result;
-};
-
-export const deleteDepartment = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${departmentTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// POSITIONS CRUD
-export const createPosition = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${positionTable} (name) VALUES (?)`, [name]);
-  return result;
-};
-
-export const getPositions = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${positionTable}`);
-  return rows;
-};
-
-export const getPositionById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${positionTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updatePosition = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${positionTable} SET name = ? WHERE id = ?`, [name, id]);
-  return result;
-};
-
-export const deletePosition = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${positionTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// LOCATIONS CRUD
-export const createLocation = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${locationTable} (name) VALUES (?)`, [name]);
-  return result;
-};
-
-export const getLocations = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${locationTable}`);
-  return rows;
-};
-
-export const getLocationById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${locationTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateLocation = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${locationTable} SET name = ? WHERE id = ?`, [name, id]);
-  return result;
-};
-
-export const deleteLocation = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${locationTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// DISTRICTS CRUD
-export const createDistrict = async (data: any) => {
-  const { name, code } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${districtTable} (name, code) VALUES (?, ?)`,
-    [name, code]
-  );
-  return result;
-};
-
-export const getDistricts = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${districtTable}`);
-  return rows;
-};
-
-export const getDistrictById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${districtTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateDistrict = async (id: number, data: any) => {
-  const { name, code } = data;
-  const [result] = await pool.query(
-    `UPDATE ${districtTable} SET name = ?, code = ? WHERE id = ?`,
-    [name, code, id]
-  );
-  return result;
-};
-
-export const deleteDistrict = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${districtTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// ZONES CRUD
-export const createZone = async (data: any) => {
-  const { name, code, employee_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${zoneTable} (name, code, employee_id) VALUES (?, ?, ?)`,
-    [name, code, employee_id]
-  );
-  return result;
-};
-
-export const getZones = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${zoneTable}`);
-  return rows;
-};
-
-export const getZoneById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${zoneTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateZone = async (id: number, data: any) => {
-  const { name, code, employee_id } = data;
-  const [result] = await pool.query(
-    `UPDATE ${zoneTable} SET name = ?, code = ?, employee_id = ? WHERE id = ?`,
-    [name, code, employee_id, id]
-  );
-  return result;
-};
-
-export const deleteZone = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${zoneTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// SITES CRUD
-export const createSite = async (data: any) => {
-  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${siteTable} (name, code, address, phone, email, description) VALUES (?, ?, ?, ?, ?, ?)`,
-    [name, code, address, phone, email, description]
-  );
-  return result;
-};
-
-export const getSites = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${siteTable}`);
-  return rows;
-};
-
-export const getSiteById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${siteTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateSite = async (id: number, data: any) => {
-  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
-  const [result] = await pool.query(
-    `UPDATE ${siteTable} SET name = ?, code = ?, address = ?, phone = ?, email = ?, description = ? WHERE id = ?`,
-    [name, code, address, phone, email, description, id]
-  );
-  return result;
-};
-
-export const deleteSite = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${siteTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-export const getSitesBatch = async (offset: number, limit: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${siteTable} LIMIT ? OFFSET ?`, [limit, offset]);
-  return rows;
-};
-
-export const getSitesCount = async () => {
-  const [rows] = await pool.query(`SELECT COUNT(*) as count FROM ${siteTable}`);
-  if (Array.isArray(rows) && rows.length > 0 && 'count' in rows[0]) {
-    return (rows[0] as any).count;
-  }
-  return 0;
-};
-
-// ZONE_DISTRICTS (JOIN TABLE) CRUD
-export const addDistrictToZone = async (zone_id: number, district_id: number) => {
-  const [result] = await pool.query(
-    `INSERT INTO ${zoneDistrictTable} (zone_id, district_id) VALUES (?, ?)`,
-    [zone_id, district_id]
-  );
-  return result;
-};
-
-export const removeDistrictFromZone = async (zone_id: number, district_id: number) => {
-  const [result] = await pool.query(
-    `DELETE FROM ${zoneDistrictTable} WHERE zone_id = ? AND district_id = ?`,
-    [zone_id, district_id]
-  );
-  return result;
-};
-
-export const getDistrictsByZone = async (zone_id: number) => {
-  const [rows] = await pool.query(
-    `SELECT d.* FROM ${districtTable} d INNER JOIN ${zoneDistrictTable} zd ON d.id = zd.district_id WHERE zd.zone_id = ?`,
-    [zone_id]
-  );
-  return rows;
-};
-
-export const getZonesByDistrict = async (district_id: number) => {
-  const [rows] = await pool.query(
-    `SELECT z.* FROM ${zoneTable} z INNER JOIN ${zoneDistrictTable} zd ON z.id = zd.zone_id WHERE zd.district_id = ?`,
-    [district_id]
-  );
-  return rows;
-};
-
-// Get all zone-district relationships
-export const getAllZoneDistricts = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${zoneDistrictTable}`);
-  return rows;
-};
-
-// Remove all zones from a given district
-export const removeAllZonesFromDistrict = async (district_id: number) => {
-  const [result] = await pool.query(
-    `DELETE FROM ${zoneDistrictTable} WHERE district_id = ?`,
-    [district_id]
-  );
-  return result;
-};
-
-// Remove all districts from a given zone
-export const removeAllDistrictsFromZone = async (zone_id: number) => {
-  const [result] = await pool.query(
-    `DELETE FROM ${zoneDistrictTable} WHERE zone_id = ?`,
-    [zone_id]
-  );
-  return result;
-};
-
-// USERS CRUD
-export const createEmployee = async (data: any) => {
-  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${employeeTable} (name, email, phone, department_id, position_id, location_id, image, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, email, phone, department_id, position_id, location_id, image, section_id]
-  );
-  return result;
-};
-
-export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
-  let query = `SELECT * FROM ${employeeTable}`;
-  const params: any[] = [];
-  const conditions: string[] = [];
-  if (status) {
-    conditions.push('employment_status = ?');
-    params.push(status);
-  }
-  // cost center filter (assuming column name costcenter_id)
-  if (Array.isArray(cc) && cc.length > 0) {
-    const ph = cc.map(() => '?').join(',');
-    conditions.push(`costcenter_id IN (${ph})`);
-    params.push(...cc);
-  }
-  // department filter
-  if (Array.isArray(dept) && dept.length > 0) {
-    const ph = dept.map(() => '?').join(',');
-    conditions.push(`department_id IN (${ph})`);
-    params.push(...dept);
-  }
-  // location filter
-  if (Array.isArray(loc) && loc.length > 0) {
-    const ph = loc.map(() => '?').join(',');
-    conditions.push(`location_id IN (${ph})`);
-    params.push(...loc);
-  }
-  // supervisor filter (match supervisor_id column to ramco_id(s))
-  if (Array.isArray(supervisor) && supervisor.length > 0) {
-    const ph = supervisor.map(() => '?').join(',');
-    conditions.push(`supervisor_id IN (${ph})`);
-    params.push(...supervisor);
-  }
-  // ramco filter (match ramco_id column)
-  if (Array.isArray(ramco) && ramco.length > 0) {
-    const ph = ramco.map(() => '?').join(',');
-    conditions.push(`ramco_id IN (${ph})`);
-    params.push(...ramco);
-  }
-  // position filter (position_id)
-  if (Array.isArray(pos) && pos.length > 0) {
-    const ph = pos.map(() => '?').join(',');
-    conditions.push(`position_id IN (${ph})`);
-    params.push(...pos);
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-  const [rows] = await pool.query(query, params);
-  return rows;
-};
-
-export const getEmployeeById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const getEmployeeByRamco = async (ramco_id: string) => {
-  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE ramco_id = ?`, [ramco_id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const getEmployeeByEmail = async (email: string) => {
-  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE email = ?`, [email]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const getEmployeeByContact = async (contact: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE contact = ?`, [contact]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateEmployee = async (id: number, data: any) => {
-  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
-  const [result] = await pool.query(
-    `UPDATE ${employeeTable} SET name = ?, email = ?, phone = ?, department_id = ?, position_id = ?, location_id = ?, image = ?, section_id = ? WHERE id = ?`,
-    [name, email, phone, department_id, position_id, location_id, image, section_id, id]
-  );
-  return result;
-};
-
-export const deleteUser = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${employeeTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// VENDORS CRUD
-export const createVendor = async (data: any) => {
-  const { name, quote_number, quote_date, quote_status } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${vendorTable} (name, quote_number, quote_date, quote_status) VALUES (?, ?, ?, ?)`,
-    [name, quote_number, quote_date, quote_status]
-  );
-  return result;
-};
-
-export const getVendors = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${vendorTable}`);
-  return rows;
-};
-
-export const getVendorById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${vendorTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateVendor = async (id: number, data: any) => {
-  const { name, quote_number, quote_date, quote_status } = data;
-  const [result] = await pool.query(
-    `UPDATE ${vendorTable} SET name = ?, quote_number = ?, quote_date = ?, quote_status = ? WHERE id = ?`,
-    [name, quote_number, quote_date, quote_status, id]
-  );
-  return result;
-};
-
-export const deleteVendor = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${vendorTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// PROCUREMENTS CRUD
-export const createProcurement = async (data: any) => {
-  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${procurementTable} (requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period]
-  );
-  return result;
-};
-
-export const getProcurements = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${procurementTable}`);
-  return rows;
-};
-
-export const getProcurementById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${procurementTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateProcurement = async (id: number, data: any) => {
-  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
-  const [result] = await pool.query(
-    `UPDATE ${procurementTable} SET requisition_number = ?, vendor_id = ?, purchase_order = ?, purchase_order_date = ?, purchase_order_status = ?, delivery_date = ?, delivery_status = ?, develivery_order = ?, invoice_number = ?, invoice_date = ?, invoice_status = ?, cost_center_id = ?, department_id = ?, conditions = ?, price = ?, currency = ?, purchase_date = ?, warranty_period = ? WHERE id = ?`,
-    [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period, id]
-  );
-  return result;
-};
-
-export const deleteProcurement = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${procurementTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// ASSETS GETTERS
+/* ============ ASSETS ============ */
 export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
   let sql = `SELECT * FROM ${assetTable}`;
   let params: any[] = [];
@@ -771,7 +125,7 @@ export const getAssetsPaged = async (
     owner?: string | string[];
     brandId?: number;
     q?: string;
-  purpose?: string | string[];
+    purpose?: string | string[];
   },
   options: {
     page: number;
@@ -912,7 +266,6 @@ export const getAssetByCode = async (asset_code: string) => {
   return (rows as RowDataPacket[])[0];
 };
 
-// ASSETS CRUD
 export const createAsset = async (data: any) => {
   const { register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
   const [result] = await pool.query(
@@ -936,7 +289,7 @@ export const updateAsset = async (id: number, data: any) => {
       if (asset) {
         await pool.query(
           `INSERT INTO ${assetHistoryTable} (asset_id, entry_code, register_number, vehicle_id, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             data.entry_code ?? null,
@@ -967,9 +320,9 @@ export const getLastEntryCodeByType = async (typeId: number): Promise<string | n
   const prefixLen = prefix.length;
   const [rows] = await pool.query(
     `SELECT entry_code FROM ${assetTable}
-     WHERE type_id = ? AND entry_code IS NOT NULL AND entry_code LIKE CONCAT(?, '%')
-     ORDER BY CAST(SUBSTRING(entry_code, ? + 1) AS UNSIGNED) DESC, entry_code DESC
-     LIMIT 1`,
+    WHERE type_id = ? AND entry_code IS NOT NULL AND entry_code LIKE CONCAT(?, '%')
+    ORDER BY CAST(SUBSTRING(entry_code, ? + 1) AS UNSIGNED) DESC, entry_code DESC
+    LIMIT 1`,
     [typeId, prefix, prefixLen]
   );
   const r = (rows as RowDataPacket[])[0];
@@ -981,7 +334,7 @@ export const deleteAsset = async (id: number) => {
   return result;
 };
 
-// ASSET_OWNERSHIP CRUD (using pc_ownership join table)
+/* =============== ASSET-OWNERSHIP CRUD (using pc_ownership join table)] =============== */
 export const createAssetOwnership = async (data: any) => {
   const { asset_code, ramco_id, effective_date } = data;
   const [result] = await pool.query(
@@ -1015,221 +368,46 @@ export const deleteAssetOwnership = async (id: number) => {
   return result;
 };
 
-// SECTIONS CRUD
-export const createSection = async (data: any) => {
-  const { name, department_id } = data;
-  const [result] = await pool.query(`INSERT INTO ${sectionTable} (name, department_id) VALUES (?, ?)`, [name, department_id]);
-  return result;
-};
-
-export const getSections = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${sectionTable}`);
+/* ======= ASSET MANAGERS ======= */
+export const getAssetManagers = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable}`);
   return rows;
 };
 
-export const getSectionById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${sectionTable} WHERE id = ?`, [id]);
+export const getAssetManagerById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE id = ?`, [id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const updateSection = async (id: number, data: any) => {
-  const { name, department_id } = data;
-  const [result] = await pool.query(`UPDATE ${sectionTable} SET name = ?, department_id = ? WHERE id = ?`, [name, department_id, id]);
-  return result;
-};
-
-export const deleteSection = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${sectionTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// COSTCENTERS CRUD
-export const createCostcenter = async (data: any) => {
-  const { name = null, description = null } = data;
-  const [result] = await pool.query(`INSERT INTO ${costcenterTable} (name, description) VALUES (?, ?)`, [name, description]);
-  return result;
-};
-
-export const getCostcenters = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${costcenterTable}`);
-  return rows;
-};
-
-export const getCostcenterById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${costcenterTable} WHERE id = ?`, [id]);
+export const getAssetManagerByRamcoId = async (ramco_id: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE ramco_id = ?`, [ramco_id]);
   return (rows as RowDataPacket[])[0];
 };
 
-export const updateCostcenter = async (id: number, data: any) => {
-  const { name = null, description = null } = data;
-  const [result] = await pool.query(`UPDATE ${costcenterTable} SET name = ?, description = ? WHERE id = ?`, [name, description, id]);
-  return result;
-};
-
-export const deleteCostcenter = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${costcenterTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// MODULES CRUD
-export const createModule = async (data: any) => {
-  const { name = null, code = null } = data;
-  const [result] = await pool.query(`INSERT INTO ${moduleTable} (name, code) VALUES (?, ?)`, [name, code]);
-  return result;
-};
-
-export const getModules = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${moduleTable}`);
-  return rows;
-};
-
-export const getModuleById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${moduleTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const updateModule = async (id: number, data: any) => {
-  const { name = null, code = null } = data;
-  const [result] = await pool.query(`UPDATE ${moduleTable} SET name = ?, code = ? WHERE id = ?`, [name, code, id]);
-  return result;
-};
-
-export const deleteModule = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${moduleTable} WHERE id = ?`, [id]);
-  return result;
-};
-
-// BRAND_CATEGORIES JOIN TABLE CRUD
-export const addBrandCategory = async (brand_code: string, category_code: string) => {
+export const createAssetManager = async (data: any) => {
   const [result] = await pool.query(
-    `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
-    [brand_code, category_code]
+    `INSERT INTO ${assetManagerTable} (ramco_id, manager_id, created_at)
+     VALUES (?, ?, NOW())`,
+    [data.ramco_id, data.manager_id, data.created_at, data.is_active ? 1 : 0]
   );
   return result;
 };
 
-export const removeBrandCategory = async (brand_code: string, category_code: string) => {
+export const updateAssetManager = async (id: number, data: any) => {
   const [result] = await pool.query(
-    `DELETE FROM ${brandCategoryTable} WHERE brand_code = ? AND category_code = ?`,
-    [brand_code, category_code]
+    `UPDATE ${assetManagerTable} SET ramco_id = ?, manager_id = ?, is_active = ?, updated_at = NOW() WHERE id = ?`,
+    [data.ramco_id, data.manager_id, data.is_active ? 1 : 0, id]
   );
   return result;
 };
 
-export const getCategoriesByBrand = async (brand_code: string) => {
-  const [rows] = await pool.query(
-    `SELECT category_code FROM ${brandCategoryTable} WHERE brand_code = ?`,
-    [brand_code]
-  );
-  return rows;
-};
-
-export const getCategoriesByBrandId = async (brand_id: number) => {
-  const [rows] = await pool.query(
-    `SELECT c.id, c.name 
-     FROM ${categoryTable} c 
-     JOIN ${brandCategoryTable} bc ON c.id = bc.category_id 
-     WHERE bc.brand_id = ?`,
-    [brand_id]
-  );
-  return rows;
-};
-
-export const getBrandsByCategory = async (category_code: string) => {
-  const [rows] = await pool.query(
-    `SELECT brand_code FROM ${brandCategoryTable} WHERE category_code = ?`,
-    [category_code]
-  );
-  return rows;
-};
-
-export const getBrandsByCategoryId = async (category_id: number) => {
-  const [rows] = await pool.query(
-    `SELECT b.id, b.name 
-     FROM ${brandTable} b 
-     JOIN ${brandCategoryTable} bc ON b.id = bc.brand_id 
-     WHERE bc.category_id = ?`,
-    [category_id]
-  );
-  return rows;
-};
-
-// SOFTWARE CRUD
-export const getSoftwares = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${softwareTable}`);
-  return rows;
-};
-
-export const getSoftwareById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${softwareTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-
-export const createSoftware = async (data: { name: string }) => {
-  const { name } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${softwareTable} (name) VALUES (?)`,
-    [name]
-  );
+export const deleteAssetManager = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetManagerTable} WHERE id = ?`, [id]);
   return result;
-};
-
-export const updateSoftware = async (id: number, data: { name: string }) => {
-  const { name } = data;
-  const [result] = await pool.query(
-    `UPDATE ${softwareTable} SET name = ? WHERE id = ?`,
-    [name, id]
-  );
-  return result;
-};
-
-export const deleteSoftware = async (id: number) => {
-  const [result] = await pool.query(
-    `DELETE FROM ${softwareTable} WHERE id = ?`,
-    [id]
-  );
-  return result;
-};
-
-// Resolve codes to IDs for model creation/update
-export const getTypeByCode = async (code: string | number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE code = ? OR id = ?`, [code, code]);
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-};
-
-export const getCategoryByCode = async (code: string | number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE code = ? OR id = ?`, [code, code]);
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-};
-
-export const getBrandByCode = async (code: string | number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE code = ? OR id = ?`, [code, code]);
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-};
-
-// Fetch specs for an asset (by asset_id)
-export async function getComputerSpecsForAsset(asset_id: number) {
-  return getSpecsForAsset(1, asset_id);
 }
 
-// Fetch installed software for an asset (by asset_id)
-export async function getInstalledSoftwareForAsset(asset_id: number) {
-  const [rows] = await pool.query(
-    `SELECT pis.id, pis.software_id, s.name, pis.installed_at
-     FROM assetdata.pc_installed_software pis
-     JOIN assetdata.pc_software s ON pis.software_id = s.id
-     WHERE pis.asset_id = ?`,
-    [asset_id]
-  );
-  return rows;
-}
 
-// Fetch vehicle specs for an asset (by asset_id)
-export async function getVehicleSpecsForAsset(asset_id: number) {
-  return getSpecsForAsset(2, asset_id);
-}
-
-// ===== Spec properties (master) + schema application helpers =====
+/* ================ SPEC PROPERTIES (master) + schema application helpers ================ */
 /**
  * Sanitize a user-provided name into a safe SQL column name.
  * Allowed characters: lowercase letters, numbers and underscore. Must start with a letter.
@@ -1473,7 +651,7 @@ export const updateSpecProperty = async (id: number, data: any) => {
   // Fetch updated row
   const updated = await getSpecPropertyById(id);
   try {
-  const tableName = getPrimarySpecTableName(Number(updated.type_id));
+    const tableName = getPrimarySpecTableName(Number(updated.type_id));
     if (tableName) {
       const qTable = quoteFullTableName(tableName);
       // If column name changed and the column existed before, rename it
@@ -1517,7 +695,7 @@ export const deleteSpecProperty = async (id: number, dropColumn: boolean = false
   const spec = await getSpecPropertyById(id);
   if (!spec) throw new Error('Spec property not found');
   if (dropColumn) {
-  const tableName = getPrimarySpecTableName(Number(spec.type_id));
+    const tableName = getPrimarySpecTableName(Number(spec.type_id));
     if (!tableName) throw new Error(`No spec table mapped for type_id ${spec.type_id}`);
     const qTable = quoteFullTableName(tableName);
     const column = spec.column_name;
@@ -1567,6 +745,873 @@ export function getStringParam(param: any): string | undefined {
   if (Array.isArray(param) && typeof param[0] === 'string') return param[0];
   return undefined;
 }
+
+/* =========== TYPES =========== */
+export const createType = async (data: any) => {
+  const { name, description, image, ramco_id } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)`,
+    [name, description, image, ramco_id]
+  );
+  return result;
+};
+
+export const getTypes = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${typeTable}`);
+  return rows;
+};
+
+export const getTypeById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateType = async (id: number, data: any) => {
+  const { name, description, image, ramco_id } = data;
+  const [result] = await pool.query(
+    `UPDATE ${typeTable} SET name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
+    [name, description, image, ramco_id, id]
+  );
+  return result;
+};
+
+export const deleteType = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${typeTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== CATEGORIES =========== */
+export const createCategory = async (data: any) => {
+  const { name, type_id } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${categoryTable} (name, type_id, manager_id) VALUES (?, ?, ?)`,
+    [name, type_id, type_id]
+  );
+  return result;
+};
+
+export const getCategories = async (manager?: string | number | string[]) => {
+  // Normalize manager input into a deduplicated array of string ids
+  let managerIds: string[] = [];
+  if (manager !== undefined && manager !== null && manager !== '') {
+    if (Array.isArray(manager)) {
+      managerIds = manager.map(m => String(m).trim()).filter(Boolean);
+    } else if (typeof manager === 'string') {
+      managerIds = manager.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      managerIds = [String(manager)];
+    }
+  }
+
+  // If no manager filter provided, return all categories
+  if (managerIds.length === 0) {
+    const [rows] = await pool.query(`SELECT * FROM ${categoryTable} ORDER BY name`);
+    return rows;
+  }
+
+  // Filter directly on the categories table by manager_id (no JOINs)
+  // Deduplicate managerIds to avoid redundant placeholders
+  managerIds = Array.from(new Set(managerIds));
+  const placeholders = managerIds.map(() => '?').join(',');
+  const sql = `SELECT * FROM ${categoryTable} WHERE manager_id IN (${placeholders}) ORDER BY name`;
+  const [rows] = await pool.query(sql, managerIds);
+  return rows;
+};
+
+export const getCategoryById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateCategory = async (id: number, data: any) => {
+  const { name, image, type_id } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  const sql = `UPDATE ${categoryTable} SET ${sets.join(', ')} WHERE id = ?`;
+  params.push(id);
+  const [result] = await pool.query(sql, params);
+  return result;
+};
+
+export const deleteCategory = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${categoryTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== BRANDS =========== */
+export const createBrand = async (data: any) => {
+  const { name, logo, type_id, category_ids } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${brandTable} (name, image${type_id ? ', type_id' : ''}) VALUES (?, ?${type_id ? ', ?' : ''})`,
+    type_id ? [name, logo, type_id] : [name, logo]
+  );
+  const insertId = (result as any).insertId as number | undefined;
+  if (insertId && Array.isArray(category_ids) && category_ids.length > 0) {
+    for (const category_id of category_ids) {
+      await pool.query(
+        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
+        [insertId, category_id]
+      );
+    }
+  }
+  return result;
+};
+
+export const getBrands = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${brandTable}`);
+  return rows;
+};
+
+export const getBrandById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateBrand = async (id: number, data: any) => {
+  const { name, logo, type_id, category_ids } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (logo !== undefined) { sets.push('image = ?'); params.push(logo); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  if (sets.length > 0) {
+    const sql = `UPDATE ${brandTable} SET ${sets.join(', ')} WHERE id = ?`;
+    params.push(id);
+    await pool.query(sql, params);
+  }
+  // Reset brand-category associations if category_ids provided
+  if (Array.isArray(category_ids)) {
+    await pool.query(`DELETE FROM ${brandCategoryTable} WHERE brand_id = ?`, [id]);
+    for (const category_id of category_ids) {
+      await pool.query(
+        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
+        [id, category_id]
+      );
+    }
+  }
+  return { ok: true } as any;
+};
+
+export const deleteBrand = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${brandTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== MODELS =========== */
+export const createModel = async (data: any) => {
+  const { name, image, brand_id, category_id, type_id, specification, generation, status } = data;
+  // Check for duplicate by name and type_id
+  const [dupRows] = await pool.query(
+    `SELECT id FROM ${modelTable} WHERE name = ? AND type_id = ?`,
+    [name, type_id]
+  );
+  if (Array.isArray(dupRows) && dupRows.length > 0) {
+    throw new Error('Model with the same name and type already exists');
+  }
+  const [result] = await pool.query(
+    `INSERT INTO ${modelTable} (name, image, brand_id, category_id, type_id, specification, generation, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, image, brand_id, category_id, type_id, specification, generation, status]
+  );
+  return result;
+};
+
+export const getModels = async (typeId?: number, brandIds?: number[]) => {
+  // Build SQL with optional filters
+  const where: string[] = [];
+  const params: any[] = [];
+  if (typeof typeId === 'number') {
+    where.push('type_id = ?');
+    params.push(typeId);
+  }
+  if (Array.isArray(brandIds) && brandIds.length > 0) {
+    const placeholders = brandIds.map(() => '?').join(',');
+    where.push(`brand_id IN (${placeholders})`);
+    params.push(...brandIds);
+  }
+  const sql = `SELECT * FROM ${modelTable}` + (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '');
+  const [rows] = await pool.query(sql, params);
+  return rows;
+};
+
+export const getModelById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateModel = async (id: number, data: any) => {
+  const { name, image, brand_id, category_id, type_id, item_code, specification, generation, status } = data;
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (name !== undefined) { sets.push('name = ?'); params.push(name); }
+  if (image !== undefined) { sets.push('image = ?'); params.push(image); }
+  if (brand_id !== undefined) { sets.push('brand_id = ?'); params.push(brand_id); }
+  if (category_id !== undefined) { sets.push('category_id = ?'); params.push(category_id); }
+  if (type_id !== undefined) { sets.push('type_id = ?'); params.push(type_id); }
+  if (item_code !== undefined) { sets.push('item_code = ?'); params.push(item_code); }
+  if (specification !== undefined) { sets.push('specification = ?'); params.push(specification); }
+  if (generation !== undefined) { sets.push('generation = ?'); params.push(generation); }
+  if (status !== undefined) { sets.push('status = ?'); params.push(status); }
+  if (sets.length === 0) return { affectedRows: 0 } as any;
+  params.push(id);
+  const sql = `UPDATE ${modelTable} SET ${sets.join(', ')} WHERE id = ?`;
+  const [result] = await pool.query(sql, params);
+  return result;
+};
+
+export const deleteModel = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${modelTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+export const getModelsByBrand = async (brand_id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${modelTable} WHERE brand_id = ?`, [brand_id]);
+  return rows;
+};
+
+
+// COSTCENTERS CRUD
+export const createCostcenter = async (data: any) => {
+  const { name = null, description = null } = data;
+  const [result] = await pool.query(`INSERT INTO ${costcenterTable} (name, description) VALUES (?, ?)`, [name, description]);
+  return result;
+};
+
+export const getCostcenters = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${costcenterTable}`);
+  return rows;
+};
+
+export const getCostcenterById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${costcenterTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateCostcenter = async (id: number, data: any) => {
+  const { name = null, description = null } = data;
+  const [result] = await pool.query(`UPDATE ${costcenterTable} SET name = ?, description = ? WHERE id = ?`, [name, description, id]);
+  return result;
+};
+
+export const deleteCostcenter = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${costcenterTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== DEPARTMENTS =========== */
+export const createDepartment = async (data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`INSERT INTO ${departmentTable} (name) VALUES (?)`, [name]);
+  return result;
+};
+
+export const getDepartments = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${departmentTable}`);
+  return rows;
+};
+
+export const getDepartmentById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${departmentTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateDepartment = async (id: number, data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`UPDATE ${departmentTable} SET name = ? WHERE id = ?`, [name, id]);
+  return result;
+};
+
+export const deleteDepartment = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${departmentTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+
+/* =========== SECTIONS =========== */
+export const createSection = async (data: any) => {
+  const { name, department_id } = data;
+  const [result] = await pool.query(`INSERT INTO ${sectionTable} (name, department_id) VALUES (?, ?)`, [name, department_id]);
+  return result;
+};
+
+export const getSections = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${sectionTable}`);
+  return rows;
+};
+
+export const getSectionById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${sectionTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateSection = async (id: number, data: any) => {
+  const { name, department_id } = data;
+  const [result] = await pool.query(`UPDATE ${sectionTable} SET name = ?, department_id = ? WHERE id = ?`, [name, department_id, id]);
+  return result;
+};
+
+export const deleteSection = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${sectionTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== LOCATIONS =========== */
+export const createLocation = async (data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`INSERT INTO ${locationTable} (name) VALUES (?)`, [name]);
+  return result;
+};
+
+export const getLocations = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${locationTable}`);
+  return rows;
+};
+
+export const getLocationById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${locationTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateLocation = async (id: number, data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`UPDATE ${locationTable} SET name = ? WHERE id = ?`, [name, id]);
+  return result;
+};
+
+export const deleteLocation = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${locationTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+
+/* ========== DISTRICTS ========== */
+export const createDistrict = async (data: any) => {
+  const { name, code } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${districtTable} (name, code) VALUES (?, ?)`,
+    [name, code]
+  );
+  return result;
+};
+
+export const getDistricts = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${districtTable}`);
+  return rows;
+};
+
+export const getDistrictById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${districtTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateDistrict = async (id: number, data: any) => {
+  const { name, code } = data;
+  const [result] = await pool.query(
+    `UPDATE ${districtTable} SET name = ?, code = ? WHERE id = ?`,
+    [name, code, id]
+  );
+  return result;
+};
+
+export const deleteDistrict = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${districtTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* ========== SITES ========== */
+export const createSite = async (data: any) => {
+  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${siteTable} (name, code, address, phone, email, description) VALUES (?, ?, ?, ?, ?, ?)`,
+    [name, code, address, phone, email, description]
+  );
+  return result;
+};
+
+export const getSites = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${siteTable}`);
+  return rows;
+};
+
+export const getSiteById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${siteTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateSite = async (id: number, data: any) => {
+  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const [result] = await pool.query(
+    `UPDATE ${siteTable} SET name = ?, code = ?, address = ?, phone = ?, email = ?, description = ? WHERE id = ?`,
+    [name, code, address, phone, email, description, id]
+  );
+  return result;
+};
+
+export const deleteSite = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${siteTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+export const getSitesBatch = async (offset: number, limit: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${siteTable} LIMIT ? OFFSET ?`, [limit, offset]);
+  return rows;
+};
+
+export const getSitesCount = async () => {
+  const [rows] = await pool.query(`SELECT COUNT(*) as count FROM ${siteTable}`);
+  if (Array.isArray(rows) && rows.length > 0 && 'count' in rows[0]) {
+    return (rows[0] as any).count;
+  }
+  return 0;
+};
+
+/* ========== ZONES ========== */
+export const createZone = async (data: any) => {
+  const { name, code, employee_id } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${zoneTable} (name, code, employee_id) VALUES (?, ?, ?)`,
+    [name, code, employee_id]
+  );
+  return result;
+};
+
+export const getZones = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${zoneTable}`);
+  return rows;
+};
+
+export const getZoneById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${zoneTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateZone = async (id: number, data: any) => {
+  const { name, code, employee_id } = data;
+  const [result] = await pool.query(
+    `UPDATE ${zoneTable} SET name = ?, code = ?, employee_id = ? WHERE id = ?`,
+    [name, code, employee_id, id]
+  );
+  return result;
+};
+
+export const deleteZone = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${zoneTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* ========== ZONE-DISTRICT RELATIONSHIPS ========== */
+export const addDistrictToZone = async (zone_id: number, district_id: number) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${zoneDistrictTable} (zone_id, district_id) VALUES (?, ?)`,
+    [zone_id, district_id]
+  );
+  return result;
+};
+
+export const removeDistrictFromZone = async (zone_id: number, district_id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${zoneDistrictTable} WHERE zone_id = ? AND district_id = ?`,
+    [zone_id, district_id]
+  );
+  return result;
+};
+
+export const getDistrictsByZone = async (zone_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT d.* FROM ${districtTable} d INNER JOIN ${zoneDistrictTable} zd ON d.id = zd.district_id WHERE zd.zone_id = ?`,
+    [zone_id]
+  );
+  return rows;
+};
+
+export const getZonesByDistrict = async (district_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT z.* FROM ${zoneTable} z INNER JOIN ${zoneDistrictTable} zd ON z.id = zd.zone_id WHERE zd.district_id = ?`,
+    [district_id]
+  );
+  return rows;
+};
+
+// Get all zone-district relationships
+export const getAllZoneDistricts = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${zoneDistrictTable}`);
+  return rows;
+};
+
+// Remove all zones from a given district
+export const removeAllZonesFromDistrict = async (district_id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${zoneDistrictTable} WHERE district_id = ?`,
+    [district_id]
+  );
+  return result;
+};
+
+// Remove all districts from a given zone
+export const removeAllDistrictsFromZone = async (zone_id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${zoneDistrictTable} WHERE zone_id = ?`,
+    [zone_id]
+  );
+  return result;
+};
+
+
+/* =========== EMPLOYEES =========== */
+export const createEmployee = async (data: any) => {
+  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${employeeTable} (name, email, phone, department_id, position_id, location_id, image, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [name, email, phone, department_id, position_id, location_id, image, section_id]
+  );
+  return result;
+};
+
+export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
+  let query = `SELECT * FROM ${employeeTable}`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+  if (status) {
+    conditions.push('employment_status = ?');
+    params.push(status);
+  }
+  // cost center filter (assuming column name costcenter_id)
+  if (Array.isArray(cc) && cc.length > 0) {
+    const ph = cc.map(() => '?').join(',');
+    conditions.push(`costcenter_id IN (${ph})`);
+    params.push(...cc);
+  }
+  // department filter
+  if (Array.isArray(dept) && dept.length > 0) {
+    const ph = dept.map(() => '?').join(',');
+    conditions.push(`department_id IN (${ph})`);
+    params.push(...dept);
+  }
+  // location filter
+  if (Array.isArray(loc) && loc.length > 0) {
+    const ph = loc.map(() => '?').join(',');
+    conditions.push(`location_id IN (${ph})`);
+    params.push(...loc);
+  }
+  // supervisor filter (match supervisor_id column to ramco_id(s))
+  if (Array.isArray(supervisor) && supervisor.length > 0) {
+    const ph = supervisor.map(() => '?').join(',');
+    conditions.push(`supervisor_id IN (${ph})`);
+    params.push(...supervisor);
+  }
+  // ramco filter (match ramco_id column)
+  if (Array.isArray(ramco) && ramco.length > 0) {
+    const ph = ramco.map(() => '?').join(',');
+    conditions.push(`ramco_id IN (${ph})`);
+    params.push(...ramco);
+  }
+  // position filter (position_id)
+  if (Array.isArray(pos) && pos.length > 0) {
+    const ph = pos.map(() => '?').join(',');
+    conditions.push(`position_id IN (${ph})`);
+    params.push(...pos);
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+  const [rows] = await pool.query(query, params);
+  return rows;
+};
+
+export const getEmployeeById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getEmployeeByRamco = async (ramco_id: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE ramco_id = ?`, [ramco_id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getEmployeeByEmail = async (email: string) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE email = ?`, [email]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getEmployeeByContact = async (contact: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE contact = ?`, [contact]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateEmployee = async (id: number, data: any) => {
+  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
+  const [result] = await pool.query(
+    `UPDATE ${employeeTable} SET name = ?, email = ?, phone = ?, department_id = ?, position_id = ?, location_id = ?, image = ?, section_id = ? WHERE id = ?`,
+    [name, email, phone, department_id, position_id, location_id, image, section_id, id]
+  );
+  return result;
+};
+
+export const deleteEmployee = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${employeeTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+/* =========== POSITIONS =========== */
+export const createPosition = async (data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`INSERT INTO ${positionTable} (name) VALUES (?)`, [name]);
+  return result;
+};
+
+export const getPositions = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${positionTable}`);
+  return rows;
+};
+
+export const getPositionById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${positionTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updatePosition = async (id: number, data: any) => {
+  const { name } = data;
+  const [result] = await pool.query(`UPDATE ${positionTable} SET name = ? WHERE id = ?`, [name, id]);
+  return result;
+};
+
+export const deletePosition = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${positionTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+// VENDORS CRUD
+export const createVendor = async (data: any) => {
+  const { name, quote_number, quote_date, quote_status } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${vendorTable} (name, quote_number, quote_date, quote_status) VALUES (?, ?, ?, ?)`,
+    [name, quote_number, quote_date, quote_status]
+  );
+  return result;
+};
+
+export const getVendors = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${vendorTable}`);
+  return rows;
+};
+
+export const getVendorById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${vendorTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateVendor = async (id: number, data: any) => {
+  const { name, quote_number, quote_date, quote_status } = data;
+  const [result] = await pool.query(
+    `UPDATE ${vendorTable} SET name = ?, quote_number = ?, quote_date = ?, quote_status = ? WHERE id = ?`,
+    [name, quote_number, quote_date, quote_status, id]
+  );
+  return result;
+};
+
+export const deleteVendor = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${vendorTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+// PROCUREMENTS CRUD
+export const createProcurement = async (data: any) => {
+  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${procurementTable} (requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period]
+  );
+  return result;
+};
+
+export const getProcurements = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${procurementTable}`);
+  return rows;
+};
+
+export const getProcurementById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${procurementTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateProcurement = async (id: number, data: any) => {
+  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
+  const [result] = await pool.query(
+    `UPDATE ${procurementTable} SET requisition_number = ?, vendor_id = ?, purchase_order = ?, purchase_order_date = ?, purchase_order_status = ?, delivery_date = ?, delivery_status = ?, develivery_order = ?, invoice_number = ?, invoice_date = ?, invoice_status = ?, cost_center_id = ?, department_id = ?, conditions = ?, price = ?, currency = ?, purchase_date = ?, warranty_period = ? WHERE id = ?`,
+    [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period, id]
+  );
+  return result;
+};
+
+export const deleteProcurement = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${procurementTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+
+
+
+// MODULES CRUD
+export const createModule = async (data: any) => {
+  const { name = null, code = null } = data;
+  const [result] = await pool.query(`INSERT INTO ${moduleTable} (name, code) VALUES (?, ?)`, [name, code]);
+  return result;
+};
+
+export const getModules = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${moduleTable}`);
+  return rows;
+};
+
+export const getModuleById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${moduleTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const updateModule = async (id: number, data: any) => {
+  const { name = null, code = null } = data;
+  const [result] = await pool.query(`UPDATE ${moduleTable} SET name = ?, code = ? WHERE id = ?`, [name, code, id]);
+  return result;
+};
+
+export const deleteModule = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${moduleTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+// BRAND_CATEGORIES JOIN TABLE CRUD
+export const addBrandCategory = async (brand_code: string, category_code: string) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${brandCategoryTable} (brand_code, category_code) VALUES (?, ?)`,
+    [brand_code, category_code]
+  );
+  return result;
+};
+
+export const removeBrandCategory = async (brand_code: string, category_code: string) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${brandCategoryTable} WHERE brand_code = ? AND category_code = ?`,
+    [brand_code, category_code]
+  );
+  return result;
+};
+
+export const getCategoriesByBrand = async (brand_code: string) => {
+  const [rows] = await pool.query(
+    `SELECT category_code FROM ${brandCategoryTable} WHERE brand_code = ?`,
+    [brand_code]
+  );
+  return rows;
+};
+
+export const getCategoriesByBrandId = async (brand_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT c.id, c.name 
+     FROM ${categoryTable} c 
+     JOIN ${brandCategoryTable} bc ON c.id = bc.category_id 
+     WHERE bc.brand_id = ?`,
+    [brand_id]
+  );
+  return rows;
+};
+
+export const getBrandsByCategory = async (category_code: string) => {
+  const [rows] = await pool.query(
+    `SELECT brand_code FROM ${brandCategoryTable} WHERE category_code = ?`,
+    [category_code]
+  );
+  return rows;
+};
+
+export const getBrandsByCategoryId = async (category_id: number) => {
+  const [rows] = await pool.query(
+    `SELECT b.id, b.name 
+     FROM ${brandTable} b 
+     JOIN ${brandCategoryTable} bc ON b.id = bc.brand_id 
+     WHERE bc.category_id = ?`,
+    [category_id]
+  );
+  return rows;
+};
+
+// SOFTWARE CRUD
+export const getSoftwares = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${softwareTable}`);
+  return rows;
+};
+
+export const getSoftwareById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${softwareTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const createSoftware = async (data: { name: string }) => {
+  const { name } = data;
+  const [result] = await pool.query(
+    `INSERT INTO ${softwareTable} (name) VALUES (?)`,
+    [name]
+  );
+  return result;
+};
+
+export const updateSoftware = async (id: number, data: { name: string }) => {
+  const { name } = data;
+  const [result] = await pool.query(
+    `UPDATE ${softwareTable} SET name = ? WHERE id = ?`,
+    [name, id]
+  );
+  return result;
+};
+
+export const deleteSoftware = async (id: number) => {
+  const [result] = await pool.query(
+    `DELETE FROM ${softwareTable} WHERE id = ?`,
+    [id]
+  );
+  return result;
+};
+
+// Resolve codes to IDs for model creation/update
+export const getTypeByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const getCategoryByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const getBrandByCode = async (code: string | number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE code = ? OR id = ?`, [code, code]);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+// Fetch specs for an asset (by asset_id)
+export async function getComputerSpecsForAsset(asset_id: number) {
+  return getSpecsForAsset(1, asset_id);
+}
+
+// Fetch installed software for an asset (by asset_id)
+export async function getInstalledSoftwareForAsset(asset_id: number) {
+  const [rows] = await pool.query(
+    `SELECT pis.id, pis.software_id, s.name, pis.installed_at
+    FROM assetdata.pc_installed_software pis
+    JOIN assetdata.pc_software s ON pis.software_id = s.id
+    WHERE pis.asset_id = ?`,
+    [asset_id]
+  );
+  return rows;
+}
+
+// Fetch vehicle specs for an asset (by asset_id)
+export async function getVehicleSpecsForAsset(asset_id: number) {
+  return getSpecsForAsset(2, asset_id);
+}
+
 
 // Helper: get assets by array of asset IDs
 export const getAssetsByIds = async (assetIds: number[]) => {
@@ -1727,39 +1772,6 @@ export const deleteTransferChecklist = async (id: number) => {
   return result;
 };
 
-/* ======= ASSET MANAGERS ======= */
-export const getAssetManagers = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable}`);
-  return rows;
-};
-
-export const getAssetManagerById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
-};
-export const getAssetManagerByRamcoId = async (ramco_id: string) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE ramco_id = ?`, [ramco_id]);
-  return (rows as RowDataPacket[])[0];
-};
-export const createAssetManager = async (data: any) => {
-  const [result] = await pool.query(
-    `INSERT INTO ${assetManagerTable} (ramco_id, manager_id, created_at)
-     VALUES (?, ?, NOW())`,
-    [data.ramco_id, data.manager_id, data.created_at, data.is_active ? 1 : 0]
-  );
-  return result;
-};
-export const updateAssetManager = async (id: number, data: any) => {
-  const [result] = await pool.query(
-    `UPDATE ${assetManagerTable} SET ramco_id = ?, manager_id = ?, is_active = ?, updated_at = NOW() WHERE id = ?`,
-    [data.ramco_id, data.manager_id, data.is_active ? 1 : 0, id]
-  );
-  return result;
-};
-export const deleteAssetManager = async (id: number) => {
-  const [result] = await pool.query(`DELETE FROM ${assetManagerTable} WHERE id = ?`, [id]);
-  return result;
-}
 
 
 // Note: named exports are used throughout the codebase. No default export to normalize usage.

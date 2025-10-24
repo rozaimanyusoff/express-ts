@@ -8,6 +8,7 @@ import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTra
 import * as purchaseModel from '../p.purchase/purchaseModel';
 
 
+/* ========== ASSETS ========== */
 export const getAssets = async (req: Request, res: Response) => {
 	// Support ?type=[type_id] and ?status=[status] params
 	const typeIdParam = req.query.type;
@@ -414,66 +415,123 @@ export const deleteAsset = async (req: Request, res: Response) => {
 		result
 	});
 };
-/* ASSETS */
 
-// --- Add this helper near the top of the file ---
-function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
-	return Array.isArray(arr) && arr.every(e => e && typeof e === 'object' && !Array.isArray(e));
-}
 
-// Register batch of assets into purchase registry table
-export const registerAssetsBatch = async (req: Request, res: Response) => {
-	try {
-		const { pr_id, assets, created_by } = req.body || {};
-		const prIdNum = Number(pr_id);
-		if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+/* ======= ASSET MANAGERS ======= */
+export const getAssetManagers = async (req: Request, res: Response) => {
+		// Fetch all asset managers
+		const managers = await assetModel.getAssetManagers();
+		if (!Array.isArray(managers)) {
+			return res.status(500).json({ status: 'error', message: 'Failed to fetch asset managers' });
 		}
-
-		// Basic normalization is handled in model; perform minimal structure check here
-		const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
-
-		return res.status(201).json({
-			status: 'success',
-			message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
-			data: { pr_id: prIdNum, insertIds }
+		// Fetch departments, locations, costcenters and all employees for mapping
+		const [departmentsRaw, locationsRaw, costcentersRaw, employeesRaw] = await Promise.all([
+			assetModel.getDepartments(),
+			assetModel.getLocations(),
+			assetModel.getCostcenters(),
+			assetModel.getEmployees()
+		]);
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
+		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+		const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+		const deptMap = new Map(departments.map((d: any) => [d.id, d]));
+		const locMap = new Map(locations.map((l: any) => [l.id, l]));
+		const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+		// Enrich managers with employee details, including nested department and location
+		let enrichedManagers = (managers as any[]).map(mgr => {
+			const emp = mgr.ramco_id && empMap.has(mgr.ramco_id) ? empMap.get(mgr.ramco_id) : null;
+			return {
+				...mgr,
+				employee: emp ? {
+					ramco_id: emp.ramco_id,
+					full_name: emp.full_name,
+					email: emp.email,
+					contact: emp.contact,
+					costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap.get(emp.costcenter_id)?.name || null } : null,
+					department: emp.department_id ? { id: emp.department_id, name: deptMap.get(emp.department_id)?.code || null } : null,
+					location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null
+				} : null
+			};
 		});
-	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
-	}
+		// Optional filter by ?ramco=... query param
+		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : null;
+		if (ramco) {
+			enrichedManagers = enrichedManagers.filter((mgr: any) => String(mgr.ramco_id) === ramco);
+		}
+		res.json({ status: 'success', message: 'Asset managers retrieved successfully', data: enrichedManagers });
 }
 
-// TYPES
-export const getTypes = async (req: Request, res: Response) => {
-	const rows = await assetModel.getTypes();
-	// Enhance: fetch all employees for manager lookup
-	const employees = await assetModel.getEmployees();
-	const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
-	const data = (rows as any[]).map((type) => {
-		let manager = null;
-		if (type.manager && employeeMap.has(type.manager)) {
-			const emp = employeeMap.get(type.manager);
-			manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
-		}
-		// Add full image URL if image exists
-		let image = type.image;
-		if (image) {
-			image = `https://${req.get('host')}/uploads/types/${image}`;
-		}
-		return {
-			...type,
-			image,
-			manager
+export const getAssetManagerById = async (req: Request, res: Response) => {
+	const managerId = Number(req.params.id);
+	if (!managerId) {
+		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
+	}
+	// Fetch the asset manager
+	const manager = await assetModel.getAssetManagerById(managerId);
+	if (!manager) {
+		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+	}
+	// Fetch employee details and related department/location
+	const emp = manager.ramco_id ? await assetModel.getEmployeeByRamco(manager.ramco_id) : null;
+	let employee = null;
+	if (emp) {
+		const [dept, loc, costcenter] = await Promise.all([
+			emp.department_id ? assetModel.getDepartmentById(emp.department_id) : null,
+			emp.location_id ? assetModel.getLocationById(emp.location_id) : null,
+			emp.costcenter_id ? assetModel.getCostcenterById(emp.costcenter_id) : null
+		]);
+		employee = {
+			ramco_id: emp.ramco_id,
+			full_name: emp.full_name,
+			email: emp.email,
+			contact: emp.contact,
+			costcenter: costcenter ? { id: costcenter.id, name: costcenter.name || null } : null,
+			department: dept ? { id: dept.id, name: dept.code || null } : null,
+			location: loc ? { id: loc.id, name: loc.name || null } : null
 		};
-	});
-	res.json({
-		status: 'success',
-		message: 'Asset type retrieved successfully',
-		data
-	});
-};
+	}
+	res.json({ status: 'success', message: 'Asset manager retrieved successfully', data: { ...manager, employee } });
+}
 
-// ===== Spec properties (master) controller =====
+export const createAssetManager = async (req: Request, res: Response) => {
+	const data = req.body;
+	// Create the asset manager
+	const insertId = await assetModel.createAssetManager(data);
+	res.status(201).json({ status: 'success', message: 'Asset manager created successfully', data: { id: insertId } });
+}
+
+export const updateAssetManager = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	const data = req.body;
+	// Update the asset manager
+	const result = await assetModel.updateAssetManager(data, id);
+	if ((result as any).affectedRows === 0) {
+		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+	}
+	res.json({ status: 'success', message: 'Asset manager updated successfully' });
+}
+
+export const deleteAssetManager = async (req: Request, res: Response) => {
+	const id = Number(req.params.id);
+	if (!id) {
+		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
+	}
+	// Validate asset manager exists
+	const manager = await assetModel.getAssetManagerById(id);
+	if (!manager) {
+		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+	}
+	// Delete the asset manager
+	const result = await assetModel.deleteAssetManager(id);
+	if ((result as any).affectedRows === 0) {
+		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+	}
+	res.json({ status: 'success', message: 'Asset manager deleted successfully' });
+}
+
+/* ============ SPEC PROPERTIES ============= */
 export const getSpecProperties = async (req: Request, res: Response) => {
 	const typeParam = req.query.type || req.params.type_id;
 	if (typeParam === undefined || typeParam === null || String(typeParam).trim() === '') {
@@ -560,6 +618,65 @@ export const applyPendingSpecProperties = async (req: Request, res: Response) =>
 	const results = await assetModel.applyPendingSpecProperties(typeId);
 	res.json({ status: 'success', message: 'Apply results', data: results });
 };
+
+
+// --- Add this helper near the top of the file ---
+function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
+	return Array.isArray(arr) && arr.every(e => e && typeof e === 'object' && !Array.isArray(e));
+}
+
+// Register batch of assets into purchase registry table
+export const registerAssetsBatch = async (req: Request, res: Response) => {
+	try {
+		const { pr_id, assets, created_by } = req.body || {};
+		const prIdNum = Number(pr_id);
+		if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
+			return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+		}
+
+		// Basic normalization is handled in model; perform minimal structure check here
+		const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
+
+		return res.status(201).json({
+			status: 'success',
+			message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
+			data: { pr_id: prIdNum, insertIds }
+		});
+	} catch (error) {
+		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
+	}
+}
+
+/* =========== TYPES =========== */
+export const getTypes = async (req: Request, res: Response) => {
+	const rows = await assetModel.getTypes();
+	// Enhance: fetch all employees for manager lookup
+	const employees = await assetModel.getEmployees();
+	const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
+	const data = (rows as any[]).map((type) => {
+		let manager = null;
+		if (type.manager && employeeMap.has(type.manager)) {
+			const emp = employeeMap.get(type.manager);
+			manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+		}
+		// Add full image URL if image exists
+		let image = type.image;
+		if (image) {
+			image = `https://${req.get('host')}/uploads/types/${image}`;
+		}
+		return {
+			...type,
+			image,
+			manager
+		};
+	});
+	res.json({
+		status: 'success',
+		message: 'Asset type retrieved successfully',
+		data
+	});
+};
+
 export const getTypeById = async (req: Request, res: Response) => {
 	const row = await assetModel.getTypeById(Number(req.params.id));
 	if (!row) {
@@ -580,6 +697,7 @@ export const getTypeById = async (req: Request, res: Response) => {
 		data
 	});
 };
+
 export const createType = async (req: Request, res: Response) => {
 	try {
 		const { name, description, image, manager, ramco_id } = req.body;
@@ -599,6 +717,7 @@ export const createType = async (req: Request, res: Response) => {
 		res.status(500).json({ status: 'error', message, data: null });
 	}
 };
+
 export const updateType = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
@@ -617,12 +736,13 @@ export const updateType = async (req: Request, res: Response) => {
 		res.status(500).json({ status: 'error', message, data: null });
 	}
 };
+
 export const deleteType = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteType(Number(req.params.id));
 	res.json(result);
 };
 
-// CATEGORIES
+/* =========== CATEGORIES =========== */
 export const getCategories = async (req: Request, res: Response) => {
 	// Support ?type={type_id} param (optional) - can be comma-separated
 	let typeIds: number[] = [];
@@ -662,10 +782,12 @@ export const getCategories = async (req: Request, res: Response) => {
 		data
 	});
 };
+
 export const getCategoryById = async (req: Request, res: Response) => {
 	const row = await assetModel.getCategoryById(Number(req.params.id));
 	res.json(row);
 };
+
 export const createCategory = async (req: Request, res: Response) => {
 	// Accept frontend payload with type_id (or typeId), map to type_id for DB
 	const { name, type_id, typeId, manager_id } = req.body;
@@ -681,16 +803,18 @@ export const createCategory = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const updateCategory = async (req: Request, res: Response) => {
 	const result = await assetModel.updateCategory(Number(req.params.id), req.body);
 	res.json(result);
 };
+
 export const deleteCategory = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteCategory(Number(req.params.id));
 	res.json(result);
 };
 
-// BRANDS
+/* =========== BRANDS =========== */
 // Helper: get all brand-category associations from join table
 async function getAllBrandCategoryAssociations() {
 	// Get all brands and categories
@@ -812,10 +936,12 @@ export const getBrands = async (req: Request, res: Response) => {
 		data
 	});
 };
+
 export const getBrandById = async (req: Request, res: Response) => {
 	const row = await assetModel.getBrandById(Number(req.params.id));
 	res.json(row);
 };
+
 export const createBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.createBrand(req.body);
@@ -825,6 +951,7 @@ export const createBrand = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const updateBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.updateBrand(Number(req.params.id), req.body);
@@ -834,12 +961,79 @@ export const updateBrand = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const deleteBrand = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteBrand(Number(req.params.id));
 	res.json(result);
 };
 
-// MODELS
+
+/* =========== BRAND-CATEGORY RELATIONSHIP ENDPOINTS =========== */
+export const assignCategoryToBrand = async (req: Request, res: Response) => {
+	const { brand_code, category_code } = req.params;
+	await assetModel.addBrandCategory(brand_code, category_code);
+	res.json({ status: 'success', message: 'Category assigned to brand' });
+};
+
+export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
+	const { brand_code, category_code } = req.params;
+	await assetModel.removeBrandCategory(brand_code, category_code);
+	res.json({ status: 'success', message: 'Category unassigned from brand' });
+};
+
+export const getCategoriesForBrand = async (req: Request, res: Response) => {
+	const { brand_code } = req.params;
+	const categories = await assetModel.getCategoriesByBrand(brand_code);
+	res.json({ status: 'success', data: categories });
+};
+
+export const getBrandsForCategory = async (req: Request, res: Response) => {
+	const { category_code } = req.params;
+	const brands = await assetModel.getBrandsByCategory(category_code);
+	res.json({ status: 'success', data: brands });
+};
+
+export const getAllBrandCategoryMappings = async (req: Request, res: Response) => {
+	// Get all brands and categories
+	const brands = await assetModel.getBrands();
+	const categories = await assetModel.getCategories();
+	// Build lookup maps
+	const brandMap = new Map<string, { id: number; name: string; code: string }>();
+	for (const b of brands as any[]) {
+		brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
+	}
+	const categoryMap = new Map<string, { id: number; name: string; code: string }>();
+	for (const c of categories as any[]) {
+		categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
+	}
+	// Brute-force all pairs using getCategoriesByBrand for each brand
+	let mappings: any[] = [];
+	for (const b of brands as any[]) {
+		const cats = await assetModel.getCategoriesByBrand(b.code);
+		const catArr = Array.isArray(cats) ? cats : [];
+		for (const c of catArr) {
+			let catCode = '';
+			if (typeof c === 'object' && c !== null) {
+				// Try to extract category_code from known RowDataPacket structure
+				if ('category_code' in c && typeof c.category_code === 'string') {
+					catCode = c.category_code;
+				} else if ('code' in c && typeof c.code === 'string') {
+					catCode = c.code;
+				}
+			} else if (typeof c === 'string') {
+				catCode = c;
+			}
+			if (!catCode) continue;
+			mappings.push({
+				brand: brandMap.get(b.code) || { code: b.code },
+				category: categoryMap.get(catCode) || { code: catCode }
+			});
+		}
+	}
+	res.json({ status: 'success', data: mappings });
+};
+
+/* =========== MODELS =========== */
 export const getModels = async (req: Request, res: Response) => {
 	// Support ?type={type_id} param (optional)
 	let typeId: number | undefined = undefined;
@@ -895,6 +1089,7 @@ export const getModels = async (req: Request, res: Response) => {
 		data
 	});
 };
+
 export const getModelById = async (req: Request, res: Response) => {
 	const row = await assetModel.getModelById(Number(req.params.id));
 	if (!row) return res.status(404).json({ status: 'error', message: 'Model not found' });
@@ -917,6 +1112,7 @@ export const getModelById = async (req: Request, res: Response) => {
 	};
 	res.json({ status: 'success', message: 'Model retrieved successfully', data });
 };
+
 export const createModel = async (req: Request, res: Response) => {
 	const data = req.body;
 	if (req.file) {
@@ -977,6 +1173,7 @@ export const updateModel = async (req: Request, res: Response) => {
 	};
 	res.json({ status: 'success', message: 'Model updated successfully', data: { id: Number(id), ...mapped } });
 };
+
 export const deleteModel = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteModel(Number(req.params.id));
 	res.json(result);
@@ -990,8 +1187,54 @@ function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; 
 }
 
 
+/* =========== COSTCENTERS =========== */
+export const getCostcenters = async (req: Request, res: Response) => {
+	const rows = await assetModel.getCostcenters();
+	res.json({
+		status: 'success',
+		message: 'Costcenters data retrieved successfully',
+		data: rows
+	});
+};
 
-// DEPARTMENTS
+export const getCostcenterById = async (req: Request, res: Response) => {
+	const row = await assetModel.getCostcenterById(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Costcenter data retrieved successfully',
+		data: row
+	});
+};
+
+export const createCostcenter = async (req: Request, res: Response) => {
+	const result = await assetModel.createCostcenter(req.body);
+	res.json({
+		status: 'success',
+		message: 'Costcenter created successfully',
+		result
+	});
+};
+
+export const updateCostcenter = async (req: Request, res: Response) => {
+	const result = await assetModel.updateCostcenter(Number(req.params.id), req.body);
+	res.json({
+		status: 'success',
+		message: 'Costcenter updated successfully',
+		result
+	});
+};
+
+export const deleteCostcenter = async (req: Request, res: Response) => {
+	const result = await assetModel.deleteCostcenter(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Costcenter deleted successfully',
+		result
+	});
+};
+
+
+/* =========== DEPARTMENTS =========== */
 export const getDepartments = async (req: Request, res: Response) => {
 	const rows = await assetModel.getDepartments();
 	res.json({
@@ -1000,6 +1243,7 @@ export const getDepartments = async (req: Request, res: Response) => {
 		data: rows
 	});
 };
+
 export const getDepartmentById = async (req: Request, res: Response) => {
 	const row = await assetModel.getDepartmentById(Number(req.params.id));
 	res.json({
@@ -1008,6 +1252,7 @@ export const getDepartmentById = async (req: Request, res: Response) => {
 		data: row
 	});
 };
+
 export const createDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.createDepartment(req.body);
 	res.json({
@@ -1016,6 +1261,7 @@ export const createDepartment = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const updateDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.updateDepartment(Number(req.params.id), req.body);
 	res.json({
@@ -1024,6 +1270,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const deleteDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteDepartment(Number(req.params.id));
 	res.json({
@@ -1033,49 +1280,8 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 	});
 };
 
-// POSITIONS
-export const getPositions = async (req: Request, res: Response) => {
-	const rows = await assetModel.getPositions();
-	res.json({
-		status: 'success',
-		message: 'Positions data retrieved successfully',
-		data: rows
-	});
-};
-export const getPositionById = async (req: Request, res: Response) => {
-	const row = await assetModel.getPositionById(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Position data retrieved successfully',
-		data: row
-	});
-};
-export const createPosition = async (req: Request, res: Response) => {
-	const result = await assetModel.createPosition(req.body);
-	res.json({
-		status: 'success',
-		message: 'Position created successfully',
-		result
-	});
-};
-export const updatePosition = async (req: Request, res: Response) => {
-	const result = await assetModel.updatePosition(Number(req.params.id), req.body);
-	res.json({
-		status: 'success',
-		message: 'Position updated successfully',
-		result
-	});
-};
-export const deletePosition = async (req: Request, res: Response) => {
-	const result = await assetModel.deletePosition(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Position deleted successfully',
-		result
-	});
-};
 
-// SECTIONS
+/* =========== SECTIONS =========== */
 export const getSections = async (req: Request, res: Response) => {
 	const sections = await assetModel.getSections();
 	const departments = await assetModel.getDepartments();
@@ -1129,6 +1335,7 @@ export const createSection = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const updateSection = async (req: Request, res: Response) => {
 	// Accept frontend payload with departmentId, map to department_id
 	const { name, departmentId } = req.body;
@@ -1142,6 +1349,7 @@ export const updateSection = async (req: Request, res: Response) => {
 		result
 	});
 };
+
 export const deleteSection = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSection(Number(req.params.id));
 	res.json({
@@ -1151,49 +1359,292 @@ export const deleteSection = async (req: Request, res: Response) => {
 	});
 };
 
-// COSTCENTERS
-export const getCostcenters = async (req: Request, res: Response) => {
-	const rows = await assetModel.getCostcenters();
+/* =========== LOCATIONS =========== */
+export const getLocations = async (req: Request, res: Response) => {
+	// Fetch all locations
+	const locations = await assetModel.getLocations();
+	if (!Array.isArray(locations)) {
+		return res.status(500).json({ status: 'error', message: 'Failed to fetch locations' });
+	}
+	res.json({ status: 'success', message: 'Locations retrieved successfully', data: locations });
+}
+
+/* =========== DISTRICTS =========== */
+export const getDistricts = async (req: Request, res: Response) => {
+	const districts = await assetModel.getDistricts();
+	const zoneDistricts = await assetModel.getAllZoneDistricts();
+	const zones = await assetModel.getZones();
+	// Build zone map with code
+	const zoneMap = new Map<number, { id: number; name: string; code: string }>();
+	for (const z of zones as any[]) {
+		zoneMap.set(z.id, { id: z.id, name: z.name, code: z.code });
+	}
+	const districtToZone = new Map<number, number>();
+	for (const zd of zoneDistricts as any[]) {
+		districtToZone.set(zd.district_id, zd.zone_id);
+	}
+	const data = (districts as any[]).map((d) => ({
+		id: d.id,
+		name: d.name,
+		code: d.code,
+		zone: zoneMap.get(districtToZone.get(d.id)!) || null
+	}));
+	res.json({ status: 'success', message: 'Districts data retrieved successfully', data });
+};
+
+export const getDistrictById = async (req: Request, res: Response) => {
+	const row = await assetModel.getDistrictById(Number(req.params.id));
+	res.json({ status: 'success', message: 'District data retrieved successfully', data: row });
+};
+
+export const createDistrict = async (req: Request, res: Response) => {
+	const { name, code, zone_id } = req.body;
+	// Create the district
+	const result = await assetModel.createDistrict({ name, code });
+	// Get the new district's id
+	const districtId = (result as any).insertId;
+	// If zone_id is provided, create the join
+	if (zone_id) {
+		await assetModel.addDistrictToZone(zone_id, districtId);
+	}
+	res.json({ status: 'success', message: 'District created successfully', result });
+};
+
+export const updateDistrict = async (req: Request, res: Response) => {
+	const { name, code, zone_id } = req.body;
+	const districtId = Number(req.params.id);
+	// Update the district
+	const result = await assetModel.updateDistrict(districtId, { name, code });
+	// Remove all previous zone links for this district
+	await assetModel.removeAllZonesFromDistrict(districtId);
+	// Add new zone link if provided
+	if (zone_id) {
+		await assetModel.addDistrictToZone(zone_id, districtId);
+	}
+	res.json({ status: 'success', message: 'District updated successfully', result });
+};
+
+export const deleteDistrict = async (req: Request, res: Response) => {
+	const districtId = Number(req.params.id);
+	// Remove all zone links for this district
+	await assetModel.removeAllZonesFromDistrict(districtId);
+	// Delete the district
+	const result = await assetModel.deleteDistrict(districtId);
+	res.json({ status: 'success', message: 'District deleted successfully', result });
+};
+
+
+/* =========== SITES =========== */
+export const getSites = async (req: Request, res: Response) => {
+	// Fetch all sites
+	let sites: any[] = [];
+	const sitesRaw = await assetModel.getSites();
+	if (Array.isArray(sitesRaw)) {
+		sites = sitesRaw;
+	} else if (sitesRaw && typeof sitesRaw === 'object' && 'length' in sitesRaw) {
+		sites = Array.from(sitesRaw as any);
+	}
+	// Fetch all related data for mapping
+	const assets = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() as any[] : [];
+	const types = Array.isArray(await assetModel.getTypes()) ? await assetModel.getTypes() as any[] : [];
+	const categories = Array.isArray(await assetModel.getCategories()) ? await assetModel.getCategories() as any[] : [];
+	const brands = Array.isArray(await assetModel.getBrands()) ? await assetModel.getBrands() as any[] : [];
+	const models = Array.isArray(await assetModel.getModels()) ? await assetModel.getModels() as any[] : [];
+	const modules = Array.isArray(await assetModel.getModules()) ? await assetModel.getModules() as any[] : [];
+	const districts = Array.isArray(await assetModel.getDistricts()) ? await assetModel.getDistricts() as any[] : [];
+
+	// Build lookup maps
+	const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
+	const categoryMap = new Map(categories.map((c: any) => [c.id, { id: c.id, name: c.name }]));
+	const brandMap = new Map(brands.map((b: any) => [b.id, { id: b.id, name: b.name }]));
+	const modelMap = new Map(models.map((m: any) => [m.id, { id: m.id, name: m.name }]));
+	const moduleMap = new Map(modules.map((m: any) => [m.id, { id: m.id, name: m.code }]));
+	const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
+	const assetMap = new Map(assets.map((a: any) => [a.id, a]));
+
+	// Format each site
+	const data = sites.map((site: any) => {
+		// Asset nesting
+		let asset = null;
+		if (site.asset_id && assetMap.has(site.asset_id)) {
+			const a: any = assetMap.get(site.asset_id);
+			asset = {
+				id: a.id,
+				serial_no: a.register_number,
+				type: typeMap.get(a.type_id) || null,
+				category: categoryMap.get(a.category_id) || null,
+				brand: brandMap.get(a.brand_id) || null,
+				model: modelMap.get(a.model_id) || null
+			};
+		}
+		// Module nesting
+		const module = site.module_id ? moduleMap.get(site.module_id) || null : null;
+		// District nesting
+		const district = site.district_id ? districtMap.get(site.district_id) || null : null;
+		// Geocode
+		let geocode = null;
+		if (site.lat !== undefined && site.lon !== undefined) {
+			geocode = { lat: site.lat, lon: site.lon };
+		}
+		return {
+			id: site.id,
+			asset,
+			module,
+			district_id: district,
+			site_category: site.site_category,
+			site_code: site.site_code,
+			site_name: site.site_name,
+			dmafull: site.dmafull,
+			geocode,
+			address: site.address,
+			address2: site.address2,
+			boundary_coordinate: site.boundary_coordinate,
+			site_status: site.site_status,
+			site_picture: site.site_picture,
+			site_schematic: site.site_schematic,
+			site_certificate: site.site_certificate,
+			notes: site.notes,
+			agency: site.agency,
+			wss_group: site.wss_group,
+			monitoring_group: site.monitoring_group,
+			area: site.area,
+			assign_to: site.assign_to,
+			dirname: site.dirname,
+			db_id: site.db_id,
+			attended_onsite_date: site.attended_onsite_date,
+			team_id: site.team_id,
+			team_id2: site.team_id2,
+			last_upload: site.last_upload,
+			main_site_code: site.main_site_code,
+			mnf_baseline: site.mnf_baseline,
+			nnf_baseline: site.nnf_baseline,
+			dmz_baseline: site.dmz_baseline,
+			cp_baseline: site.cp_baseline,
+			date_created: site.date_created,
+			min_mnf: site.min_mnf,
+			max_mnf: site.max_mnf,
+			dmz_type: site.dmz_type,
+			operational_certificate: site.operational_certificate,
+			eit_certificate: site.eit_certificate,
+			remarks: site.remarks
+		};
+	});
 	res.json({
 		status: 'success',
-		message: 'Costcenters data retrieved successfully',
-		data: rows
+		message: 'Sites data retrieved successfully',
+		data
 	});
 };
-export const getCostcenterById = async (req: Request, res: Response) => {
-	const row = await assetModel.getCostcenterById(Number(req.params.id));
+
+export const getSiteById = async (req: Request, res: Response) => {
+	const row = await assetModel.getSiteById(Number(req.params.id));
 	res.json({
 		status: 'success',
-		message: 'Costcenter data retrieved successfully',
+		message: 'Site data retrieved successfully',
 		data: row
 	});
 };
-export const createCostcenter = async (req: Request, res: Response) => {
-	const result = await assetModel.createCostcenter(req.body);
+
+export const createSite = async (req: Request, res: Response) => {
+	const result = await assetModel.createSite(req.body);
 	res.json({
 		status: 'success',
-		message: 'Costcenter created successfully',
-		result
-	});
-};
-export const updateCostcenter = async (req: Request, res: Response) => {
-	const result = await assetModel.updateCostcenter(Number(req.params.id), req.body);
-	res.json({
-		status: 'success',
-		message: 'Costcenter updated successfully',
-		result
-	});
-};
-export const deleteCostcenter = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteCostcenter(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Costcenter deleted successfully',
+		message: 'Site created successfully',
 		result
 	});
 };
 
-// EMPLOYEES
+export const updateSite = async (req: Request, res: Response) => {
+	const result = await assetModel.updateSite(Number(req.params.id), req.body);
+	res.json({
+		status: 'success',
+		message: 'Site updated successfully',
+		result
+	});
+};
+
+export const deleteSite = async (req: Request, res: Response) => {
+	const result = await assetModel.deleteSite(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Site deleted successfully',
+		result
+	});
+};
+
+/* =========== ZONES =========== */
+export const getZones = async (req: Request, res: Response) => {
+	const zones = await assetModel.getZones();
+	const zoneDistricts = await assetModel.getAllZoneDistricts();
+	const districts = await assetModel.getDistricts();
+	const employees = await assetModel.getEmployees();
+	// Build district map with code
+	const districtMap = new Map<number, { id: number; name: string; code: string }>();
+	for (const d of districts as any[]) {
+		districtMap.set(d.id, { id: d.id, name: d.name, code: d.code });
+	}
+	const employeeMap = new Map<number, { id: number; name: string }>();
+	for (const e of employees as any[]) {
+		employeeMap.set(e.id, { id: e.id, name: e.name });
+	}
+	const zoneToDistricts = new Map<number, { id: number; name: string; code: string }[]>();
+	for (const zd of zoneDistricts as any[]) {
+		if (!zoneToDistricts.has(zd.zone_id)) zoneToDistricts.set(zd.zone_id, []);
+		const district = districtMap.get(zd.district_id);
+		if (district) zoneToDistricts.get(zd.zone_id)!.push(district);
+	}
+	const data = (zones as any[]).map((z) => ({
+		id: z.id,
+		name: z.name,
+		code: z.code,
+		employees: z.employee_id ? employeeMap.get(z.employee_id) || null : null,
+		districts: zoneToDistricts.get(z.id) || []
+	}));
+	res.json({ status: 'success', message: 'Zones data retrieved successfully', data });
+};
+
+export const getZoneById = async (req: Request, res: Response) => {
+	const row = await assetModel.getZoneById(Number(req.params.id));
+	res.json({ status: 'success', message: 'Zone data retrieved successfully', data: row });
+};
+
+export const createZone = async (req: Request, res: Response) => {
+	const { name, code, employee_id, districts } = req.body;
+	// Create the zone
+	const result = await assetModel.createZone({ name, code, employee_id });
+	const zoneId = (result as any).insertId;
+	// Add districts to zone if provided
+	if (Array.isArray(districts)) {
+		for (const districtId of districts) {
+			await assetModel.addDistrictToZone(zoneId, districtId);
+		}
+	}
+	res.json({ status: 'success', message: 'Zone created successfully', result });
+};
+
+export const updateZone = async (req: Request, res: Response) => {
+	const { name, code, employee_id, districts } = req.body;
+	const zoneId = Number(req.params.id);
+	// Update the zone
+	const result = await assetModel.updateZone(zoneId, { name, code, employee_id });
+	// Remove all previous district links for this zone
+	await assetModel.removeAllDistrictsFromZone(zoneId);
+	// Add new district links if provided
+	if (Array.isArray(districts)) {
+		for (const districtId of districts) {
+			await assetModel.addDistrictToZone(zoneId, districtId);
+		}
+	}
+	res.json({ status: 'success', message: 'Zone updated successfully', result });
+};
+
+export const deleteZone = async (req: Request, res: Response) => {
+	const result = await assetModel.deleteZone(Number(req.params.id));
+	res.json({ status: 'success', message: 'Zone deleted successfully', result });
+};
+
+
+/* =========== EMPLOYEES =========== */
 export const getEmployees = async (req: Request, res: Response) => {
 	// Support ?status=active param and filters: ?cc, ?dept, ?loc (array or CSV), ?supervisor (ramco_id)
 	const status = typeof req.query.status === 'string' && req.query.status !== '' ? req.query.status : undefined;
@@ -1431,7 +1882,6 @@ export const getEmployeeByContact = async (req: Request, res: Response) => {
 	});
 }
 
-
 export const createEmployee = async (req: Request, res: Response) => {
 	const {
 		ramco_id,
@@ -1521,7 +1971,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 };
 
 export const deleteEmployee = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteUser(Number(req.params.id));
+	const result = await assetModel.deleteEmployee(Number(req.params.id));
 	res.json({
 		status: 'success',
 		message: 'Employee deleted successfully',
@@ -1529,432 +1979,6 @@ export const deleteEmployee = async (req: Request, res: Response) => {
 	});
 };
 
-// DISTRICTS
-export const getDistricts = async (req: Request, res: Response) => {
-	const districts = await assetModel.getDistricts();
-	const zoneDistricts = await assetModel.getAllZoneDistricts();
-	const zones = await assetModel.getZones();
-	// Build zone map with code
-	const zoneMap = new Map<number, { id: number; name: string; code: string }>();
-	for (const z of zones as any[]) {
-		zoneMap.set(z.id, { id: z.id, name: z.name, code: z.code });
-	}
-	const districtToZone = new Map<number, number>();
-	for (const zd of zoneDistricts as any[]) {
-		districtToZone.set(zd.district_id, zd.zone_id);
-	}
-	const data = (districts as any[]).map((d) => ({
-		id: d.id,
-		name: d.name,
-		code: d.code,
-		zone: zoneMap.get(districtToZone.get(d.id)!) || null
-	}));
-	res.json({ status: 'success', message: 'Districts data retrieved successfully', data });
-};
-
-export const getDistrictById = async (req: Request, res: Response) => {
-	const row = await assetModel.getDistrictById(Number(req.params.id));
-	res.json({ status: 'success', message: 'District data retrieved successfully', data: row });
-};
-export const createDistrict = async (req: Request, res: Response) => {
-	const { name, code, zone_id } = req.body;
-	// Create the district
-	const result = await assetModel.createDistrict({ name, code });
-	// Get the new district's id
-	const districtId = (result as any).insertId;
-	// If zone_id is provided, create the join
-	if (zone_id) {
-		await assetModel.addDistrictToZone(zone_id, districtId);
-	}
-	res.json({ status: 'success', message: 'District created successfully', result });
-};
-export const updateDistrict = async (req: Request, res: Response) => {
-	const { name, code, zone_id } = req.body;
-	const districtId = Number(req.params.id);
-	// Update the district
-	const result = await assetModel.updateDistrict(districtId, { name, code });
-	// Remove all previous zone links for this district
-	await assetModel.removeAllZonesFromDistrict(districtId);
-	// Add new zone link if provided
-	if (zone_id) {
-		await assetModel.addDistrictToZone(zone_id, districtId);
-	}
-	res.json({ status: 'success', message: 'District updated successfully', result });
-};
-export const deleteDistrict = async (req: Request, res: Response) => {
-	const districtId = Number(req.params.id);
-	// Remove all zone links for this district
-	await assetModel.removeAllZonesFromDistrict(districtId);
-	// Delete the district
-	const result = await assetModel.deleteDistrict(districtId);
-	res.json({ status: 'success', message: 'District deleted successfully', result });
-};
-
-// ZONES
-export const getZones = async (req: Request, res: Response) => {
-	const zones = await assetModel.getZones();
-	const zoneDistricts = await assetModel.getAllZoneDistricts();
-	const districts = await assetModel.getDistricts();
-	const employees = await assetModel.getEmployees();
-	// Build district map with code
-	const districtMap = new Map<number, { id: number; name: string; code: string }>();
-	for (const d of districts as any[]) {
-		districtMap.set(d.id, { id: d.id, name: d.name, code: d.code });
-	}
-	const employeeMap = new Map<number, { id: number; name: string }>();
-	for (const e of employees as any[]) {
-		employeeMap.set(e.id, { id: e.id, name: e.name });
-	}
-	const zoneToDistricts = new Map<number, { id: number; name: string; code: string }[]>();
-	for (const zd of zoneDistricts as any[]) {
-		if (!zoneToDistricts.has(zd.zone_id)) zoneToDistricts.set(zd.zone_id, []);
-		const district = districtMap.get(zd.district_id);
-		if (district) zoneToDistricts.get(zd.zone_id)!.push(district);
-	}
-	const data = (zones as any[]).map((z) => ({
-		id: z.id,
-		name: z.name,
-		code: z.code,
-		employees: z.employee_id ? employeeMap.get(z.employee_id) || null : null,
-		districts: zoneToDistricts.get(z.id) || []
-	}));
-	res.json({ status: 'success', message: 'Zones data retrieved successfully', data });
-};
-export const getZoneById = async (req: Request, res: Response) => {
-	const row = await assetModel.getZoneById(Number(req.params.id));
-	res.json({ status: 'success', message: 'Zone data retrieved successfully', data: row });
-};
-export const createZone = async (req: Request, res: Response) => {
-	const { name, code, employee_id, districts } = req.body;
-	// Create the zone
-	const result = await assetModel.createZone({ name, code, employee_id });
-	const zoneId = (result as any).insertId;
-	// Add districts to zone if provided
-	if (Array.isArray(districts)) {
-		for (const districtId of districts) {
-			await assetModel.addDistrictToZone(zoneId, districtId);
-		}
-	}
-	res.json({ status: 'success', message: 'Zone created successfully', result });
-};
-export const updateZone = async (req: Request, res: Response) => {
-	const { name, code, employee_id, districts } = req.body;
-	const zoneId = Number(req.params.id);
-	// Update the zone
-	const result = await assetModel.updateZone(zoneId, { name, code, employee_id });
-	// Remove all previous district links for this zone
-	await assetModel.removeAllDistrictsFromZone(zoneId);
-	// Add new district links if provided
-	if (Array.isArray(districts)) {
-		for (const districtId of districts) {
-			await assetModel.addDistrictToZone(zoneId, districtId);
-		}
-	}
-	res.json({ status: 'success', message: 'Zone updated successfully', result });
-};
-export const deleteZone = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteZone(Number(req.params.id));
-	res.json({ status: 'success', message: 'Zone deleted successfully', result });
-};
-
-// MODULES
-export const getModules = async (req: Request, res: Response) => {
-	const rows = await assetModel.getModules();
-	res.json({
-		status: 'success',
-		message: 'Modules data retrieved successfully',
-		data: rows
-	});
-};
-export const getModuleById = async (req: Request, res: Response) => {
-	const row = await assetModel.getModuleById(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Module data retrieved successfully',
-		data: row
-	});
-};
-export const createModule = async (req: Request, res: Response) => {
-	const { name, code } = req.body;
-	const result = await assetModel.createModule({ name, code });
-	res.json({
-		status: 'success',
-		message: 'Module created successfully',
-		result
-	});
-};
-export const updateModule = async (req: Request, res: Response) => {
-	const { name, code } = req.body;
-	const result = await assetModel.updateModule(Number(req.params.id), { name, code });
-	res.json({
-		status: 'success',
-		message: 'Module updated successfully',
-		result
-	});
-};
-export const deleteModule = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteModule(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Module deleted successfully',
-		result
-	});
-};
-
-// SITES
-export const getSites = async (req: Request, res: Response) => {
-	// Fetch all sites
-	let sites: any[] = [];
-	const sitesRaw = await assetModel.getSites();
-	if (Array.isArray(sitesRaw)) {
-		sites = sitesRaw;
-	} else if (sitesRaw && typeof sitesRaw === 'object' && 'length' in sitesRaw) {
-		sites = Array.from(sitesRaw as any);
-	}
-	// Fetch all related data for mapping
-	const assets = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() as any[] : [];
-	const types = Array.isArray(await assetModel.getTypes()) ? await assetModel.getTypes() as any[] : [];
-	const categories = Array.isArray(await assetModel.getCategories()) ? await assetModel.getCategories() as any[] : [];
-	const brands = Array.isArray(await assetModel.getBrands()) ? await assetModel.getBrands() as any[] : [];
-	const models = Array.isArray(await assetModel.getModels()) ? await assetModel.getModels() as any[] : [];
-	const modules = Array.isArray(await assetModel.getModules()) ? await assetModel.getModules() as any[] : [];
-	const districts = Array.isArray(await assetModel.getDistricts()) ? await assetModel.getDistricts() as any[] : [];
-
-	// Build lookup maps
-	const typeMap = new Map(types.map((t: any) => [t.id, { id: t.id, name: t.name }]));
-	const categoryMap = new Map(categories.map((c: any) => [c.id, { id: c.id, name: c.name }]));
-	const brandMap = new Map(brands.map((b: any) => [b.id, { id: b.id, name: b.name }]));
-	const modelMap = new Map(models.map((m: any) => [m.id, { id: m.id, name: m.name }]));
-	const moduleMap = new Map(modules.map((m: any) => [m.id, { id: m.id, name: m.code }]));
-	const districtMap = new Map(districts.map((d: any) => [d.id, { id: d.id, name: d.name }]));
-	const assetMap = new Map(assets.map((a: any) => [a.id, a]));
-
-	// Format each site
-	const data = sites.map((site: any) => {
-		// Asset nesting
-		let asset = null;
-		if (site.asset_id && assetMap.has(site.asset_id)) {
-			const a: any = assetMap.get(site.asset_id);
-			asset = {
-				id: a.id,
-				serial_no: a.register_number,
-				type: typeMap.get(a.type_id) || null,
-				category: categoryMap.get(a.category_id) || null,
-				brand: brandMap.get(a.brand_id) || null,
-				model: modelMap.get(a.model_id) || null
-			};
-		}
-		// Module nesting
-		const module = site.module_id ? moduleMap.get(site.module_id) || null : null;
-		// District nesting
-		const district = site.district_id ? districtMap.get(site.district_id) || null : null;
-		// Geocode
-		let geocode = null;
-		if (site.lat !== undefined && site.lon !== undefined) {
-			geocode = { lat: site.lat, lon: site.lon };
-		}
-		return {
-			id: site.id,
-			asset,
-			module,
-			district_id: district,
-			site_category: site.site_category,
-			site_code: site.site_code,
-			site_name: site.site_name,
-			dmafull: site.dmafull,
-			geocode,
-			address: site.address,
-			address2: site.address2,
-			boundary_coordinate: site.boundary_coordinate,
-			site_status: site.site_status,
-			site_picture: site.site_picture,
-			site_schematic: site.site_schematic,
-			site_certificate: site.site_certificate,
-			notes: site.notes,
-			agency: site.agency,
-			wss_group: site.wss_group,
-			monitoring_group: site.monitoring_group,
-			area: site.area,
-			assign_to: site.assign_to,
-			dirname: site.dirname,
-			db_id: site.db_id,
-			attended_onsite_date: site.attended_onsite_date,
-			team_id: site.team_id,
-			team_id2: site.team_id2,
-			last_upload: site.last_upload,
-			main_site_code: site.main_site_code,
-			mnf_baseline: site.mnf_baseline,
-			nnf_baseline: site.nnf_baseline,
-			dmz_baseline: site.dmz_baseline,
-			cp_baseline: site.cp_baseline,
-			date_created: site.date_created,
-			min_mnf: site.min_mnf,
-			max_mnf: site.max_mnf,
-			dmz_type: site.dmz_type,
-			operational_certificate: site.operational_certificate,
-			eit_certificate: site.eit_certificate,
-			remarks: site.remarks
-		};
-	});
-	res.json({
-		status: 'success',
-		message: 'Sites data retrieved successfully',
-		data
-	});
-};
-export const getSiteById = async (req: Request, res: Response) => {
-	const row = await assetModel.getSiteById(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Site data retrieved successfully',
-		data: row
-	});
-};
-export const createSite = async (req: Request, res: Response) => {
-	const result = await assetModel.createSite(req.body);
-	res.json({
-		status: 'success',
-		message: 'Site created successfully',
-		result
-	});
-};
-export const updateSite = async (req: Request, res: Response) => {
-	const result = await assetModel.updateSite(Number(req.params.id), req.body);
-	res.json({
-		status: 'success',
-		message: 'Site updated successfully',
-		result
-	});
-};
-export const deleteSite = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteSite(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Site deleted successfully',
-		result
-	});
-};
-
-// --- BRAND-CATEGORY RELATIONSHIP ENDPOINTS ---
-
-// Assign a category to a brand
-export const assignCategoryToBrand = async (req: Request, res: Response) => {
-	const { brand_code, category_code } = req.params;
-	await assetModel.addBrandCategory(brand_code, category_code);
-	res.json({ status: 'success', message: 'Category assigned to brand' });
-};
-
-// Unassign a category from a brand
-export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
-	const { brand_code, category_code } = req.params;
-	await assetModel.removeBrandCategory(brand_code, category_code);
-	res.json({ status: 'success', message: 'Category unassigned from brand' });
-};
-
-// Get all categories for a brand
-export const getCategoriesForBrand = async (req: Request, res: Response) => {
-	const { brand_code } = req.params;
-	const categories = await assetModel.getCategoriesByBrand(brand_code);
-	res.json({ status: 'success', data: categories });
-};
-
-// Get all brands for a category
-export const getBrandsForCategory = async (req: Request, res: Response) => {
-	const { category_code } = req.params;
-	const brands = await assetModel.getBrandsByCategory(category_code);
-	res.json({ status: 'success', data: brands });
-};
-
-// Get all brand-category associations (for frontend mapping)
-export const getAllBrandCategoryMappings = async (req: Request, res: Response) => {
-	// Get all brands and categories
-	const brands = await assetModel.getBrands();
-	const categories = await assetModel.getCategories();
-	// Build lookup maps
-	const brandMap = new Map<string, { id: number; name: string; code: string }>();
-	for (const b of brands as any[]) {
-		brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
-	}
-	const categoryMap = new Map<string, { id: number; name: string; code: string }>();
-	for (const c of categories as any[]) {
-		categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
-	}
-	// Brute-force all pairs using getCategoriesByBrand for each brand
-	let mappings: any[] = [];
-	for (const b of brands as any[]) {
-		const cats = await assetModel.getCategoriesByBrand(b.code);
-		const catArr = Array.isArray(cats) ? cats : [];
-		for (const c of catArr) {
-			let catCode = '';
-			if (typeof c === 'object' && c !== null) {
-				// Try to extract category_code from known RowDataPacket structure
-				if ('category_code' in c && typeof c.category_code === 'string') {
-					catCode = c.category_code;
-				} else if ('code' in c && typeof c.code === 'string') {
-					catCode = c.code;
-				}
-			} else if (typeof c === 'string') {
-				catCode = c;
-			}
-			if (!catCode) continue;
-			mappings.push({
-				brand: brandMap.get(b.code) || { code: b.code },
-				category: categoryMap.get(catCode) || { code: catCode }
-			});
-		}
-	}
-	res.json({ status: 'success', data: mappings });
-};
-
-// SOFTWARES
-export const getSoftwares = async (req: Request, res: Response) => {
-	const rows = await assetModel.getSoftwares();
-	res.json({
-		status: 'success',
-		message: 'Softwares data retrieved successfully',
-		data: rows
-	});
-};
-
-export const getSoftwareById = async (req: Request, res: Response) => {
-	const row = await assetModel.getSoftwareById(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Software data retrieved successfully',
-		data: row
-	});
-};
-
-export const createSoftware = async (req: Request, res: Response) => {
-	const { name } = req.body;
-	const result = await assetModel.createSoftware({ name });
-	res.status(201).json({
-		status: 'success',
-		message: 'Software created successfully',
-		result
-	});
-};
-
-export const updateSoftware = async (req: Request, res: Response) => {
-	const { name } = req.body;
-	const result = await assetModel.updateSoftware(Number(req.params.id), { name });
-	res.json({
-		status: 'success',
-		message: 'Software updated successfully',
-		result
-	});
-};
-
-export const deleteSoftware = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteSoftware(Number(req.params.id));
-	res.json({
-		status: 'success',
-		message: 'Software deleted successfully',
-		result
-	});
-};
-
-// --- Employee autocomplete search ---
 // GET /employees/search?q=term
 export const searchEmployees = async (req: Request, res: Response) => {
 	const q = (req.query.q || '').toString().toLowerCase();
@@ -2027,6 +2051,150 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 		}
 	});
 };
+
+
+/* =========== POSITIONS =========== */
+export const getPositions = async (req: Request, res: Response) => {
+	const rows = await assetModel.getPositions();
+	res.json({
+		status: 'success',
+		message: 'Positions data retrieved successfully',
+		data: rows
+	});
+};
+
+export const getPositionById = async (req: Request, res: Response) => {
+	const row = await assetModel.getPositionById(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Position data retrieved successfully',
+		data: row
+	});
+};
+
+export const createPosition = async (req: Request, res: Response) => {
+	const result = await assetModel.createPosition(req.body);
+	res.json({
+		status: 'success',
+		message: 'Position created successfully',
+		result
+	});
+};
+
+export const updatePosition = async (req: Request, res: Response) => {
+	const result = await assetModel.updatePosition(Number(req.params.id), req.body);
+	res.json({
+		status: 'success',
+		message: 'Position updated successfully',
+		result
+	});
+};
+
+export const deletePosition = async (req: Request, res: Response) => {
+	const result = await assetModel.deletePosition(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Position deleted successfully',
+		result
+	});
+};
+
+
+
+
+// MODULES
+export const getModules = async (req: Request, res: Response) => {
+	const rows = await assetModel.getModules();
+	res.json({
+		status: 'success',
+		message: 'Modules data retrieved successfully',
+		data: rows
+	});
+};
+export const getModuleById = async (req: Request, res: Response) => {
+	const row = await assetModel.getModuleById(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Module data retrieved successfully',
+		data: row
+	});
+};
+export const createModule = async (req: Request, res: Response) => {
+	const { name, code } = req.body;
+	const result = await assetModel.createModule({ name, code });
+	res.json({
+		status: 'success',
+		message: 'Module created successfully',
+		result
+	});
+};
+export const updateModule = async (req: Request, res: Response) => {
+	const { name, code } = req.body;
+	const result = await assetModel.updateModule(Number(req.params.id), { name, code });
+	res.json({
+		status: 'success',
+		message: 'Module updated successfully',
+		result
+	});
+};
+export const deleteModule = async (req: Request, res: Response) => {
+	const result = await assetModel.deleteModule(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Module deleted successfully',
+		result
+	});
+};
+
+
+// SOFTWARES
+export const getSoftwares = async (req: Request, res: Response) => {
+	const rows = await assetModel.getSoftwares();
+	res.json({
+		status: 'success',
+		message: 'Softwares data retrieved successfully',
+		data: rows
+	});
+};
+
+export const getSoftwareById = async (req: Request, res: Response) => {
+	const row = await assetModel.getSoftwareById(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Software data retrieved successfully',
+		data: row
+	});
+};
+
+export const createSoftware = async (req: Request, res: Response) => {
+	const { name } = req.body;
+	const result = await assetModel.createSoftware({ name });
+	res.status(201).json({
+		status: 'success',
+		message: 'Software created successfully',
+		result
+	});
+};
+
+export const updateSoftware = async (req: Request, res: Response) => {
+	const { name } = req.body;
+	const result = await assetModel.updateSoftware(Number(req.params.id), { name });
+	res.json({
+		status: 'success',
+		message: 'Software updated successfully',
+		result
+	});
+};
+
+export const deleteSoftware = async (req: Request, res: Response) => {
+	const result = await assetModel.deleteSoftware(Number(req.params.id));
+	res.json({
+		status: 'success',
+		message: 'Software deleted successfully',
+		result
+	});
+};
+
 
 /* ============ ASSET TRANSFER REQUESTS ============ */
 export const getAssetTransfers = async (req: Request, res: Response) => {
@@ -2657,125 +2825,5 @@ export const deleteTransferChecklist = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: 'Transfer checklist item deleted successfully' });
 }
 
-/* LOCATIONS */
 
-export const getLocations = async (req: Request, res: Response) => {
-	// Fetch all locations
-	const locations = await assetModel.getLocations();
-	if (!Array.isArray(locations)) {
-		return res.status(500).json({ status: 'error', message: 'Failed to fetch locations' });
-	}
-	res.json({ status: 'success', message: 'Locations retrieved successfully', data: locations });
-}
 
-/* ======= ASSET MANAGERS ======= */
-export const getAssetManagers = async (req: Request, res: Response) => {
-		// Fetch all asset managers
-		const managers = await assetModel.getAssetManagers();
-		if (!Array.isArray(managers)) {
-			return res.status(500).json({ status: 'error', message: 'Failed to fetch asset managers' });
-		}
-		// Fetch departments, locations, costcenters and all employees for mapping
-		const [departmentsRaw, locationsRaw, costcentersRaw, employeesRaw] = await Promise.all([
-			assetModel.getDepartments(),
-			assetModel.getLocations(),
-			assetModel.getCostcenters(),
-			assetModel.getEmployees()
-		]);
-		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
-		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
-		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
-		const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
-		const deptMap = new Map(departments.map((d: any) => [d.id, d]));
-		const locMap = new Map(locations.map((l: any) => [l.id, l]));
-		const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
-		// Enrich managers with employee details, including nested department and location
-		let enrichedManagers = (managers as any[]).map(mgr => {
-			const emp = mgr.ramco_id && empMap.has(mgr.ramco_id) ? empMap.get(mgr.ramco_id) : null;
-			return {
-				...mgr,
-				employee: emp ? {
-					ramco_id: emp.ramco_id,
-					full_name: emp.full_name,
-					email: emp.email,
-					contact: emp.contact,
-					costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap.get(emp.costcenter_id)?.name || null } : null,
-					department: emp.department_id ? { id: emp.department_id, name: deptMap.get(emp.department_id)?.code || null } : null,
-					location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null
-				} : null
-			};
-		});
-		// Optional filter by ?ramco=... query param
-		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : null;
-		if (ramco) {
-			enrichedManagers = enrichedManagers.filter((mgr: any) => String(mgr.ramco_id) === ramco);
-		}
-		res.json({ status: 'success', message: 'Asset managers retrieved successfully', data: enrichedManagers });
-}
-export const getAssetManagerById = async (req: Request, res: Response) => {
-	const managerId = Number(req.params.id);
-	if (!managerId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
-	}
-	// Fetch the asset manager
-	const manager = await assetModel.getAssetManagerById(managerId);
-	if (!manager) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
-	}
-	// Fetch employee details and related department/location
-	const emp = manager.ramco_id ? await assetModel.getEmployeeByRamco(manager.ramco_id) : null;
-	let employee = null;
-	if (emp) {
-		const [dept, loc, costcenter] = await Promise.all([
-			emp.department_id ? assetModel.getDepartmentById(emp.department_id) : null,
-			emp.location_id ? assetModel.getLocationById(emp.location_id) : null,
-			emp.costcenter_id ? assetModel.getCostcenterById(emp.costcenter_id) : null
-		]);
-		employee = {
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			costcenter: costcenter ? { id: costcenter.id, name: costcenter.name || null } : null,
-			department: dept ? { id: dept.id, name: dept.code || null } : null,
-			location: loc ? { id: loc.id, name: loc.name || null } : null
-		};
-	}
-	res.json({ status: 'success', message: 'Asset manager retrieved successfully', data: { ...manager, employee } });
-}
-export const createAssetManager = async (req: Request, res: Response) => {
-	const data = req.body;
-	// Create the asset manager
-	const insertId = await assetModel.createAssetManager(data);
-	res.status(201).json({ status: 'success', message: 'Asset manager created successfully', data: { id: insertId } });
-}
-
-export const updateAssetManager = async (req: Request, res: Response) => {
-	const id = Number(req.params.id);
-	const data = req.body;
-	// Update the asset manager
-	const result = await assetModel.updateAssetManager(data, id);
-	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
-	}
-	res.json({ status: 'success', message: 'Asset manager updated successfully' });
-}
-
-export const deleteAssetManager = async (req: Request, res: Response) => {
-	const id = Number(req.params.id);
-	if (!id) {
-		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
-	}
-	// Validate asset manager exists
-	const manager = await assetModel.getAssetManagerById(id);
-	if (!manager) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
-	}
-	// Delete the asset manager
-	const result = await assetModel.deleteAssetManager(id);
-	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
-	}
-	res.json({ status: 'success', message: 'Asset manager deleted successfully' });
-}
