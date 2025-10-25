@@ -328,17 +328,7 @@ export const pushVehicleMtnToBilling = async (reqId: number) => {
         const [result] = await pool2.query(`
             INSERT INTO ${maintenanceBillingTable}
             (svc_order, asset_id, register_number, entry_code, ws_id, entry_date, costcenter_id, location_id)
-            SELECT 
-                req_id,
-                COALESCE(asset_id, vehicle_id),
-                register_number,
-                entry_code,
-                ws_id,
-                COALESCE(DATE(approval_date), DATE(NOW())),
-                COALESCE(costcenter_id, cc_id),
-                COALESCE(location_id, loc_id)
-            FROM ${vehicleMaintenanceTable}
-            WHERE req_id = ?
+            SELECT req_id, asset_id, register_number, entry_code, ws_id, approval_date,costcenter_id, location_id FROM ${vehicleMaintenanceTable} WHERE req_id = ?
         `, [reqId]) as ResultSetHeader[];
 
 		if (result.affectedRows === 0) {
