@@ -13,6 +13,9 @@ const roadtaxTable = `${dbMaintenance}.roadtax`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
+const dbBilling = 'billings';
+const maintenanceBillingTable = `${dbBilling}.tbl_inv2`;
+
 const poolCarTable = `${dbMaintenance}.poolcar2`;
 
 const tngTable = `${dbAssets}.touchngo`;
@@ -134,6 +137,11 @@ const getRequestStatus = (record: any): string => {
     if (d === 2) return 'cancelled';
     // Any rejection on the flow (except driver cancellation) is 'rejected'
     if (v === 2 || r === 2 || a === 2) return 'rejected';
+    // If maintenance form has been uploaded, show as 'Form Uploaded'
+    try {
+        const fu = (record && record.form_upload !== undefined && record.form_upload !== null) ? String(record.form_upload).trim() : '';
+        if (fu) return 'Form Uploaded';
+    } catch { /* ignore */ }
     // Approved when all stages are positively confirmed and not cancelled
     if (v === 1 && r === 1 && a === 1) return 'approved';
     // Pending phases
@@ -241,7 +249,9 @@ export const updateVehicleMtnRequest = async (id: number, data: any) => {
         // recommendation workflow
         'recommendation','recommendation_stat','recommendation_date',
         // approval workflow
-        'approval','approval_stat','approval_date'
+        'approval','approval_stat','approval_date',
+        // maintenance form upload
+        'form_upload','form_upload_date'
     ];
     for (const col of directKeys) {
         if (Object.prototype.hasOwnProperty.call(data, col) && !sets.find(s => s.startsWith(`${col} =`))) {
@@ -302,26 +312,34 @@ export const updateVehicleMtnUpload = async (req_id: number, dbPath: string) => 
 };
 
 // Force invoice creation for approved maintenance record - used when the requestor claimed already upload the form but the maintenance request is still pending for invoicing
-export const pushVehicleMtnToBilling = async (requestId: number) => {
+export const pushVehicleMtnToBilling = async (reqId: number) => {
 	try {
 		// Check if invoice already exists
 		const [existing] = await pool2.query(
-			'SELECT svc_order FROM billings.tbl_inv WHERE svc_order = ?',
-			[requestId]
+			`SELECT svc_order FROM ${maintenanceBillingTable} WHERE svc_order = ?`,
+			[reqId]
 		) as RowDataPacket[][];
 
 		if (existing.length > 0) {
 			throw new Error('Invoice already exists for this maintenance record (duplicate)');
 		}
 
-		// Insert invoice record
-		const [result] = await pool2.query(`
-            INSERT INTO billings.tbl_inv
-            (svc_order, vehicle_id, entry_code, ws_id, entry_date, cc_id, loc_id)
-            SELECT req_id, vehicle_id, entry_code, ws_id, date(approval_date), cc_id, loc_id
-            FROM applications.vehicle_svc
-            WHERE approval_stat = 1 AND drv_stat != 2 AND req_id = ?
-        `, [requestId]) as ResultSetHeader[];
+        // Insert invoice record (trust caller did the approval); tolerate nulls for optional fields
+        const [result] = await pool2.query(`
+            INSERT INTO ${maintenanceBillingTable}
+            (svc_order, asset_id, register_number, entry_code, ws_id, entry_date, costcenter_id, location_id)
+            SELECT 
+                req_id,
+                COALESCE(asset_id, vehicle_id),
+                register_number,
+                entry_code,
+                ws_id,
+                COALESCE(DATE(approval_date), DATE(NOW())),
+                COALESCE(costcenter_id, cc_id),
+                COALESCE(location_id, loc_id)
+            FROM ${vehicleMaintenanceTable}
+            WHERE req_id = ?
+        `, [reqId]) as ResultSetHeader[];
 
 		if (result.affectedRows === 0) {
 			throw new Error('No eligible maintenance record found or record not approved');
@@ -331,7 +349,7 @@ export const pushVehicleMtnToBilling = async (requestId: number) => {
 			success: true,
 			insertId: result.insertId,
 			affectedRows: result.affectedRows,
-			requestId
+			reqId
 		};
 	} catch (error) {
 		throw error;
@@ -515,7 +533,6 @@ export async function updateFleetInsuranceWithAssets(id: number, payload: Create
     if (!id || !insurance || !Array.isArray(assets_ids)) {
         throw new Error('Invalid payload: missing id, insurance or assets_ids');
     }
-
     // Preload register numbers for assets (best-effort; uses pool on assets DB)
     let registerMap = new Map<number, string | null>();
     try {

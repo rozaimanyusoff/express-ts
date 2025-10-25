@@ -335,6 +335,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 				recommendation_date: record.recommendation_date,
 				approval_date: record.approval_date,
 				form_upload_date: record.form_upload_date,
+				drv_date: record.drv_date,
 				emailStat: record.emailStat,
 				inv_status: record.inv_status,
 				status: record.status,
@@ -469,6 +470,8 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 			svc_type: svcTypeArray,
 			odo_start: (record as any).odo_start,
 			odo_end: (record as any).odo_end,
+			extra_mileage: (record as any).extra_mileage,
+			late_notice: (record as any).late_notice,
 			// Use asset_id (vehicle_id is deprecated)
 			req_comment: (record as any).req_comment,
 			req_upload: toPublicUrl((record as any).req_upload),
@@ -479,11 +482,12 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 			recommendation_date: (record as any).recommendation_date,
 			approval_date: (record as any).approval_date,
 			status: (record as any).status,
-			form_upload_date: (record as any).form_upload_date,
 			emailStat: (record as any).emailStat,
 			inv_status: (record as any).inv_status,
 			acceptance_status: (record as any).drv_stat,
 			cancellation_comment: (record as any).drv_cancel_comment,
+			form_upload: toPublicUrl((record as any).form_upload),
+			form_upload_date: (record as any).form_upload_date,
 			asset: assetMap.has((record as any).asset_id) ? (() => {
 				const a = assetMap.get((record as any).asset_id) as any;
 				return {
@@ -563,21 +567,9 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 		const odo_end = body.odo_end || null;
 		const req_comment = body.req_comment || body.comment || '';
 		const svc_opt = body.svc_opt || '';
-
-		// Extra mileage and late notice logic
-		let extra_mileage: string | null = null;
-		if (body.extra_mileage !== undefined && body.extra_mileage !== null) {
-			const em = Number(body.extra_mileage);
-			if (Number.isFinite(em) && em > 0) {
-				extra_mileage = String(em);
-			}
-		}
-		let late_notice: string | null = null;
-		let late_notice_date: string | null = null;
-		if (extra_mileage && Number(extra_mileage) > 500) {
-			late_notice = ' - ';
-			late_notice_date = body.late_notice_date || req_date || null;
-		}
+		const extra_mileage = body.extra_mileage || null;
+		const late_notice = body.late_notice || null;
+		const late_notice_date = body.late_notice_date || null;
 
 		// Uploaded file
 		// Defer req_upload_path until we know req_id; set null for initial insert
@@ -843,8 +835,32 @@ curl -X POST 'http://localhost:3030/api/mtn/request' \
 export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
-		// Pass request body directly to model for update. Model will use data.{bodyField} mapping.
-		const data = req.body || {};
+		// Build update payload from body and optionally handle 'form_upload' file
+		const data = { ...(req.body || {}) } as any;
+
+		// If a maintenance form is uploaded, move/rename to the same directory and store full URL
+		if (req.file) {
+			try {
+				const originalAbs = req.file.path; // temp filename from multer in admin/vehiclemtn2
+				// Generate final filename: <req_id>-<epoch>-<rand9><ext>
+				const epochSec = Math.floor(Date.now() / 1000);
+				const rand9 = Math.floor(100000000 + Math.random() * 900000000);
+				const extRaw = (req.file.originalname ? path.extname(req.file.originalname) : '') || path.extname(originalAbs) || '';
+				const ext = (extRaw && /^[.a-zA-Z0-9]+$/.test(extRaw)) ? extRaw.toLowerCase() : '';
+				const finalFilename = `${id}-${epochSec}-${rand9}${ext}`;
+				const destAbs = await buildStoragePath('admin/vehiclemtn2', finalFilename);
+				await safeMove(originalAbs, destAbs);
+				const dbPath = toDbPath('admin/vehiclemtn2', finalFilename); // e.g., uploads/admin/vehiclemtn2/<file>
+				// Persist DB path (not full URL) on form_upload field
+				data.form_upload = dbPath;
+				// Allow client-provided date or default to now
+				if (!('form_upload_date' in data) || !data.form_upload_date) {
+					data.form_upload_date = dayjs().format('YYYY-MM-DD HH:mm:ss');
+				}
+			} catch (fileErr) {
+				console.error('updateVehicleMtnRequest: failed handling form_upload file', fileErr);
+			}
+		}
 		const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
 
 		// If this update includes verification_stat = 1, notify recommender to review/recommend via workflow service
@@ -871,6 +887,15 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	}
 };
 
+// Dedicated controller for uploading maintenance form; reuses updateVehicleMtnRequest logic
+export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
+	// This endpoint expects:
+	// - binary file in field 'form_upload' (handled by multer in routes)
+	// - optional form_upload_date (string)
+	// We reuse updateVehicleMtnRequest which already processes req.file and sets fields accordingly.
+	return updateVehicleMtnRequest(req, res);
+};
+
 export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
@@ -890,7 +915,7 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 	}
 };
 
-// ========== RECOMMEND / APPROVE (single) ==========
+// RECOMMEND / APPROVE (single)
 export const recommendVehicleMtnRequestSingle = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
@@ -968,15 +993,28 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 			approval_date
 		};
 	const result = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
+
+	// If approved, push to billing (best-effort; ignore duplicate silently)
+	let billing: any = null;
+	if (approval_stat === 1) {
+		try {
+			billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
+		} catch (e: any) {
+			if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
+				console.warn('approveVehicleMtnRequestSingle: push to billing failed', e);
+			}
+		}
+	}
+
 	// Best-effort notify requester of approval outcome
 	try { await sendRequesterApprovalEmail(reqId, approval_stat); } catch { /* ignore */ }
-	return res.json({ status: 'success', message: 'Approval updated', data: { requestId: reqId, result } });
+	return res.json({ status: 'success', message: 'Approval updated', data: { requestId: reqId, result, billing } });
 	} catch (error) {
 		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
 	}
 };
 
-// ========== RECOMMEND / APPROVE (bulk) ==========
+// RECOMMEND / APPROVE (bulk)
 export const recommendVehicleMtnRequestBulk = async (req: Request, res: Response) => {
 	try {
 		const items = Array.isArray(req.body?.items) ? req.body.items as any[] : [];
@@ -1025,7 +1063,17 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 			const payload = { approval: String(actor), approval_stat: stat, approval_date: when } as any;
 			try {
 				const r = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
-				results.push({ req_id: reqId, ok: true, result: r });
+				let billing: any = null;
+				if (stat === 1) {
+					try {
+						billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
+					} catch (e: any) {
+						if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
+							console.warn('approveVehicleMtnRequestBulk: push to billing failed', e);
+						}
+					}
+				}
+				results.push({ req_id: reqId, ok: true, result: r, billing });
 				try { await sendRequesterApprovalEmail(reqId, stat); } catch { /* ignore */ }
 			} catch (e) {
 				results.push({ req_id: reqId, error: e instanceof Error ? e.message : 'update failed' });
@@ -1215,7 +1263,6 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
 	}
 };
-
 
 export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 	try {

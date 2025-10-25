@@ -13,7 +13,10 @@ router.get('/request/:id', asyncHandler(maintenanceController.getVehicleMtnReque
 
 router.get('/request', asyncHandler(maintenanceController.getVehicleMtnRequests)); // ?status={pending|verified|recommended|approved}
 router.post('/request', mtnUploader.single('req_upload'), asyncHandler(maintenanceController.createVehicleMtnRequest));
+// General update (no file upload middleware)
 router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
+// Dedicated endpoint to upload maintenance form
+router.put('/request/:id/form-upload', mtnUploader.single('form_upload'), asyncHandler(maintenanceController.uploadVehicleMtnForm));
 router.put('/request/:id/admin', asyncHandler(maintenanceController.adminUpdateVehicleMtnRequest));
 // Recommend / Approve single endpoints (actor ramco from ?authorize or body)
 router.put('/request/:id/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestSingle));
