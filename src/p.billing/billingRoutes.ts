@@ -33,16 +33,27 @@ router.delete('/mtn/parts/:id', asyncHandler(billingController.deleteServicePart
 router.get('/mtn/parts/search', asyncHandler(billingController.searchServiceParts));
 
 /* ================== VEHICLE MAINTENANCE BILLINGS ================== */
-
+// Same list endpoint but filters by inv_date instead of entry_date
+router.get('/mtn/inv', asyncHandler(billingController.getVehicleMtnBillingsInv));
 router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnBillingByVehicleSummary)); // /api/bills/vehicle/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id} -- EXCEL GENERATED REPORT
 router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
 // Find maintenance billings by request id (svc_order)
 router.get('/mtn/request/:svc_order', asyncHandler(billingController.getVehicleMtnBillingByRequestId));
 router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
+
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
+
 // Check invoice number existence for maintenance billings
 router.get('/mtn/check-invno', asyncHandler(billingController.checkVehicleMtnInvNo));
-router.put('/mtn/:id', mtnUploader.single('attachment'), asyncHandler(billingController.updateVehicleMtnBilling));
+// Accept file under either 'attachment' (preferred) or 'upload' (legacy/frontend variant)
+router.put(
+	'/mtn/:id',
+	mtnUploader.fields([
+		{ name: 'attachment', maxCount: 1 },
+		{ name: 'upload', maxCount: 1 }
+	]),
+	asyncHandler(billingController.updateVehicleMtnBilling)
+);
 //router.delete('/vehicle/:id', asyncHandler(billingController.deleteVehicleMtnBilling)); //NO DATA DELETE ALLOWED
 // Maintenance lookup by asset id
 router.get('/mtn/vehicle/:asset_id', asyncHandler(billingController.getVehicleMaintenanceByAsset));

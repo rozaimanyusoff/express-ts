@@ -1,11 +1,3 @@
-// Set the attachment (PDF filename) for a vehicle maintenance billing record
-export const setVehicleMtnBillingAttachment = async (inv_id: number, attachment: string): Promise<void> => {
-  // Persist to the `upload` column which is the column used by updateVehicleMtnBilling
-  await pool2.query(
-    `UPDATE ${vehicleMtnBillingTable} SET upload = ? WHERE inv_id = ?`,
-    [attachment, inv_id]
-  );
-};
 import { pool, pool2 } from '../utils/db';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
@@ -28,13 +20,211 @@ const beneficiaryTable = `${dbBillings}.util_beneficiary`;
 
 const serviceOptionsTable = `${dbApps}.svctype`;
 const servicePartsTable = `${dbBillings}.autoparts`;
-const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
+const vehicleMtnBillingTable = `${dbBillings}.tbl_inv2`;
 const vehicleMtnBillingPartTable = `${dbBillings}.tbl_inv_part`;
 
 //to be removed later
 const tempVehicleRecordTable = `${dbAssets}.assetdata`;
 const tempVehicleRecordDetailsTable = `${dbAssets}.vehicle_dt`;
 const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
+
+
+
+/* =========== VEHICLE MAINTENANCE BILLING PARENT TABLE =========== */
+
+export interface VehicleMaintenance {
+  inv_id: number;
+  inv_no: string;
+  inv_date: string;
+  svc_order: string;
+  vehicle_id: number;
+  costcenter_id: number;
+  location_id: number;
+  ws_id: number;
+  svc_date: string;
+  svc_odo: string;
+  inv_total: string;
+  inv_stat: string;
+  inv_remarks: string | null;
+  attachment: string | null;
+  running_no: number;
+}
+
+export const getVehicleMtnBillings = async (
+  year?: number | string,
+  from?: string,
+  to?: string
+): Promise<VehicleMaintenance[]> => {
+  // Prefer explicit date range when both from & to provided; else fall back to YEAR(entry_date)
+  const hasFrom = typeof from === 'string' && from.trim() !== '';
+  const hasTo = typeof to === 'string' && to.trim() !== '';
+  if (hasFrom && hasTo) {
+    const [rows] = await pool2.query(
+      `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND entry_date BETWEEN ? AND ? ORDER BY entry_date DESC, inv_id DESC`,
+      [from, to]
+    );
+    return rows as VehicleMaintenance[];
+  }
+
+  // Optional year filter using entry_date to avoid inv_date-only results
+  if (year !== undefined && year !== null && String(year).trim() !== '') {
+    const y = Number(year);
+    if (Number.isFinite(y)) {
+      const [rows] = await pool2.query(
+        `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND YEAR(entry_date) = ? ORDER BY entry_date DESC, inv_id DESC`,
+        [y]
+      );
+      return rows as VehicleMaintenance[];
+    }
+  }
+  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} ORDER BY inv_id DESC`);
+  return rows as VehicleMaintenance[];
+};
+
+// Variant that filters using inv_date instead of entry_date
+export const getVehicleMtnBillingsByInvDate = async (
+  year?: number | string,
+  from?: string,
+  to?: string
+): Promise<VehicleMaintenance[]> => {
+  const hasFrom = typeof from === 'string' && from.trim() !== '';
+  const hasTo = typeof to === 'string' && to.trim() !== '';
+  if (hasFrom && hasTo) {
+    const [rows] = await pool2.query(
+      `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date IS NOT NULL AND inv_date BETWEEN ? AND ? ORDER BY inv_date DESC, inv_id DESC`,
+      [from, to]
+    );
+    return rows as VehicleMaintenance[];
+  }
+  if (year !== undefined && year !== null && String(year).trim() !== '') {
+    const y = Number(year);
+    if (Number.isFinite(y)) {
+      const [rows] = await pool2.query(
+        `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date IS NOT NULL AND YEAR(inv_date) = ? ORDER BY inv_date DESC, inv_id DESC`,
+        [y]
+      );
+      return rows as VehicleMaintenance[];
+    }
+  }
+  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} ORDER BY inv_id DESC`);
+  return rows as VehicleMaintenance[];
+};
+
+export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaintenance | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_id = ?`, [id]);
+  const VehicleMaintenance = (rows as VehicleMaintenance[])[0];
+  return VehicleMaintenance || null;
+};
+
+// Fetch vehicle maintenance billings by request id (svc_order)
+export const getVehicleMtnBillingByRequestId = async (svc_order: string): Promise<VehicleMaintenance[]> => {
+  if (!svc_order || String(svc_order).trim() === '') return [];
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE svc_order = ? ORDER BY inv_date DESC, inv_id DESC`,
+    [svc_order]
+  );
+  return rows as VehicleMaintenance[];
+};
+
+export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
+  // Prefer data.upload if provided by controller; fall back to data.attachment for compatibility
+  const uploadValue = (data as any).upload ?? (data as any).attachment ?? null;
+  await pool2.query(
+    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
+    [data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, uploadValue, id]
+  );
+};
+
+export const deleteVehicleMtnBilling = async (id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${vehicleMtnBillingTable} WHERE id = ?`, [id]);
+};
+
+// Set the attachment (PDF filename) for a vehicle maintenance billing record
+export const setVehicleMtnBillingAttachment = async (inv_id: number, attachment: string): Promise<void> => {
+  // Persist to the `upload` column which is the column used by updateVehicleMtnBilling
+  await pool2.query(
+    `UPDATE ${vehicleMtnBillingTable} SET upload = ? WHERE inv_id = ?`,
+    [attachment, inv_id]
+  );
+};
+
+/* =========== VEHICLE MAINTENANCE BILLING PARTS TABLE ============= */
+
+// Obtain vehicle maintenance parts by maintenance ID
+export const getVehicleMtnBillingParts = async (maintenanceId: number): Promise<any[]> => {
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
+    [maintenanceId]
+  );
+  return rows as any[];
+};
+
+// Delete all parts for a given invoice (inv_id)
+export const deleteAllVehicleMtnBillingParts = async (inv_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`, [inv_id]);
+};
+
+// Bulk insert parts for a given invoice (inv_id)
+export const createVehicleMtnBillingParts = async (inv_id: number, parts: any[]): Promise<void> => {
+  if (!Array.isArray(parts) || parts.length === 0) return;
+  // Map part_amount (payload) to part_final_amount (DB)
+  const values = parts.map(part => [
+    inv_id,
+    part.autopart_id ?? null,
+    part.part_qty ?? null,
+    part.part_uprice ?? null,
+    part.part_final_amount ?? part.part_amount ?? null
+  ]);
+  await pool2.query(
+    `INSERT INTO ${vehicleMtnBillingPartTable} (inv_id, autopart_id, part_qty, part_uprice, part_final_amount)
+     VALUES ?`,
+    [values]
+  );
+};
+
+export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleMaintenance | null> => {
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
+    [id]
+  );
+  const part = (rows as VehicleMaintenance[])[0];
+  return part || null;
+};
+
+
+export const getVehicleMtnBillingByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date BETWEEN ? AND ? AND inv_date IS NOT NULL ORDER BY inv_date DESC`,
+    [from, to]
+  );
+  return rows as VehicleMaintenance[];
+};
+
+export const getVehicleMtnBillingByAssetId = async (assetId: number): Promise<VehicleMaintenance[]> => {
+  const [rows] = await pool2.query(
+    `SELECT * FROM ${vehicleMtnBillingTable} WHERE asset_id = ? ORDER BY inv_date DESC, inv_id DESC`,
+    [assetId]
+  );
+  return rows as VehicleMaintenance[];
+};
+
+// Count maintenance billings by inv_no. Optionally exclude a specific inv_id (useful when validating during edit)
+export const countVehicleMtnByInvNo = async (inv_no: string, excludeInvId?: number, billId?: number): Promise<number> => {
+  if (!inv_no || String(inv_no).trim() === '') return 0;
+  const params: any[] = [inv_no.trim()];
+  let sql = `SELECT COUNT(*) as cnt FROM ${vehicleMtnBillingTable} WHERE inv_no = ?`;
+  if (Number.isFinite(billId)) {
+    sql += ` AND bill_id = ?`;
+    params.push(billId);
+  }
+  if (Number.isFinite(excludeInvId)) {
+    sql += ` AND inv_id != ?`;
+    params.push(excludeInvId);
+  }
+  const [rows] = await pool2.query(sql, params);
+  const cnt = Array.isArray(rows) && rows.length > 0 ? (rows as any)[0].cnt : 0;
+  return Number(cnt) || 0;
+};
 
 /* =================== SERVICE OPTION TABLE ========================== */
 export interface ServiceOption {
@@ -186,138 +376,6 @@ export const getServicePartsByIds = async (ids: number[]): Promise<ServicePart[]
   return rows as ServicePart[];
 };
 
-
-/* =========== VEHICLE MAINTENANCE BILLING PARENT TABLE =========== */
-
-export interface VehicleMaintenance {
-  inv_id: number;
-  inv_no: string;
-  inv_date: string;
-  svc_order: string;
-  vehicle_id: number;
-  costcenter_id: number;
-  location_id: number;
-  ws_id: number;
-  svc_date: string;
-  svc_odo: string;
-  inv_total: string;
-  inv_stat: string;
-  inv_remarks: string | null;
-  attachment: string | null;
-  running_no: number;
-}
-
-export const getVehicleMtnBillings = async (): Promise<VehicleMaintenance[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} ORDER BY inv_id DESC`);
-  return rows as VehicleMaintenance[];
-};
-
-export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaintenance | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_id = ?`, [id]);
-  const VehicleMaintenance = (rows as VehicleMaintenance[])[0];
-  return VehicleMaintenance || null;
-};
-
-// Fetch vehicle maintenance billings by request id (svc_order)
-export const getVehicleMtnBillingByRequestId = async (svc_order: string): Promise<VehicleMaintenance[]> => {
-  if (!svc_order || String(svc_order).trim() === '') return [];
-  const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingTable} WHERE svc_order = ? ORDER BY inv_date DESC, inv_id DESC`,
-    [svc_order]
-  );
-  return rows as VehicleMaintenance[];
-};
-
-export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleMaintenance>): Promise<void> => {
-  // Prefer data.upload if provided by controller; fall back to data.attachment for compatibility
-  const uploadValue = (data as any).upload ?? (data as any).attachment ?? null;
-  await pool2.query(
-    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
-    [ data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, uploadValue, id ]
-  );
-};
-
-export const deleteVehicleMtnBilling = async (id: number): Promise<void> => {
-  await pool2.query(`DELETE FROM ${vehicleMtnBillingTable} WHERE id = ?`, [id]);
-};
-
-/* =========== VEHICLE MAINTENANCE BILLING PARTS TABLE ============= */
-
-// Obtain vehicle maintenance parts by maintenance ID
-export const getVehicleMtnBillingParts = async (maintenanceId: number): Promise<any[]> => {
-  const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
-    [maintenanceId]
-  );
-  return rows as any[];
-};
-
-// Delete all parts for a given invoice (inv_id)
-export const deleteAllVehicleMtnBillingParts = async (inv_id: number): Promise<void> => {
-  await pool2.query(`DELETE FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`, [inv_id]);
-};
-
-// Bulk insert parts for a given invoice (inv_id)
-export const createVehicleMtnBillingParts = async (inv_id: number, parts: any[]): Promise<void> => {
-  if (!Array.isArray(parts) || parts.length === 0) return;
-  // Map part_amount (payload) to part_final_amount (DB)
-  const values = parts.map(part => [
-    inv_id,
-    part.autopart_id ?? null,
-    part.part_qty ?? null,
-    part.part_uprice ?? null,
-    part.part_final_amount ?? part.part_amount ?? null
-  ]);
-  await pool2.query(
-    `INSERT INTO ${vehicleMtnBillingPartTable} (inv_id, autopart_id, part_qty, part_uprice, part_final_amount)
-     VALUES ?`,
-    [values]
-  );
-};
-
-export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleMaintenance | null> => {
-  const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
-    [id]
-  );
-  const part = (rows as VehicleMaintenance[])[0];
-  return part || null;
-};
-
-
-export const getVehicleMtnBillingByDate = async (from: string, to: string): Promise<VehicleMaintenance[]> => {
-  const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_date BETWEEN ? AND ? AND inv_date IS NOT NULL ORDER BY inv_date DESC`,
-    [from, to]
-  );
-  return rows as VehicleMaintenance[];
-};
-
-export const getVehicleMtnBillingByAssetId = async (assetId: number): Promise<VehicleMaintenance[]> => {
-  const [rows] = await pool2.query(
-    `SELECT * FROM ${vehicleMtnBillingTable} WHERE asset_id = ? ORDER BY inv_date DESC, inv_id DESC`,
-    [assetId]
-  );
-  return rows as VehicleMaintenance[];
-};
-
-// Count maintenance billings by inv_no. Optionally exclude a specific inv_id (useful when validating during edit)
-export const countVehicleMtnByInvNo = async (inv_no: string, excludeInvId?: number, billId?: number): Promise<number> => {
-  if (!inv_no || String(inv_no).trim() === '') return 0;
-  const params: any[] = [inv_no.trim()];
-  let sql = `SELECT COUNT(*) as cnt FROM ${vehicleMtnBillingTable} WHERE inv_no = ?`;
-  if (Number.isFinite(billId)) {
-    sql += ` AND bill_id = ?`;
-    params.push(billId);
-  }
-  if (Number.isFinite(excludeInvId)) {
-    sql += ` AND inv_id != ?`;
-    params.push(excludeInvId);
-  }
-  const [rows] = await pool2.query(sql, params);
-  const cnt = Array.isArray(rows) && rows.length > 0 ? (rows as any)[0].cnt : 0;
-  return Number(cnt) || 0;
-};
 
 /* =================================== WORKSHOP TABLE ========================================== */
 

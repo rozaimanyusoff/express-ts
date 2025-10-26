@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import * as billingModel from './billingModel';
 import * as assetsModel from '../p.asset/assetModel';
+import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 import dayjs from 'dayjs';
 import { stat } from 'fs';
 import { register } from 'module';
@@ -14,168 +15,121 @@ import { toPublicUrl } from '../utils/uploadUtil';
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
-	// Accept optional filters: year or from/to (svc_date). Default to current year.
-	const { year, from, to } = req.query as any;
-	// Optional asset filter: ?asset={asset_id} (supports comma-separated values)
-	const assetParam = (req.query as any).asset;
-	let assetFilterIds: number[] = [];
-	if (assetParam !== undefined && assetParam !== null && String(assetParam).trim() !== '') {
-		const tokens = String(assetParam)
-			.split(',')
-			.map((s: string) => Number(s.trim()))
-			.filter((n: number) => Number.isFinite(n) && n > 0);
-		assetFilterIds = Array.from(new Set(tokens));
-	}
-	let startDate: string | undefined;
-	let endDate: string | undefined;
+	try {
+		// Optional filters applied at model level using entry_date
+		const qYear = (req.query as any)?.year;
+		const year = (qYear !== undefined && qYear !== null && String(qYear).trim() !== '') ? Number(String(qYear).trim()) : undefined;
+		const from = (req.query as any)?.from ? String((req.query as any).from) : undefined;
+		const to = (req.query as any)?.to ? String((req.query as any).to) : undefined;
+		// Load rows (model will prioritize from/to over year)
+		const list = await billingModel.getVehicleMtnBillings(year, from, to);
+		const vehicleMtn = Array.isArray(list) ? (list as any[]) : [];
 
-	if (from && to) {
-		startDate = from;
-		endDate = to;
-		// single range fetch
-		let vehicleMtn = await billingModel.getVehicleMtnBillingByDate(startDate as string, endDate as string);
-		// Apply asset filter when provided (match by asset_id, fallback to vehicle_id if present)
-		if (assetFilterIds.length > 0) {
-			vehicleMtn = (vehicleMtn || []).filter((b: any) => {
-				const aid = b?.asset_id ?? b?.vehicle_id;
-				return aid !== undefined && assetFilterIds.includes(Number(aid));
-			});
-		}
-		// continue with vehicleMtn
-		// Fetch lookup lists after
+		// Fetch lookup lists
 		const workshops = await billingModel.getWorkshops() as any[];
 		const assets = await assetsModel.getAssets() as any[];
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
-		// Build lookup maps for fast access
-		// Build asset map keyed by id (primary key)
-		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+		// Build lookup maps for fast access (support id and asset_id)
+		const assetMap = new Map();
+		for (const a of (assets || [])) {
+			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
+			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
+		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
-		// Only return selected fields with nested structure
-		const filtered = vehicleMtn.map(b => {
-			const asset_id = (b as any).asset_id;
-			const cc_id = (b as any).cc_id;
-			const loc_id = (b as any).loc_id;
+		// Map nested structure
+		const data = vehicleMtn.map(b => {
+			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
+			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
+			const loc_id = (b as any).loc_id ?? (b as any).location_id;
 			return {
-				inv_id: b.inv_id,
-				inv_no: b.inv_no,
-				inv_date: b.inv_date,
-				svc_order: b.svc_order,
+				inv_id: (b as any).inv_id,
+				entry_date: (b as any).entry_date,
+				inv_no: (b as any).inv_no,
+				inv_date: (b as any).inv_date,
+				svc_order: (b as any).svc_order,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
-					register_number: (assetMap.get(asset_id) as any)?.register_number,
-					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type,
-					costcenter: ccMap.has(cc_id) ? {
-						id: cc_id,
-						name: (ccMap.get(cc_id) as any)?.name
-					} : null,
-					location: locationMap.has(loc_id) ? {
-						id: loc_id,
-						name: (locationMap.get(loc_id) as any)?.code
-					} : null
+					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
+					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
+					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
+					location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
-				workshop: wsMap.has(b.ws_id) ? {
-					id: b.ws_id,
-					name: (wsMap.get(b.ws_id) as any)?.ws_name
-				} : null,
-				svc_date: b.svc_date,
-				svc_odo: b.svc_odo,
-				inv_total: b.inv_total,
-				inv_stat: b.inv_stat,
-				inv_remarks: b.inv_remarks,
-				running_no: b.running_no
+				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
+				svc_date: (b as any).svc_date,
+				svc_odo: (b as any).svc_odo,
+				inv_total: (b as any).inv_total,
+				inv_stat: (b as any).inv_stat,
+				inv_remarks: (b as any).inv_remarks,
+				running_no: (b as any).running_no
 			};
 		});
-		return res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data: filtered });
+		return res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data });
+	} catch (err: any) {
+		logger.error(err);
+		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings', data: null });
 	}
+};
 
-	// If year param provided, support comma-separated years
-	let vehicleMtn: any[] = [];
-	if (year) {
-		const years = String(year).split(',').map((s: string) => Number(s.trim())).filter((y: number) => !isNaN(y));
-		if (years.length === 0) {
-			// fallback to current year
-			years.push(dayjs().year());
-		}
-		const seenInv = new Set<number>();
-		for (const y of years) {
-			const s = dayjs().year(y).startOf('year').toISOString();
-			const e = dayjs().year(y).endOf('year').toISOString();
-			const rows = Array.isArray(await billingModel.getVehicleMtnBillingByDate(s, e)) ? await billingModel.getVehicleMtnBillingByDate(s, e) : [];
-			for (const r of rows) {
-				if (!seenInv.has(r.inv_id)) {
-					seenInv.add(r.inv_id);
-					vehicleMtn.push(r);
-				}
-			}
-		}
-	} else {
-		// default: current year
-		const y = dayjs().year();
-		const s = dayjs().year(y).startOf('year').toISOString();
-		const e = dayjs().year(y).endOf('year').toISOString();
-		vehicleMtn = Array.isArray(await billingModel.getVehicleMtnBillingByDate(s, e)) ? await billingModel.getVehicleMtnBillingByDate(s, e) : [];
-	}
+// Same as getVehicleMtnBillings but applies filters on inv_date rather than entry_date
+export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
+	try {
+		const qYear = (req.query as any)?.year;
+		const year = (qYear !== undefined && qYear !== null && String(qYear).trim() !== '') ? Number(String(qYear).trim()) : undefined;
+		const from = (req.query as any)?.from ? String((req.query as any).from) : undefined;
+		const to = (req.query as any)?.to ? String((req.query as any).to) : undefined;
+		// Load rows filtered by inv_date
+		const list = await billingModel.getVehicleMtnBillingsByInvDate(year, from, to);
+		const vehicleMtn = Array.isArray(list) ? (list as any[]) : [];
 
-	// Apply asset filter globally for non-range branches
-	if (!from || !to) {
-		if (assetFilterIds.length > 0) {
-			vehicleMtn = (vehicleMtn || []).filter((b: any) => {
-				const aid = b?.asset_id ?? b?.vehicle_id;
-				return aid !== undefined && assetFilterIds.includes(Number(aid));
-			});
+		// Fetch lookup lists
+		const workshops = await billingModel.getWorkshops() as any[];
+		const assets = await assetsModel.getAssets() as any[];
+		const costcenters = await assetsModel.getCostcenters() as any[];
+		const locations = await assetsModel.getLocations() as any[];
+		// Build lookup maps for fast access (support id and asset_id)
+		const assetMap = new Map();
+		for (const a of (assets || [])) {
+			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
+			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
 		}
-	}
-
-	// Fetch lookup lists
-	const workshops = await billingModel.getWorkshops() as any[];
-	const assets = await assetsModel.getAssets() as any[];
-	const costcenters = await assetsModel.getCostcenters() as any[];
-	const locations = await assetsModel.getLocations() as any[];
-	// Build lookup maps for fast access
-	// Build asset map keyed by id (primary key)
-	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
-	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
-	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
-	// Only return selected fields with nested structure
-	const filtered = vehicleMtn.map(b => {
-		const asset_id = (b as any).asset_id;
-		const cc_id = (b as any).cc_id;
-		const loc_id = (b as any).loc_id;
-		return {
-			inv_id: b.inv_id,
-			inv_no: b.inv_no,
-			inv_date: b.inv_date,
-			svc_order: b.svc_order,
-			asset: assetMap.has(asset_id) ? {
-				id: asset_id,
-				register_number: (assetMap.get(asset_id) as any)?.register_number,
-				fuel_type: (assetMap.get(asset_id) as any)?.fuel_type,
-				costcenter: ccMap.has(cc_id) ? {
-					id: cc_id,
-					name: (ccMap.get(cc_id) as any)?.name
+		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
+		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
+		// Map nested structure (same shape as default list endpoint)
+		const data = vehicleMtn.map(b => {
+			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
+			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
+			const loc_id = (b as any).loc_id ?? (b as any).location_id;
+			return {
+				inv_id: (b as any).inv_id,
+				entry_date: (b as any).entry_date,
+				inv_no: (b as any).inv_no,
+				inv_date: (b as any).inv_date,
+				svc_order: (b as any).svc_order,
+				asset: assetMap.has(asset_id) ? {
+					id: asset_id,
+					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
+					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
+					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
+					location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
-				location: locationMap.has(loc_id) ? {
-					id: loc_id,
-					name: (locationMap.get(loc_id) as any)?.code
-				} : null
-			} : null,
-			workshop: wsMap.has(b.ws_id) ? {
-				id: b.ws_id,
-				name: (wsMap.get(b.ws_id) as any)?.ws_name
-			} : null,
-			svc_date: b.svc_date,
-			svc_odo: b.svc_odo,
-			inv_total: b.inv_total,
-			inv_stat: b.inv_stat,
-			inv_remarks: b.inv_remarks,
-			running_no: b.running_no
-		};
-	});
-	res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data: filtered });
+				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
+				svc_date: (b as any).svc_date,
+				svc_odo: (b as any).svc_odo,
+				inv_total: (b as any).inv_total,
+				inv_stat: (b as any).inv_stat,
+				inv_remarks: (b as any).inv_remarks,
+				running_no: (b as any).running_no
+			};
+		});
+		return res.json({ status: 'success', message: `Vehicle maintenance billings (inv_date) retrieved successfully`, data });
+	} catch (err: any) {
+		logger.error(err);
+		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings (inv_date)', data: null });
+	}
 };
 
 export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
@@ -200,6 +154,31 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	const invoiceId = billing.inv_id;
 	const parts = await billingModel.getVehicleMtnBillingParts(invoiceId);
 
+	// Optionally resolve maintenance request (svc_order maps to req_id)
+	let svcOrderDetails: any = null;
+	try {
+		const svcOrderVal = (billing as any).svc_order;
+		const reqId = Number(svcOrderVal);
+		if (Number.isFinite(reqId) && reqId > 0) {
+			const req = await maintenanceModel.getVehicleMtnRequestById(reqId);
+			if (req) {
+				const rAssetId = (req as any).asset_id ?? (req as any).vehicle_id;
+				const rCcId = (req as any).costcenter_id ?? (req as any).cc_id;
+				const rLocId = (req as any).location_id ?? (req as any).loc_id;
+				const rWsId = (req as any).ws_id;
+				svcOrderDetails = {
+					req_id: (req as any).req_id,
+					req_date: (req as any).req_date,
+					form_upload: (req as any).form_upload ?? null,
+					approval_date: (req as any).approval_date ?? null,
+					status: (req as any).req_stat ?? (req as any).status ?? null
+				};
+			}
+		}
+	} catch (e) {
+		// non-fatal enrichment failure
+	}
+
 	// Structure the billing data with nested objects
 	const asset_id = (billing as any).asset_id;
 	const cc_id = (billing as any).cc_id;
@@ -222,6 +201,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		inv_no: billing.inv_no,
 		inv_date: billing.inv_date,
 		svc_order: billing.svc_order,
+		svc_order_details: svcOrderDetails,
 		asset: assetMap.has(asset_id) ? {
 			id: asset_id,
 			register_number: (assetMap.get(asset_id) as any)?.register_number,
@@ -345,13 +325,22 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		inv_stat: body.inv_stat
 	};
 
-	// If this was a multipart/form-data request, req.file may contain the uploaded file
-	// Normalize and attach to updateData so the DB update sets the correct upload column.
-	// Note: multer puts the file on req.file and other fields remain in req.body (strings).
-	const uploadedFile = (req as any).file;
-	if (uploadedFile && uploadedFile.path) {
-		const normalized = normalizeStoredPath(uploadedFile.path);
-		if (normalized) updateData.attachment = normalized; // passed to updateVehicleMtnBilling -> upload column
+	// Handle file upload from either 'attachment' or 'upload' field names.
+	// With multer.single, files land on req.file; with multer.fields, files land on req.files as arrays.
+	let uploadedPath: string | null = null;
+	const anyReq: any = req as any;
+	if (anyReq.file && anyReq.file.path) {
+		uploadedPath = anyReq.file.path;
+	} else if (anyReq.files) {
+		// Prefer 'attachment', then 'upload'
+		const f1 = Array.isArray(anyReq.files.attachment) && anyReq.files.attachment.length > 0 ? anyReq.files.attachment[0] : null;
+		const f2 = Array.isArray(anyReq.files.upload) && anyReq.files.upload.length > 0 ? anyReq.files.upload[0] : null;
+		const f = f1 || f2;
+		if (f && f.path) uploadedPath = f.path;
+	}
+	if (uploadedPath) {
+		const normalized = normalizeStoredPath(uploadedPath);
+		if (normalized) updateData.attachment = normalized; // will mirror to upload below
 	}
 	// ensure we also set upload in updateData to match DB column used by model
 	if (updateData.attachment) updateData.upload = updateData.attachment;
@@ -381,9 +370,10 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		await billingModel.createVehicleMtnBillingParts(id, parts);
 	}
 
-	// If the client provided attachment path as a string field (not file), normalize it too
-	if (!updateData.attachment && body.attachment && typeof body.attachment === 'string' && body.attachment.trim() !== '') {
-		updateData.attachment = normalizeStoredPath(body.attachment.trim()) || body.attachment.trim();
+	// If the client provided a stored path as string (not file), accept under either 'attachment' or 'upload'
+	const stringUpload = typeof body.upload === 'string' ? body.upload : (typeof body.attachment === 'string' ? body.attachment : null);
+	if (!updateData.attachment && stringUpload && stringUpload.trim() !== '') {
+		updateData.attachment = normalizeStoredPath(stringUpload.trim()) || stringUpload.trim();
 	}
 	// mirror to `upload` field which is the actual column name used in the model
 	if (updateData.attachment && !updateData.upload) updateData.upload = updateData.attachment;
