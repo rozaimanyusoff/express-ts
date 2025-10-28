@@ -2096,51 +2096,56 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			return String(c.pcar_empid) === ramco || String(c.pcar_driver) === ramco || String(c.pass) === ramco;
 		});
 
-		// Enrich fields and exclude nulls
+		// Build cleaned response shape per requirements
 		const data = filtered.map((c: any) => {
-			const obj: any = { ...c };
-			// Enrich employee-related by replacing original fields
-			if (c.pcar_empid && empMap.has(String(c.pcar_empid))) {
-				const e = empMap.get(String(c.pcar_empid));
-				obj.pcar_empid = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
-			}
-			if (c.pcar_driver && empMap.has(String(c.pcar_driver))) {
-				const e = empMap.get(String(c.pcar_driver));
-				obj.pcar_driver = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
-			}
-			// Keep pass as-is (string). Do not add extra passenger object.
+			// Employee resolver
+			const emp = (rid: any) => {
+				const e = rid ? empMap.get(String(rid)) : null;
+				return e ? { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null } : null;
+			};
+			// Department and Location resolver
+			const dept = (id: any) => {
+				const d = (id != null) ? deptMap.get(Number(id)) : null;
+				return d ? { id: Number(d.id), code: d.code || null } : null;
+			};
+			const loc = (id: any) => {
+				const l = (id != null) ? locMap.get(Number(id)) : null;
+				return l ? { id: Number(l.id), name: l.name || null } : null;
+			};
 
-			// Enrich department/location/type and asset
-			if (c.dept_id != null && deptMap.has(Number(c.dept_id))) {
-				const d = deptMap.get(Number(c.dept_id));
-				obj.department = { id: Number(d.id), code: d.code || null };
-			}
-			if (c.loc_id != null && locMap.has(Number(c.loc_id))) {
-				const l = locMap.get(Number(c.loc_id));
-				obj.location = { id: Number(l.id), name: l.name || null };
-			}
-			if (c.pcar_type != null && typeMap.has(Number(c.pcar_type))) {
-				const t = typeMap.get(Number(c.pcar_type));
-				obj.pcar_type = { id: Number(t.id), name: t.name || null };
-			}
-			if (c.asset_id && assetMap.has(Number(c.asset_id))) {
-				const a = assetMap.get(Number(c.asset_id));
-				obj.asset = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
-			}
-			// Recommendation/approval users
-			if (c.recommendation && empMap.has(String(c.recommendation))) {
-				const e = empMap.get(String(c.recommendation));
-				obj.recommendation = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
-			}
-			if (c.approval && empMap.has(String(c.approval))) {
-				const e = empMap.get(String(c.approval));
-				obj.approval = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
-			}
-			// Remove null fields as requested (exclude nulls)
-			Object.keys(obj).forEach((k) => {
-				if (obj[k] === null) delete obj[k];
-			});
-			return obj;
+			const out: any = {
+				pcar_id: c.pcar_id,
+				pcar_datereq: c.pcar_datereq ?? c.pcar_datererq ?? null,
+				pcar_empid: emp(c.pcar_empid),
+				ctc_m: c.ctc_m ?? null,
+				dept_id: c.dept_id ?? null,
+				loc_id: c.loc_id ?? null,
+				pcar_booktype: c.pcar_booktype ?? null,
+				pcar_type: (c.pcar_type !== undefined ? Number(c.pcar_type) : null),
+				pcar_datefr: c.pcar_datefr ?? c.pcard_datefr ?? null,
+				pcar_dateto: c.pcar_dateto ?? c.pcard_dateto ?? null,
+				pcar_retdate: c.pcar_retdate ?? null,
+				pcar_day: c.pcar_day ?? null,
+				pcar_hour: c.pcar_hour ?? null,
+				pcar_dest: c.pcar_dest ?? null,
+				pcar_purp: c.pcar_purp ?? null,
+				pcar_driver: emp(c.pcar_driver),
+				cancel_date: c.cancel_date ?? null,
+				approval_stat: (c.approval_stat !== undefined && c.approval_stat !== null) ? Number(c.approval_stat) : 0,
+				pcar_cancel: (c.pcar_cancel === null || c.pcar_cancel === undefined) ? null : String(c.pcar_cancel),
+				pcar_canrem: c.pcar_canrem ?? null,
+				assigned_poolcar: assetMap.has(Number(c.asset_id)) ? {
+					id: Number(c.asset_id),
+					register_number: (assetMap.get(Number(c.asset_id)) as any)?.register_number || null
+				} : null,
+				status: c.status ?? null,
+				department: dept(c.dept_id),
+				location: loc(c.loc_id)
+			};
+
+			// Remove nulls
+			Object.keys(out).forEach((k) => { if (out[k] === null) delete out[k]; });
+			return out;
 		});
 
 		res.json({
@@ -2205,9 +2210,9 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 			const l = locMap.get(Number(car.loc_id));
 			obj.location = { id: Number(l.id), name: l.name || null };
 		}
-		if (car.pcar_type != null && typeMap.has(Number(car.pcar_type))) {
-			const t = typeMap.get(Number(car.pcar_type));
-			obj.pcar_type = { id: Number(t.id), name: t.name || null };
+		// Keep pcar_type as a number (no object enrichment)
+		if (car.pcar_type != null) {
+			obj.pcar_type = Number(car.pcar_type);
 		}
 		if (car.asset_id && assetMap.has(Number(car.asset_id))) {
 			const a = assetMap.get(Number(car.asset_id));
@@ -2228,13 +2233,47 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 				.split(/[,;\s]+/)
 				.map((s: string) => s.trim())
 				.filter((s: string) => s.length > 0);
-			const unique = Array.from(new Set(ids));
+			const unique = Array.from(new Set(ids)) as string[];
 			const passenger = unique.map((rid: string) => {
 				const emp = empMap.get(rid);
 				return { ramco_id: rid, full_name: emp ? (emp.full_name || emp.name || null) : null };
 			});
 			if (passenger.length > 0) obj.passenger = passenger;
 		}
+		// Enrich TNG and Fleetcard objects if IDs exist
+		try {
+			if ((car as any).tng_id) {
+				const tid = Number((car as any).tng_id);
+				if (Number.isFinite(tid) && tid > 0) {
+					const tng = await maintenanceModel.getTngRecordById(tid);
+					if (tng) {
+						obj.tng = {
+							id: (tng as any).tng_id ?? (tng as any).id ?? tid,
+							tng_sn: (tng as any).tng_sn ?? null
+						};
+					}
+				}
+			}
+		} catch {}
+		try {
+			if ((car as any).fleetcard_id) {
+				const fid = Number((car as any).fleetcard_id);
+				if (Number.isFinite(fid) && fid > 0) {
+					const fc = await billingModel.getFleetCardById(fid);
+					if (fc) {
+						obj.fleetcard = {
+							id: (fc as any).id ?? fid,
+							card_no: (fc as any).card_no ?? null
+						};
+					}
+				}
+			}
+		} catch {}
+
+		// Include return info explicitly if present
+		if ((car as any).pcar_retdate !== undefined) obj.pcar_retdate = (car as any).pcar_retdate;
+		if ((car as any).pcar_odo_end !== undefined) obj.pcar_odo_end = (car as any).pcar_odo_end;
+
 		Object.keys(obj).forEach((k) => { if (obj[k] === null) delete obj[k]; });
 
 		res.json({
@@ -2349,6 +2388,81 @@ export const updatePoolCar = async (req: Request, res: Response) => {
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			data: null
 		});
+	}
+};
+
+// Mark a pool car application as returned (record return date/time and odometer)
+// Route: PUT /api/mtn/poolcars/:id/returned
+// Payload: { pcar_retdate: 'YYYY-MM-DD HH:mm:ss', pcar_odo_end: number }
+export const returnPoolCar = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const body = req.body || {};
+		const pcarId = Number(id || body.pcar_id);
+		if (!Number.isFinite(pcarId) || pcarId <= 0) {
+			return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+		}
+
+		const pcar_retdate = body.pcar_retdate || body.return_date || null;
+		const pcar_odo_end = (body.pcar_odo_end !== undefined && body.pcar_odo_end !== null)
+			? Number(body.pcar_odo_end)
+			: (body.odo_end !== undefined ? Number(body.odo_end) : null);
+
+		if (!pcar_retdate) {
+			return res.status(400).json({ status: 'error', message: 'pcar_retdate is required', data: null });
+		}
+		if (pcar_odo_end !== null && !Number.isFinite(pcar_odo_end)) {
+			return res.status(400).json({ status: 'error', message: 'pcar_odo_end must be a number if provided', data: null });
+		}
+
+		const payload: any = { pcar_retdate };
+		if (pcar_odo_end !== null) payload.pcar_odo_end = pcar_odo_end;
+
+		await maintenanceModel.updatePoolCar(pcarId, payload);
+
+		return res.json({ status: 'success', message: 'Pool car marked as returned', data: { id: pcarId, pcar_retdate, pcar_odo_end } });
+	} catch (error: any) {
+		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to update return info', data: null });
+	}
+};
+
+// User-driven cancellation for Pool Car application
+// Route: PUT /api/mtn/poolcars/:id/cancellation
+// Payload: { cancel_date: 'YYYY-MM-DD HH:mm:ss', pcar_canrem: string, pcar_cancel: 'cancelled' | null }
+export const cancelPoolCar = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const body = req.body || {};
+		const pcarId = Number(id || body.pcar_id);
+		if (!Number.isFinite(pcarId)) {
+			return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+		}
+
+		// Interpret the cancellation flag (expects literal 'cancelled' per payload spec)
+		const isCancelled = typeof body.pcar_cancel === 'string' && String(body.pcar_cancel).toLowerCase() === 'cancelled';
+
+		const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+		const update: any = {};
+
+		if (isCancelled) {
+			update.pcar_cancel = 1;
+			update.cancel_date = body.cancel_date || nowStr;
+			update.pcar_canrem = body.pcar_canrem ?? null;
+			// Optionally capture actor
+			const actor = (req.user && typeof req.user === 'object') ? ((req.user as any).ramco_id || (req.user as any).username || null) : null;
+			if (actor) update.cancel_by = actor;
+			// Do not alter approval/allocation fields here (user-level cancellation)
+		} else {
+			// Clearing cancellation
+			update.pcar_cancel = 0;
+			update.cancel_date = null;
+			if (Object.prototype.hasOwnProperty.call(body, 'pcar_canrem')) update.pcar_canrem = body.pcar_canrem;
+		}
+
+		await maintenanceModel.updatePoolCar(pcarId, update);
+		return res.json({ status: 'success', message: isCancelled ? 'Pool car cancelled' : 'Pool car cancellation cleared', data: { id: pcarId } });
+	} catch (err: any) {
+		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to update pool car cancellation', data: null });
 	}
 };
 

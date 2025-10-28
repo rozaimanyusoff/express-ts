@@ -625,11 +625,18 @@ export async function getRoadtaxCountsByInsurer() {
 
 export const getPoolCars = async () => {
     const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} ORDER BY pcar_id DESC`);
-    return rows as RowDataPacket[];
+    const arr = rows as RowDataPacket[];
+    // Attach computed status based on approval_stat and pcar_cancel
+    return arr.map((r: any) => ({
+        ...r,
+        status: getPoolCarStatus(r)
+    }));
 };
 export const getPoolCarById = async (id: number) => {
     const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
-    return (rows as RowDataPacket[])[0];
+    const rec = (rows as RowDataPacket[])[0];
+    if (!rec) return rec;
+    return { ...(rec as any), status: getPoolCarStatus(rec as any) } as any;
 };
 export const createPoolCar = async (data: any) => {
     const [result] = await pool2.query(`INSERT INTO ${poolCarTable} SET ?`, [data]);
@@ -709,6 +716,52 @@ export const getAvailablePoolCars = async () => {
         ORDER BY t.pcar_id DESC`;
     const [rows] = await pool2.query(sql);
     return rows as RowDataPacket[];
+};
+
+// Helper to compute poolcar status from approval_stat and pcar_cancel
+export const getPoolCarStatus = (input: any, pcar_cancelParam?: any): string => {
+    // Support calling with a record or raw values
+    const approval_stat = (typeof input === 'object' && input !== null && 'approval_stat' in input)
+        ? (input as any).approval_stat
+        : input;
+    const pcar_cancel = (typeof input === 'object' && input !== null && 'pcar_cancel' in input)
+        ? (input as any).pcar_cancel
+        : pcar_cancelParam;
+    const pcar_retdate = (typeof input === 'object' && input !== null && 'pcar_retdate' in input)
+        ? (input as any).pcar_retdate
+        : undefined;
+
+    const a = Number(approval_stat ?? 0);
+    const cancelled = (() => {
+        const v = pcar_cancel;
+        if (v === null || v === undefined) return false;
+        if (typeof v === 'number') return v === 1;
+        if (typeof v === 'boolean') return v === true;
+        const s = String(v).toLowerCase();
+        return s === '1' || s === 'true' || s === 'yes' || s === 'cancelled';
+    })();
+    const hasReturned = (() => {
+        if (pcar_retdate === null || pcar_retdate === undefined) return false;
+        const d = new Date(pcar_retdate);
+        return !Number.isNaN(d.getTime());
+    })();
+
+    // Rules:
+    // - if approval_stat: 2 & pcar_cancel: any => rejected
+    if (a === 2) return 'rejected';
+    // - if pcar_cancel indicates cancellation => cancelled
+    if (cancelled) return 'cancelled';
+    // - if returned date exists => returned
+    if (hasReturned) return 'returned';
+    // - if approval_stat: 0 & pcar_cancel: '1' => cancelled
+    if (a === 0 && cancelled) return 'cancelled';
+    // - if approval_stat: 1 & pcar_cancel: null => approved
+    if (a === 1 && !cancelled) return 'approved';
+    // - if approval_stat: 0 & pcar_cancel: null => pending
+    if (a === 0 && !cancelled) return 'pending';
+    // Fallbacks for unspecified combos
+    if (cancelled) return 'cancelled';
+    return 'pending';
 };
 
 
