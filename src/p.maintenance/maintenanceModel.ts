@@ -623,8 +623,16 @@ export async function getRoadtaxCountsByInsurer() {
 
 /* ================= POOLCAR APPS ================= */
 
-export const getPoolCars = async () => {
-    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} ORDER BY pcar_id DESC`);
+export const getPoolCars = async (opts?: { asset_id?: number }) => {
+    // Optional filter by assigned asset_id
+    const where: string[] = [];
+    const params: any[] = [];
+    if (opts && typeof opts.asset_id === 'number' && Number.isFinite(opts.asset_id) && opts.asset_id > 0) {
+        where.push(`asset_id = ?`);
+        params.push(Number(opts.asset_id));
+    }
+    const sql = `SELECT * FROM ${poolCarTable}` + (where.length ? ` WHERE ${where.join(' AND ')}` : '') + ` ORDER BY pcar_id DESC`;
+    const [rows] = await pool2.query(sql, params);
     const arr = rows as RowDataPacket[];
     // Attach computed status based on approval_stat and pcar_cancel
     return arr.map((r: any) => ({

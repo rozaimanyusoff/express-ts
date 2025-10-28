@@ -2068,7 +2068,10 @@ const mapPoolCarPayload = (body: any) => {
 
 export const getPoolCars = async (req: Request, res: Response) => {
 	try {
-		const cars = await maintenanceModel.getPoolCars();
+		// Optional filters
+		const assetParam = typeof req.query.asset === 'string' ? req.query.asset.trim() : '';
+		const assetId = assetParam && !Number.isNaN(Number(assetParam)) ? Number(assetParam) : undefined;
+		const cars = await maintenanceModel.getPoolCars({ asset_id: (assetId && assetId > 0) ? assetId : undefined });
 		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
 
 		// Lookups for enrichment
@@ -2090,7 +2093,7 @@ export const getPoolCars = async (req: Request, res: Response) => {
 		const typeMap = new Map(types.map((t: any) => [Number(t.id), t]));
 		const assetMap = new Map(assets.map((a: any) => [Number(a.id), a]));
 
-		// Filter by ?ramco on pcar_empid if provided
+		// Filter by ?ramco on pcar_empid if provided (post-query filter)
 		const filtered = (Array.isArray(cars) ? cars as any[] : []).filter((c: any) => {
 			if (!ramco) return true;
 			return String(c.pcar_empid) === ramco || String(c.pcar_driver) === ramco || String(c.pass) === ramco;

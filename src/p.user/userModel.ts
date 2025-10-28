@@ -14,7 +14,7 @@ const usersTable = 'users';
 const userGroupsTable = 'user_groups';
 const userProfileTable = 'user_profile';
 const userTasksTable = 'user_tasks';
-const approvalLevelsTable = 'approval_levels';
+const workflowTable = 'workflows';
 const moduleTable = 'modules';
 const moduleMembersTable = 'module_members';
 const permissionTable = 'permissions';
@@ -606,7 +606,7 @@ export const createWorkflow = async (data: any): Promise<number> => {
         }
 
         const [result] = await conn.query(
-            `INSERT INTO ${approvalLevelsTable} (module_name, level_order, ramco_id, level_name, description, is_active, created_at, updated_at)
+            `INSERT INTO ${workflowTable} (module_name, level_order, ramco_id, level_name, description, is_active, created_at, updated_at)
              VALUES ${placeholders}`,
             params
         );
@@ -630,25 +630,25 @@ export const createWorkflow = async (data: any): Promise<number> => {
 };
 
 export const getWorkflows = async () => {
-    const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable}`);
+    const [rows] = await pool.query(`SELECT * FROM ${workflowTable}`);
     return rows;
 };
 
 export const getWorkflowById = async (id: number) => {
-    const [rows] = await pool.query(`SELECT * FROM ${approvalLevelsTable} WHERE id = ?`, [id]) as [any[], any];
+    const [rows] = await pool.query(`SELECT * FROM ${workflowTable} WHERE id = ?`, [id]) as [any[], any];
     return rows[0] || null;
 };
 
 export const updateWorkflow = async (id: number, data: any): Promise<void> => {
     const [result] = await pool.query(`
-        UPDATE ${approvalLevelsTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, updated_at = NOW()
+        UPDATE ${workflowTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, updated_at = NOW()
         WHERE id = ?`, 
         [data.module_name, data.level_order, data.employee_ramco_id, data.level_name, data.description, data.is_active, id]
     );
 };
 
 export const deleteWorkflow = async (id: number) => {
-    const [result] = await pool.query(`DELETE FROM ${approvalLevelsTable} WHERE id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${workflowTable} WHERE id = ?`, [id]);
     return result;
 };
 
@@ -674,10 +674,10 @@ export const reorderWorkflows = async (payload: { module_name?: string; items: A
         let updated = 0;
         for (const item of normalized) {
             if (payload.module_name) {
-                const [res] = await conn.query(`UPDATE ${approvalLevelsTable} SET level_order = ?, updated_at = NOW() WHERE id = ? AND module_name = ?`, [item.level_order, item.id, payload.module_name]);
+                const [res] = await conn.query(`UPDATE ${workflowTable} SET level_order = ?, updated_at = NOW() WHERE id = ? AND module_name = ?`, [item.level_order, item.id, payload.module_name]);
                 updated += (res as ResultSetHeader).affectedRows || 0;
             } else {
-                const [res] = await conn.query(`UPDATE ${approvalLevelsTable} SET level_order = ?, updated_at = NOW() WHERE id = ?`, [item.level_order, item.id]);
+                const [res] = await conn.query(`UPDATE ${workflowTable} SET level_order = ?, updated_at = NOW() WHERE id = ?`, [item.level_order, item.id]);
                 updated += (res as ResultSetHeader).affectedRows || 0;
             }
         }
