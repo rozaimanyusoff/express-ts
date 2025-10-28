@@ -20,7 +20,7 @@ const beneficiaryTable = `${dbBillings}.util_beneficiary`;
 
 const serviceOptionsTable = `${dbApps}.svctype`;
 const servicePartsTable = `${dbBillings}.autoparts`;
-const vehicleMtnBillingTable = `${dbBillings}.tbl_inv2`;
+const vehicleMtnBillingTable = `${dbBillings}.tbl_inv`;
 const vehicleMtnBillingPartTable = `${dbBillings}.tbl_inv_part`;
 
 //to be removed later
