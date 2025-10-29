@@ -643,7 +643,7 @@ export const updateWorkflow = async (id: number, data: any): Promise<void> => {
     const [result] = await pool.query(`
         UPDATE ${workflowTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, updated_at = NOW()
         WHERE id = ?`, 
-        [data.module_name, data.level_order, data.employee_ramco_id, data.level_name, data.description, data.is_active, id]
+        [data.module_name, data.level_order, data.ramco_id, data.level_name, data.description, data.is_active, id]
     );
 };
 

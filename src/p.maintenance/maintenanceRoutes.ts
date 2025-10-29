@@ -50,10 +50,7 @@ router.post('/request/:requestId/resend/approval', (req, res, next) => {
 
 
 // ========== FLEET INSURANCE + ROADTAX ==========
-router.post('/insurance', asyncHandler(maintenanceController.createFleetInsurance));
-router.put('/insurance/:id', asyncHandler(maintenanceController.updateFleetInsurance));
-router.get('/insurance/:id', asyncHandler(maintenanceController.getFleetInsuranceById));
-router.get('/insurance', asyncHandler(maintenanceController.listFleetInsurances));
+
 // ========== MAINTENANCE TYPES CRUD ==========
 router.get('/types', asyncHandler(maintenanceController.getServiceTypes));
 router.get('/types/:id', asyncHandler(maintenanceController.getServiceTypeById));

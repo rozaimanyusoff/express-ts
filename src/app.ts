@@ -16,6 +16,7 @@ import importRoutes from './p.admin/importerRoutes';
 import webstockRoutes from './s.webstock/webstockRoutes';
 import summonRoutes from './p.compliance/complianceRoutes';
 import notificationRoutes from './p.notification/notificationRoutes';
+import projectRoutes from './p.project/projectRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -82,6 +83,7 @@ app.use('/api/importer', tokenValidator, importRoutes);
 app.use('/api/webstock', webstockRoutes);
 app.use('/api/compliance', summonRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/projects', projectRoutes);
 
 app.use(errorHandler);
 
