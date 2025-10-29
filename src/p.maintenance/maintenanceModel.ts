@@ -8,8 +8,7 @@ const dbAssets = 'assets';
 // Example:
 const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc2`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
-const fleetInsuranceTable = `${dbAssets}.vehicle_insurance`;
-const roadtaxTable = `${dbMaintenance}.roadtax`;
+const insuranceTable = `${dbAssets}.vehicle_insurance`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
@@ -346,8 +345,7 @@ export const pushVehicleMtnToBilling = async (reqId: number) => {
 	}
 };
 
-/* MAINTENANCE TYPE */
-
+/* =========== MAINTENANCE TYPE =========== */
 export const getServiceTypes = async () => {
 	// Placeholder - implement when database structure is provided
 	const [rows] = await pool2.query(`SELECT * FROM ${maintenanceTypesTable}`);
@@ -413,11 +411,38 @@ export const getVehicleMtnRequestByAssetId = async (vehicleId: number, status?: 
 	}
 };
 
-// Add more CRUD functions here based on your requirements
 
-/* ================== FLEET INSURANCE + ROADTAX ================== */
+/* ================== INSURANCE + ROADTAX ================== */
+//insurance CRUD operations will be here when database structure is provided
+export const getInsurances = async () => {
+    // Placeholder - implement when database structure is provided
+    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} ORDER BY rt_id DESC`);
+    return rows;
+}
 
+export const getInsuranceById = async (id: number) => {
+    // Placeholder - implement when database structure is provided
+    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} WHERE rt_id = ?`, [id]);
+    return (rows as RowDataPacket[])[0];
+};
 
+export const createInsurance = async (data: any) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`INSERT INTO ${insuranceTable} SET ?`, [data]);
+    return (result as ResultSetHeader).insertId;
+};
+
+export const updateInsurance = async (id: number, data: any) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`UPDATE ${insuranceTable} SET ? WHERE rt_id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteInsurance = async (id: number) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`DELETE FROM ${insuranceTable} WHERE rt_id = ?`, [id]);
+    return result;
+}
 
 
 /* ================= POOLCAR APPS ================= */

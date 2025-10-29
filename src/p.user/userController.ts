@@ -94,33 +94,43 @@ async function getUserTimeSpent(userId: number): Promise<number> {
 export const getAllUser = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const users = await userModel.getAllUsers();
-    // Map users to include role object and usergroups as array of objects
-    const formattedUsers = await Promise.all(users.map(async (user) => {
-      // Get role object
-      let roleObj = null;
-      if (user.role) {
-        const role = await roleModel.getRoleById(user.role);
-        if (role) roleObj = { id: role.id, name: role.name };
-      }
-      // Get usergroups as array of objects
+    const userIds = users.map(u => u.id);
+
+    // Batch fetch roles, groups, and time spent
+    const [roles, groups, timeSpentRows] = await Promise.all([
+      roleModel.getAllRoles(),
+      groupModel.getAllGroups(),
+      (await import('../p.admin/logModel.js')).getTimeSpentByUsers(userIds)
+    ]);
+
+    const rolesMap = new Map<number, { id: number; name: string }>(
+      roles.map((r: any) => [Number(r.id), { id: Number(r.id), name: r.name }])
+    );
+    const groupsMap = new Map<number, { id: number; name: string }>(
+      groups.map((g: any) => [Number(g.id), { id: Number(g.id), name: g.name }])
+    );
+    const timeMap = new Map<number, number>(
+      (timeSpentRows || []).map((t: any) => [Number(t.user_id), Number(t.time_spent || 0)])
+    );
+
+    const formattedUsers = users.map((user) => {
+      const roleObj = user.role ? (rolesMap.get(Number(user.role)) || null) : null;
       let usergroupsArr: any[] = [];
       if (user.usergroups) {
         const groupIds = String(user.usergroups).split(',').map(Number).filter(Boolean);
-        usergroupsArr = await Promise.all(groupIds.map(async (gid) => {
-          const group = await groupModel.getGroupById(gid);
-          return group ? { id: group.id, name: group.name } : null;
-        }));
-        usergroupsArr = usergroupsArr.filter(Boolean);
+        usergroupsArr = groupIds
+          .map((gid) => groupsMap.get(gid) || null)
+          .filter(Boolean) as any[];
       }
-      // Calculate time_spent from logs_auth
-      const time_spent = await getUserTimeSpent(user.id);
+      const time_spent = timeMap.get(user.id) ?? 0;
       return {
         ...user,
         role: roleObj,
         usergroups: usergroupsArr,
         time_spent
       };
-    }));
+    });
+
     return res.status(200).json({ status: 'success', message: 'User data retrieved successfully', data: formattedUsers });
   } catch (error: any) {
     console.error('Error getting all users:', error);

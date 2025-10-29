@@ -49,7 +49,12 @@ router.post('/request/:requestId/resend/approval', (req, res, next) => {
 });
 
 
-// ========== FLEET INSURANCE + ROADTAX ==========
+// ========== INSURANCE + ROADTAX ==========
+router.get('/insurance/:id', asyncHandler(maintenanceController.getInsuranceById));
+router.get('/insurance', asyncHandler(maintenanceController.getInsurances));
+router.post('/insurance', asyncHandler(maintenanceController.createInsurance));
+router.put('/insurance/:id', asyncHandler(maintenanceController.updateInsurance));
+router.delete('/insurance/:id', asyncHandler(maintenanceController.deleteInsurance));
 
 // ========== MAINTENANCE TYPES CRUD ==========
 router.get('/types', asyncHandler(maintenanceController.getServiceTypes));
