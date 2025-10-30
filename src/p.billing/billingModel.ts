@@ -490,7 +490,7 @@ export const getFuelVehicleAmountById = async (id: number): Promise<any | null> 
 
 export const getFuelVehicleAmountByDateRange = async (from: string, to: string): Promise<any[]> => {
   const [rows] = await pool2.query(
-    `SELECT * FROM ${fuelVehicleAmountTable}  WHERE stmt_date BETWEEN ? AND ? AND amount > 0 ORDER BY stmt_date DESC`,
+    `SELECT * FROM ${fuelVehicleAmountTable} WHERE stmt_date BETWEEN ? AND ? ORDER BY stmt_date DESC`,
     [from, to]
   );
   return rows as any[];

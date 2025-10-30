@@ -1087,7 +1087,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	if (!from || !to) {
 		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
 	}
-	// Fetch all lookup data (use assetsModel.getAssets() after schema change)
+	// Fetch all lookup data
 	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
 		assetsModel.getAssets(),
 		assetsModel.getCostcenters(),
@@ -1126,99 +1126,110 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	// Use ramco_id as key for employeeMap (since we match by ramco_id from vehicle records)
 	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
-	// Get all fuel billings in date range
-	const fuelBillings = await billingModel.getFuelBillingByDate(from as string, to as string);
+	// Fetch all vehicle amount detail rows within date range (primary source for amount and usage)
+	const detailsInRange = await billingModel.getFuelVehicleAmountByDateRange(from as string, to as string);
 	// Group by asset_id
 	const summary: Record<string, any> = {};
-	for (const bill of fuelBillings) {
-		const detailsRaw = await billingModel.getFuelVehicleAmount(bill.stmt_id);
-		for (const d of (Array.isArray(detailsRaw) ? detailsRaw : [])) {
-			// If cc filter is provided, skip if not matching
-			const ccId = d.cc_id ?? d.costcenter_id;
-			if (cc && String(ccId) !== String(cc)) continue;
-			const asset_id = d.asset_id;
-			// Resolve category, brand, and model objects
-			let category = null;
-			let brand = null;
-			let model = null;
-			let categoryId = d.category;
-			let brandId = null;
-			let modelId = null;
-			let ramcoId = null;
-			if (assetMap.has(asset_id)) {
-				const asset = assetMap.get(asset_id);
-				if (!categoryId) categoryId = asset.category_id;
-				brandId = asset.brand_id;
-				modelId = asset.model_id;
-				ramcoId = asset.ramco_id;
-			}
-			if (categoryId && categoryMap.has(categoryId)) {
-				const catObj = categoryMap.get(categoryId);
-				category = { id: catObj.id, name: catObj.name };
-			}
-			if (brandId && brandMap.has(brandId)) {
-				const brandObj = brandMap.get(brandId);
-				brand = { id: brandObj.id, name: brandObj.name };
-			}
-			if (modelId && modelMap.has(modelId)) {
-				const modelObj = modelMap.get(modelId);
-				model = { id: modelObj.id, name: modelObj.name };
-			}
-			// Resolve owner object by ramco_id
-			let owner = null;
-			if (ramcoId && employeeMap.has(ramcoId)) {
-				const empObj = employeeMap.get(ramcoId);
-				owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
-			}
+	for (const d of (Array.isArray(detailsInRange) ? detailsInRange : [])) {
+		// If cc filter is provided, skip if not matching
+		const ccId = d.cc_id ?? d.costcenter_id;
+		if (cc && String(ccId) !== String(cc)) continue;
+		const asset_id = d.asset_id;
+		// Resolve category, brand, and model objects using asset mapping
+		let category = null;
+		let brand = null;
+		let model = null;
+		let categoryId = d.category;
+		let brandId: any = null;
+		let modelId: any = null;
+		let ramcoId: any = null;
+		if (assetMap.has(asset_id)) {
+			const asset = assetMap.get(asset_id);
+			if (!categoryId) categoryId = asset.category_id;
+			brandId = asset.brand_id;
+			modelId = asset.model_id;
+			ramcoId = asset.ramco_id;
+		}
+		if (categoryId && categoryMap.has(categoryId)) {
+			const catObj = categoryMap.get(categoryId);
+			category = { id: catObj.id, name: catObj.name };
+		}
+		if (brandId && brandMap.has(brandId)) {
+			const brandObj = brandMap.get(brandId);
+			brand = { id: brandObj.id, name: brandObj.name };
+		}
+		if (modelId && modelMap.has(modelId)) {
+			const modelObj = modelMap.get(modelId);
+			model = { id: modelObj.id, name: modelObj.name };
+		}
+		// Resolve owner object by ramco_id
+		let owner = null;
+		if (ramcoId && employeeMap.has(ramcoId)) {
+			const empObj = employeeMap.get(ramcoId);
+			owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
+		}
 
-			if (!summary[asset_id]) {
-				const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) : null;
-				const ccId = d.cc_id ?? d.costcenter_id;
-				const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
-				const locId = d.loc_id ?? d.location_id;
-				const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
-				summary[asset_id] = {
-					asset_id: asset_id,
-					vehicle: vehicleObj ? (vehicleObj.vehicle_regno || vehicleObj.register_number || null) : null,
-					category,
-					brand,
-					model,
-					owner,
-					transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
-					fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
-					purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
-					age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
-					costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
-					location: locationObj ? { id: locId, name: locationObj.name ?? locationObj.code } : null,
-					classification: vehicleObj ? (vehicleObj.classification || null) : null,
-					record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
-					total_litre: 0,
-					total_amount: 0,
-					_yearMap: {} // temp for grouping by year
-				};
-			}
-			summary[asset_id].total_litre += parseFloat(d.total_litre || '0');
-			summary[asset_id].total_amount += parseFloat(d.amount || '0');
-			// Determine date for this detail (prefer detail row date)
-			const detailDate = d.stmt_date || bill.stmt_date;
-			const year = detailDate ? dayjs(detailDate).year() : dayjs(bill.stmt_date).year();
+		if (!summary[asset_id]) {
+			const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) : null;
+			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
+			const locId = d.loc_id ?? d.location_id;
+			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
+			summary[asset_id] = {
+				asset_id: asset_id,
+				vehicle: vehicleObj ? (vehicleObj.register_number || null) : null,
+				category,
+				brand,
+				model,
+				owner,
+				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
+				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
+				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
+				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
+				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
+				location: locationObj ? { id: locId, name: locationObj.name ?? locationObj.code } : null,
+				classification: vehicleObj ? (vehicleObj.classification || null) : null,
+				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
+				total_litre: 0,
+				total_amount: 0,
+				_yearMap: {} // temp for grouping by year
+			};
+		}
+		summary[asset_id].total_litre += parseFloat(d.total_litre || '0');
+		summary[asset_id].total_amount += parseFloat(d.amount || '0');
+		// Group by detail row stmt_date (primary date source)
+		const detailDate = d.stmt_date;
+		const year = detailDate ? dayjs(detailDate).year() : null;
+		if (year !== null) {
 			if (!summary[asset_id]._yearMap[year]) {
 				summary[asset_id]._yearMap[year] = { total_annual: 0, monthlyMap: {} };
 			}
 			const amountNum = parseFloat(d.amount || '0');
 			summary[asset_id]._yearMap[year].total_annual += amountNum;
-			const monthNum = detailDate ? dayjs(detailDate).month() + 1 : 0;
-			const monthName = detailDate ? dayjs(detailDate).format('MMMM') : null;
-			if (!summary[asset_id]._yearMap[year].monthlyMap[monthNum]) summary[asset_id]._yearMap[year].monthlyMap[monthNum] = [];
-			summary[asset_id]._yearMap[year].monthlyMap[monthNum].push({
-				month: monthName,
-				monthNum,
-				s_id: d.s_id,
-				stmt_id: d.stmt_id,
-				stmt_date: detailDate ? dayjs(detailDate).format('YYYY-MM-DD') : null,
-				total_litre: d.total_litre,
-				amount: d.amount
-			});
+			const monthNum = dayjs(detailDate).month() + 1;
+			const monthName = dayjs(detailDate).format('MMMM');
+			const existing = summary[asset_id]._yearMap[year].monthlyMap[monthNum];
+			if (!existing) {
+				summary[asset_id]._yearMap[year].monthlyMap[monthNum] = {
+					month: monthName,
+					s_id: d.s_id,
+					stmt_id: d.stmt_id,
+					stmt_date: detailDate ? dayjs(detailDate).format('YYYY-MM-DD') : null,
+					total_litre: parseFloat(d.total_litre || '0'),
+					amount: parseFloat(d.amount || '0')
+				};
+			} else {
+				// Merge into single monthly entry: sum totals, keep latest stmt info
+				existing.total_litre = parseFloat(String(existing.total_litre)) + parseFloat(d.total_litre || '0');
+				existing.amount = parseFloat(String(existing.amount)) + parseFloat(d.amount || '0');
+				// Prefer the later date within the month
+				const existingDate = existing.stmt_date ? dayjs(existing.stmt_date) : null;
+				const thisDate = detailDate ? dayjs(detailDate) : null;
+				if (!existingDate || (thisDate && thisDate.isAfter(existingDate))) {
+					existing.stmt_date = thisDate ? thisDate.format('YYYY-MM-DD') : existing.stmt_date;
+					existing.stmt_id = d.stmt_id;
+					existing.s_id = d.s_id;
+				}
+			}
 		}
 	}
 	// Format output
@@ -1226,15 +1237,16 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		const details = Object.entries(asset._yearMap).map(([year, data]: [string, any]) => {
 			// Convert monthlyMap to sorted array (descending month)
 			const monthNums = Object.keys(data.monthlyMap).map(n => Number(n)).sort((a, b) => b - a);
-			const monthly_expenses = monthNums.flatMap((mn) => {
-				return (data.monthlyMap[mn] || []).map((m: any) => ({
+			const monthly_expenses = monthNums.map((mn) => {
+				const m = data.monthlyMap[mn];
+				return {
 					month: m.month,
 					s_id: m.s_id,
 					stmt_id: m.stmt_id,
 					stmt_date: m.stmt_date,
-					total_litre: m.total_litre,
-					amount: m.amount
-				}));
+					total_litre: typeof m.total_litre === 'number' ? m.total_litre.toFixed(2) : m.total_litre,
+					amount: typeof m.amount === 'number' ? m.amount.toFixed(2) : m.amount
+				};
 			});
 			return {
 				year: Number(year),
@@ -1256,7 +1268,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 
 	res.json({
 		status: 'success',
-		message: 'Fuel billing summary by date range retrieved successfully',
+		message: `Fuel billing summary by date range retrieved successfully with ${result.length} entries`,
 		data: result,
 	});
 };
