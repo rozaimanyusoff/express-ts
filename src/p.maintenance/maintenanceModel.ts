@@ -8,7 +8,8 @@ const dbAssets = 'assets';
 // Example:
 const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc2`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
-const insuranceTable = `${dbAssets}.vehicle_insurance`;
+const insuranceTable = `${dbAssets}.insurance`;
+const roadtaxTable = `${dbAssets}.vehicle_insurance`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
@@ -412,17 +413,17 @@ export const getVehicleMtnRequestByAssetId = async (vehicleId: number, status?: 
 };
 
 
-/* ================== INSURANCE + ROADTAX ================== */
+/* ================== INSURANCE ================== */
 //insurance CRUD operations will be here when database structure is provided
 export const getInsurances = async () => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} ORDER BY rt_id DESC`);
+    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} ORDER BY id DESC`);
     return rows;
 }
 
 export const getInsuranceById = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} WHERE rt_id = ?`, [id]);
+    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} WHERE id = ?`, [id]);
     return (rows as RowDataPacket[])[0];
 };
 
@@ -434,16 +435,80 @@ export const createInsurance = async (data: any) => {
 
 export const updateInsurance = async (id: number, data: any) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`UPDATE ${insuranceTable} SET ? WHERE rt_id = ?`, [data, id]);
+    const [result] = await pool2.query(`UPDATE ${insuranceTable} SET ? WHERE id = ?`, [data, id]);
     return result;
 };
 
 export const deleteInsurance = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`DELETE FROM ${insuranceTable} WHERE rt_id = ?`, [id]);
+    const [result] = await pool2.query(`DELETE FROM ${insuranceTable} WHERE id = ?`, [id]);
     return result;
 }
 
+/* ================== ROAD TAX ================== */
+//roadtax CRUD operations will be here when database structure is provided
+export const getRoadTaxes = async () => {
+    // Placeholder - implement when database structure is provided
+    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} ORDER BY rt_id DESC`);
+    return rows;
+};
+
+export const getRoadTaxById = async (id: number) => {
+    // Placeholder - implement when database structure is provided
+    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
+    return (rows as RowDataPacket[])[0];
+};
+
+export const getRoadTaxByInsuranceId = async (insuranceId: number) => {
+    // Placeholder - implement when database structure is provided
+    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} WHERE insurance_id = ? ORDER BY rt_id DESC`, [insuranceId]);
+    return rows;
+};
+
+export const createRoadTax = async (data: any) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`INSERT INTO ${roadtaxTable} SET ?`, [data]);
+    return (result as ResultSetHeader).insertId;
+};
+
+export const updateRoadTax = async (id: number, data: any) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`UPDATE ${roadtaxTable} SET ? WHERE rt_id = ?`, [data, id]);
+    return result;
+};
+
+// Bulk update: set insurance_id for all roadtax rows matching any of the provided asset IDs
+export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: number[]) => {
+    const ids = Array.isArray(assetIds) ? assetIds.filter((n) => Number.isFinite(Number(n))).map(Number) : [];
+    if (!ids.length) {
+        // Return a ResultSetHeader-like object with 0 affected rows
+        return { affectedRows: 0, changedRows: 0, warningStatus: 0 } as any;
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    const sql = `UPDATE ${roadtaxTable} SET insurance_id = ? WHERE asset_id IN (${placeholders})`;
+    const params = [insuranceId, ...ids];
+    const [result] = await pool2.query(sql, params);
+    return result;
+};
+
+// Bulk update: set rt_exp for all roadtax rows matching any of the provided asset IDs
+export const updateRoadTaxExpiryByAssets = async (rtExp: string, assetIds: number[]) => {
+    const ids = Array.isArray(assetIds) ? assetIds.filter((n) => Number.isFinite(Number(n))).map(Number) : [];
+    if (!ids.length) {
+        return { affectedRows: 0, changedRows: 0, warningStatus: 0 } as any;
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    const sql = `UPDATE ${roadtaxTable} SET rt_exp = ? WHERE asset_id IN (${placeholders})`;
+    const params = [rtExp, ...ids];
+    const [result] = await pool2.query(sql, params);
+    return result;
+};
+
+export const deleteRoadTax = async (id: number) => {
+    // Placeholder - implement when database structure is provided
+    const [result] = await pool2.query(`DELETE FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
+    return result;
+};
 
 /* ================= POOLCAR APPS ================= */
 

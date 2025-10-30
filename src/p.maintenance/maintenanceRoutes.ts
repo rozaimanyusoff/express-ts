@@ -56,6 +56,13 @@ router.post('/insurance', asyncHandler(maintenanceController.createInsurance));
 router.put('/insurance/:id', asyncHandler(maintenanceController.updateInsurance));
 router.delete('/insurance/:id', asyncHandler(maintenanceController.deleteInsurance));
 
+/* ============= ROAD TAX ============== */
+router.get('/roadtax/:id', asyncHandler(maintenanceController.getRoadTaxById));
+router.get('/roadtax', asyncHandler(maintenanceController.getRoadTaxes));
+router.post('/roadtax', asyncHandler(maintenanceController.createRoadTax));
+router.put('/roadtax/:id', asyncHandler(maintenanceController.updateRoadTax));
+router.delete('/roadtax/:id', asyncHandler(maintenanceController.deleteRoadTax));
+
 // ========== MAINTENANCE TYPES CRUD ==========
 router.get('/types', asyncHandler(maintenanceController.getServiceTypes));
 router.get('/types/:id', asyncHandler(maintenanceController.getServiceTypeById));

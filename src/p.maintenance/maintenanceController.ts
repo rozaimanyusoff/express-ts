@@ -37,99 +37,10 @@ function getApiBaseUrl(): string {
 /* ================== INSURANCE + ROADTAX ================== */
 export const getInsurances = async (req: Request, res: Response) => {
 	try {
-		const insurancesRaw: any = await maintenanceModel.getInsurances();
-		// Normalize to array
-		const insurances = Array.isArray(insurancesRaw) ? insurancesRaw : (insurancesRaw ? [insurancesRaw] : []);
+		const insurances = await maintenanceModel.getInsurances();
+		const insArray = Array.isArray(insurances) ? insurances : (insurances ? [insurances] : []);
 
-		// Enrich with asset mapping from assetModel.getAssetsByIds
-		const assetIds = Array.from(
-			new Set(
-				insurances
-					.map((r: any) => Number(r.asset_id))
-					.filter((n) => Number.isFinite(n) && n > 0)
-			)
-		);
-		let assetMap = new Map<number, any>();
-		let ccMap = new Map<number, any>();
-		let deptMap = new Map<number, any>();
-		let locMap = new Map<number, any>();
-		let catMap = new Map<number, any>();
-		let brandMap = new Map<number, any>();
-		let modelMap = new Map<number, any>();
-		if (assetIds.length > 0) {
-			const [assetsRows, costcenters, departments, locations, categories, brands, models] = await Promise.all([
-				assetModel.getAssetsByIds(assetIds) as Promise<any[]>,
-				assetModel.getCostcenters() as Promise<any[]>,
-				assetModel.getDepartments() as Promise<any[]>,
-				assetModel.getLocations() as Promise<any[]>,
-				assetModel.getCategories() as Promise<any[]>,
-				assetModel.getBrands() as Promise<any[]>,
-				assetModel.getModels() as Promise<any[]>
-			]);
-			const assetsArr = Array.isArray(assetsRows) ? assetsRows : [];
-			assetMap = new Map(assetsArr.map((a: any) => [Number(a.id), a]));
-			ccMap = new Map((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [Number(c.id), c]));
-			deptMap = new Map((Array.isArray(departments) ? departments : []).map((d: any) => [Number(d.id), d]));
-			locMap = new Map((Array.isArray(locations) ? locations : []).map((l: any) => [Number(l.id), l]));
-			catMap = new Map((Array.isArray(categories) ? categories : []).map((c: any) => [Number(c.id), c]));
-			brandMap = new Map((Array.isArray(brands) ? brands : []).map((b: any) => [Number(b.id), b]));
-			modelMap = new Map((Array.isArray(models) ? models : []).map((m: any) => [Number(m.id), m]));
-		}
-
-		const data = insurances.map((row: any) => {
-			const a = assetMap.get(Number(row.asset_id));
-
-			// Build enriched asset object when found
-			let asset: any = null;
-			if (a) {
-				const ageYears = a.purchase_date ? dayjs().diff(dayjs(a.purchase_date), 'year') : null;
-				const ccId = a.costcenter_id ?? a.costcenter ?? null;
-				const depId = a.department_id ?? a.department ?? null;
-				const locId = a.location_id ?? a.location ?? null;
-				const catId = a.category_id ?? a.category ?? null;
-				const brId = a.brand_id ?? a.brand ?? null;
-				const mdlId = a.model_id ?? a.model ?? null;
-
-				const costcenter = (ccId != null && ccMap.has(Number(ccId))) ? (() => { const v: any = ccMap.get(Number(ccId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const department = (depId != null && deptMap.has(Number(depId))) ? (() => { const v: any = deptMap.get(Number(depId)); return { id: Number(v.id), name: v.code ?? null }; })() : null;
-				const location = (locId != null && locMap.has(Number(locId))) ? (() => { const v: any = locMap.get(Number(locId)); return { id: Number(v.id), name: v.code ?? null }; })() : null;
-				const category = (catId != null && catMap.has(Number(catId))) ? (() => { const v: any = catMap.get(Number(catId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const brand = (brId != null && brandMap.has(Number(brId))) ? (() => { const v: any = brandMap.get(Number(brId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const model = (mdlId != null && modelMap.has(Number(mdlId))) ? (() => { const v: any = modelMap.get(Number(mdlId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-
-				asset = {
-					id: Number(a.id),
-					register_number: a.register_number ?? null,
-					entry_code: a.entry_code ?? null,
-					classification: a.classification ?? null,
-					purchase_date: a.purchase_date ?? null,
-					age_years: ageYears,
-					// enriched info
-					costcenter,
-					department,
-					location,
-					category,
-					brand,
-					model
-				};
-			}
-
-			// Build public URL for insurance upload if present
-			const insUploadUrl = row.ins_upload ? toPublicUrl(toDbPath('insurance', String(row.ins_upload))) : null;
-
-			// Return only expected fields (omit asset_id/vehicle_id)
-			return {
-				rt_id: row.rt_id,
-				insurer: row.insurer ?? null,
-				ins_policy: row.ins_policy ?? null,
-				ins_exp: row.ins_exp ?? null,
-				ins_upload: insUploadUrl,
-				rt_exp: row.rt_exp ?? null,
-				asset
-			};
-		});
-
-		res.json({ status: 'success', message: 'Insurances fetched successfully with ' + data.length + ' entries', data });
+		res.json({ status: 'success', message: `Insurances fetched successfully with ${insArray.length} entries`, data: insurances });
 	} catch (error) {
 		// include error from backend
 		console.error('Error fetching insurances:', error);
@@ -146,73 +57,36 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 			return;
 		}
 
-		// Build asset enrichment similar to list endpoint
-		const assetIdRaw = (insurance as any).asset_id ?? (insurance as any).vehicle_id;
-		const assetId = Number(assetIdRaw);
-		let asset: any = null;
-		if (Number.isFinite(assetId) && assetId > 0) {
-			const [assetsRows, costcenters, departments, locations, categories, brands, models] = await Promise.all([
-				assetModel.getAssetsByIds([assetId]) as Promise<any[]>,
-				assetModel.getCostcenters() as Promise<any[]>,
-				assetModel.getDepartments() as Promise<any[]>,
-				assetModel.getLocations() as Promise<any[]>,
-				assetModel.getCategories() as Promise<any[]>,
-				assetModel.getBrands() as Promise<any[]>,
-				assetModel.getModels() as Promise<any[]>
-			]);
-			const a = (Array.isArray(assetsRows) ? assetsRows : []).find((x: any) => Number(x.id) === assetId);
-			if (a) {
-				const ageYears = a.purchase_date ? dayjs().diff(dayjs(a.purchase_date), 'year') : null;
-				const ccId = a.costcenter_id ?? a.costcenter ?? null;
-				const depId = a.department_id ?? a.department ?? null;
-				const locId = a.location_id ?? a.location ?? null;
-				const catId = a.category_id ?? a.category ?? null;
-				const brId = a.brand_id ?? a.brand ?? null;
-				const mdlId = a.model_id ?? a.model ?? null;
+		// Fetch related roadtax records to resolve linked assets, then map to { id, register_number }
+		const rtsRaw = await maintenanceModel.getRoadTaxByInsuranceId(Number(id));
+		const rts = Array.isArray(rtsRaw) ? rtsRaw as any[] : (rtsRaw ? [rtsRaw] as any[] : []);
+		const assetIds = Array.from(new Set(
+			rts
+				.map((r: any) => Number(r.asset_id))
+				.filter((n: any) => Number.isFinite(n) && n > 0)
+		));
 
-				const ccMap = new Map((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [Number(c.id), c]));
-				const deptMap = new Map((Array.isArray(departments) ? departments : []).map((d: any) => [Number(d.id), d]));
-				const locMap = new Map((Array.isArray(locations) ? locations : []).map((l: any) => [Number(l.id), l]));
-				const catMap = new Map((Array.isArray(categories) ? categories : []).map((c: any) => [Number(c.id), c]));
-				const brandMap = new Map((Array.isArray(brands) ? brands : []).map((b: any) => [Number(b.id), b]));
-				const modelMap = new Map((Array.isArray(models) ? models : []).map((m: any) => [Number(m.id), m]));
-
-				const costcenter = (ccId != null && ccMap.has(Number(ccId))) ? (() => { const v: any = ccMap.get(Number(ccId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const department = (depId != null && deptMap.has(Number(depId))) ? (() => { const v: any = deptMap.get(Number(depId)); return { id: Number(v.id), name: v.code ?? null }; })() : null;
-				const location = (locId != null && locMap.has(Number(locId))) ? (() => { const v: any = locMap.get(Number(locId)); return { id: Number(v.id), name: v.code ?? null }; })() : null;
-				const category = (catId != null && catMap.has(Number(catId))) ? (() => { const v: any = catMap.get(Number(catId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const brand = (brId != null && brandMap.has(Number(brId))) ? (() => { const v: any = brandMap.get(Number(brId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-				const model = (mdlId != null && modelMap.has(Number(mdlId))) ? (() => { const v: any = modelMap.get(Number(mdlId)); return { id: Number(v.id), name: v.name ?? null }; })() : null;
-
-				asset = {
-					id: Number(a.id),
-					register_number: a.register_number ?? null,
-					entry_code: a.entry_code ?? null,
-					classification: a.classification ?? null,
-					purchase_date: a.purchase_date ?? null,
-					age_years: ageYears,
-					costcenter,
-					department,
-					location,
-					category,
-					brand,
-					model
-				};
+		let assetsArr: any[] = [];
+		if (assetIds.length > 0) {
+			try {
+				const assetsRaw = await assetModel.getAssetsByIds(assetIds);
+				const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+				const assetMap = new Map(assets.map((a: any) => [Number(a.id), a]));
+				assetsArr = assetIds
+					.map((aid) => {
+						const a = assetMap.get(aid);
+						if (!a) return null;
+						return { asset_id: aid, register_number: (a as any).register_number || null };
+					})
+					.filter(Boolean) as any[];
+			} catch (e) {
+				// If asset lookup fails, continue with empty assets array
+				assetsArr = [];
 			}
 		}
 
-		const insUploadUrl = (insurance as any).ins_upload ? toPublicUrl(toDbPath('insurance', String((insurance as any).ins_upload))) : null;
-		const shaped = {
-			rt_id: (insurance as any).rt_id,
-			insurer: (insurance as any).insurer ?? null,
-			ins_policy: (insurance as any).ins_policy ?? null,
-			ins_exp: (insurance as any).ins_exp ?? null,
-			ins_upload: insUploadUrl,
-			rt_exp: (insurance as any).rt_exp ?? null,
-			asset
-		};
-
-		res.json({ status: 'success', message: 'Insurance fetched successfully', data: shaped });
+		const data = { ...(insurance as any), assets: assetsArr };
+		res.json({ status: 'success', message: 'Insurance fetched successfully', data });
 	} catch (error) {
 		console.error('Error fetching insurance by ID:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -220,10 +94,36 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 };
 
 export const createInsurance = async (req: Request, res: Response) => {
-	const insuranceData = req.body;
+	const body = req.body || {};
 	try {
-		const newInsurance = await maintenanceModel.createInsurance(insuranceData);
-		res.status(201).json({ status: 'success', message: 'Insurance created successfully', data: newInsurance });
+		// Normalize payload
+		const insurer = body.insurer ?? body.company ?? body.name ?? null;
+		const policy = body.policy ?? body.policy_no ?? body.ins_policy ?? null;
+		const expiry = body.expiry ?? body.expiry_date ?? body.exp_date ?? null;
+	const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+	const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+
+		// Create insurance
+		const insertId = await maintenanceModel.createInsurance({ insurer, policy, expiry });
+
+		// Link assets in roadtax table by setting insurance_id for provided assets
+		let updateResult: any = null;
+		if (assetIds.length > 0) {
+			updateResult = await maintenanceModel.updateRoadTaxByAssets(Number(insertId), assetIds);
+		}
+
+		res.status(201).json({
+			status: 'success',
+			message: 'Insurance created and roadtax updated successfully',
+			data: {
+				id: Number(insertId),
+				insurer,
+				policy,
+				expiry,
+				assets: assetIds,
+				roadtax_updates: updateResult
+			}
+		});
 	} catch (error) {
 		console.error('Error creating insurance:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -232,14 +132,42 @@ export const createInsurance = async (req: Request, res: Response) => {
 
 export const updateInsurance = async (req: Request, res: Response) => {
 	const { id } = req.params;
-	const insuranceData = req.body;
+	const body = req.body || {};
 	try {
-		const updatedInsurance = await maintenanceModel.updateInsurance(Number(id), insuranceData);
-		if (updatedInsurance) {
-			res.json({ status: 'success', message: 'Insurance updated successfully', data: updatedInsurance });
-		} else {
-			res.status(404).json({ error: 'Insurance not found' });
+		// Normalize payload
+		const insurer = (body.insurer ?? body.company ?? body.name) as string | undefined;
+		const policy = (body.policy ?? body.policy_no ?? body.ins_policy) as string | undefined;
+		const expiry = (body.expiry ?? body.expiry_date ?? body.exp_date) as string | undefined;
+	const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+	const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+
+		// Build update object only with provided fields
+		const payload: any = {};
+		if (insurer !== undefined) payload.insurer = insurer;
+		if (policy !== undefined) payload.policy = policy;
+		if (expiry !== undefined) payload.expiry = expiry;
+
+		const updatedInsurance = Object.keys(payload).length > 0
+			? await maintenanceModel.updateInsurance(Number(id), payload)
+			: { affectedRows: 0 } as any;
+
+		// Update roadtax insurance_id for provided assets (if any)
+		let updateResult: any = null;
+		if (assetIds.length > 0) {
+			updateResult = await maintenanceModel.updateRoadTaxByAssets(Number(id), assetIds);
 		}
+
+		res.json({
+			status: 'success',
+			message: 'Insurance updated successfully',
+			data: {
+				id: Number(id),
+				...payload,
+				assets: assetIds,
+				roadtax_updates: updateResult,
+				insurance_update: updatedInsurance
+			}
+		});
 	} catch (error) {
 		console.error('Error updating insurance:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -258,6 +186,195 @@ export const deleteInsurance = async (req: Request, res: Response) => {
 		}
 	} catch (error) {
 		console.error('Error deleting insurance:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+};
+
+/* ============= ROAD TAX ================== */
+// Road tax CRUD operations will be here when database structure is provided
+export const getRoadTaxes = async (req: Request, res: Response) => {
+	try {
+		const roadTaxes = await maintenanceModel.getRoadTaxes();
+		const rtArray = Array.isArray(roadTaxes) ? roadTaxes as any[] : (roadTaxes ? [roadTaxes] as any[] : []);
+
+		// Fetch lookups to enrich nested structures
+		const [insurancesRaw, assetsRaw, categoriesRaw, brandsRaw, costcentersRaw, departmentsRaw, locationsRaw] = await Promise.all([
+			maintenanceModel.getInsurances(),
+			assetModel.getAssets(),
+			assetModel.getCategories(),
+			assetModel.getBrands(),
+			assetModel.getCostcenters(),
+			(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+			assetModel.getLocations()
+		]);
+
+		const insMap = new Map((Array.isArray(insurancesRaw) ? insurancesRaw : []).map((i: any) => [Number(i.id), i]));
+		const assetMap = new Map((Array.isArray(assetsRaw) ? assetsRaw : []).map((a: any) => [Number(a.id), a]));
+		const catMap = new Map((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [Number(c.id), c]));
+		const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [Number(b.id), b]));
+		const ccMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((cc: any) => [Number(cc.id), cc]));
+		const deptMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
+		const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+
+		const data = rtArray.map((r: any) => {
+			const ins = insMap.get(Number(r.insurance_id));
+			const asset = assetMap.get(Number(r.asset_id));
+			const insurance = ins ? {
+				id: Number(ins.id),
+				insurer: ins.insurer ?? ins.company ?? ins.name ?? null,
+				policy: (ins.policy) ?? null,
+				expiry: (ins.expiry) ?? null,
+				upload: r.ins_upload || null
+			} : null;
+			const assetObj = asset ? {
+				id: Number(r.asset_id),
+				register_number: asset.register_number || null,
+				costcenter: asset.costcenter_id ? { id: Number(asset.costcenter_id), name: (ccMap.get(Number(asset.costcenter_id)) as any)?.name || null } : null,
+				department: asset.department_id ? { id: Number(asset.department_id), name: (deptMap.get(Number(asset.department_id)) as any)?.code || null } : null,
+				location: asset.location_id ? { id: Number(asset.location_id), name: (locMap.get(Number(asset.location_id)) as any)?.name || null } : null,
+				category: asset.category_id ? { id: Number(asset.category_id), name: (catMap.get(Number(asset.category_id)) as any)?.name || null } : null,
+				brand: asset.brand_id ? { id: Number(asset.brand_id), name: (brandMap.get(Number(asset.brand_id)) as any)?.name || null } : null
+			} : null;
+			return {
+				rt_id: Number(r.rt_id ?? r.id ?? r.rtId ?? 0) || r.rt_id,
+				insurance,
+				asset: assetObj,
+				roadtax_expiry: r.rt_exp ?? r.roadtax_expiry ?? r.expiry_date ?? null
+			};
+		});
+
+		res.json({ status: 'success', message: `Road taxes fetched successfully with ${data.length} entries`, data });
+	} catch (error) {
+		// include error from backend
+		console.error('Error fetching road taxes:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+};
+
+export const getRoadTaxById = async (req: Request, res: Response) => {
+	const { id } = req.params;
+	try {
+		const r = await maintenanceModel.getRoadTaxById(Number(id));
+		if (!r) {
+			res.status(404).json({ error: 'Road tax not found' });
+			return;
+		}
+		// Enrich single record
+		const [ins, assetsRaw, categoriesRaw, brandsRaw, costcentersRaw, departmentsRaw, locationsRaw] = await Promise.all([
+			r.insurance_id ? maintenanceModel.getInsuranceById(Number(r.insurance_id)) : Promise.resolve(null),
+			assetModel.getAssetsByIds([Number(r.asset_id)]),
+			assetModel.getCategories(),
+			assetModel.getBrands(),
+			assetModel.getCostcenters(),
+			(assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+			assetModel.getLocations()
+		]);
+		const asset = (Array.isArray(assetsRaw) ? assetsRaw : [assetsRaw]).find((a: any) => Number(a?.id) === Number(r.asset_id));
+		const catMap = new Map((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [Number(c.id), c]));
+		const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [Number(b.id), b]));
+		const ccMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((cc: any) => [Number(cc.id), cc]));
+		const deptMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
+		const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+
+		const insurance = ins ? {
+			id: Number((ins as any).id),
+			insurer: (ins as any).insurer ?? (ins as any).company ?? (ins as any).name ?? null,
+			policy: (((ins as any).ins_policy ?? (ins as any).policy_no) ?? (ins as any).policy) ?? null,
+			expiry: (((ins as any).expiry ?? (ins as any).expiry_date) ?? (ins as any).exp_date) ?? null,
+			upload: (r as any).ins_upload || null
+		} : null;
+		const assetObj = asset ? {
+			id: Number((r as any).asset_id),
+			register_number: (asset as any).register_number || null,
+			costcenter: (asset as any).costcenter_id ? { id: Number((asset as any).costcenter_id), name: (ccMap.get(Number((asset as any).costcenter_id)) as any)?.name || null } : null,
+			department: (asset as any).department_id ? { id: Number((asset as any).department_id), name: (deptMap.get(Number((asset as any).department_id)) as any)?.code || null } : null,
+			location: (asset as any).location_id ? { id: Number((asset as any).location_id), name: (locMap.get(Number((asset as any).location_id)) as any)?.name || null } : null,
+			category: (asset as any).category_id ? { id: Number((asset as any).category_id), name: (catMap.get(Number((asset as any).category_id)) as any)?.name || null } : null,
+			brand: (asset as any).brand_id ? { id: Number((asset as any).brand_id), name: (brandMap.get(Number((asset as any).brand_id)) as any)?.name || null } : null
+		} : null;
+
+		const data = {
+			rt_id: Number((r as any).rt_id ?? (r as any).id ?? 0) || (r as any).rt_id,
+			insurance,
+			asset: assetObj,
+			roadtax_expiry: (r as any).rt_exp ?? (r as any).roadtax_expiry ?? (r as any).expiry_date ?? null
+		};
+
+		res.json({ status: 'success', message: 'Road tax fetched successfully', data });
+	} catch (error) {
+		console.error('Error fetching road tax by ID:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+};
+
+export const createRoadTax = async (req: Request, res: Response) => {
+	const body = req.body || {};
+	try {
+		// Support bulk update: { rt_exp, assets: [] }
+		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as string | null;
+		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+
+		if (rtExp && assetIds.length > 0) {
+			const result = await maintenanceModel.updateRoadTaxExpiryByAssets(rtExp, assetIds);
+			return res.status(201).json({
+				status: 'success',
+				message: 'Road tax expiry updated successfully for provided assets',
+				data: { rt_exp: rtExp, assets: assetIds, result }
+			});
+		}
+
+		// Fallback: create a single roadtax row if full data provided
+		const newRoadTax = await maintenanceModel.createRoadTax(body);
+		res.status(201).json({ status: 'success', message: 'Road tax created successfully', data: newRoadTax });
+	} catch (error) {
+		console.error('Error creating road tax:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+};
+
+export const updateRoadTax = async (req: Request, res: Response) => {
+	const { id } = req.params;
+	const body = req.body || {};
+	try {
+		// If assets array provided, perform bulk rt_exp update; else update by rt_id
+		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as string | null;
+		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+
+		if (rtExp && assetIds.length > 0) {
+			const result = await maintenanceModel.updateRoadTaxExpiryByAssets(rtExp, assetIds);
+			return res.json({
+				status: 'success',
+				message: 'Road tax expiry updated successfully for provided assets',
+				data: { rt_exp: rtExp, assets: assetIds, result }
+			});
+		}
+
+		const updatedRoadTax = await maintenanceModel.updateRoadTax(Number(id), body);
+		if (updatedRoadTax) {
+			res.json({ status: 'success', message: 'Road tax updated successfully', data: updatedRoadTax });
+		} else {
+			res.status(404).json({ error: 'Road tax not found' });
+		}
+	} catch (error) {
+		console.error('Error updating road tax:', error);
+		res.status(500).json({ error: 'Internal server error' });
+	}
+};
+
+export const deleteRoadTax = async (req: Request, res: Response) => {
+	const { id } = req.params;
+	try {
+		const deleted = await maintenanceModel.deleteRoadTax(Number(id));
+		if (deleted) {
+			// Return message on successful deletion
+			res.status(204).send({ message: 'Road tax deleted successfully' });
+		} else {
+			res.status(404).json({ error: 'Road tax not found' });
+		}
+	} catch (error) {
+		console.error('Error deleting road tax:', error);
 		res.status(500).json({ error: 'Internal server error' });
 	}
 };
