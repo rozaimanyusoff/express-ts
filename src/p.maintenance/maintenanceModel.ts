@@ -498,7 +498,7 @@ export const updateRoadTaxExpiryByAssets = async (rtExp: string, assetIds: numbe
         return { affectedRows: 0, changedRows: 0, warningStatus: 0 } as any;
     }
     const placeholders = ids.map(() => '?').join(',');
-    const sql = `UPDATE ${roadtaxTable} SET rt_exp = ? WHERE asset_id IN (${placeholders})`;
+    const sql = `UPDATE ${roadtaxTable} SET rt_exp = ?, updated_at = NOW() WHERE asset_id IN (${placeholders})`;
     const params = [rtExp, ...ids];
     const [result] = await pool2.query(sql, params);
     return result;
