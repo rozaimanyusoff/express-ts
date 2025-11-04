@@ -78,10 +78,16 @@ router.put('/fuel/vendor/:id', asyncHandler(billingController.updateFuelVendor))
 router.get('/fuel/summary/vehicle', asyncHandler(billingController.getFuelBillingVehicleSummary)); // /api/bills/fuel/summary/vehicle?from=YYYY-MM-DD&to=YYYY-MM-DD&cc={costcenter_id}
 router.get('/fuel/summary/costcenter', asyncHandler(billingController.getFuelBillingCostcenterSummary)); /* /api/bills/fuel/summary/costcenter?from=2024-01-01&to=2024-12-31 */
 router.get('/fuel/:id', asyncHandler(billingController.getFuelBillingById));
+// Remove a single bill entry from fuel statement detail by s_id
 router.get('/fuel/vehicle/:asset_id', asyncHandler(billingController.getFuelConsumptionByVehicle));
 router.get('/fuel', asyncHandler(billingController.getFuelBillings));
+// Insert a new bill entry into consumer details
+router.post('/fuel/:id/new-bill-entry', asyncHandler(billingController.createFuelNewBillEntry));
 router.post('/fuel', asyncHandler(billingController.createFuelBilling));
 router.put('/fuel/:id', asyncHandler(billingController.updateFuelBilling));
+// Remove a bill entry from consumer details
+router.delete('/fuel/:id/remove-bill-entry', asyncHandler(billingController.removeFuelBillEntry));
+router.delete('/fuel/:id', asyncHandler(billingController.deleteFuelBilling));
 
 /* =================== FLEET CARD TABLE ========================== */
 router.get('/fleet/asset/:asset_id', asyncHandler(billingController.getFleetCardsByAssetId));

@@ -1081,6 +1081,27 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 	}
 };
 
+// Delete a fuel billing statement and its detail rows
+export const deleteFuelBilling = async (req: Request, res: Response) => {
+	try {
+		const id = Number(req.params.id);
+		if (!Number.isFinite(id) || id <= 0) {
+			return res.status(400).json({ status: 'error', message: 'Invalid fuel statement id', data: null });
+		}
+		// Optional: ensure exists
+		const existing = await billingModel.getFuelBillingById(id);
+		if (!existing) {
+			return res.status(404).json({ status: 'error', message: 'Fuel billing not found', data: null });
+		}
+		// Delete details first, then parent
+		await billingModel.deleteFuelVehicleAmount(id);
+		await billingModel.deleteFuelBilling(id);
+		return res.json({ status: 'success', message: 'Fuel billing deleted successfully', data: { stmt_id: id } });
+	} catch (error: any) {
+		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to delete fuel billing', data: null });
+	}
+};
+
 //Purposely to export fuel consumption report data to Excel
 export const getFuelBillingVehicleSummary = async (req: Request, res: Response) => {
 	const { from, to, cc } = req.query;
@@ -1359,6 +1380,54 @@ export const getFuelVendors = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: 'Fuel vendors retrieved successfully', data: vendorsWithUrls });
 };
 
+// Insert a new minimal fuel statement detail row for a given statement
+// POST /api/bills/fuel/:stmt_id/new-bill-entry
+// Payload: { stmt_id, card_id, asset_id, cc_id, loc_id, purpose, stmt_date }
+export const createFuelNewBillEntry = async (req: Request, res: Response) => {
+	try {
+		const stmtIdParam = Number(req.params.stmt_id || req.params.id);
+		const body = req.body || {};
+		const stmt_id = Number.isFinite(stmtIdParam) ? stmtIdParam : Number(body.stmt_id);
+		const card_id = Number(body.card_id);
+		const asset_id = Number(body.asset_id);
+		const cc_id = Number(body.cc_id);
+		const loc_id = Number(body.loc_id);
+		const purpose = typeof body.purpose === 'string' ? String(body.purpose) : null;
+		const stmt_date = typeof body.stmt_date === 'string' ? String(body.stmt_date).slice(0,10) : null;
+
+		if (!Number.isFinite(stmt_id) || stmt_id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid stmt_id', data: null });
+		if (!Number.isFinite(card_id) || card_id <= 0) return res.status(400).json({ status: 'error', message: 'card_id is required', data: null });
+		if (!Number.isFinite(asset_id) || asset_id <= 0) return res.status(400).json({ status: 'error', message: 'asset_id is required', data: null });
+		if (!Number.isFinite(cc_id) || cc_id <= 0) return res.status(400).json({ status: 'error', message: 'cc_id is required', data: null });
+		if (!Number.isFinite(loc_id) || loc_id <= 0) return res.status(400).json({ status: 'error', message: 'loc_id is required', data: null });
+		if (!purpose) return res.status(400).json({ status: 'error', message: 'purpose is required', data: null });
+		if (!stmt_date) return res.status(400).json({ status: 'error', message: 'stmt_date is required', data: null });
+
+		// Reuse model function with minimal fields; leave others null
+		const insertId = await billingModel.createFuelVehicleAmount({
+			stmt_id,
+			stmt_date,
+			card_id,
+			asset_id,
+			vehicle_id: null,
+			entry_code: null,
+			costcenter_id: cc_id,
+			location_id: loc_id,
+			category: purpose,
+			start_odo: null,
+			end_odo: null,
+			total_km: null,
+			total_litre: null,
+			efficiency: null,
+			amount: null
+		});
+
+		return res.status(201).json({ status: 'success', message: 'Fuel bill entry created', data: { s_id: insertId } });
+	} catch (err: any) {
+		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to create fuel bill entry', data: null });
+	}
+}
+
 export const getFuelVendorById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const fuelVendor = await billingModel.getFuelVendorById(id);
@@ -1390,6 +1459,29 @@ export const updateFuelVendor = async (req: Request, res: Response) => {
 		res.json({ status: 'success', message: 'Fuel vendor updated successfully' });
 	} catch (error) {
 		res.status(500).json({ status: 'error', message: 'Failed to update fuel vendor', error });
+	}
+};
+
+// Delete a single fuel detail row by s_id
+export const removeFuelBillEntry = async (req: Request, res: Response) => {
+	try {
+		// URL carries stmt_id, body carries s_id (fallback to query for clients that can't send DELETE bodies)
+		const stmt_id = Number(req.params.id || (req.params as any).stmt_id);
+		const bodySid = (req.body && (req.body.s_id ?? (req.body.sid ?? req.body.id))) as any;
+		const querySid = (req.query && ((req.query as any).s_id ?? (req.query as any).sid)) as any;
+		const s_id = Number(bodySid !== undefined ? bodySid : querySid);
+
+		if (!Number.isFinite(stmt_id) || stmt_id <= 0) {
+			return res.status(400).json({ status: 'error', message: 'Invalid stmt_id', data: null });
+		}
+		if (!Number.isFinite(s_id) || s_id <= 0) {
+			return res.status(400).json({ status: 'error', message: 's_id is required', data: null });
+		}
+
+		await billingModel.deleteFuelVehicleAmountByStmtAndSid(stmt_id, s_id);
+		return res.json({ status: 'success', message: 'Bill entry removed', data: { stmt_id, s_id } });
+	} catch (error: any) {
+		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to remove bill entry', data: null });
 	}
 };
 

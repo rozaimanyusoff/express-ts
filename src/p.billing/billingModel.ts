@@ -520,6 +520,11 @@ export const deleteFuelVehicleAmountBySid = async (sid: number): Promise<void> =
   await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE s_id = ?`, [sid]);
 };
 
+// Delete a single fuel vehicle amount row with both stmt_id and s_id
+export const deleteFuelVehicleAmountByStmtAndSid = async (stmt_id: number, s_id: number): Promise<void> => {
+  await pool2.query(`DELETE FROM ${fuelVehicleAmountTable} WHERE stmt_id = ? AND s_id = ?`, [stmt_id, s_id]);
+};
+
 // Fetch all fuel detail rows for a specific vehicle across statements
 export const getFuelVehicleAmountByVehicleId = async (vehicleId: number): Promise<any[]> => {
   const [rows] = await pool2.query(
