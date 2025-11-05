@@ -76,6 +76,8 @@ router.get('/employees/search', asyncHandler(assetController.searchEmployees));
 router.get('/employees/:id', asyncHandler(assetController.getEmployeeById));
 router.get('/employees', asyncHandler(assetController.getEmployees));
 router.post('/employees', asyncHandler(assetController.createEmployee));
+// Bulk update resignation by ramco_id list
+router.put('/employees/update-resign', asyncHandler(assetController.updateEmployeeResignation));
 router.put('/employees/:id', asyncHandler(assetController.updateEmployee));
 router.delete('/employees/:id', asyncHandler(assetController.deleteEmployee));
 router.get('/employees/ramco/:ramco_id', asyncHandler(assetController.getEmployeeByRamco));

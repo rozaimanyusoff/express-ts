@@ -1979,6 +1979,38 @@ export const deleteEmployee = async (req: Request, res: Response) => {
 	});
 };
 
+// PUT /api/assets/employees/update-resign
+// Body: { ramco_id: string[] | string, resignation_date: string (yyyy-mm-dd), employment_status?: string }
+export const updateEmployeeResignation = async (req: Request, res: Response) => {
+	const { ramco_id, resignation_date, employment_status } = req.body || {};
+
+	// Normalize ramco_id(s)
+	let ids: string[] = [];
+	if (Array.isArray(ramco_id)) {
+		ids = ramco_id.map((v: any) => String(v).trim()).filter(Boolean);
+	} else if (typeof ramco_id === 'string') {
+		// Accept CSV string as well
+		ids = ramco_id.split(',').map(s => s.trim()).filter(Boolean);
+	}
+
+	if (ids.length === 0 || typeof resignation_date !== 'string' || resignation_date.trim() === '') {
+		return res.status(400).json({ status: 'error', message: 'ramco_id[] and resignation_date are required', data: null });
+	}
+
+	// Default to 'resigned' if not provided
+	const status = typeof employment_status === 'string' && employment_status.trim() !== ''
+		? employment_status
+		: 'resigned';
+
+	const result = await (assetModel as any).updateEmployeesResignation(ids, resignation_date, status);
+	const affected = (result && typeof result === 'object' && 'affectedRows' in result) ? (result as any).affectedRows : 0;
+	res.json({
+		status: 'success',
+		message: `Updated resignation details for ${affected} employee(s)`,
+		data: { affected }
+	});
+};
+
 // GET /employees/search?q=term
 export const searchEmployees = async (req: Request, res: Response) => {
 	const q = (req.query.q || '').toString().toLowerCase();

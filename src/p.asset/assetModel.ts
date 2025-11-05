@@ -1355,6 +1355,22 @@ export const deleteEmployee = async (id: number) => {
   return result;
 };
 
+// Bulk update resignation details by ramco_id array
+export const updateEmployeesResignation = async (
+  ramcoIds: string[],
+  resignationDate: string,
+  employmentStatus: string
+) => {
+  if (!Array.isArray(ramcoIds) || ramcoIds.length === 0) {
+    return { affectedRows: 0 } as any;
+  }
+  const placeholders = ramcoIds.map(() => '?').join(',');
+  const sql = `UPDATE ${employeeTable} SET resignation_date = ?, employment_status = ? WHERE ramco_id IN (${placeholders})`;
+  const params = [resignationDate, employmentStatus, ...ramcoIds];
+  const [result] = await pool.query(sql, params);
+  return result as ResultSetHeader;
+};
+
 /* =========== POSITIONS =========== */
 export const createPosition = async (data: any) => {
   const { name } = data;
