@@ -1943,7 +1943,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 		position_id,
 		department_id,
 		costcenter_id,
-		district_id
+		location_id,
 	} = req.body;
 	const result = await assetModel.updateEmployee(Number(req.params.id), {
 		ramco_id,
@@ -1961,7 +1961,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 		position_id,
 		department_id,
 		costcenter_id,
-		district_id
+		location_id
 	});
 	res.json({
 		status: 'success',
