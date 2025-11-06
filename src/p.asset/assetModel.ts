@@ -1342,10 +1342,10 @@ export const getEmployeeByContact = async (contact: number) => {
 };
 
 export const updateEmployee = async (id: number, data: any) => {
-  const { full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar } = data;
+  const { full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_status } = data;
   const [result] = await pool.query(
-    `UPDATE ${employeeTable} SET full_name = ?, email = ?, contact = ?, department_id = ?, costcenter_id = ?, position_id = ?, location_id = ?, avatar = ? WHERE id = ?`,
-    [full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, id]
+    `UPDATE ${employeeTable} SET full_name = ?, email = ?, contact = ?, department_id = ?, costcenter_id = ?, position_id = ?, location_id = ?, avatar = ?, resignation_date = ?, employment_status = ? WHERE id = ?`,
+    [full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_status, id]
   );
   return result;
 };

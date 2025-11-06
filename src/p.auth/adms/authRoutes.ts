@@ -4,7 +4,7 @@ import { register, validateActivationDetails, activateAccount, login, resetPassw
 import asyncHandler from '../../utils/asyncHandler.js';
 //import { rsaDecryptMiddleware } from '../middlewares/rsaDecrypt.js';
 import tokenValidator from '../../middlewares/tokenValidator.js';
-import rateLimiter from '../../middlewares/rateLimiter.js';
+import rateLimiter, { getClientBlockInfo } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 router.post('/register/verifyme', asyncHandler(verifyRegisterUser));
@@ -22,5 +22,13 @@ router.post('/refresh-token', asyncHandler(refreshToken)); // not apply tokenVal
 router.post('/approve-pending-user', asyncHandler(approvePendingUser));
 router.post('/invite-users', asyncHandler(inviteUsers));
 router.post('/delete-pending-user', asyncHandler(deletePendingUser));
+
+// Read-only status endpoint to help frontend show countdown timers
+// Query param `route` allows checking a specific route's block status (default: /api/auth/login)
+router.get('/rate-limit-status', asyncHandler(async (req, res) => {
+	const route = String((req.query.route ?? '/api/auth/login'));
+	const info = getClientBlockInfo(req, route);
+	return res.json({ status: 'success', data: info });
+}));
 
 export default router;
