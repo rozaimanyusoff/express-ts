@@ -4,7 +4,7 @@ import { register, validateActivationDetails, activateAccount, login, resetPassw
 import asyncHandler from '../../utils/asyncHandler.js';
 //import { rsaDecryptMiddleware } from '../middlewares/rsaDecrypt.js';
 import tokenValidator from '../../middlewares/tokenValidator.js';
-import rateLimiter, { getClientBlockInfo } from '../../middlewares/rateLimiter.js';
+import rateLimiter, { getClientBlockInfo, getAttemptInfo, clearClientBlockByKey, clearClientBlockByParams, listActiveBlocks } from '../../middlewares/rateLimiter.js';
 
 const router = Router();
 router.post('/register/verifyme', asyncHandler(verifyRegisterUser));
@@ -28,7 +28,29 @@ router.post('/delete-pending-user', asyncHandler(deletePendingUser));
 router.get('/rate-limit-status', asyncHandler(async (req, res) => {
 	const route = String((req.query.route ?? '/api/auth/login'));
 	const info = getClientBlockInfo(req, route);
-	return res.json({ status: 'success', data: info });
+	const attempts = getAttemptInfo(req, route);
+	return res.json({ status: 'success', data: { ...info, attempts } });
+}));
+
+// Admin: list active rate-limit blocks (in-memory)
+router.get('/admin/rate-limit/blocks', tokenValidator, asyncHandler(async (req, res) => {
+	const blocks = listActiveBlocks();
+	return res.json({ status: 'success', data: blocks });
+}));
+
+// Admin: unblock a specific client key or ip+ua+route
+router.post('/admin/rate-limit/unblock', tokenValidator, asyncHandler(async (req, res) => {
+	const { key, ip, userAgent, route } = req.body || {};
+	let ok = false;
+	if (typeof key === 'string' && key.trim()) {
+		ok = clearClientBlockByKey(key.trim());
+	} else if (ip && userAgent && route) {
+		ok = clearClientBlockByParams(String(ip), String(userAgent), String(route));
+	} else {
+		return res.status(400).json({ status: 'error', message: 'Provide either { key } or { ip, userAgent, route }' });
+	}
+	if (ok) return res.json({ status: 'success', message: 'Unblocked' });
+	return res.status(404).json({ status: 'error', message: 'No matching block found' });
 }));
 
 export default router;
