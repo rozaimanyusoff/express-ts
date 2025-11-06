@@ -21,7 +21,7 @@ import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChan
 import { v4 as uuidv4 } from 'uuid';
 import * as assetModel from '../../p.asset/assetModel';
 import {pool} from '../../utils/db';
-import { clearClientBlock } from '../../middlewares/rateLimiter';
+import { clearClientBlock, resetAttempts, recordFailedAttempt } from '../../middlewares/rateLimiter';
 
 dotenv.config();
 
@@ -369,7 +369,10 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const result: any = await userModel.verifyLoginCredentials(emailOrUsername, password);
 
         if (!result.success) {
-            return res.status(401).json({ status: 'error', code: 401, message: result.message });
+            // Count only failed logins towards remaining-attempts
+            try { recordFailedAttempt(req); } catch {}
+            // Security: do not leak remaining attempts or specific reason
+            return res.status(401).json({ status: 'error', code: 401, message: 'Invalid credential' });
         }
 
         if (result.user.status === 0) {
@@ -398,8 +401,9 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     await userModel.updateLastLogin(result.user.id);
         await logModel.logAuthActivity(result.user.id, 'login', 'success', {}, req);
 
-    // On successful login, clear any lingering rate-limit/ip block for this client
+    // On successful login: clear any block and reset failed-attempts counter
     try { clearClientBlock(req); } catch (_) { /* noop */ }
+    try { resetAttempts(req); } catch (_) { /* noop */ }
 
         const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
         const userAgent = req.headers['user-agent'] || null;

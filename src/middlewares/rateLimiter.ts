@@ -12,23 +12,47 @@ type BlockRecord = {
 const blockedMap = new Map<string, BlockRecord>();
 
 // Lightweight attempt tracker to expose remaining attempts in current window
-type AttemptRecord = { windowStart: number; hits: number };
+// We track FAILED login attempts per client key within a sliding window.
+// This powers the UI's "remaining attempts" without counting successful logins.
+type AttemptRecord = { windowStart: number; fails: number };
 const attemptMap = new Map<string, AttemptRecord>();
 
-function trackAttemptForKey(key: string, now: number) {
+// Increment failed-attempt counter for current window (used by controllers on auth failure)
+export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
+    const key = `${ip}|${userAgent}|${routeId}`;
+    const now = Date.now();
     const rec = attemptMap.get(key);
     if (!rec) {
-        attemptMap.set(key, { windowStart: now, hits: 1 });
+        attemptMap.set(key, { windowStart: now, fails: 1 });
         return;
     }
-    // reset window if expired
     if (now - rec.windowStart >= WINDOW_MS) {
         rec.windowStart = now;
-        rec.hits = 1;
+        rec.fails = 1;
     } else {
-        rec.hits += 1;
+        rec.fails += 1;
     }
     attemptMap.set(key, rec);
+}
+
+// Reset failed-attempts for the current client key (used on successful auth)
+export function resetAttempts(req: Request, routeIdOverride?: string) {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
+    const key = `${ip}|${userAgent}|${routeId}`;
+    attemptMap.delete(key);
 }
 
 export function getAttemptInfo(req: Request, routeIdOverride?: string): { current: number; remaining: number; limit: number; resetAt: number } {
@@ -47,7 +71,7 @@ export function getAttemptInfo(req: Request, routeIdOverride?: string): { curren
     }
     // if window expired, effectively back to 0
     const inWindow = now - rec.windowStart < WINDOW_MS;
-    const current = inWindow ? rec.hits : 0;
+    const current = inWindow ? rec.fails : 0;
     const remaining = Math.max(0, MAX_ATTEMPTS - current);
     const resetAt = (inWindow ? rec.windowStart : now) + WINDOW_MS;
     return { current, remaining, limit: MAX_ATTEMPTS, resetAt };
@@ -216,8 +240,6 @@ function ipBlocker(req: Request, res: Response, next: NextFunction) {
     if (block && block.blockedUntil <= Date.now()) {
         blockedMap.delete(key);
     }
-    // Track this attempt for remaining-attempts visibility
-    try { trackAttemptForKey(key, Date.now()); } catch {}
     next();
 }
 
