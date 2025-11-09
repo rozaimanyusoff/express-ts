@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as assetController from './assetController';
 import asyncHandler from '../utils/asyncHandler';
+import { createUploader } from '../utils/fileUploader';
 
 const router = Router();
 
@@ -124,12 +125,28 @@ router.post('/softwares', asyncHandler(assetController.createSoftware));
 router.put('/softwares/:id', asyncHandler(assetController.updateSoftware));
 router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
 
+
+// ASSET TRANSFER ITEMS (direct access)
+router.get('/transfers/items', asyncHandler(assetController.getAssetTransferItems)); // all items
+router.get('/transfers/:id/items', asyncHandler(assetController.getAssetTransferItemsByTransfer)); // items for a specific transfer
+router.get('/transfers/:transferId/items/:itemId', asyncHandler(assetController.getAssetTransferItemByTransfer)); // enriched single item within transfer
+router.post('/transfers/:id/items', asyncHandler(assetController.createAssetTransferItem));
+router.get('/transfer-items/:itemId', asyncHandler(assetController.getAssetTransferItem));
+router.put('/transfer-items/:itemId', asyncHandler(assetController.updateAssetTransferItem));
+router.delete('/transfer-items/:itemId', asyncHandler(assetController.deleteAssetTransferItem));
+
 // ASSET TRANSFER REQUESTS
+const acceptanceUploader = createUploader('assets/transfers/acceptance');
 router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferById));
-router.get('/transfers', asyncHandler(assetController.getAssetTransfers)); // ?status=&requester=&supervisor=&hod=&from_date=&to_date=
+router.get('/transfers', asyncHandler(assetController.getAssetTransfers)); // ?status=&dept=&requester=&supervisor=&hod=&from_date=&to_date=
 router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
+router.put('/transfers/approval', asyncHandler(assetController.updateAssetTransfersApproval)); // bulk/individual approval
+router.put('/transfers/:id/acceptance', acceptanceUploader.array('acceptance_attachments'), asyncHandler(assetController.setAssetTransferAcceptance));
 router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));
+
+
+
 
 // ASSET TRANSFER APPROVAL (for supervisor approve/reject buttons)
 router.post('/transfer-requests/:id/approval', asyncHandler(assetController.updateAssetTransferApprovalStatusById));

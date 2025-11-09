@@ -14,20 +14,27 @@ interface EmailData {
 }
 
 export default function assetTransferRequestEmail({ request, items, requestor, supervisor, actionToken, actionBaseUrl }: EmailData) {
-  // Helper for safe value
-  const safe = (v: any) => v || '-';
-  // Requestor details
-  const reqCostCenter = requestor?.costcenter_id && requestor?.costcenter ? requestor.costcenter.name : '-';
-  const reqDepartment = requestor?.department_id && requestor?.department ? requestor.department.name : '-';
-  const reqDistrict = requestor?.district_id && requestor?.district ? requestor.district.name : '-';
-  const reqStatus = request?.request_status || '-';
-  // Format date
+  // Helpers
+  const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
-  // Styles
-  const cardStyle = `background: #FFF8E1; border: 1px solid #e0c080; border-radius: 8px; padding: 18px 18px 10px 18px; margin-bottom: 18px; font-size: 15px; line-height: 1.6;`;
-  const labelStyle = 'font-weight: bold; display: inline-block; min-width: 140px; vertical-align: top;';
-  const valueStyle = 'display: inline-block; min-width: 180px;';
-  const rowStyle = 'margin-bottom: 6px;';
+  const reqCostCenter = requestor?.costcenter?.name || '-';
+  const reqDepartment = requestor?.department?.name || '-';
+  const reqDistrict = requestor?.district?.name || '-';
+  const reqStatus = request?.request_status || request?.transfer_status || '-';
+  const reqNo = request?.request_no || request?.id || '-';
+  const reqDate = request?.request_date || request?.transfer_date || new Date();
+  // Green theme styles
+  const primary = '#1b5e20'; // dark green
+  const primarySoft = '#2e7d32';
+  const bgSoft = '#e8f5e9';
+  const border = '#c8e6c9';
+  const header = `background:${primary}; color:#fff; padding:16px 20px; border-radius:8px 8px 0 0; font-size:18px; font-weight:700;`;
+  const container = `border:1px solid ${border}; border-radius:8px; overflow:hidden;`;
+  const sectionTitle = `font-size:16px; color:${primarySoft}; margin:16px 0 8px 0;`;
+  const cardStyle = `background:${bgSoft}; border:1px solid ${border}; border-radius:8px; padding:14px 16px; margin-bottom:14px; font-size:14px; line-height:1.55;`;
+  const labelStyle = 'font-weight:600; display:inline-block; min-width:160px; vertical-align:top;';
+  const valueStyle = 'display:inline-block; min-width:180px;';
+  const rowStyle = 'margin-bottom:6px;';
   // Action buttons (only for supervisor)
   let actionButtons = '';
   if (actionToken && actionBaseUrl && supervisor?.email) {
@@ -42,7 +49,7 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
     `;
   }
   // Email subject
-  const subject = `Asset Transfer Request #${safe(request?.request_no)} Submitted`;
+  const subject = `Asset Transfer Request #${safe(reqNo)} Submitted`;
   // Determine greeting
   let greeting = `Dear ${safe(requestor?.full_name)},`;
   if (actionToken && actionBaseUrl && supervisor?.email && requestor?.email !== supervisor?.email) {
@@ -50,19 +57,24 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
   }
   // Email HTML
   const html = `
-    <div style="font-family: Arial, sans-serif; color: #222;">
-      <h2 style="margin-bottom: 0.5em;">Asset Transfer Request Initiated</h2>
-      <p>${greeting}</p>
-      <p>Your asset transfer request <b>#${safe(request?.request_no)}</b> has been submitted on <span style="color: #b26a00; font-weight: bold;">${formatDate(request?.request_date)}</span>.</p>
-      <h3 style="margin-bottom: 0.3em;">Request Details</h3>
-      <ul style="margin-top: 0; margin-bottom: 0.7em;">
-        <li><b>Requestor:</b> ${safe(requestor?.full_name)} (${safe(requestor?.email)})</li>
-        <li><b>Cost Center:</b> ${safe(reqCostCenter)}</li>
-        <li><b>Department:</b> ${safe(reqDepartment)}</li>
-        <li><b>District:</b> ${safe(reqDistrict)}</li>
-        <li><b>Status:</b> ${safe(reqStatus)}</li>
-      </ul>
-      <h3 style="margin-bottom: 0.3em;">Transfer Items</h3>
+    <div style="font-family: Arial, sans-serif; color:#1a1a1a;">
+      <div style="${container}">
+        <div style="${header}">Asset Transfer</div>
+        <div style="padding:16px 20px;">
+          <div style="margin-bottom:10px; color:#444;">${greeting}</div>
+          <div style="margin-bottom:14px;">Your asset transfer request <b>#${safe(reqNo)}</b> has been submitted on <span style="color:${primarySoft}; font-weight:700;">${formatDate(reqDate)}</span>.</div>
+          <div style="${sectionTitle}">Request Summary</div>
+          <div style="${cardStyle}">
+            <div style="${rowStyle}"><span style="${labelStyle}">Request No:</span> <span style="${valueStyle}">${safe(reqNo)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Date:</span> <span style="${valueStyle}">${formatDate(reqDate)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Requestor:</span> <span style="${valueStyle}">${safe(requestor?.full_name)} (${safe(requestor?.email)})</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Cost Center:</span> <span style="${valueStyle}">${safe(reqCostCenter)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Department:</span> <span style="${valueStyle}">${safe(reqDepartment)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">District:</span> <span style="${valueStyle}">${safe(reqDistrict)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Status:</span> <span style="${valueStyle}">${safe(reqStatus)}</span></div>
+          </div>
+
+          <div style="${sectionTitle}">Transfer Items</div>
       ${items.map(item => `
         <div style="${cardStyle}">
           <div style="display: flex; flex-wrap: wrap;">
@@ -77,18 +89,19 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
             <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Costcenter:</span> <span style="${valueStyle}">${safe(item.newCostcenterName)}</span></div>
             <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Department:</span> <span style="${valueStyle}">${safe(item.newDepartmentCode)}</span></div>
             <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New District:</span> <span style="${valueStyle}">${safe(item.newDistrictCode)}</span></div>
-            <div style="width: 100%; ${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons)}</span></div>
+            <div style="width: 100%; ${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
           </div>
         </div>
       `).join('')}
-      <div style="margin-top: 1.5em;">
-        <span>This request will be reviewed by your supervisor: <b>${safe(supervisor?.name)}</b> (<span style="color: #b26a00; font-weight: bold;">${safe(supervisor?.email)}</span>).</span>
+          <div style="margin-top: 1em;">
+            <span>This request will be reviewed by your supervisor: <b>${safe(supervisor?.name || requestor?.supervisor_name || 'Supervisor')}</b> (<span style="color:${primarySoft}; font-weight:700;">${safe(supervisor?.email)}</span>).</span>
+          </div>
+        </div>
       </div>
-      ${(actionToken && actionBaseUrl && supervisor?.email && requestor?.email !== supervisor?.email) ? actionButtons : ''}
-      <div style="margin-top: 2em; font-size: 13px; color: #888; border-top: 1px solid #eee; padding-top: 1em;">
+      <div style="margin-top: 1em; font-size: 12px; color: #607d8b;">
         <b>Disclaimer:</b> If this request has not been made by you, please contact the IT Asset Management team immediately. This is an automated notification; please do not reply to this email.
       </div>
-      <div style="margin-top: 1.5em;">Thank you.</div>
+      <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
   return { subject, html };

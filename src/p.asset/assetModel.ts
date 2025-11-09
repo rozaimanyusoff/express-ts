@@ -1331,6 +1331,21 @@ export const getEmployeeByRamco = async (ramco_id: string) => {
   return (rows as RowDataPacket[])[0];
 };
 
+// Get Head of Department (HOD) by department_id using departmental_level = 1
+export const getDepartmentHeadByDepartmentId = async (department_id: number) => {
+  if (!Number.isFinite(department_id)) return null as any;
+  const [rows] = await pool.query(
+    `SELECT * FROM ${employeeTable}
+     WHERE department_id = ?
+       AND employment_status = 'active'
+       AND COALESCE(departmental_level, 0) = 1
+     ORDER BY id ASC
+     LIMIT 1`,
+    [department_id]
+  );
+  return (rows as RowDataPacket[])[0];
+};
+
 export const getEmployeeByEmail = async (email: string) => {
   const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE email = ?`, [email]);
   return (rows as RowDataPacket[])[0];
@@ -1637,11 +1652,32 @@ export const getAssetsByIds = async (assetIds: number[]) => {
   return rows;
 };
 
-// Search employees for autocomplete
+// Search employees for autocomplete with enriched organizational details
 export const searchEmployeesAutocomplete = async (query: string) => {
-  const q = `%${query.toLowerCase()}%`;
+  const term = String(query || '').trim().toLowerCase();
+  if (!term) return [];
+  const q = `%${term}%`;
   const [rows] = await pool.query(
-    `SELECT ramco_id, full_name FROM ${employeeTable} WHERE employment_status = 'active' AND LOWER(full_name) LIKE ? OR LOWER(ramco_id) LIKE ? LIMIT 20`,
+    `SELECT 
+       e.ramco_id,
+       e.full_name,
+       e.position_id,
+       p.name AS position_name,
+       e.costcenter_id,
+       cc.name AS costcenter_name,
+       e.department_id,
+       d.name AS department_name,
+       e.location_id,
+       l.name AS location_name
+     FROM ${employeeTable} e
+     LEFT JOIN ${positionTable} p ON p.id = e.position_id
+     LEFT JOIN ${costcenterTable} cc ON cc.id = e.costcenter_id
+     LEFT JOIN ${departmentTable} d ON d.id = e.department_id
+     LEFT JOIN ${locationTable} l ON l.id = e.location_id
+     WHERE e.employment_status = 'active'
+       AND (LOWER(e.full_name) LIKE ? OR LOWER(e.ramco_id) LIKE ?)
+     ORDER BY e.full_name ASC
+     LIMIT 20`,
     [q, q]
   );
   return rows;
@@ -1706,6 +1742,18 @@ export const updateAssetTransfer = async (id: number, data: any) => {
   );
   return result;
 };
+
+// Bulk/individual update of transfer approvals
+export const bulkUpdateAssetTransfersApproval = async (ids: number[], status: string, approved_by: string, approved_date?: string | Date) => {
+  if (!Array.isArray(ids) || ids.length === 0) return { affectedRows: 0 } as any;
+  const placeholders = ids.map(() => '?').join(',');
+  const dateVal = approved_date ?? new Date();
+  // Align with controller which reads approved_by/approved_date and transfer_status for statuses
+  const sql = `UPDATE ${assetTransferRequestTable} SET transfer_status = ?, approved_by = ?, approved_date = ?, updated_at = NOW() WHERE id IN (${placeholders})`;
+  const params: any[] = [status, approved_by, dateVal, ...ids];
+  const [result] = await pool.query(sql, params);
+  return result;
+};
 export const deleteAssetTransfer = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${assetTransferRequestTable} WHERE id = ?`, [id]);
   return result;
@@ -1717,6 +1765,56 @@ export const deleteAssetTransferItemByRequestId = async (requestId: number) => {
 export const getAssetTransferItemByRequestId = async (transfer_id: number) => {
   const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable} WHERE transfer_id = ?`, [transfer_id]);
   return rows;
+};
+
+export const getAssetTransferItemById = async (id: number) => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable} WHERE id = ?`, [id]);
+  return (rows as RowDataPacket[])[0];
+};
+
+export const getAllAssetTransferItems = async () => {
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable}`);
+  return rows;
+};
+
+export const updateAssetTransferItem = async (id: number, data: any) => {
+  const allowedFields = [
+    'effective_date',
+    'asset_id',
+    'type_id',
+    'current_owner',
+    'current_costcenter_id',
+    'current_department_id',
+    'current_location_id',
+    'new_owner',
+    'new_costcenter_id',
+    'new_department_id',
+    'new_location_id',
+    'return_to_asset_manager',
+    'reason',
+    'remarks',
+    'attachment'
+  ] as const;
+  const sets: string[] = [];
+  const params: any[] = [];
+  for (const key of allowedFields) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      sets.push(`${key} = ?`);
+      params.push((data as any)[key]);
+    }
+  }
+  if (!sets.length) {
+    return { affectedRows: 0 } as any;
+  }
+  const sql = `UPDATE ${assetTransferItemTable} SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ?`;
+  params.push(id);
+  const [result] = await pool.query(sql, params);
+  return result;
+};
+
+export const deleteAssetTransferItem = async (id: number) => {
+  const [result] = await pool.query(`DELETE FROM ${assetTransferItemTable} WHERE id = ?`, [id]);
+  return result;
 };
 
 export const getAssetTransferWithDetails = async () => {
@@ -1757,8 +1855,12 @@ export const generateNextRequestNo = async () => {
   return `AR/${nextNumber.toString().padStart(4, '0')}/${year}`;
 };
 
-// TRANSFER CHECKLISTS CRUD
-export const getTransferChecklists = async () => {
+/* === TRANSFER CHECKLIST === */
+export const getTransferChecklists = async (typeId?: number) => {
+  if (typeof typeId === 'number' && !Number.isNaN(typeId)) {
+    const [rows] = await pool.query(`SELECT * FROM ${transferChecklistTable} WHERE type_id = ?`, [typeId]);
+    return rows;
+  }
   const [rows] = await pool.query(`SELECT * FROM ${transferChecklistTable}`);
   return rows;
 };
@@ -1785,6 +1887,37 @@ export const updateTransferChecklist = async (id: number, data: any) => {
 };
 export const deleteTransferChecklist = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${transferChecklistTable} WHERE id = ?`, [id]);
+  return result;
+};
+
+// Update acceptance metadata for a transfer request (dynamic fields)
+export const setAssetTransferAcceptance = async (id: number, data: {
+  acceptance_by?: string | null;
+  acceptance_date?: string | null; // expect 'YYYY-MM-DD hh:mm:ss'
+  acceptance_remarks?: string | null;
+  acceptance_attachments?: string[]; // stored as JSON array string
+  acceptance_checklist_items?: number[]; // will be stored as comma-separated string
+}) => {
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (data.acceptance_by !== undefined) { sets.push('acceptance_by = ?'); params.push(data.acceptance_by); }
+  if (data.acceptance_date !== undefined) { sets.push('acceptance_date = ?'); params.push(data.acceptance_date); }
+  if (data.acceptance_remarks !== undefined) { sets.push('acceptance_remarks = ?'); params.push(data.acceptance_remarks); }
+  if (data.acceptance_attachments !== undefined) {
+    // keep attachments as JSON string for future-proofing
+    sets.push('acceptance_attachments = ?');
+    params.push(JSON.stringify(data.acceptance_attachments));
+  }
+  if (data.acceptance_checklist_items !== undefined) {
+    // store as plain comma-separated list without brackets
+    const csv = data.acceptance_checklist_items.map(n => Number(n)).filter(n => Number.isFinite(n)).join(',');
+    sets.push('acceptance_checklist_items = ?');
+    params.push(csv);
+  }
+  if (!sets.length) return { affectedRows: 0 } as any;
+  const sql = `UPDATE ${assetTransferItemTable} SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ?`;
+  params.push(id);
+  const [result] = await pool.query(sql, params);
   return result;
 };
 
