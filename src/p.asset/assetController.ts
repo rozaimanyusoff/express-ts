@@ -9,6 +9,7 @@ import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/asset
 import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferApprovedRequestor';
 import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferApprovedNewOwner';
 import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
+import { assetTransferAcceptedRequestorEmail, assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail } from '../utils/emailTemplates/assetTransferAccepted';
 import * as purchaseModel from '../p.purchase/purchaseModel';
 
 
@@ -3085,6 +3086,112 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// store as comma separated string (no brackets) handled in model
 		acceptance_checklist_items: checklistIds
 	});
+
+	// Send email notifications to: requestor, current owner, and new owner's HOD
+	try {
+		// Fetch transfer items with details
+		const itemsResult = await assetModel.getAssetTransferItemByRequestId(requestId);
+		const items = Array.isArray(itemsResult) ? itemsResult : [];
+		if (items.length === 0) {
+			return res.json({ status: 'success', message: 'Acceptance data saved', result });
+		}
+
+		// Collect unique employee IDs
+		const employeeIds = new Set<string>();
+		if (request.transfer_by) employeeIds.add(String(request.transfer_by));
+		items.forEach((item: any) => {
+			if (item.current_owner) employeeIds.add(String(item.current_owner));
+			if (item.new_owner) employeeIds.add(String(item.new_owner));
+		});
+
+		// Fetch all employees at once
+		const employeesResult = await assetModel.getEmployees();
+		const employees = Array.isArray(employeesResult) ? employeesResult : [];
+		const employeeMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+
+		// Get requestor/applicant
+		const requestor: any = request.transfer_by ? employeeMap.get(String(request.transfer_by)) : null;
+
+		// Get unique current owners and new owners
+		const currentOwners = new Set<string>();
+		const newOwners = new Set<string>();
+		items.forEach((item: any) => {
+			if (item.current_owner) currentOwners.add(String(item.current_owner));
+			if (item.new_owner) newOwners.add(String(item.new_owner));
+		});
+
+		// Enrich items with display names
+		const enrichedItems = items.map((item: any) => ({
+			...item,
+			identifierDisplay: item.identifier || item.asset_code || item.register_number || '-',
+			currOwnerName: item.current_owner ? ((employeeMap.get(String(item.current_owner)) as any)?.full_name || item.current_owner) : '-',
+			newOwnerName: item.new_owner ? ((employeeMap.get(String(item.new_owner)) as any)?.full_name || item.new_owner) : '-'
+		}));
+
+		// 1. Notify Requestor/Applicant
+		if (requestor?.email) {
+			const newOwnerForEmail: any = newOwners.size > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null;
+			const { subject, html } = assetTransferAcceptedRequestorEmail({
+				request,
+				items: enrichedItems,
+				requestor,
+				newOwner: newOwnerForEmail,
+				acceptanceDate: acceptance_date || new Date(),
+				acceptanceRemarks: acceptance_remarks
+			});
+			await sendMail(requestor.email, subject, html).catch(err => 
+				console.error('Failed to send acceptance email to requestor:', err)
+			);
+		}
+
+		// 2. Notify Current/Previous Owners
+		for (const ownerId of currentOwners) {
+			const currentOwner: any = employeeMap.get(ownerId);
+			if (currentOwner?.email) {
+				const itemsForOwner = enrichedItems.filter((i: any) => String(i.current_owner) === ownerId);
+				const newOwnerForEmail: any = newOwners.size > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null;
+				const { subject, html } = assetTransferAcceptedCurrentOwnerEmail({
+					request,
+					items: itemsForOwner,
+					currentOwner,
+					newOwner: newOwnerForEmail,
+					acceptanceDate: acceptance_date || new Date(),
+					acceptanceRemarks: acceptance_remarks
+				});
+				await sendMail(currentOwner.email, subject, html).catch(err =>
+					console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err)
+				);
+			}
+		}
+
+		// 3. Notify New Owner's HOD
+		for (const ownerId of newOwners) {
+			const newOwner: any = employeeMap.get(ownerId);
+			if (newOwner) {
+				// Get HOD - check supervisor_ramco_id or hod field
+				const hodId = newOwner.supervisor_ramco_id || newOwner.hod || null;
+				const hod: any = hodId ? employeeMap.get(String(hodId)) : null;
+				
+				if (hod?.email) {
+					const itemsForOwner = enrichedItems.filter((i: any) => String(i.new_owner) === ownerId);
+					const { subject, html } = assetTransferAcceptedHodEmail({
+						request,
+						items: itemsForOwner,
+						newOwner,
+						newOwnerHod: hod,
+						acceptanceDate: acceptance_date || new Date(),
+						acceptanceRemarks: acceptance_remarks
+					});
+					await sendMail(hod.email, subject, html).catch(err =>
+						console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err)
+					);
+				}
+			}
+		}
+	} catch (emailErr) {
+		console.error('Error sending acceptance notification emails:', emailErr);
+		// Don't fail the request if emails fail
+	}
 
 	return res.json({ status: 'success', message: 'Acceptance data saved', result });
 };
