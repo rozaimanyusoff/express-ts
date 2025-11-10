@@ -3192,6 +3192,8 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 		id: item.id,
 		transfer_id: item.transfer_id,
 		transfer_by: transfer_by_emp ? { ramco_id: transfer_by_emp.ramco_id, name: transfer_by_emp.full_name || transfer_by_emp.name || null } : null,
+		approved_by: transfer.approved_by,
+		approved_date: transfer.approved_date,
 		effective_date: item.effective_date,
 		asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (item.asset_id ? { id: item.asset_id, register_number: null } : null),
 		type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (item.type_id ? { id: item.type_id, name: null } : null),
