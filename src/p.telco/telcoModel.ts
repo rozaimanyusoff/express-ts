@@ -324,8 +324,8 @@ export async function createTelcoBilling(billing: any) {
     const { account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status } = billing;
     // Check for duplicate by bill_no and account_id
     const [dupRows] = await pool2.query<RowDataPacket[]>(
-        `SELECT id FROM ${tables.telcoBilling} WHERE bill_no = ? AND account_id = ? LIMIT 1`,
-        [bill_no, account_id]
+        `SELECT id FROM ${tables.telcoBilling} WHERE bill_no = ? AND account_id = ? AND bill_date = ? LIMIT 1`,
+        [bill_no, account_id, bill_date]
     );
     if (dupRows && dupRows.length > 0) {
         // Duplicate found, return existing id (or throw error if preferred)

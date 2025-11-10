@@ -50,5 +50,6 @@ router.get('/bills/:id/report/costcenter', asyncHandler(TelcoController.getTelco
 router.get('/bills', asyncHandler(TelcoController.getTelcoBillings)); // list subscribers billing
 router.post('/bills', asyncHandler(TelcoController.createTelcoBilling));
 router.put('/bills/:id', asyncHandler(TelcoController.updateTelcoBilling));
+router.delete('/bills/:id', asyncHandler(TelcoController.deleteTelcoBilling));
 
 export default router;

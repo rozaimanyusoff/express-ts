@@ -185,9 +185,9 @@ export const getTelcoBillings = async (req: Request, res: Response, next: NextFu
                     provider: acc.provider || null,
                 };
             }
-        return {
-            id: b.id,
-            bfcy_id: b.id ?? b.bfcy_id,
+            return {
+                id: b.id,
+                bfcy_id: b.id ?? b.bfcy_id,
                 account: accountObj,
                 bill_date: b.bill_date,
                 bill_no: b.bill_no,
@@ -376,7 +376,7 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
                 provider = b.provider;
             }
             // Fetch details for this bill
-            let details: Array<{ costcenter: { id: any, name: string|null }, amount: any }> = [];
+            let details: Array<{ costcenter: { id: any, name: string | null }, amount: any }> = [];
             try {
                 const billDetails = await telcoModel.getTelcoBillingDetailsById(b.id);
                 if (Array.isArray(billDetails)) {
@@ -629,21 +629,64 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
 export const createTelcoBilling = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const billing = req.body;
+
+        // Validate required fields
+        if (!billing.account_id) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'account_id is required'
+            });
+        }
+        if (!billing.bill_no) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'bill_no is required'
+            });
+        }
+        if (!billing.bill_date) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'bill_date is required'
+            });
+        }
+
+        // Check if billing already exists
+        const existingBillings = await telcoModel.getTelcoBillings();
+        const duplicate = existingBillings.find((b: any) =>
+            b.bill_no === billing.bill_no &&
+            b.account_id === billing.account_id &&
+            b.bill_date === billing.bill_date
+        );
+
+        if (duplicate) {
+            return res.status(409).json({
+                status: 'error',
+                message: 'Billing record already exists for this account, bill number, and date',
+                data: { existing_id: duplicate.id }
+            });
+        }
+
         // Insert parent billing
         const insertId = await telcoModel.createTelcoBilling(billing);
+
         // Insert child details if present
         if (Array.isArray(billing.details) && billing.details.length > 0) {
-            // Attach util_id to each detail
-            const detailsWithUtilId = billing.details.map((detail: any) => ({
+            // Attach bill_id to each detail
+            const detailsWithBillId = billing.details.map((detail: any) => ({
                 ...detail,
                 bill_id: insertId
             }));
             // Insert each detail
-            for (const detail of detailsWithUtilId) {
+            for (const detail of detailsWithBillId) {
                 await telcoModel.createTelcoBillingDetail(detail);
             }
         }
-        res.status(201).json({ status: 'success', message: 'Telco billing created', id: insertId });
+
+        res.status(201).json({
+            status: 'success',
+            message: 'Telco billing created successfully',
+            data: { id: insertId }
+        });
     } catch (error) {
         next(error);
     }

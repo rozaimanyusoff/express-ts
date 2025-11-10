@@ -1921,6 +1921,59 @@ export const setAssetTransferAcceptance = async (id: number, data: {
   return result;
 };
 
+// Insert asset movement record into asset_history
+export const insertAssetHistory = async (data: {
+  asset_id: number;
+  register_number?: string | null;
+  type_id?: number | null;
+  costcenter_id?: number | null;
+  department_id?: number | null;
+  location_id?: number | null;
+  ramco_id?: string | null;
+  effective_date?: string | Date;
+}) => {
+  const [result] = await pool.query(
+    `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.asset_id,
+      data.register_number ?? null,
+      data.type_id ?? null,
+      data.costcenter_id ?? null,
+      data.department_id ?? null,
+      data.location_id ?? null,
+      data.ramco_id ?? null,
+      data.effective_date ?? new Date()
+    ]
+  );
+  return result;
+};
+
+// Update asset current ownership data in assetdata table
+export const updateAssetCurrentOwner = async (asset_id: number, data: {
+  ramco_id?: string | null;
+  costcenter_id?: number | null;
+  department_id?: number | null;
+  location_id?: number | null;
+}) => {
+  const sets: string[] = [];
+  const params: any[] = [];
+  
+  if (data.ramco_id !== undefined) { sets.push('ramco_id = ?'); params.push(data.ramco_id); }
+  if (data.costcenter_id !== undefined) { sets.push('costcenter_id = ?'); params.push(data.costcenter_id); }
+  if (data.department_id !== undefined) { sets.push('department_id = ?'); params.push(data.department_id); }
+  if (data.location_id !== undefined) { sets.push('location_id = ?'); params.push(data.location_id); }
+  
+  if (!sets.length) return { affectedRows: 0 } as any;
+  
+  const sql = `UPDATE ${assetTable} SET ${sets.join(', ')} WHERE id = ?`;
+  params.push(asset_id);
+  
+  const [result] = await pool.query(sql, params);
+  return result;
+};
+
 
 
 // Note: named exports are used throughout the codebase. No default export to normalize usage.
+
