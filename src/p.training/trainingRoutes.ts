@@ -2,8 +2,10 @@
 import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler';
 import * as trainingController from './trainingController';
+import { createUploader } from '../utils/fileUploader';
 
 const router = Router();
+const uploadTraining = createUploader('trainings');
 
 // Trainers
 router.get('/trainers/:id', asyncHandler(trainingController.getTrainerById));
@@ -30,7 +32,7 @@ router.delete('/participants/:id', asyncHandler(trainingController.deletePartici
 router.get('/:id', asyncHandler(trainingController.getTrainingById));
 router.get('/', asyncHandler(trainingController.getTrainings));
 router.post('/', asyncHandler(trainingController.createTraining));
-router.put('/:id', asyncHandler(trainingController.updateTraining));
+router.put('/:id', uploadTraining.single('attendance_uploaded'), asyncHandler(trainingController.updateTraining));
 router.delete('/:id', asyncHandler(trainingController.deleteTraining));
 
 

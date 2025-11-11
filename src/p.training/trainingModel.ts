@@ -27,11 +27,52 @@ export interface TrainingEvent {
    attendance_upload: string | null; // full URL when present
 }
 
-const dbTraining = 'training';
+const dbTraining = 'training2';
 const trainingEventTable = `${dbTraining}.training_events`; //index column is training_id
 const trainerTable = `${dbTraining}.trainer`; //index column is trainer_id
 const courseTable = `${dbTraining}.course`; //index column is course_id
 const participantTable = `${dbTraining}.participant`; //index column is participant_id linked to table training_events.training_id.
+const costingTable = `${dbTraining}.event_costing`; //index column is costing_id linked to table training_events.training_id.
+
+// Decode common HTML entities (named and numeric)
+const decodeHtmlEntities = (str: any): any => {
+   if (typeof str !== 'string') return str;
+   const namedMap: Record<string, string> = {
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&#34;': '"',
+      '&#39;': "'",
+      '&apos;': "'",
+      '&nbsp;': ' '
+   };
+   let out = str.replace(/&(amp|lt|gt|quot|apos|nbsp);|&#(?:34|39);/g, (m) => namedMap[m] ?? m);
+   out = out.replace(/&#(\d+);/g, (_, dec) => {
+      const code = Number(dec);
+      return Number.isFinite(code) ? String.fromCharCode(code) : _;
+   });
+   out = out.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return Number.isFinite(code) ? String.fromCharCode(code) : _;
+   });
+   return out;
+};
+
+// Shallow decode for objects/arrays
+const decodeStringsShallow = (val: any): any => {
+   if (typeof val === 'string') return decodeHtmlEntities(val);
+   if (Array.isArray(val)) return val.map(decodeStringsShallow);
+   if (val && typeof val === 'object') {
+      const out: any = {};
+      for (const k of Object.keys(val)) {
+         const v = (val as any)[k];
+         out[k] = typeof v === 'string' ? decodeHtmlEntities(v) : v;
+      }
+      return out;
+   }
+   return val;
+};
 
 /* ========== TRAINING EVENTS =========== */
 export const getTrainings = async (year?: number) => {
@@ -41,7 +82,7 @@ export const getTrainings = async (year?: number) => {
       sql += ' WHERE YEAR(sdate) = ?';
       params.push(Math.floor(year as number));
    }
-   sql += ' ORDER BY training_id DESC LIMIT 100';
+   sql += ' ORDER BY training_id DESC';
    const [rows] = await pool2.query(sql, params);
    return rows as any[];
 };
@@ -106,12 +147,14 @@ export const getCourses = async (searchTerm?: string) => {
    
    query += ` ORDER BY course_id DESC LIMIT 200`;
    const [rows] = await pool2.query(query, params);
-   return rows as any[];
+   const arr = rows as any[];
+   return arr.map(decodeStringsShallow);
 };
 
 export const getCourseById = async (id: number) => {
    const [rows] = await pool2.query(`SELECT * FROM ${courseTable} WHERE course_id = ? LIMIT 1`, [id]);
-   return (rows as any[])[0] || null;
+   const item = (rows as any[])[0] || null;
+   return item ? decodeStringsShallow(item) : null;
 };
 
 export const createCourse = async (data: any) => {
@@ -157,5 +200,58 @@ export const deleteParticipant = async (id: number) => {
 
 export const getParticipantsByTrainingId = async (training_id: number) => {
    const [rows] = await pool2.query(`SELECT * FROM ${participantTable} WHERE training_id = ? ORDER BY participant_id DESC`, [training_id]);
+   return rows as any[];
+};
+
+/* ========== COSTING =========== */
+export const createCosting = async (data: any) => {
+   const [result] = await pool2.query(`INSERT INTO ${costingTable} SET ?`, [data]);
+   return result as any;
+};
+
+export const createMultipleCostings = async (costings: any[]) => {
+   if (!Array.isArray(costings) || costings.length === 0) {
+      return { insertedCount: 0, insertIds: [] };
+   }
+   const insertIds: number[] = [];
+   for (const costing of costings) {
+      try {
+         const result: any = await createCosting(costing);
+         if (result?.insertId) insertIds.push(result.insertId);
+      } catch (error) {
+         console.error('Error inserting costing:', error);
+      }
+   }
+   return { insertedCount: insertIds.length, insertIds };
+};
+
+export const createMultipleParticipants = async (participants: any[]) => {
+   if (!Array.isArray(participants) || participants.length === 0) {
+      return { insertedCount: 0, insertIds: [] };
+   }
+   const insertIds: number[] = [];
+   for (const participant of participants) {
+      try {
+         const result: any = await createParticipant(participant);
+         if (result?.insertId) insertIds.push(result.insertId);
+      } catch (error) {
+         console.error('Error inserting participant:', error);
+      }
+   }
+   return { insertedCount: insertIds.length, insertIds };
+};
+
+export const deleteCostingsByTrainingId = async (training_id: number) => {
+   const [result] = await pool2.query(`DELETE FROM ${costingTable} WHERE training_id = ?`, [training_id]);
+   return result as any;
+};
+
+export const deleteParticipantsByTrainingId = async (training_id: number) => {
+   const [result] = await pool2.query(`DELETE FROM ${participantTable} WHERE training_id = ?`, [training_id]);
+   return result as any;
+};
+
+export const getCostingsByTrainingId = async (training_id: number) => {
+   const [rows] = await pool2.query(`SELECT * FROM ${costingTable} WHERE training_id = ? ORDER BY costing_id DESC`, [training_id]);
    return rows as any[];
 };
