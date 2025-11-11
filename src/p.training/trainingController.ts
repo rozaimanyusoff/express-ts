@@ -196,9 +196,13 @@ export const deleteTrainer = async (req: Request, res: Response) => {
 };
 
 /* ======== Courses ======== */
-export const getCourses = async (_req: Request, res: Response) => {
+export const getCourses = async (req: Request, res: Response) => {
    try {
-      const data = await trainingModel.getCourses();
+      // Support ?q= or ?search= for autocomplete/search functionality
+      const searchTerm = typeof req.query?.q === 'string' ? req.query.q : 
+                        (typeof req.query?.search === 'string' ? req.query.search : undefined);
+      
+      const data = await trainingModel.getCourses(searchTerm);
       return res.json({ status: 'success', message: 'Courses fetched', data });
    } catch (error) {
       return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });

@@ -94,8 +94,18 @@ export const deleteTrainer = async (id: number) => {
 };
 
 /* ========== COURSES =========== */
-export const getCourses = async () => {
-   const [rows] = await pool2.query(`SELECT * FROM ${courseTable} ORDER BY course_id DESC LIMIT 200`);
+export const getCourses = async (searchTerm?: string) => {
+   let query = `SELECT * FROM ${courseTable}`;
+   const params: any[] = [];
+   
+   if (searchTerm && searchTerm.trim() !== '') {
+      query += ` WHERE course_title LIKE ? OR course_desc LIKE ?`;
+      const searchPattern = `%${searchTerm.trim()}%`;
+      params.push(searchPattern, searchPattern);
+   }
+   
+   query += ` ORDER BY course_id DESC LIMIT 200`;
+   const [rows] = await pool2.query(query, params);
    return rows as any[];
 };
 
