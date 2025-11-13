@@ -773,3 +773,58 @@ export const replaceAssessmentDetailsWithConn = async (
   const inserted = (insRes as ResultSetHeader).affectedRows || 0;
   return { deleted, inserted };
 };
+
+// Get assessment with details by asset_id and year
+export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year: number): Promise<Array<AssessmentRecord & { details: AssessmentDetailRecord[] }>> => {
+  let query = `SELECT * FROM ${assessmentTable} WHERE asset_id = ?`;
+  const params: any[] = [asset_id];
+
+  if (year) {
+    query += ` AND (YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?))`;
+    params.push(year, year);
+  }
+
+  query += ` ORDER BY assess_id DESC`;
+  const [assessmentRows] = await pool2.query(query, params);
+  const assessments = assessmentRows as AssessmentRecord[];
+
+  // Fetch details for each assessment
+  const result: Array<AssessmentRecord & { details: AssessmentDetailRecord[] }> = [];
+  for (const assessment of assessments) {
+    const details = await getAssessmentDetails(assessment.assess_id!);
+    result.push({ ...assessment, details });
+  }
+
+  return result;
+};
+
+// Get assessment with NCR details (adt_ncr = 1) by asset_id and year
+export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: number): Promise<Array<AssessmentRecord & { details: AssessmentDetailRecord[] }>> => {
+  let query = `SELECT * FROM ${assessmentTable} WHERE asset_id = ?`;
+  const params: any[] = [asset_id];
+
+  if (year) {
+    query += ` AND (YEAR(a_date) = ? OR (a_date IS NULL AND YEAR(a_dt) = ?))`;
+    params.push(year, year);
+  }
+
+  query += ` ORDER BY assess_id DESC`;
+  const [assessmentRows] = await pool2.query(query, params);
+  const assessments = assessmentRows as AssessmentRecord[];
+
+  // Fetch NCR details (adt_ncr = 1) for each assessment
+  const result: Array<AssessmentRecord & { details: AssessmentDetailRecord[] }> = [];
+  for (const assessment of assessments) {
+    const [detailRows] = await pool2.query(
+      `SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? AND adt_ncr = 2 ORDER BY adt_id`,
+      [assessment.assess_id]
+    );
+    const details = detailRows as AssessmentDetailRecord[];
+    // Only include assessments that have NCR details
+    if (details.length > 0) {
+      result.push({ ...assessment, details });
+    }
+  }
+
+  return result;
+};

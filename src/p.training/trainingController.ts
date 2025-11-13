@@ -465,8 +465,43 @@ export const getCourseById = async (req: Request, res: Response) => {
 export const createCourse = async (req: Request, res: Response) => {
    try {
       const payload = req.body ?? {};
-      const result: any = await trainingModel.createCourse(payload);
-      return res.json({ status: 'success', message: 'Course created', data: { insertId: result?.insertId } });
+      
+      // Extract costings array if present
+      const { costings, ...courseData } = payload;
+      
+      // Validate required fields
+      if (!courseData.course_title) {
+         return res.status(400).json({ status: 'error', message: 'course_title is required', data: null });
+      }
+      
+      // Create course
+      const result: any = await trainingModel.createCourse(courseData);
+      const course_id = result?.insertId;
+      
+      if (!course_id) {
+         return res.status(500).json({ status: 'error', message: 'Failed to create course', data: null });
+      }
+      
+      // Insert costings if provided
+      let costingInsertCount = 0;
+      if (Array.isArray(costings) && costings.length > 0) {
+         const costingsWithCourseId = costings.map(c => ({
+            course_id,
+            cost_desc: c.cost_desc || null,
+            cost: c.cost || null
+         }));
+         const costingResult = await trainingModel.createMultipleCourseCostings(costingsWithCourseId);
+         costingInsertCount = costingResult?.affectedRows || 0;
+      }
+      
+      return res.json({ 
+         status: 'success', 
+         message: 'Course created', 
+         data: { 
+            course_id,
+            costing_inserted: costingInsertCount
+         } 
+      });
    } catch (error) {
       return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
    }
@@ -476,9 +511,46 @@ export const updateCourse = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      
       const payload = req.body ?? {};
-      const result: any = await trainingModel.updateCourse(id, payload);
-      return res.json({ status: 'success', message: 'Course updated', data: { affectedRows: result?.affectedRows } });
+      
+      // Extract costings array if present
+      const { costings, ...courseData } = payload;
+      
+      // Update course
+      const result: any = await trainingModel.updateCourse(id, courseData);
+      
+      // Handle costings replacement if provided
+      let costingDeleted = 0;
+      let costingInserted = 0;
+      
+      if (Array.isArray(costings)) {
+         // Delete existing costings
+         const delResult = await trainingModel.deleteCourseCostingsByCourseId(id);
+         costingDeleted = delResult?.affectedRows || 0;
+         
+         // Insert new costings
+         if (costings.length > 0) {
+            const costingsWithCourseId = costings.map(c => ({
+               course_id: id,
+               cost_desc: c.cost_desc || null,
+               cost: c.cost || null
+            }));
+            const costingResult = await trainingModel.createMultipleCourseCostings(costingsWithCourseId);
+            costingInserted = costingResult?.affectedRows || 0;
+         }
+      }
+      
+      return res.json({ 
+         status: 'success', 
+         message: 'Course updated', 
+         data: { 
+            course_id: id,
+            course_updated: result?.affectedRows > 0,
+            costing_deleted: costingDeleted,
+            costing_inserted: costingInserted
+         } 
+      });
    } catch (error) {
       return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
    }
@@ -521,17 +593,15 @@ export const getParticipants = async (req: Request, res: Response) => {
       const ramcoQ = typeof req.query?.ramco === 'string' ? String(req.query.ramco).trim() : undefined;
       const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query?.year) ? Number(req.query.year[0]) : undefined);
       const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
+      const showAllParam = req.query?.show_all === 'true' || req.query?.show_all === '1';
 
       // Fetch all participants
       const rows = trainingIdQ ? await trainingModel.getParticipantsByTrainingId(Number(trainingIdQ)) : await trainingModel.getParticipants();
       let filteredRows = ramcoQ ? (rows as any[]).filter(r => String(r.participant || '').trim() === ramcoQ) : (rows as any[]);
 
-      // Batch fetch: collect all unique training IDs and ramco IDs
+      // Batch fetch: collect all unique training IDs
       const trainingIds = Array.from(new Set(
          filteredRows.map(r => Number(r.training_id ?? 0)).filter(n => Number.isFinite(n) && n > 0)
-      ));
-      const ramcoIds = Array.from(new Set(
-         filteredRows.map(r => String(r.participant || '').trim()).filter(s => s.length > 0)
       ));
 
       // Fetch all trainings at once
@@ -559,49 +629,40 @@ export const getParticipants = async (req: Request, res: Response) => {
          });
       }
 
-      // Fetch all employees, departments, positions, and locations at once
-      let employeeMap = new Map<string, any>();
-      let departmentMap = new Map<number, any>();
-      let positionMap = new Map<number, any>();
-      let locationMap = new Map<number, any>();
+      // Fetch all employees, departments, positions, and locations
+      const [employees, departments, positions, locations] = await Promise.all([
+         assetModel.getEmployees(),
+         assetModel.getDepartments?.().catch(() => []),
+         assetModel.getPositions?.().catch(() => []),
+         assetModel.getLocations?.().catch(() => [])
+      ]);
 
-      if (ramcoIds.length > 0) {
-         try {
-            const employees = await assetModel.getEmployees();
-            if (Array.isArray(employees)) {
-               employeeMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+      const employeeMap = new Map(Array.isArray(employees) ? employees.map((e: any) => [String(e.ramco_id), e]) : []);
+      const departmentMap = new Map(Array.isArray(departments) ? departments.map((d: any) => [Number(d.id), d]) : []);
+      const positionMap = new Map(Array.isArray(positions) ? positions.map((pos: any) => [Number(pos.id), pos]) : []);
+      const locationMap = new Map(Array.isArray(locations) ? locations.map((l: any) => [Number(l.id), l]) : []);
+
+      // Get unique ramco IDs from participants
+      const participatedRamcoIds = new Set(
+         filteredRows.map(r => String(r.participant || '').trim()).filter(s => s.length > 0)
+      );
+
+      // Group participants by ramco_id to avoid duplicates
+      const participantsByRamco = new Map<string, any[]>();
+      filteredRows.forEach(p => {
+         const ramco = String(p.participant || '').trim();
+         if (ramco) {
+            if (!participantsByRamco.has(ramco)) {
+               participantsByRamco.set(ramco, []);
             }
-         } catch { /* ignore */ }
-      }
-
-      try {
-         const departments = await assetModel.getDepartments?.();
-         if (Array.isArray(departments)) {
-            departmentMap = new Map(departments.map((d: any) => [Number(d.id), d]));
+            participantsByRamco.get(ramco)!.push(p);
          }
-      } catch { /* ignore */ }
+      });
 
-      try {
-         const positions = await assetModel.getPositions?.();
-         if (Array.isArray(positions)) {
-            positionMap = new Map(positions.map((pos: any) => [Number(pos.id), pos]));
-         }
-      } catch { /* ignore */ }
-
-      try {
-         const locations = await assetModel.getLocations?.();
-         if (Array.isArray(locations)) {
-            locationMap = new Map(locations.map((l: any) => [Number(l.id), l]));
-         }
-      } catch { /* ignore */ }
-
-      // Build response by mapping cached data (no per-row awaits)
-      const data = filteredRows.map(p => {
-         const ramco = p?.participant ? String(p.participant) : '';
+      // Build response for participants who attended training (unique per employee)
+      const participantsWithTraining = Array.from(participantsByRamco.entries()).map(([ramco, participations]) => {
          const emp = employeeMap.get(ramco);
-         const trainId = Number(p.training_id ?? 0);
-         const ev = trainingMap.get(trainId);
-
+         
          // Build participant object with position, department, and location
          let participantObj: any = { ramco_id: ramco, full_name: emp?.full_name ?? null };
          if (emp?.position_id) {
@@ -617,11 +678,21 @@ export const getParticipants = async (req: Request, res: Response) => {
             if (loc) participantObj.location = { id: loc.id, name: loc.name };
          }
 
-         return {
-            participant_id: Number(p.participant_id ?? 0),
-            participant: participantObj,
-            training_details: {
+         // Calculate total training hours for this participant (sum all their trainings)
+         const totalHours = participations.reduce((sum, pr) => {
+            const tId = Number(pr.training_id ?? 0);
+            const training = trainingMap.get(tId);
+            const hrs = training?.hrs ? parseFloat(String(training.hrs)) : 0;
+            return sum + (isNaN(hrs) ? 0 : hrs);
+         }, 0);
+
+         // Get all training details for this participant
+         const trainingDetails = participations.map(p => {
+            const trainId = Number(p.training_id ?? 0);
+            const ev = trainingMap.get(trainId);
+            return {
                training_id: trainId,
+               participant_id: Number(p.participant_id ?? 0),
                start_date: ev?.sdate,
                end_date: ev?.edate,
                course_title: ev?.course_title ?? null,
@@ -629,11 +700,150 @@ export const getParticipants = async (req: Request, res: Response) => {
                days: ev?.days ?? null,
                venue: ev?.venue ? decodeHtmlEntities(ev.venue) : null,
                attendance_upload: ev?.attendance_upload ?? null
-            },
+            };
+         });
+
+         return {
+            participant: participantObj,
+            total_training_hours: totalHours.toFixed(2),
+            trainings_count: participations.length,
+            training_details: trainingDetails
          };
       });
 
-      return res.json({ status: 'success', message: `${data.length} entries fetched`, data });
+      // If show_all=true, add employees who haven't participated
+      let data: any[] = participantsWithTraining;
+      if (showAllParam && Array.isArray(employees)) {
+         const employeesWithNoTraining = employees
+            .filter((emp: any) => {
+               const ramco = String(emp.ramco_id || '').trim();
+               return ramco.length > 0 && !participatedRamcoIds.has(ramco);
+            })
+            .map((emp: any) => {
+               let participantObj: any = {
+                  ramco_id: emp.ramco_id,
+                  full_name: emp.full_name ?? null
+               };
+
+               if (emp.position_id) {
+                  const pos = positionMap.get(Number(emp.position_id));
+                  if (pos) participantObj.position = { id: pos.id, name: pos.name || pos.position_name };
+               }
+               if (emp.department_id) {
+                  const dept = departmentMap.get(Number(emp.department_id));
+                  if (dept) participantObj.department = { id: dept.id, name: dept.name };
+               }
+               if (emp.location_id) {
+                  const loc = locationMap.get(Number(emp.location_id));
+                  if (loc) participantObj.location = { id: loc.id, name: loc.name };
+               }
+
+               return {
+                  participant: participantObj,
+                  total_training_hours: "0.00",
+                  trainings_count: 0,
+                  training_details: []
+               };
+            });
+
+         data = [...participantsWithTraining, ...employeesWithNoTraining];
+      }
+
+      const message = showAllParam 
+         ? `${participantsWithTraining.length} participated, ${data.length - participantsWithTraining.length} not participated`
+         : `${data.length} entries fetched`;
+
+      return res.json({ status: 'success', message, data });
+   } catch (error) {
+      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+   }
+};
+
+// GET /api/training/participants/no-training?year=2025
+export const getEmployeesWithNoTraining = async (req: Request, res: Response) => {
+   try {
+      const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : undefined;
+      const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
+
+      if (!year) {
+         return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+      }
+
+      // Fetch all active employees
+      const employees = await assetModel.getEmployees();
+      if (!Array.isArray(employees)) {
+         return res.status(500).json({ status: 'error', message: 'Failed to fetch employees', data: null });
+      }
+
+      // Fetch all participants
+      const allParticipants = await trainingModel.getParticipants();
+      
+      // Fetch all trainings for the specified year
+      const allTrainings = await trainingModel.getTrainings(year);
+      const trainingIds = allTrainings.map(t => Number(t.training_id)).filter(id => id > 0);
+
+      // Get participants who attended trainings in the specified year
+      const participantsInYear = (allParticipants as any[]).filter(p => 
+         trainingIds.includes(Number(p.training_id))
+      );
+
+      // Extract unique ramco_ids of employees who attended training
+      const attendedRamcoIds = new Set(
+         participantsInYear.map(p => String(p.participant || '').trim()).filter(s => s.length > 0)
+      );
+
+      // Fetch enrichment data
+      const [departments, positions, locations] = await Promise.all([
+         assetModel.getDepartments?.().catch(() => []),
+         assetModel.getPositions?.().catch(() => []),
+         assetModel.getLocations?.().catch(() => [])
+      ]);
+
+      const depts = Array.isArray(departments) ? departments : [];
+      const poss = Array.isArray(positions) ? positions : [];
+      const locs = Array.isArray(locations) ? locations : [];
+
+      const departmentMap = new Map(depts.map((d: any) => [Number(d.id), d]));
+      const positionMap = new Map(poss.map((p: any) => [Number(p.id), p]));
+      const locationMap = new Map(locs.map((l: any) => [Number(l.id), l]));
+
+      // Filter employees who have NOT attended any training in the specified year
+      const employeesWithNoTraining = employees
+         .filter((emp: any) => {
+            const ramco = String(emp.ramco_id || '').trim();
+            return ramco.length > 0 && !attendedRamcoIds.has(ramco);
+         })
+         .map((emp: any) => {
+            let participantObj: any = {
+               ramco_id: emp.ramco_id,
+               full_name: emp.full_name ?? null
+            };
+
+            if (emp.position_id) {
+               const pos = positionMap.get(Number(emp.position_id));
+               if (pos) participantObj.position = { id: pos.id, name: pos.name || pos.position_name };
+            }
+            if (emp.department_id) {
+               const dept = departmentMap.get(Number(emp.department_id));
+               if (dept) participantObj.department = { id: dept.id, name: dept.name };
+            }
+            if (emp.location_id) {
+               const loc = locationMap.get(Number(emp.location_id));
+               if (loc) participantObj.location = { id: loc.id, name: loc.name };
+            }
+
+            return {
+               participant: participantObj,
+               total_training_hours: "0.00",
+               training_details: null
+            };
+         });
+
+      return res.json({ 
+         status: 'success', 
+         message: `${employeesWithNoTraining.length} employee(s) with no training in ${year}`, 
+         data: employeesWithNoTraining 
+      });
    } catch (error) {
       return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
    }

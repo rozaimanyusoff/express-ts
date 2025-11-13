@@ -31,6 +31,7 @@ const dbTraining = 'training2';
 const trainingEventTable = `${dbTraining}.training_events`; //index column is training_id
 const trainerTable = `${dbTraining}.trainer`; //index column is trainer_id
 const courseTable = `${dbTraining}.course`; //index column is course_id
+const courseCostingTable = `${dbTraining}.course_cost`; //index column is costing_id linked to table course.course_id.
 const participantTable = `${dbTraining}.participant`; //index column is participant_id linked to table training_events.training_id.
 const costingTable = `${dbTraining}.event_costing`; //index column is costing_id linked to table training_events.training_id.
 
@@ -110,7 +111,7 @@ export const deleteTraining = async (id: number) => {
 
 /* ========== TRAINERS =========== */
 export const getTrainers = async () => {
-   const [rows] = await pool2.query(`SELECT * FROM ${trainerTable} ORDER BY trainer_id DESC LIMIT 200`);
+   const [rows] = await pool2.query(`SELECT DISTINCT * FROM ${trainerTable} ORDER BY trainer_id DESC LIMIT 200`);
    return rows as any[];
 };
 
@@ -169,6 +170,27 @@ export const updateCourse = async (id: number, data: any) => {
 
 export const deleteCourse = async (id: number) => {
    const [result] = await pool2.query(`DELETE FROM ${courseTable} WHERE course_id = ?`, [id]);
+   return result as any;
+};
+
+// Course Costings
+export const getCourseCostingsByCourseId = async (course_id: number) => {
+   const [rows] = await pool2.query(`SELECT * FROM ${courseCostingTable} WHERE course_id = ? ORDER BY costing_id`, [course_id]);
+   return rows as any[];
+};
+
+export const createMultipleCourseCostings = async (costings: any[]) => {
+   if (!Array.isArray(costings) || costings.length === 0) return { affectedRows: 0 };
+   const values = costings.map(c => [c.course_id, c.cost_desc, c.cost]);
+   const [result] = await pool2.query(
+      `INSERT INTO ${courseCostingTable} (course_id, cost_desc, cost) VALUES ?`,
+      [values]
+   );
+   return result as any;
+};
+
+export const deleteCourseCostingsByCourseId = async (course_id: number) => {
+   const [result] = await pool2.query(`DELETE FROM ${courseCostingTable} WHERE course_id = ?`, [course_id]);
    return result as any;
 };
 

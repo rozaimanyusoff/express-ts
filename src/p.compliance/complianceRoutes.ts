@@ -53,6 +53,19 @@ router.delete('/assessments/criteria/:id', asyncHandler(complianceController.del
 router.put('/assessments/criteria/:id/reorder', asyncHandler(complianceController.reorderAssessmentCriteria));
 
 
+/* ========== ASSESSMENT DETAILS (child) ROUTES ========== */
+// Query NCR assessment details (adt_ncr=1) by asset and optional year
+router.get('/assessments/details/ncr', asyncHandler(complianceController.getAssessmentNCRDetailsByAsset));
+// Query assessment details by asset and year (must be before :id routes to avoid collision)
+router.get('/assessments/details', asyncHandler(complianceController.getAssessmentDetailsByAssetAndYear));
+// Get details for a specific assessment by assessId
+router.get('/assessments/:assessId/details', asyncHandler(complianceController.getAssessmentDetails));
+// Get single detail by adt_id
+router.get('/assessments/details/:id', asyncHandler(complianceController.getAssessmentDetailById));
+router.post('/assessments/details', asyncHandler(complianceController.createAssessmentDetail));
+router.put('/assessments/details/:id', asyncHandler(complianceController.updateAssessmentDetail));
+router.delete('/assessments/details/:id', asyncHandler(complianceController.deleteAssessmentDetail));
+
 
 /* ========== ASSESSMENTS (parent) ROUTES ========== */
 const uploadAssessment = createUploader('compliance/assessment');
@@ -68,14 +81,6 @@ router.put('/assessments/:id', asyncHandler(complianceController.updateAssessmen
 router.post('/assessments/test-email', asyncHandler(complianceController.sendAssessmentTestEmail));
 
 router.delete('/assessments/:id', asyncHandler(complianceController.deleteAssessment));
-
-/* ========== ASSESSMENT DETAILS (child) ROUTES ========== */
-router.get('/assessments/:assessId/details', asyncHandler(complianceController.getAssessmentDetails));
-router.get('/assessments/details/:id', asyncHandler(complianceController.getAssessmentDetailById));
-router.post('/assessments/details', asyncHandler(complianceController.createAssessmentDetail));
-router.put('/assessments/details/:id', asyncHandler(complianceController.updateAssessmentDetail));
-router.delete('/assessments/details/:id', asyncHandler(complianceController.deleteAssessmentDetail));
-
 
 
 export default router;

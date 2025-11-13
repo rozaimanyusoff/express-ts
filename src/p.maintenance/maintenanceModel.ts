@@ -478,17 +478,60 @@ export const updateRoadTax = async (id: number, data: any) => {
 };
 
 // Bulk update: set insurance_id for all roadtax rows matching any of the provided asset IDs
+// If asset_id doesn't exist in roadtax table, insert a new record
 export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: number[]) => {
     const ids = Array.isArray(assetIds) ? assetIds.filter((n) => Number.isFinite(Number(n))).map(Number) : [];
     if (!ids.length) {
         // Return a ResultSetHeader-like object with 0 affected rows
-        return { affectedRows: 0, changedRows: 0, warningStatus: 0 } as any;
+        return { affectedRows: 0, changedRows: 0, insertedCount: 0, warningStatus: 0 } as any;
     }
+
+    // Check which asset_ids already exist in roadtax table
     const placeholders = ids.map(() => '?').join(',');
-    const sql = `UPDATE ${roadtaxTable} SET insurance_id = ? WHERE asset_id IN (${placeholders})`;
-    const params = [insuranceId, ...ids];
-    const [result] = await pool2.query(sql, params);
-    return result;
+    const [existingRows] = await pool2.query(
+        `SELECT DISTINCT asset_id FROM ${roadtaxTable} WHERE asset_id IN (${placeholders})`,
+        ids
+    ) as RowDataPacket[][];
+
+    const existingAssetIds = new Set(existingRows.map((row: any) => Number(row.asset_id)));
+    const toUpdate = ids.filter(id => existingAssetIds.has(id));
+    const toInsert = ids.filter(id => !existingAssetIds.has(id));
+
+    let updatedCount = 0;
+    let insertedCount = 0;
+
+    // Update existing records
+    if (toUpdate.length > 0) {
+        const updatePlaceholders = toUpdate.map(() => '?').join(',');
+        const updateSql = `UPDATE ${roadtaxTable} SET insurance_id = ? WHERE asset_id IN (${updatePlaceholders})`;
+        const updateParams = [insuranceId, ...toUpdate];
+        const [updateResult] = await pool2.query(updateSql, updateParams) as ResultSetHeader[];
+        updatedCount = updateResult.affectedRows || 0;
+    }
+
+    // Insert new records for asset_ids that don't exist
+    if (toInsert.length > 0) {
+        for (const assetId of toInsert) {
+            try {
+                const [insertResult] = await pool2.query(
+                    `INSERT INTO ${roadtaxTable} (asset_id, insurance_id) VALUES (?, ?)`,
+                    [assetId, insuranceId]
+                ) as ResultSetHeader[];
+                if (insertResult.affectedRows > 0) insertedCount++;
+            } catch (error) {
+                console.error(`Error inserting roadtax record for asset_id ${assetId}:`, error);
+                // Continue with other inserts even if one fails
+            }
+        }
+    }
+
+    return {
+        affectedRows: updatedCount + insertedCount,
+        updatedCount,
+        insertedCount,
+        changedRows: updatedCount,
+        warningStatus: 0
+    };
 };
 
 // Bulk update: set rt_exp for all roadtax rows matching any of the provided asset IDs

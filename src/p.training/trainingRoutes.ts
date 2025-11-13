@@ -22,6 +22,7 @@ router.put('/courses/:id', asyncHandler(trainingController.updateCourse));
 router.delete('/courses/:id', asyncHandler(trainingController.deleteCourse));
 
 // Participants
+router.get('/participants/no-training', asyncHandler(trainingController.getEmployeesWithNoTraining));
 router.get('/participants/:id', asyncHandler(trainingController.getParticipantById));
 router.get('/participants', asyncHandler(trainingController.getParticipants));
 router.post('/participants', asyncHandler(trainingController.createParticipant));

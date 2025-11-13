@@ -1601,3 +1601,275 @@ export const deleteAssessmentDetail = async (req: Request, res: Response) => {
     return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment detail', data: null });
   }
 };
+
+// GET /api/compliance/assessments/details?asset={asset_id}&year={year}
+export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Response) => {
+  try {
+    const assetParam = req.query.asset as string;
+    const yearParam = req.query.year as string;
+
+    if (!assetParam) {
+      return res.status(400).json({ status: 'error', message: 'asset parameter is required', data: null });
+    }
+
+    const asset_id = parseInt(assetParam, 10);
+    if (isNaN(asset_id)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid asset parameter', data: null });
+    }
+
+    if (!yearParam) {
+      return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+    }
+
+    const year = parseInt(yearParam, 10);
+    if (isNaN(year) || year < 1900 || year > new Date().getFullYear() + 10) {
+      return res.status(400).json({ status: 'error', message: 'Invalid year parameter', data: null });
+    }
+
+    const assessments = await complianceModel.getAssessmentDetailsByAssetAndYear(asset_id, year);
+
+    // Enrich with asset data
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+
+    const assetMap = new Map();
+    for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+    // Enrich with criteria descriptions
+    const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
+    const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+    const qsetMap = new Map<number, any>();
+    for (const c of criteria) {
+      if (c && c.qset_id) {
+        qsetMap.set(Number(c.qset_id), { 
+          qset_desc: c.qset_desc || null,
+          qset_type: c.qset_type || null
+        });
+      }
+    }
+
+    // Enrich details with criteria descriptions and convert URLs
+    const enrichedData = assessments.map((assessment: any) => {
+      const enrichedDetails = (assessment.details || []).map((d: any) => {
+        const qid = d && d.adt_item ? Number(d.adt_item) : null;
+        const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
+        const { vehicle_id, asset_id, ...rest } = d || {};
+        return { 
+          ...rest, 
+          qset_desc: qset_info.qset_desc,
+          qset_type: qset_info.qset_type,
+          adt_image: toPublicUrl(rest.adt_image)
+        };
+      });
+
+      const { details, reg_no, vehicle_id, asset_id: aid, a_loc, ownership, loc_id, location_id, ...cleanAssessment } = assessment;
+      
+      // Build asset object
+      let asset = null;
+      if (aid && assetMap.has(aid)) {
+        const a = assetMap.get(aid);
+        const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
+        let age: number | null = null;
+        if (purchase_date) {
+          const pd = new Date(String(purchase_date));
+          if (!isNaN(pd.getTime())) {
+            const diffMs = Date.now() - pd.getTime();
+            age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365));
+          }
+        }
+        const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        asset = {
+          id: aid,
+          register_number: a.register_number || a.vehicle_regno || null,
+          purchase_date,
+          age,
+          costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          location: (() => {
+            const locId = a.location_id ?? a.location?.id ?? null;
+            if (!locId) return null;
+            const found = locationMap.get(locId);
+            return found ? { id: locId, code: found.code || found.name || null } : null;
+          })(),
+          owner
+        };
+      }
+
+      // Build assessed_location
+      const assessed_location = location_id && locationMap.has(location_id) 
+        ? { id: location_id, code: locationMap.get(location_id).code || locationMap.get(location_id).name || null }
+        : null;
+
+      return {
+        ...cleanAssessment,
+        asset,
+        assessed_location,
+        details: enrichedDetails,
+        a_upload: toPublicUrl(cleanAssessment.a_upload),
+        a_upload2: toPublicUrl(cleanAssessment.a_upload2),
+        a_upload3: toPublicUrl(cleanAssessment.a_upload3),
+        a_upload4: toPublicUrl(cleanAssessment.a_upload4),
+      };
+    });
+
+    return res.json({ 
+      status: 'success', 
+      message: `${enrichedData.length} assessment(s) retrieved`, 
+      data: enrichedData 
+    });
+  } catch (e) {
+    return res.status(500).json({ 
+      status: 'error', 
+      message: e instanceof Error ? e.message : 'Failed to fetch assessment details', 
+      data: null 
+    });
+  }
+};
+
+// GET /api/compliance/assessments/details/ncr?asset={asset_id}&year={year}
+export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response) => {
+  try {
+    const assetParam = req.query.asset as string;
+    const yearParam = req.query.year as string;
+
+    if (!assetParam) {
+      return res.status(400).json({ status: 'error', message: 'asset parameter is required', data: null });
+    }
+
+    const asset_id = parseInt(assetParam, 10);
+    if (isNaN(asset_id)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid asset parameter', data: null });
+    }
+
+    if (!yearParam) {
+      return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+    }
+
+    const year = parseInt(yearParam, 10);
+    if (isNaN(year) || year < 1900 || year > new Date().getFullYear() + 10) {
+      return res.status(400).json({ status: 'error', message: 'Invalid year parameter', data: null });
+    }
+
+    const assessments = await complianceModel.getAssessmentNCRDetailsByAsset(asset_id, year);
+
+    // Enrich with asset data
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+
+    const assetMap = new Map();
+    for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+    // Enrich with criteria descriptions
+    const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
+    const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+    const qsetMap = new Map<number, any>();
+    for (const c of criteria) {
+      if (c && c.qset_id) {
+        qsetMap.set(Number(c.qset_id), { 
+          qset_desc: c.qset_desc || null,
+          qset_type: c.qset_type || null
+        });
+      }
+    }
+
+    // Enrich details with criteria descriptions and convert URLs
+    const enrichedData = assessments.map((assessment: any) => {
+      const enrichedDetails = (assessment.details || []).map((d: any) => {
+        const qid = d && d.adt_item ? Number(d.adt_item) : null;
+        const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
+        const { vehicle_id, asset_id, ...rest } = d || {};
+        return { 
+          ...rest, 
+          qset_desc: qset_info.qset_desc,
+          qset_type: qset_info.qset_type,
+          adt_image: toPublicUrl(rest.adt_image)
+        };
+      });
+
+      const { details, reg_no, vehicle_id, asset_id: aid, a_loc, ownership, loc_id, location_id, ...cleanAssessment } = assessment;
+      
+      // Build asset object
+      let asset = null;
+      if (aid && assetMap.has(aid)) {
+        const a = assetMap.get(aid);
+        const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
+        let age: number | null = null;
+        if (purchase_date) {
+          const pd = new Date(String(purchase_date));
+          if (!isNaN(pd.getTime())) {
+            const diffMs = Date.now() - pd.getTime();
+            age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365));
+          }
+        }
+        const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        asset = {
+          id: aid,
+          register_number: a.register_number || a.vehicle_regno || null,
+          purchase_date,
+          age,
+          costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          location: (() => {
+            const locId = a.location_id ?? a.location?.id ?? null;
+            if (!locId) return null;
+            const found = locationMap.get(locId);
+            return found ? { id: locId, code: found.code || found.name || null } : null;
+          })(),
+          owner
+        };
+      }
+
+      // Build assessed_location
+      const assessed_location = location_id && locationMap.has(location_id) 
+        ? { id: location_id, code: locationMap.get(location_id).code || locationMap.get(location_id).name || null }
+        : null;
+
+      return {
+        ...cleanAssessment,
+        asset,
+        assessed_location,
+        details: enrichedDetails,
+        a_upload: toPublicUrl(cleanAssessment.a_upload),
+        a_upload2: toPublicUrl(cleanAssessment.a_upload2),
+        a_upload3: toPublicUrl(cleanAssessment.a_upload3),
+        a_upload4: toPublicUrl(cleanAssessment.a_upload4),
+      };
+    });
+
+    return res.json({ 
+      status: 'success', 
+      message: `${enrichedData.length} assessment(s) with NCR retrieved`, 
+      data: enrichedData 
+    });
+  } catch (e) {
+    return res.status(500).json({ 
+      status: 'error', 
+      message: e instanceof Error ? e.message : 'Failed to fetch NCR assessment details', 
+      data: null 
+    });
+  }
+};
