@@ -442,6 +442,9 @@ export const updateScope = async (req: Request, res: Response) => {
 
     if (body.progress !== undefined) updates.progress = Number.isFinite(Number(body.progress)) ? Number(body.progress) : null;
     if (body.status !== undefined) updates.status = body.status ?? null;
+    
+    // Extract overall_progress for project update (not stored in scope)
+    const overallProgress = body.overall_progress ?? body.overallProgress;
 
     if (actual_start_date !== undefined) updates.actual_start_date = actual_start_date;
     if (actual_end_date !== undefined) updates.actual_end_date = actual_end_date;
@@ -499,6 +502,11 @@ export const updateScope = async (req: Request, res: Response) => {
         assignee: (updates.assignee !== undefined ? updates.assignee : scope.assignee) ?? null,
         actual_mandays: (updates.actual_mandays !== undefined ? updates.actual_mandays : scope.actual_mandays) ?? null
       });
+    }
+
+    // Update overall_progress on T_PROJECT table if provided
+    if (overallProgress !== undefined && Number.isFinite(Number(overallProgress))) {
+      await projectModel.updateProject(projectId, { overall_progress: Number(overallProgress) });
     }
 
     return res.status(200).json({ status: 'success', message: 'Scope updated', data: { id: scopeId } });
