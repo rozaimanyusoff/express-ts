@@ -303,3 +303,111 @@ export async function upsertAssignment(row: AssignmentRow): Promise<void> {
 export async function deleteAssignmentByProjectScope(projectId: number, scopeId: number): Promise<void> {
   await pool.query(`DELETE FROM ${T_ASSIGN} WHERE project_id = ? AND scope_id = ?`, [projectId, scopeId]);
 }
+
+export async function getAssignmentsByProjectId(projectId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      a.id,
+      a.project_id,
+      a.scope_id,
+      a.assignee,
+      a.actual_mandays,
+      s.title as scope_title,
+      s.status as scope_status,
+      s.progress as scope_progress,
+      s.planned_start_date,
+      s.planned_end_date,
+      s.actual_start_date,
+      s.actual_end_date,
+      p.code as project_code,
+      p.name as project_name
+    FROM ${T_ASSIGN} a
+    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
+    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
+    WHERE a.project_id = ?
+    ORDER BY s.order_index ASC, s.id ASC
+  `;
+  const [rows]: any = await pool.query(sql, [projectId]);
+  return rows;
+}
+
+export async function getAllAssignments(): Promise<any[]> {
+  const sql = `
+    SELECT 
+      a.id,
+      a.project_id,
+      a.scope_id,
+      a.assignee,
+      a.actual_mandays,
+      s.title as scope_title,
+      s.status as scope_status,
+      s.progress as scope_progress,
+      s.planned_start_date,
+      s.planned_end_date,
+      s.actual_start_date,
+      s.actual_end_date,
+      p.code as project_code,
+      p.name as project_name,
+      p.start_date as project_start_date,
+      p.due_date as project_due_date
+    FROM ${T_ASSIGN} a
+    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
+    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
+    ORDER BY a.assignee ASC, p.id ASC, s.order_index ASC
+  `;
+  const [rows]: any = await pool.query(sql);
+  return rows;
+}
+
+export async function getAssignmentsByAssignee(assignee: string): Promise<any[]> {
+  const sql = `
+    SELECT 
+      a.id,
+      a.project_id,
+      a.scope_id,
+      a.assignee,
+      a.actual_mandays,
+      s.title as scope_title,
+      s.status as scope_status,
+      s.progress as scope_progress,
+      s.planned_start_date,
+      s.planned_end_date,
+      s.actual_start_date,
+      s.actual_end_date,
+      p.code as project_code,
+      p.name as project_name,
+      p.start_date as project_start_date,
+      p.due_date as project_due_date
+    FROM ${T_ASSIGN} a
+    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
+    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
+    WHERE a.assignee = ?
+    ORDER BY p.id ASC, s.order_index ASC
+  `;
+  const [rows]: any = await pool.query(sql, [assignee]);
+  return rows;
+}
+
+export async function getWorkloadSummary(): Promise<any[]> {
+  const sql = `
+    SELECT 
+      a.assignee,
+      COUNT(DISTINCT a.project_id) as total_projects,
+      COUNT(a.id) as total_scopes,
+      SUM(a.actual_mandays) as total_scope_mandays,
+      SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) as completed_scopes,
+      SUM(CASE WHEN s.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress_scopes,
+      SUM(CASE WHEN s.status = 'not_started' THEN 1 ELSE 0 END) as not_started_scopes,
+      AVG(s.progress) as avg_progress,
+      MIN(p.start_date) as earliest_start_date,
+      MAX(p.due_date) as latest_due_date
+    FROM ${T_ASSIGN} a
+    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
+    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
+    WHERE a.assignee IS NOT NULL
+    GROUP BY a.assignee
+    ORDER BY total_scope_mandays DESC
+  `;
+  const [rows]: any = await pool.query(sql);
+  return rows;
+}

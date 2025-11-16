@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as projectModel from './projectModel';
 import { buildStoragePath, safeMove, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
+import * as assetModel from '../p.asset/assetModel';
 import path from 'path';
 
 
@@ -9,7 +10,55 @@ export const getProjects = async (req: Request, res: Response) => {
   try {
     const projects = await projectModel.getProjects();
 
-    return res.status(200).json({ status: 'success', message: `${projects.length} Projects retrieved`, data: projects });
+    // Fetch employees for enrichment
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+
+    // Enrich each project with assignments summary
+    const enrichedProjects = await Promise.all(
+      projects.map(async (project: any) => {
+        const scopes = await projectModel.getScopeByProjectId(project.id);
+
+        // Calculate assignments summary grouped by assignee
+        const assignmentsMap = new Map<string, { assignee: { ramco_id: string; full_name: string | null }; planned_mandays: number; actual_mandays: number; scope_count: number }>();
+
+        for (const scope of scopes) {
+          const assigneeId = scope.assignee || 'unassigned';
+          const plannedMandays = Number(scope.planned_mandays) || 0;
+          const actualMandays = Number(scope.actual_mandays) || 0;
+
+          if (!assignmentsMap.has(assigneeId)) {
+            const emp = empMap.get(assigneeId);
+            assignmentsMap.set(assigneeId, {
+              assignee: {
+                ramco_id: assigneeId,
+                full_name: emp ? (emp.full_name || emp.name || null) : null
+              },
+              planned_mandays: 0,
+              actual_mandays: 0,
+              scope_count: 0
+            });
+          }
+
+          const current = assignmentsMap.get(assigneeId)!;
+          current.planned_mandays += plannedMandays;
+          current.actual_mandays += actualMandays;
+          current.scope_count += 1;
+        }
+
+        const assignments = Array.from(assignmentsMap.values())
+          .filter(a => a.assignee.ramco_id !== 'unassigned')
+          .sort((a, b) => b.actual_mandays - a.actual_mandays);
+
+        return {
+          ...project,
+          assignments
+        };
+      })
+    );
+
+    return res.status(200).json({ status: 'success', message: `${enrichedProjects.length} Projects retrieved`, data: enrichedProjects });
   } catch (e: any) {
     return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch projects', data: null });
   }
@@ -26,9 +75,55 @@ export const getProjectById = async (req: Request, res: Response) => {
       return res.status(404).json({ status: 'error', message: 'Project not found', data: null });
     }
     const scopes = await projectModel.getScopeByProjectId(projectId);
+
+    // Fetch employees for enrichment
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+
+    // Calculate assignments summary grouped by assignee
+    const assignmentsMap = new Map<string, { assignee: { ramco_id: string; full_name: string | null }; planned_mandays: number; actual_mandays: number; scope_count: number }>();
+
+    for (const scope of scopes) {
+      const assigneeId = scope.assignee || 'unassigned';
+      const plannedMandays = Number(scope.planned_mandays) || 0;
+      const actualMandays = Number(scope.actual_mandays) || 0;
+
+      if (!assignmentsMap.has(assigneeId)) {
+        const emp = empMap.get(assigneeId);
+        assignmentsMap.set(assigneeId, {
+          assignee: {
+            ramco_id: assigneeId,
+            full_name: emp ? (emp.full_name || emp.name || null) : null
+          },
+          planned_mandays: 0,
+          actual_mandays: 0,
+          scope_count: 0
+        });
+      }
+
+      const current = assignmentsMap.get(assigneeId)!;
+      current.planned_mandays += plannedMandays;
+      current.actual_mandays += actualMandays;
+      current.scope_count += 1;
+    }
+
+    const assignments = Array.from(assignmentsMap.values())
+      .filter(a => a.assignee.ramco_id !== 'unassigned') // Optionally exclude unassigned
+      .sort((a, b) => b.actual_mandays - a.actual_mandays); // Sort by actual mandays desc
+
     const { percent_complete, overall_progress, ...rest } = project as any;
     const progress = (overall_progress !== undefined && overall_progress !== null) ? overall_progress : percent_complete;
-    return res.status(200).json({ status: 'success', message: 'Project retrieved', data: { ...rest, overall_progress: progress, scopes } });
+    return res.status(200).json({
+      status: 'success',
+      message: 'Project retrieved',
+      data: {
+        ...rest,
+        overall_progress: progress,
+        assignments,
+        scopes
+      }
+    });
   } catch (e: any) {
     return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch project', data: null });
   }
@@ -435,14 +530,14 @@ export const updateScope = async (req: Request, res: Response) => {
       updates.planned_mandays = Number.isFinite(Number(body.planned_mandays ?? body.plannedMandays))
         ? Number(body.planned_mandays ?? body.plannedMandays)
         : businessDaysInclusive(
-            (updates.planned_start_date ?? (scope.planned_start_date || null)),
-            (updates.planned_end_date ?? (scope.planned_end_date || null))
-          );
+          (updates.planned_start_date ?? (scope.planned_start_date || null)),
+          (updates.planned_end_date ?? (scope.planned_end_date || null))
+        );
     }
 
     if (body.progress !== undefined) updates.progress = Number.isFinite(Number(body.progress)) ? Number(body.progress) : null;
     if (body.status !== undefined) updates.status = body.status ?? null;
-    
+
     // Extract overall_progress for project update (not stored in scope)
     const overallProgress = body.overall_progress ?? body.overallProgress;
 
@@ -452,9 +547,9 @@ export const updateScope = async (req: Request, res: Response) => {
       updates.actual_mandays = Number.isFinite(Number(body.actual_mandays ?? body.actualMandays))
         ? Number(body.actual_mandays ?? body.actualMandays)
         : businessDaysInclusive(
-            (updates.actual_start_date ?? (scope.actual_start_date || null)),
-            (updates.actual_end_date ?? (scope.actual_end_date || null))
-          );
+          (updates.actual_start_date ?? (scope.actual_start_date || null)),
+          (updates.actual_end_date ?? (scope.actual_end_date || null))
+        );
     }
 
     // Move any uploaded files and apply attachments_mode
@@ -545,7 +640,7 @@ export const reorderScopes = async (req: Request, res: Response) => {
     }
     // Validate scopes belong to project
     const existingIds = await projectModel.getScopeIdsByProject(projectId);
-  const invalid = order.filter((id: number) => !existingIds.includes(id));
+    const invalid = order.filter((id: number) => !existingIds.includes(id));
     if (invalid.length) {
       return res.status(400).json({ status: 'error', message: 'order contains scope ids not in this project', data: { invalid } });
     }
@@ -556,4 +651,205 @@ export const reorderScopes = async (req: Request, res: Response) => {
   }
 };
 
+
+/* ======= ASSIGNMENTS ======= */
+
+// GET /api/projects/:id/assignments - Get all assignments for a project
+export const getProjectAssignments = async (req: Request, res: Response) => {
+  try {
+    const projectId = Number(req.params.id);
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+    }
+    const assignments = await projectModel.getAssignmentsByProjectId(projectId);
+    
+    // Restructure to nest assignee details
+    const enriched = assignments.map((a: any) => ({
+      id: a.id,
+      project_id: a.project_id,
+      scope_id: a.scope_id,
+      assignee: {
+        ramco_id: a.assignee,
+        full_name: null // Will be enriched from employee table if needed
+      },
+      actual_mandays: a.actual_mandays,
+      scope_title: a.scope_title,
+      scope_status: a.scope_status,
+      scope_progress: a.scope_progress,
+      planned_start_date: a.planned_start_date,
+      planned_end_date: a.planned_end_date,
+      actual_start_date: a.actual_start_date,
+      actual_end_date: a.actual_end_date,
+      project_code: a.project_code,
+      project_name: a.project_name
+    }));
+    
+    return res.status(200).json({
+      status: 'success',
+      message: `${enriched.length} assignments retrieved`,
+      data: enriched
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+  }
+};
+
+// GET /api/assignments - Get all assignments across all projects
+export const getAllAssignments = async (req: Request, res: Response) => {
+  try {
+    const assignments = await projectModel.getAllAssignments();
+    
+    // Get employees for enrichment
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+    
+    // Restructure to nest assignee details
+    const enriched = assignments.map((a: any) => {
+      const emp = empMap.get(String(a.assignee));
+      return {
+        id: a.id,
+        project_id: a.project_id,
+        scope_id: a.scope_id,
+        assignee: {
+          ramco_id: a.assignee,
+          full_name: emp ? (emp.full_name || emp.name || null) : null
+        },
+        actual_mandays: a.actual_mandays,
+        scope_title: a.scope_title,
+        scope_status: a.scope_status,
+        scope_progress: a.scope_progress,
+        planned_start_date: a.planned_start_date,
+        planned_end_date: a.planned_end_date,
+        actual_start_date: a.actual_start_date,
+        actual_end_date: a.actual_end_date,
+        project_code: a.project_code,
+        project_name: a.project_name,
+        project_start_date: a.project_start_date,
+        project_due_date: a.project_due_date
+      };
+    });
+    
+    return res.status(200).json({
+      status: 'success',
+      message: `${enriched.length} assignments retrieved`,
+      data: enriched
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+  }
+};
+
+// GET /api/assignments/assignee/:assignee - Get assignments by assignee/developer
+export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
+  try {
+    const assignee = req.params.assignee;
+    if (!assignee) {
+      return res.status(400).json({ status: 'error', message: 'Assignee is required', data: null });
+    }
+    const assignments = await projectModel.getAssignmentsByAssignee(assignee);
+    
+    // Get employee for enrichment
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+    const emp = empMap.get(String(assignee));
+    
+    // Restructure to nest assignee details
+    const enriched = assignments.map((a: any) => ({
+      id: a.id,
+      project_id: a.project_id,
+      scope_id: a.scope_id,
+      assignee: {
+        ramco_id: a.assignee,
+        full_name: emp ? (emp.full_name || emp.name || null) : null
+      },
+      actual_mandays: a.actual_mandays,
+      scope_title: a.scope_title,
+      scope_status: a.scope_status,
+      scope_progress: a.scope_progress,
+      planned_start_date: a.planned_start_date,
+      planned_end_date: a.planned_end_date,
+      actual_start_date: a.actual_start_date,
+      actual_end_date: a.actual_end_date,
+      project_code: a.project_code,
+      project_name: a.project_name,
+      project_start_date: a.project_start_date,
+      project_due_date: a.project_due_date
+    }));
+    
+    return res.status(200).json({
+      status: 'success',
+      message: `${enriched.length} assignments retrieved for ${assignee}`,
+      data: enriched
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+  }
+};
+
+// GET /api/assignments/workload - Get workload summary for all developers
+export const getWorkloadSummary = async (req: Request, res: Response) => {
+  try {
+    const workload = await projectModel.getWorkloadSummary();
+    
+    // Get employees for enrichment
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+    const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+    
+    // Helper function to calculate business days between two dates
+    const calculateBusinessDays = (startDate: string | null, endDate: string | null): number | null => {
+      if (!startDate || !endDate) return null;
+      
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+      if (end < start) return 0;
+      
+      let count = 0;
+      const current = new Date(start);
+      
+      while (current <= end) {
+        const dayOfWeek = current.getDay(); // 0=Sunday, 6=Saturday
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          count++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+      
+      return count;
+    };
+    
+    // Restructure to nest assignee details
+    const enriched = workload.map((w: any) => {
+      const emp = empMap.get(String(w.assignee));
+      const actualDuration = calculateBusinessDays(w.earliest_start_date, w.latest_due_date);
+      
+      return {
+        assignee: {
+          ramco_id: w.assignee,
+          full_name: emp ? (emp.full_name || emp.name || null) : null
+        },
+        total_projects: w.total_projects,
+        total_scopes: w.total_scopes,
+        total_scope_mandays: w.total_scope_mandays,
+        actual_duration_days: actualDuration, // Business days from earliest project start to latest project end
+        completed_scopes: w.completed_scopes,
+        in_progress_scopes: w.in_progress_scopes,
+        not_started_scopes: w.not_started_scopes,
+        avg_progress: w.avg_progress ? Math.round(Number(w.avg_progress)) : null
+      };
+    });
+    
+    return res.status(200).json({
+      status: 'success',
+      message: `Workload summary for ${enriched.length} developers`,
+      data: enriched
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch workload summary', data: null });
+  }
+};
 
