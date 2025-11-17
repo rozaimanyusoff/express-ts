@@ -20,4 +20,12 @@ const pool2 = mysql.createPool({
   database: process.env.DB2_NAME,
 });
 
-export { pool, pool2 };
+const pool3 = mysql.createPool({
+  host: process.env.DB_HOST_AQS,
+  port: parseInt(process.env.DB_PORT_AQS as string),
+  user: process.env.DB_USER_AQS,
+  password: process.env.DB_PASSWORD_AQS,
+  database: process.env.DB_NAME_AQS || 'ranhill',
+});
+
+export { pool, pool2, pool3 };
