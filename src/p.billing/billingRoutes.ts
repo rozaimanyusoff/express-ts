@@ -42,6 +42,9 @@ router.get('/mtn/request/:svc_order', asyncHandler(billingController.getVehicleM
 router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
 
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
+// POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts
+router.post('/mtn', asyncHandler(billingController.getVehicleMtnBillingsByIds));
+
 
 // Check invoice number existence for maintenance billings
 router.get('/mtn/check-invno', asyncHandler(billingController.checkVehicleMtnInvNo));

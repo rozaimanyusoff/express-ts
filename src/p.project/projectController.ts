@@ -662,7 +662,7 @@ export const getProjectAssignments = async (req: Request, res: Response) => {
       return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
     }
     const assignments = await projectModel.getAssignmentsByProjectId(projectId);
-    
+
     // Restructure to nest assignee details
     const enriched = assignments.map((a: any) => ({
       id: a.id,
@@ -683,7 +683,7 @@ export const getProjectAssignments = async (req: Request, res: Response) => {
       project_code: a.project_code,
       project_name: a.project_name
     }));
-    
+
     return res.status(200).json({
       status: 'success',
       message: `${enriched.length} assignments retrieved`,
@@ -698,12 +698,12 @@ export const getProjectAssignments = async (req: Request, res: Response) => {
 export const getAllAssignments = async (req: Request, res: Response) => {
   try {
     const assignments = await projectModel.getAllAssignments();
-    
+
     // Get employees for enrichment
     const employeesRaw = await assetModel.getEmployees();
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
-    
+
     // Restructure to nest assignee details
     const enriched = assignments.map((a: any) => {
       const emp = empMap.get(String(a.assignee));
@@ -729,7 +729,7 @@ export const getAllAssignments = async (req: Request, res: Response) => {
         project_due_date: a.project_due_date
       };
     });
-    
+
     return res.status(200).json({
       status: 'success',
       message: `${enriched.length} assignments retrieved`,
@@ -748,13 +748,13 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
       return res.status(400).json({ status: 'error', message: 'Assignee is required', data: null });
     }
     const assignments = await projectModel.getAssignmentsByAssignee(assignee);
-    
+
     // Get employee for enrichment
     const employeesRaw = await assetModel.getEmployees();
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
     const emp = empMap.get(String(assignee));
-    
+
     // Restructure to nest assignee details
     const enriched = assignments.map((a: any) => ({
       id: a.id,
@@ -777,7 +777,7 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
       project_start_date: a.project_start_date,
       project_due_date: a.project_due_date
     }));
-    
+
     return res.status(200).json({
       status: 'success',
       message: `${enriched.length} assignments retrieved for ${assignee}`,
@@ -792,25 +792,25 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
 export const getWorkloadSummary = async (req: Request, res: Response) => {
   try {
     const workload = await projectModel.getWorkloadSummary();
-    
+
     // Get employees for enrichment
     const employeesRaw = await assetModel.getEmployees();
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
-    
+
     // Helper function to calculate business days between two dates
     const calculateBusinessDays = (startDate: string | null, endDate: string | null): number | null => {
       if (!startDate || !endDate) return null;
-      
+
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
+
       if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
       if (end < start) return 0;
-      
+
       let count = 0;
       const current = new Date(start);
-      
+
       while (current <= end) {
         const dayOfWeek = current.getDay(); // 0=Sunday, 6=Saturday
         if (dayOfWeek !== 0 && dayOfWeek !== 6) {
@@ -818,15 +818,15 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
         }
         current.setDate(current.getDate() + 1);
       }
-      
+
       return count;
     };
-    
+
     // Restructure to nest assignee details
     const enriched = workload.map((w: any) => {
       const emp = empMap.get(String(w.assignee));
       const actualDuration = calculateBusinessDays(w.earliest_start_date, w.latest_due_date);
-      
+
       return {
         assignee: {
           ramco_id: w.assignee,
@@ -842,7 +842,7 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
         avg_progress: w.avg_progress ? Math.round(Number(w.avg_progress)) : null
       };
     });
-    
+
     return res.status(200).json({
       status: 'success',
       message: `Workload summary for ${enriched.length} developers`,
@@ -853,3 +853,205 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
   }
 };
 
+
+/* ======= DEV CORE TASKS CRUD ======= */
+// POST /api/projects/devcore-tasks - Create a new dev core task
+export const createDevCoreTask = async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const title = body.title;
+    const description = body.description ?? null;
+    const example = body.example ?? null;
+
+    if (!title) {
+      return res.status(400).json({ status: 'error', message: 'title is required', data: null });
+    }
+
+    const id = await projectModel.createDevCoreTask({ title, description, example });
+    return res.status(201).json({ status: 'success', message: 'Dev core task created', data: { id } });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create dev core task', data: null });
+  }
+};
+
+// GET /api/projects/devcore-tasks - Get all dev core tasks
+export const getDevCoreTasks = async (req: Request, res: Response) => {
+  try {
+    const tasks = await projectModel.getDevCoreTasks();
+    return res.status(200).json({
+      status: 'success',
+      message: `Retrieved ${tasks.length} dev core tasks`,
+      data: tasks
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch dev core tasks', data: null });
+  }
+};
+
+// GET /api/projects/devcore-tasks/:id - Get a dev core task by ID
+export const getDevCoreTaskById = async (req: Request, res: Response) => {
+  try {
+    const taskId = Number(req.params.id);
+    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+
+    const task = await projectModel.getDevCoreTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Dev core task retrieved',
+      data: task
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch dev core task', data: null });
+  }
+};
+
+// PUT /api/projects/devcore-tasks/:id - Update a dev core task by ID
+export const updateDevCoreTask = async (req: Request, res: Response) => {
+  try {
+    const taskId = Number(req.params.id);
+    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+
+    const body = req.body || {};
+    const updateData: Partial<projectModel.DevCoreTask> = {};
+    if (body.title !== undefined) updateData.title = String(body.title);
+    if (body.description !== undefined) updateData.description = body.description ? String(body.description) : null;
+    if (body.example !== undefined) updateData.example = body.example ? String(body.example) : null;
+
+    // ensure task exists
+    const existing = await projectModel.getDevCoreTaskById(taskId);
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+    }
+
+    await projectModel.updateDevCoreTask(taskId, updateData);
+    return res.status(200).json({ status: 'success', message: 'Dev core task updated', data: null });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update dev core task', data: null });
+  }
+};
+
+// DELETE /api/projects/devcore-tasks/:id - Delete a dev core task by ID
+export const deleteDevCoreTask = async (req: Request, res: Response) => {
+  try {
+    const taskId = Number(req.params.id);
+    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+
+    // ensure task exists
+    const existing = await projectModel.getDevCoreTaskById(taskId);
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+    }
+
+    await projectModel.deleteDevCoreTask(taskId);
+    return res.status(200).json({ status: 'success', message: 'Dev core task deleted', data: null });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete dev core task', data: null });
+  }
+};
+
+/* ======= APP CORE FEATURES CRUD ======= */
+// POST /api/projects/core-features - Create a new core feature
+export const createCoreFeature = async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const category = body.category;
+    const feature_key = body.feature_key;
+    const feature_name = body.feature_name;
+    const description = body.description ?? null;
+    const example_module = body.example_module ?? null;
+
+    if (!category || !feature_key || !feature_name) {
+      return res.status(400).json({ status: 'error', message: 'category, feature_key, and feature_name are required', data: null });
+    }
+
+    const id = await projectModel.createCoreFeature({ category, feature_key, feature_name, description, example_module });
+    return res.status(201).json({ status: 'success', message: 'Core feature created', data: { id } });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create core feature', data: null });
+  }
+};
+
+// GET /api/projects/core-features - Get all core features
+export const getCoreFeatures = async (req: Request, res: Response) => {
+  try {
+    const features = await projectModel.getCoreFeatures();
+    return res.status(200).json({
+      status: 'success',
+      message: `Retrieved ${features.length} core features`,
+      data: features
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch core features', data: null });
+  }
+};
+
+// GET /api/projects/core-features/:id - Get a core feature by ID
+export const getCoreFeatureById = async (req: Request, res: Response) => {
+  try {
+    const featureId = Number(req.params.id);
+    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+
+    const feature = await projectModel.getCoreFeatureById(featureId);
+    if (!feature) {
+      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+    }
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Core feature retrieved',
+      data: feature
+    });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch core feature', data: null });
+  }
+};
+
+// PUT /api/projects/core-features/:id - Update a core feature by ID
+export const updateCoreFeature = async (req: Request, res: Response) => {
+  try {
+    const featureId = Number(req.params.id);
+    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+
+    const body = req.body || {};
+    const updateData: Partial<projectModel.CoreFeature> = {};
+    if (body.category !== undefined) updateData.category = String(body.category);
+    if (body.feature_key !== undefined) updateData.feature_key = String(body.feature_key);
+    if (body.feature_name !== undefined) updateData.feature_name = String(body.feature_name);
+    if (body.description !== undefined) updateData.description = body.description ? String(body.description) : null;
+    if (body.example_module !== undefined) updateData.example_module = body.example_module ? String(body.example_module) : null;
+
+    // ensure feature exists
+    const existing = await projectModel.getCoreFeatureById(featureId);
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+    }
+
+    await projectModel.updateCoreFeature(featureId, updateData);
+    return res.status(200).json({ status: 'success', message: 'Core feature updated', data: null });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update core feature', data: null });
+  }
+};
+
+// DELETE /api/projects/core-features/:id - Delete a core feature by ID
+export const deleteCoreFeature = async (req: Request, res: Response) => {
+  try {
+    const featureId = Number(req.params.id);
+    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+
+    // ensure feature exists
+    const existing = await projectModel.getCoreFeatureById(featureId);
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+    }
+
+    await projectModel.deleteCoreFeature(featureId);
+    return res.status(200).json({ status: 'success', message: 'Core feature deleted', data: null });
+  } catch (e: any) {
+    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete core feature', data: null });
+  }
+};

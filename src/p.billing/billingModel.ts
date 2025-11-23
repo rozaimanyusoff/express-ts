@@ -112,8 +112,46 @@ export const getVehicleMtnBillingsByInvDate = async (
 
 export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaintenance | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_id = ?`, [id]);
-  const VehicleMaintenance = (rows as VehicleMaintenance[])[0];
-  return VehicleMaintenance || null;
+  const billing = (rows as VehicleMaintenance[])[0];
+  
+  if (!billing) return null;
+  
+  // Fetch maintenance request to get svc_opt and map to service types
+  const svc_order = (billing as any).svc_order;
+  let svc_type: any[] = [];
+  
+  if (svc_order) {
+    try {
+      const [mtnRows] = await pool2.query(
+        `SELECT svc_opt FROM ${vehicleMtnAppTable} WHERE req_id = ?`,
+        [svc_order]
+      );
+      const mtnRecord = (mtnRows as any[])[0];
+      
+      if (mtnRecord && mtnRecord.svc_opt) {
+        // Fetch service types
+        const [serviceTypesRows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable}`);
+        const serviceTypes = serviceTypesRows as any[];
+        
+        // Parse svc_opt and map to service type names
+        const svcTypeIds = String(mtnRecord.svc_opt)
+          .split(',')
+          .map((id: string) => parseInt(id.trim()))
+          .filter((n: number) => Number.isFinite(n));
+        
+        svc_type = svcTypeIds
+          .map((id: number) => {
+            const st = serviceTypes.find((s: any) => s.svcTypeId === id);
+            return st ? { id: st.svcTypeId, name: st.svcType } : null;
+          })
+          .filter((st: any) => st !== null);
+      }
+    } catch (error) {
+      console.error(`Error fetching service types for billing ${id}:`, error);
+    }
+  }
+  
+  return { ...billing, svc_type } as any;
 };
 
 // Fetch vehicle maintenance billings by request id (svc_order)

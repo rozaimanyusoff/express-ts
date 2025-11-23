@@ -233,6 +233,103 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	res.json({ status: 'success', message: 'Vehicle maintenance billing retrieved successfully', data: structuredBilling });
 };
 
+// POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts
+export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) => {
+	try {
+		// Extract IDs from request body
+		const idsInput = req.body?.ids;
+		let ids: number[] = [];
+
+		// Support both array and comma-separated string formats
+		if (Array.isArray(idsInput)) {
+			ids = idsInput.map((id: any) => Number(id)).filter((n: number) => Number.isFinite(n) && n > 0);
+		} else if (typeof idsInput === 'string') {
+			ids = idsInput.split(',').map((id: string) => Number(id.trim())).filter((n: number) => Number.isFinite(n) && n > 0);
+		}
+
+		if (ids.length === 0) {
+			return res.status(400).json({ status: 'error', message: 'ids array is required in request body', data: null });
+		}
+
+		// Fetch billings for all provided IDs
+		const billings = await Promise.all(
+			ids.map(id => billingModel.getVehicleMtnBillingById(id))
+		);
+
+		// Filter out null results (not found billings)
+		const validBillings = billings.filter(b => b !== null);
+
+		// Fetch lookup data
+		const assets = await assetsModel.getAssets() as any[];
+		const costcenters = await assetsModel.getCostcenters() as any[];
+		const locations = await assetsModel.getLocations() as any[];
+		const workshops = await billingModel.getWorkshops() as any[];
+
+		// Build lookup maps for fast access
+		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
+		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
+
+		// Structure the billing data without parts
+		const structuredBillings = validBillings.map(billing => {
+			const asset_id = (billing as any).asset_id;
+			const cc_id = (billing as any).cc_id;
+			const loc_id = (billing as any).loc_id;
+
+			// Extract service details from svc_type array (already populated by billingModel)
+			let serviceDetails = null;
+			if (Array.isArray((billing as any).svc_type) && (billing as any).svc_type.length > 0) {
+				serviceDetails = (billing as any).svc_type
+					.map((st: any) => st.name)
+					.filter((name: string) => name)
+					.join(', ');
+			}
+
+			return {
+				inv_id: billing.inv_id,
+				inv_no: billing.inv_no,
+				inv_date: billing.inv_date,
+				svc_order: billing.svc_order,
+				service_details: serviceDetails,
+				asset: assetMap.has(asset_id) ? {
+					id: asset_id,
+					register_number: (assetMap.get(asset_id) as any)?.register_number,
+					costcenter: ccMap.has(cc_id) ? {
+						id: cc_id,
+						name: (ccMap.get(cc_id) as any)?.name
+					} : null,
+					location: locationMap.has(loc_id) ? {
+						id: loc_id,
+						name: (locationMap.get(loc_id) as any)?.code
+					} : null
+				} : null,
+				workshop: wsMap.has(billing.ws_id) ? {
+					id: billing.ws_id,
+					name: (wsMap.get(billing.ws_id) as any)?.ws_name
+				} : null,
+				svc_date: billing.svc_date,
+				svc_odo: billing.svc_odo,
+				inv_total: billing.inv_total,
+				inv_stat: billing.inv_stat,
+				inv_remarks: billing.inv_remarks,
+				running_no: billing.running_no,
+				upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null)
+			};
+		});
+
+		res.json({ 
+			status: 'success', 
+			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`, 
+			data: structuredBillings 
+		});
+	} catch (err: any) {
+		logger.error(err);
+		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings', data: null });
+	}
+};
+
+
 // Get maintenance billings by request id (svc_order)
 export const getVehicleMtnBillingByRequestId = async (req: Request, res: Response) => {
 	const svc_order = String(req.params.svc_order || '').trim();
