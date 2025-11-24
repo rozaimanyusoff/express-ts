@@ -6,7 +6,7 @@ const dbMaintenance = 'applications';
 const dbAssets = 'assets';
 // Add your table declarations here when you provide the database structure
 // Example:
-const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc2`;
+const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
 const insuranceTable = `${dbAssets}.insurance`;
 const roadtaxTable = `${dbAssets}.vehicle_insurance`;
@@ -14,9 +14,9 @@ const roadtaxTable = `${dbAssets}.vehicle_insurance`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
 const dbBilling = 'billings';
-const maintenanceBillingTable = `${dbBilling}.tbl_inv2`;
+const maintenanceBillingTable = `${dbBilling}.tbl_inv`;
 
-const poolCarTable = `${dbMaintenance}.poolcar2`;
+const poolCarTable = `${dbMaintenance}.poolcar`;
 
 const tngTable = `${dbAssets}.touchngo`;
 const tngDetailTable = `${dbAssets}.touchngo_det`;
