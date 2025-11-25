@@ -4,12 +4,6 @@ import asyncHandler from '../../utils/asyncHandler';
 
 const router = Router();
 
-// ---- SUPPLIERS ----
-router.post('/suppliers', asyncHandler(nrwStockController.createSupplier));
-router.get('/suppliers', asyncHandler(nrwStockController.getSuppliers));
-router.get('/suppliers/:id', asyncHandler(nrwStockController.getSupplierById));
-router.put('/suppliers/:id', asyncHandler(nrwStockController.updateSupplier));
-router.delete('/suppliers/:id', asyncHandler(nrwStockController.deleteSupplier));
 
 // ---- TEAM ----
 router.post('/teams', asyncHandler(nrwStockController.createTeam));
@@ -18,14 +12,6 @@ router.get('/teams/:id', asyncHandler(nrwStockController.getTeamById));
 router.put('/teams/:id', asyncHandler(nrwStockController.updateTeam));
 router.delete('/teams/:id', asyncHandler(nrwStockController.deleteTeam));
 
-// ---- FIXED ASSETS ----
-router.post('/items', asyncHandler(nrwStockController.createStockItem));
-router.get('/items', asyncHandler(nrwStockController.getStockItems));
-router.get('/items/:id', asyncHandler(nrwStockController.getStockItemById));
-router.get('/items/:id/transactions', asyncHandler(nrwStockController.getStockItemTransactions));
-router.get('/items/:id/in-stock', asyncHandler(nrwStockController.getStockItemInStock));
-router.put('/items/:id', asyncHandler(nrwStockController.updateStockItem));
-router.delete('/items/:id', asyncHandler(nrwStockController.deleteStockItem));
 
 // ---- STOCK PURCHASES ----
 router.post('/purchases', asyncHandler(nrwStockController.createStockPurchase));
@@ -68,5 +54,38 @@ router.post('/requests/:requestId/items', asyncHandler(nrwStockController.addSto
 router.get('/requests/:requestId/items', asyncHandler(nrwStockController.getStockRequestItems));
 router.put('/request-items/:id', asyncHandler(nrwStockController.updateStockRequestItem));
 router.delete('/request-items/:id', asyncHandler(nrwStockController.deleteStockRequestItem));
+
+
+/* ======== MANUFACTURERS ======== */
+router.get('/manufacturers/:id', asyncHandler(nrwStockController.getManufacturerById));
+// get manufacturers by ids
+router.post('/manufacturers/by-ids', asyncHandler(nrwStockController.getManufacturersByIds));
+router.get('/manufacturers', asyncHandler(nrwStockController.getManufacturers));
+
+router.post('/manufacturers', asyncHandler(nrwStockController.createManufacturer));
+
+
+router.put('/manufacturers/:id', asyncHandler(nrwStockController.updateManufacturer));
+router.delete('/manufacturers/:id', asyncHandler(nrwStockController.deleteManufacturer));
+
+
+/* ========== ITEMS ========== */
+router.get('/items/:id', asyncHandler(nrwStockController.getItemById));
+//get item by ids
+router.post('/items/by-ids', asyncHandler(nrwStockController.getItemsByIds));
+router.get('/items', asyncHandler(nrwStockController.getItems));
+router.post('/items', asyncHandler(nrwStockController.createItem));
+router.put('/items/:id', asyncHandler(nrwStockController.updateItem));
+router.delete('/items/:id', asyncHandler(nrwStockController.deleteItem));
+
+/* ========== FIXED ASSETS ======= */
+// raw data for all stock in items
+router.post('/', asyncHandler(nrwStockController.createStock));
+router.get('/:id', asyncHandler(nrwStockController.getStockById));
+router.get('/', asyncHandler(nrwStockController.getStocks));
+router.get('/:id/transactions', asyncHandler(nrwStockController.getStockTransactions));
+router.get('/:id/in-stock', asyncHandler(nrwStockController.getStockInStock));
+router.put('/:id', asyncHandler(nrwStockController.updateStock));
+router.delete('/:id', asyncHandler(nrwStockController.deleteStock));
 
 export default router;
