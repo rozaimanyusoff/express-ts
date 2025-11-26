@@ -61,13 +61,18 @@ router.get('/manufacturers/:id', asyncHandler(nrwStockController.getManufacturer
 // get manufacturers by ids
 router.post('/manufacturers/by-ids', asyncHandler(nrwStockController.getManufacturersByIds));
 router.get('/manufacturers', asyncHandler(nrwStockController.getManufacturers));
-
 router.post('/manufacturers', asyncHandler(nrwStockController.createManufacturer));
-
-
 router.put('/manufacturers/:id', asyncHandler(nrwStockController.updateManufacturer));
 router.delete('/manufacturers/:id', asyncHandler(nrwStockController.deleteManufacturer));
 
+/* ======== SUPPLIERS ======== */
+router.get('/suppliers/:id', asyncHandler(nrwStockController.getSupplierById));
+// get suppliers by ids
+router.post('/suppliers/by-ids', asyncHandler(nrwStockController.getSuppliersByIds));
+router.get('/suppliers', asyncHandler(nrwStockController.getSuppliers));
+router.post('/suppliers', asyncHandler(nrwStockController.createSupplier));
+router.put('/suppliers/:id', asyncHandler(nrwStockController.updateSupplier));
+router.delete('/suppliers/:id', asyncHandler(nrwStockController.deleteSupplier));
 
 /* ========== ITEMS ========== */
 router.get('/items/:id', asyncHandler(nrwStockController.getItemById));
@@ -77,6 +82,13 @@ router.get('/items', asyncHandler(nrwStockController.getItems));
 router.post('/items', asyncHandler(nrwStockController.createItem));
 router.put('/items/:id', asyncHandler(nrwStockController.updateItem));
 router.delete('/items/:id', asyncHandler(nrwStockController.deleteItem));
+
+/* ========== ITEM SIZES ========== */
+router.get('/sizes/:id', asyncHandler(nrwStockController.getSizeById));
+router.get('/sizes', asyncHandler(nrwStockController.getSizes));
+router.post('/sizes', asyncHandler(nrwStockController.createSize));
+router.put('/sizes/:id', asyncHandler(nrwStockController.updateSize));
+router.delete('/sizes/:id', asyncHandler(nrwStockController.deleteSize));
 
 /* ========== FIXED ASSETS ======= */
 // raw data for all stock in items

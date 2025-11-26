@@ -729,3 +729,135 @@ export const deleteStock = async (req: Request, res: Response) => {
     data: result
   });
 };
+
+/* ========= SUPPLIERS ========= */
+export const createSupplier = async (req: Request, res: Response) => {
+  const data = req.body;
+  const result = await nrwStockModel.createSupplier(data);
+  res.status(201).json({
+    status: 'success',
+    message: 'Supplier created',
+    data: result
+  });
+};
+
+export const getSuppliers = async (req: Request, res: Response) => {
+  const suppliers = await nrwStockModel.getSuppliers();
+  res.json({
+    status: 'success',
+    message: 'Suppliers retrieved',
+    data: suppliers
+  });
+};
+
+export const getSupplierById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const supplier = await nrwStockModel.getSupplierById(Number(id));
+
+  if (!supplier) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Supplier not found',
+      data: null
+    });
+  }
+
+  res.json({
+    status: 'success',
+    message: 'Supplier retrieved',
+    data: supplier
+  });
+};
+
+// get suppliers by ids
+export const getSuppliersByIds = async (req: Request, res: Response) => {
+  const { ids } = req.body; // expecting { ids: number[] }
+  const suppliers = await nrwStockModel.getSuppliersByIds(ids);
+  res.json({
+    status: 'success',
+    message: 'Suppliers retrieved',
+    data: suppliers
+  });
+};
+
+export const updateSupplier = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+  const result = await nrwStockModel.updateSupplier(Number(id), data);
+  res.json({
+    status: 'success',
+    message: 'Supplier updated',
+    data: result
+  });
+};
+
+export const deleteSupplier = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await nrwStockModel.deleteSupplier(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Supplier deleted',
+    data: result
+  });
+};
+
+
+/* ======= SIZES ======= */
+export const getSizes = async (req: Request, res: Response) => {
+  const sizes = await nrwStockModel.getSizes();
+  res.json({
+    status: 'success',
+    message: 'Item sizes retrieved',
+    data: sizes
+  });
+};
+
+export const getSizeById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const size = await nrwStockModel.getSizeById(Number(id));
+
+  if (!size) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Item size not found',
+      data: null
+    });
+  }
+
+  res.json({
+    status: 'success',
+    message: 'Item size retrieved',
+    data: size
+  });
+};
+
+export const createSize = async (req: Request, res: Response) => {
+  const data = req.body;
+  const result = await nrwStockModel.createSize(data);
+  res.status(201).json({
+    status: 'success',
+    message: 'Item size created',
+    data: result
+  });
+};
+
+export const updateSize = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+  const result = await nrwStockModel.updateSize(Number(id), data);
+  res.json({
+    status: 'success',
+    message: 'Item size updated',
+    data: result
+  });
+};
+
+export const deleteSize = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await nrwStockModel.deleteSize(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Item size deleted',
+    data: result
+  });
+};

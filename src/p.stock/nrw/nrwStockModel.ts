@@ -9,8 +9,9 @@ const stockPurchaseItemsTable = `${dbName}.nrw_stock_purchase_items`;
 const teamTable = `${dbName}.nrw_team`;
 const fixedAssetTable = `${dbName}.fixed_asset`; //collection of all stock items with unique serial numbers
 const itemsTable = `${dbName}.items`; // collected unique items that obtained from stocks
+const sizesTable = `${dbName}.item_sizes`;
 const manufacturerTable = `${dbName}.manufacturers`; // collected unique manufacturers/suppliers from stocks items
-
+const supplierTable = `${dbName}.suppliers`;
 const stockCardTable = `${dbName}.nrw_stock_card`;
 const stockTrackingTable = `${dbName}.nrw_stock_tracking`;
 const stockRequestTable = `${dbName}.nrw_stock_request`;
@@ -336,5 +337,63 @@ export const updateStock = async (id: number, data: any) => {
 
 export const deleteStock = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${fixedAssetTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+/* ========= SUPPLIERS ========= */ 
+export const createSupplier = async (data: any) => {
+    const [result] = await pool.query(`INSERT INTO ${supplierTable} SET ?`, [data]);
+    return result;
+};
+
+export const getSuppliers = async () => {
+    const [rows] = await pool.query(`SELECT * FROM ${supplierTable} ORDER BY id DESC`);
+    return rows;
+};
+
+export const getSupplierById = async (id: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${supplierTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const getSuppliersByIds = async (ids: number[]) => {
+    if (!ids || ids.length === 0) return [];
+    const [rows] = await pool.query(`SELECT * FROM ${supplierTable} WHERE id IN (?)`, [ids]);
+    return rows;
+};
+
+export const updateSupplier = async (id: number, data: any) => {
+    const [result] = await pool.query(`UPDATE ${supplierTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteSupplier = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${supplierTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+/* ========= SIZES ========= */
+export const getSizes = async () => {
+    const [rows] = await pool.query(`SELECT * FROM ${sizesTable} ORDER BY id DESC`);
+    return rows;
+};
+
+export const getSizeById = async (id: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${sizesTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const createSize = async (data: any) => {
+    const [result] = await pool.query(`INSERT INTO ${sizesTable} SET ?`, [data]);
+    return result;
+};
+
+export const updateSize = async (id: number, data: any) => {
+    const [result] = await pool.query(`UPDATE ${sizesTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteSize = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${sizesTable} WHERE id = ?`, [id]);
     return result;
 };
