@@ -545,8 +545,36 @@ export const getItemById = async (req: Request, res: Response) => {
     ? await nrwStockModel.getManufacturerById((item as any).mfg_id)
     : null;
 
+  // Parse and enrich supplier_ids
+  const supplierIdsStr = (item as any).supplier_ids || '';
+  const supplierIds = supplierIdsStr
+    .split(',')
+    .map((id: string) => Number(id.trim()))
+    .filter((id: number) => !isNaN(id) && id > 0);
+  const suppliersRaw = supplierIds.length > 0
+    ? await nrwStockModel.getSuppliersByIds(supplierIds)
+    : [];
+  const suppliers = (suppliersRaw as any[]).map((s: any) => ({ 
+    id: s.id, 
+    name: s.name || s.supplier_name || s.companyName || s.company_name || '' 
+  }));
+
+  // Parse and enrich size_ids
+  const sizeIdsStr = (item as any).size_ids || '';
+  const sizeIds = sizeIdsStr
+    .split(',')
+    .map((id: string) => Number(id.trim()))
+    .filter((id: number) => !isNaN(id) && id > 0);
+  const sizesRaw = sizeIds.length > 0
+    ? await nrwStockModel.getSizesByIds(sizeIds)
+    : [];
+  const sizes = (sizesRaw as any[]).map((s: any) => ({ 
+    id: s.id, 
+    name: s.name || s.size || s.size_name || s.description || '' 
+  }));
+
   // Remove mfg_id and manufacturer.status
-  const { mfg_id, ...itemWithoutMfgId } = item as any;
+  const { mfg_id, supplier_ids, size_ids, ...itemWithoutMfgId } = item as any;
   const manufacturerData = manufacturer ? (() => {
     const { status, ...mfgWithoutStatus } = manufacturer as any;
     return mfgWithoutStatus;
@@ -557,7 +585,9 @@ export const getItemById = async (req: Request, res: Response) => {
     message: 'Item retrieved',
     data: {
       ...itemWithoutMfgId,
-      manufacturer: manufacturerData
+      manufacturer: manufacturerData,
+      suppliers,
+      sizes
     }
   });
 };
@@ -574,12 +604,74 @@ export const getItemsByIds = async (req: Request, res: Response) => {
     acc[mfg.id] = mfgWithoutStatus;
     return acc;
   }, {});
+
+  // Collect all supplier and size IDs
+  const allSupplierIds = new Set<number>();
+  const allSizeIds = new Set<number>();
+  
+  (items as any[]).forEach((item: any) => {
+    const supplierIdsStr = item.supplier_ids || '';
+    supplierIdsStr.split(',').forEach((id: string) => {
+      const numId = Number(id.trim());
+      if (!isNaN(numId) && numId > 0) allSupplierIds.add(numId);
+    });
+    
+    const sizeIdsStr = item.size_ids || '';
+    sizeIdsStr.split(',').forEach((id: string) => {
+      const numId = Number(id.trim());
+      if (!isNaN(numId) && numId > 0) allSizeIds.add(numId);
+    });
+  });
+
+  // Fetch suppliers and sizes
+  const suppliers = allSupplierIds.size > 0
+    ? await nrwStockModel.getSuppliersByIds([...allSupplierIds])
+    : [];
+  const suppliersById = (suppliers as any[]).reduce((acc: any, supplier: any) => {
+    acc[supplier.id] = { 
+      id: supplier.id, 
+      name: supplier.name || supplier.supplier_name || supplier.companyName || supplier.company_name || '' 
+    };
+    return acc;
+  }, {});
+
+  const sizes = allSizeIds.size > 0
+    ? await nrwStockModel.getSizesByIds([...allSizeIds])
+    : [];
+  const sizesById = (sizes as any[]).reduce((acc: any, size: any) => {
+    acc[size.id] = { 
+      id: size.id, 
+      name: size.name || size.size || size.size_name || size.description || '' 
+    };
+    return acc;
+  }, {});
   
   const enrichedItems = (items as any[]).map((item: any) => {
-    const { mfg_id, ...itemWithoutMfgId } = item;
+    const { mfg_id, supplier_ids, size_ids, ...itemWithoutMfgId } = item;
+    
+    // Parse supplier IDs and map to supplier objects
+    const itemSupplierIds = (supplier_ids || '')
+      .split(',')
+      .map((id: string) => Number(id.trim()))
+      .filter((id: number) => !isNaN(id) && id > 0);
+    const itemSuppliers = itemSupplierIds
+      .map((id: number) => suppliersById[id])
+      .filter(Boolean);
+
+    // Parse size IDs and map to size objects
+    const itemSizeIds = (size_ids || '')
+      .split(',')
+      .map((id: string) => Number(id.trim()))
+      .filter((id: number) => !isNaN(id) && id > 0);
+    const itemSizes = itemSizeIds
+      .map((id: number) => sizesById[id])
+      .filter(Boolean);
+
     return {
       ...itemWithoutMfgId,
-      manufacturer: manufacturersById[item.mfg_id] || null
+      manufacturer: manufacturersById[item.mfg_id] || null,
+      suppliers: itemSuppliers,
+      sizes: itemSizes
     };
   });
   
@@ -601,12 +693,74 @@ export const getItems = async (req: Request, res: Response) => {
     acc[mfg.id] = mfgWithoutStatus;
     return acc;
   }, {});
+
+  // Collect all supplier and size IDs
+  const allSupplierIds = new Set<number>();
+  const allSizeIds = new Set<number>();
+  
+  (items as any[]).forEach((item: any) => {
+    const supplierIdsStr = item.supplier_ids || '';
+    supplierIdsStr.split(',').forEach((id: string) => {
+      const numId = Number(id.trim());
+      if (!isNaN(numId) && numId > 0) allSupplierIds.add(numId);
+    });
+    
+    const sizeIdsStr = item.size_ids || '';
+    sizeIdsStr.split(',').forEach((id: string) => {
+      const numId = Number(id.trim());
+      if (!isNaN(numId) && numId > 0) allSizeIds.add(numId);
+    });
+  });
+
+  // Fetch suppliers and sizes
+  const suppliers = allSupplierIds.size > 0
+    ? await nrwStockModel.getSuppliersByIds([...allSupplierIds])
+    : [];
+  const suppliersById = (suppliers as any[]).reduce((acc: any, supplier: any) => {
+    acc[supplier.id] = { 
+      id: supplier.id, 
+      name: supplier.name || supplier.supplier_name || supplier.companyName || supplier.company_name || '' 
+    };
+    return acc;
+  }, {});
+
+  const sizes = allSizeIds.size > 0
+    ? await nrwStockModel.getSizesByIds([...allSizeIds])
+    : [];
+  const sizesById = (sizes as any[]).reduce((acc: any, size: any) => {
+    acc[size.id] = { 
+      id: size.id, 
+      name: size.name || size.size || size.size_name || size.description || '' 
+    };
+    return acc;
+  }, {});
   
   const enrichedItems = (items as any[]).map((item: any) => {
-    const { mfg_id, ...itemWithoutMfgId } = item;
+    const { mfg_id, supplier_ids, size_ids, ...itemWithoutMfgId } = item;
+    
+    // Parse supplier IDs and map to supplier objects
+    const itemSupplierIds = (supplier_ids || '')
+      .split(',')
+      .map((id: string) => Number(id.trim()))
+      .filter((id: number) => !isNaN(id) && id > 0);
+    const itemSuppliers = itemSupplierIds
+      .map((id: number) => suppliersById[id])
+      .filter(Boolean);
+
+    // Parse size IDs and map to size objects
+    const itemSizeIds = (size_ids || '')
+      .split(',')
+      .map((id: string) => Number(id.trim()))
+      .filter((id: number) => !isNaN(id) && id > 0);
+    const itemSizes = itemSizeIds
+      .map((id: number) => sizesById[id])
+      .filter(Boolean);
+
     return {
       ...itemWithoutMfgId,
-      manufacturer: manufacturersById[item.mfg_id] || null
+      manufacturer: manufacturersById[item.mfg_id] || null,
+      suppliers: itemSuppliers,
+      sizes: itemSizes
     };
   });
   
