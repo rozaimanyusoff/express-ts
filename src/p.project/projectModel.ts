@@ -11,6 +11,8 @@ const T_PROGRESS = `${projectDB}.${BASE_PROGRESS}`;
 const T_TAGS = `${projectDB}.project_tags`;
 const T_TAG_LINKS = `${projectDB}.project_tag_links`;
 const T_SUPPORT = `${projectDB}.project_support_shifts`;
+const T_DEV_TASKS = `${projectDB}.dev_core_tasks`;
+const T_CORE_FEATURES = `${projectDB}.app_core_features`;
 
 // --- Schema adaptability helpers ---
 type ProgressCol = 'overall_progress' | 'percent_complete';
@@ -410,4 +412,129 @@ export async function getWorkloadSummary(): Promise<any[]> {
   `;
   const [rows]: any = await pool.query(sql);
   return rows;
+}
+
+
+/* ======= DEV CORE TASKS CRUD ======= */
+export interface DevCoreTask {
+  id: number;
+  title: string;
+  description: string | null;
+  example: string | null;
+}
+
+export async function getDevCoreTasks(): Promise<DevCoreTask[]> {
+  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} ORDER BY id ASC`;
+  const [rows]: any = await pool.query(sql);
+  return rows.map((r: any) => ({
+    id: Number(r.id),
+    title: String(r.title),
+    description: r.description ? String(r.description) : null,
+    example: r.example ? String(r.example) : null
+  }));
+}
+
+export async function getDevCoreTaskById(taskId: number): Promise<DevCoreTask | null> {
+  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} WHERE id = ? LIMIT 1`;
+  const [rows]: any = await pool.query(sql, [taskId]);
+  if (rows.length) {
+    const r = rows[0];
+    return {
+      id: Number(r.id),
+      title: String(r.title),
+      description: r.description ? String(r.description) : null,
+      example: r.example ? String(r.example) : null
+    };
+  }
+  return null;
+}
+
+export async function createDevCoreTask(task: Omit<DevCoreTask, 'id'>): Promise<number> {
+  const payload: any = {
+    title: task.title,
+    description: task.description ?? null,
+    example: task.example ?? null
+  };
+  const [res]: any = await pool.query(`INSERT INTO ${T_DEV_TASKS} SET ?`, [payload]);
+  return Number(res.insertId);
+}
+
+export async function updateDevCoreTask(taskId: number, updates: Partial<Omit<DevCoreTask, 'id'>>): Promise<void> {
+  const payload: any = {};
+  if (updates.title !== undefined) payload.title = updates.title;
+  if (updates.description !== undefined) payload.description = updates.description ?? null;
+  if (updates.example !== undefined) payload.example = updates.example ?? null;
+  if (Object.keys(payload).length === 0) return; // Nothing to update
+  await pool.query(`UPDATE ${T_DEV_TASKS} SET ? WHERE id = ?`, [payload, taskId]);
+}
+
+export async function deleteDevCoreTask(taskId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_DEV_TASKS} WHERE id = ?`, [taskId]);
+}
+
+/* ========= APP CORE FEATURES ========= */
+export interface CoreFeature {
+  id: number;
+  category: string | null;
+  feature_key: string;
+  feature_name: string;
+  description: string | null;
+  example_module: string | null;
+}
+
+export async function getCoreFeatures(): Promise<CoreFeature[]> {
+  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} ORDER BY category ASC, feature_name ASC`;
+  const [rows]: any = await pool.query(sql);
+  return rows.map((r: any) => ({
+    id: Number(r.id),
+    category: r.category ? String(r.category) : null,
+    feature_key: String(r.feature_key),
+    feature_name: String(r.feature_name),
+    description: r.description ? String(r.description) : null,
+    example_module: r.example_module ? String(r.example_module) : null
+  }));
+}
+
+export async function getCoreFeatureById(featureId: number): Promise<CoreFeature | null> {
+  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} WHERE id = ? LIMIT 1`;
+  const [rows]: any = await pool.query(sql, [featureId]);
+  if (rows.length) {
+    const r = rows[0];
+    return {
+      id: Number(r.id),
+      category: r.category ? String(r.category) : null,
+      feature_key: String(r.feature_key),
+      feature_name: String(r.feature_name),
+      description: r.description ? String(r.description) : null,
+      example_module: r.example_module ? String(r.example_module) : null
+    };
+  }
+  return null;
+}
+
+export async function createCoreFeature(feature: Omit<CoreFeature, 'id'>): Promise<number> {
+  const payload: any = {
+    category: feature.category ?? null,
+    feature_key: feature.feature_key,
+    feature_name: feature.feature_name,
+    description: feature.description ?? null,
+    example_module: feature.example_module ?? null
+  };
+  const [res]: any = await pool.query(`INSERT INTO ${T_CORE_FEATURES} SET ?`, [payload]);
+  return Number(res.insertId);
+}
+
+export async function updateCoreFeature(featureId: number, updates: Partial<Omit<CoreFeature, 'id'>>): Promise<void> {
+  const payload: any = {};
+  if (updates.category !== undefined) payload.category = updates.category ?? null;
+  if (updates.feature_key !== undefined) payload.feature_key = updates.feature_key;
+  if (updates.feature_name !== undefined) payload.feature_name = updates.feature_name;
+  if (updates.description !== undefined) payload.description = updates.description ?? null;
+  if (updates.example_module !== undefined) payload.example_module = updates.example_module ?? null;
+  if (Object.keys(payload).length === 0) return; // Nothing to update
+  await pool.query(`UPDATE ${T_CORE_FEATURES} SET ? WHERE id = ?`, [payload, featureId]);
+}
+
+export async function deleteCoreFeature(featureId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_CORE_FEATURES} WHERE id = ?`, [featureId]);
 }

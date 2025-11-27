@@ -6,7 +6,7 @@ const dbMaintenance = 'applications';
 const dbAssets = 'assets';
 // Add your table declarations here when you provide the database structure
 // Example:
-const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc2`;
+const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
 const insuranceTable = `${dbAssets}.insurance`;
 const roadtaxTable = `${dbAssets}.vehicle_insurance`;
@@ -14,9 +14,9 @@ const roadtaxTable = `${dbAssets}.vehicle_insurance`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
 const dbBilling = 'billings';
-const maintenanceBillingTable = `${dbBilling}.tbl_inv2`;
+const maintenanceBillingTable = `${dbBilling}.tbl_inv`;
 
-const poolCarTable = `${dbMaintenance}.poolcar2`;
+const poolCarTable = `${dbMaintenance}.poolcar`;
 
 const tngTable = `${dbAssets}.touchngo`;
 const tngDetailTable = `${dbAssets}.touchngo_det`;
@@ -174,8 +174,26 @@ export const getVehicleMtnRequestById = async (id: number) => {
 	const record = (rows as RowDataPacket[])[0];
 
     if (record) {
+        // Map svc_opt to svc_type with names
+        let svc_type: any[] = [];
+        if (record.svc_opt) {
+            const serviceTypes = await getServiceTypes() as any[];
+            const svcTypeIds = String(record.svc_opt)
+                .split(',')
+                .map((id: string) => parseInt(id.trim()))
+                .filter((n: number) => Number.isFinite(n));
+            
+            svc_type = svcTypeIds
+                .map((id: number) => {
+                    const st = serviceTypes.find((s: any) => s.svctype_id === id);
+                    return st ? { id: st.svctype_id, name: st.svctype_name } : null;
+                })
+                .filter((st: any) => st !== null);
+        }
+
         return {
             ...record,
+            svc_type,
             status: getRequestStatus(record),
             application_status: getApplicationStatus(record)
         };

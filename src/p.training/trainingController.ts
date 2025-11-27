@@ -594,6 +594,7 @@ export const getParticipants = async (req: Request, res: Response) => {
       const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query?.year) ? Number(req.query.year[0]) : undefined);
       const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
       const showAllParam = req.query?.show_all === 'true' || req.query?.show_all === '1';
+      const statusFilter = typeof req.query?.status === 'string' ? String(req.query.status).toLowerCase() : undefined;
 
       // Fetch all participants
       const rows = trainingIdQ ? await trainingModel.getParticipantsByTrainingId(Number(trainingIdQ)) : await trainingModel.getParticipants();
@@ -606,6 +607,7 @@ export const getParticipants = async (req: Request, res: Response) => {
 
       // Fetch all trainings at once
       let trainingMap = new Map<number, TrainingEvent>();
+      let trainingRawDateMap = new Map<number, any>(); // Store raw dates for year filtering
       if (trainingIds.length > 0) {
          try {
             const trainings = await Promise.all(trainingIds.map(id => trainingModel.getTrainingById(id)));
@@ -613,31 +615,42 @@ export const getParticipants = async (req: Request, res: Response) => {
                if (tr) {
                   const event = mapRowToTrainingEvent(tr);
                   trainingMap.set(Number(tr.training_id), event);
+                  // Store raw date for accurate year filtering
+                  trainingRawDateMap.set(Number(tr.training_id), tr.sdate);
                }
             });
          } catch { /* ignore */ }
       }
 
-      // Filter by year if provided (filter based on training sdate)
+      // Filter by year if provided (filter based on training sdate using raw date)
       if (Number.isFinite(year)) {
          filteredRows = filteredRows.filter(p => {
             const trainId = Number(p.training_id ?? 0);
-            const training = trainingMap.get(trainId);
-            if (!training || !training.sdate) return false;
-            const trainingYear = dayjs(training.sdate, 'D/M/YYYY h:mm A').year();
+            const rawDate = trainingRawDateMap.get(trainId);
+            if (!rawDate) return false;
+            const trainingYear = dayjs(rawDate).year();
             return trainingYear === year;
          });
       }
 
       // Fetch all employees, departments, positions, and locations
-      const [employees, departments, positions, locations] = await Promise.all([
+      const [employeesRaw, departments, positions, locations] = await Promise.all([
          assetModel.getEmployees(),
          assetModel.getDepartments?.().catch(() => []),
          assetModel.getPositions?.().catch(() => []),
          assetModel.getLocations?.().catch(() => [])
       ]);
 
-      const employeeMap = new Map(Array.isArray(employees) ? employees.map((e: any) => [String(e.ramco_id), e]) : []);
+      // Filter employees by employment_status if status=active is provided
+      const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+      let filteredEmployees = employees;
+      if (statusFilter === 'active') {
+         filteredEmployees = employees.filter((e: any) => 
+            String(e.employment_status || '').toLowerCase() === 'active'
+         );
+      }
+
+      const employeeMap = new Map(filteredEmployees.map((e: any) => [String(e.ramco_id), e]));
       const departmentMap = new Map(Array.isArray(departments) ? departments.map((d: any) => [Number(d.id), d]) : []);
       const positionMap = new Map(Array.isArray(positions) ? positions.map((pos: any) => [Number(pos.id), pos]) : []);
       const locationMap = new Map(Array.isArray(locations) ? locations.map((l: any) => [Number(l.id), l]) : []);
