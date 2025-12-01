@@ -383,8 +383,14 @@ export const getSizeById = async (id: number) => {
     return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
+export const getSizesByIds = async (ids: number[]) => {
+    if (!ids || ids.length === 0) return [];
+    const [rows] = await pool.query(`SELECT * FROM ${sizesTable} WHERE id IN (?)`, [ids]);
+    return rows;
+};
+
 export const createSize = async (data: any) => {
-    const [result] = await pool.query(`INSERT INTO ${sizesTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${sizesTable} SET ? ORDER BY name`, [data]);
     return result;
 };
 
