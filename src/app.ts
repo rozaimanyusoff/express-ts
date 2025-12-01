@@ -19,6 +19,8 @@ import summonRoutes from './p.compliance/complianceRoutes';
 import notificationRoutes from './p.notification/notificationRoutes';
 import projectRoutes from './p.project/projectRoutes';
 import siteRoutes from './p.site/siteRoutes';
+import aqsRoleRoutes from './aqs/a.role/roleRoutes';
+import aqsModuleRoutes from './aqs/a.module/moduleRoutes'
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -88,6 +90,8 @@ app.use('/api/compliance', summonRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/sites', siteRoutes);
+app.use('/api/aqs/roles', aqsRoleRoutes);
+app.use('/api/aqs/modules', aqsModuleRoutes);
 app.use(errorHandler);
 
 export default app;

@@ -1,6 +1,8 @@
 // filepath: /Users/rozaiman/express-ts/src/utils/dbPool.ts
 import * as mysql from 'mysql2/promise';
 import * as dotenv from 'dotenv';
+import { post } from 'axios';
+import { Pool } from 'pg';
 
 dotenv.config();
 
@@ -28,4 +30,12 @@ const pool3 = mysql.createPool({
   database: process.env.DB_NAME_AQS || 'ranhill',
 });
 
-export { pool, pool2, pool3 };
+const pgPool = new Pool({
+  host: process.env.PG_DB_HOST_LOCAL,
+  port: parseInt(process.env.PG_DB_PORT_LOCAL as string),
+  user: process.env.PG_DB_USER_LOCAL,
+  password: process.env.PG_DB_PASSWORD_LOCAL,
+  database: process.env.PG_DB_NAME_LOCAL,
+});
+
+export { pool, pool2, pool3, pgPool };
