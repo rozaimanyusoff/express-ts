@@ -30,6 +30,9 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const assets = await assetsModel.getAssets() as any[];
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
+		// Fetch maintenance requests to get form_upload_date
+		const mtnRequests = await maintenanceModel.getVehicleMtnRequests() as any[];
+		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
 		// Build lookup maps for fast access (support id and asset_id)
 		const assetMap = new Map();
 		for (const a of (assets || [])) {
@@ -44,12 +47,15 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
 			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
 			const loc_id = (b as any).loc_id ?? (b as any).location_id;
+			const svc_order = (b as any).svc_order;
+			const mtnReq = mtnReqMap.get(Number(svc_order));
 			return {
 				inv_id: (b as any).inv_id,
 				entry_date: (b as any).entry_date,
 				inv_no: (b as any).inv_no,
 				inv_date: (b as any).inv_date,
-				svc_order: (b as any).svc_order,
+				svc_order: svc_order,
+				form_upload_date: mtnReq?.form_upload_date ?? null,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
 					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
@@ -166,10 +172,18 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				const rCcId = (req as any).costcenter_id ?? (req as any).cc_id;
 				const rLocId = (req as any).location_id ?? (req as any).loc_id;
 				const rWsId = (req as any).ws_id;
+				
+				// Build full URL for form_upload if it exists
+				const formUpload = (req as any).form_upload;
+				const formUploadUrl = formUpload 
+					? `${process.env.BACKEND_URL || 'http://localhost:3000'}/${formUpload}`
+					: null;
+				
 				svcOrderDetails = {
 					req_id: (req as any).req_id,
 					req_date: (req as any).req_date,
-					form_upload: (req as any).form_upload ?? null,
+					form_upload: formUploadUrl,
+					form_upload_date: (req as any).form_upload_date ?? null,
 					approval_date: (req as any).approval_date ?? null,
 					status: (req as any).req_stat ?? (req as any).status ?? null
 				};

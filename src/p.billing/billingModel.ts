@@ -60,7 +60,7 @@ export const getVehicleMtnBillings = async (
   const hasTo = typeof to === 'string' && to.trim() !== '';
   if (hasFrom && hasTo) {
     const [rows] = await pool2.query(
-      `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND entry_date BETWEEN ? AND ? ORDER BY entry_date DESC, inv_id DESC`,
+      `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND DATE(entry_date) BETWEEN ? AND ? ORDER BY DATE(entry_date), svc_order DESC`,
       [from, to]
     );
     return rows as VehicleMaintenance[];
@@ -71,7 +71,7 @@ export const getVehicleMtnBillings = async (
     const y = Number(year);
     if (Number.isFinite(y)) {
       const [rows] = await pool2.query(
-        `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND YEAR(entry_date) = ? ORDER BY entry_date DESC, inv_id DESC`,
+        `SELECT * FROM ${vehicleMtnBillingTable} WHERE entry_date IS NOT NULL AND YEAR(entry_date) = ? ORDER BY DATE(entry_date) DESC, inv_id DESC`,
         [y]
       );
       return rows as VehicleMaintenance[];

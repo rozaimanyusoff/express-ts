@@ -2342,7 +2342,7 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 		}
 		if (car.asset_id && assetMap.has(Number(car.asset_id))) {
 			const a = assetMap.get(Number(car.asset_id));
-			obj.asset = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
+			obj.assigned_poolcar = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
 		}
 		if (car.recommendation && empMap.has(String(car.recommendation))) {
 			const e = empMap.get(String(car.recommendation));
