@@ -27,6 +27,7 @@ import logger from './utils/logger';
 import path from 'path';
 import fs from 'fs';
 import { getUploadBaseSync } from './utils/uploadUtil';
+import { checkDatabaseHealth } from './utils/dbHealthCheck';
 
 const app: Express = express();
 
@@ -68,6 +69,26 @@ app.use('/uploads', (req, res, next) => {
 })();
 
 app.use('/api/auth', authRoutes);
+// Health check endpoint for monitoring
+app.get('/api/health', async (req, res) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const isHealthy = dbHealth.pool1.connected && dbHealth.pool2.connected;
+    
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'healthy' : 'unhealthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: dbHealth
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: 'Health check failed',
+      error: (error as Error).message
+    });
+  }
+});
 app.use('/api/users', userRoutes);
 app.use('/api/roles', tokenValidator, roleRoutes);
 app.use('/api/groups', tokenValidator, groupRoutes);
