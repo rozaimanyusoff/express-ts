@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
+import { setSocketIOInstance } from './utils/socketIoInstance.js';
 
 dotenv.config();
 
@@ -42,6 +43,9 @@ io.on('connection', (socket) => {
     logger.info(`Socket disconnected userId=${userId} socketId=${socket.id}`);
   });
 });
+
+// Set the io instance globally so controllers can emit events
+setSocketIOInstance(io);
 
 export { io }; // Export the WebSocket instance
 

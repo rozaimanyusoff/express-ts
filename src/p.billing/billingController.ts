@@ -11,6 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import { setUtilityBillRef } from './billingModel';
 import { toPublicUrl } from '../utils/uploadUtil';
+import { getSocketIOInstance } from '../utils/socketIoInstance';
 
 /* ============== VEHICLE MAINTENANCE =============== */
 
@@ -490,6 +491,31 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 	if (updateData.attachment && !updateData.upload) updateData.upload = updateData.attachment;
 
 	await billingModel.updateVehicleMtnBilling(id, updateData);
+
+	// Emit Socket.IO events if status changed to processed/invoiced
+	try {
+		const statusChanged = updateData.inv_stat && ['processed', 'invoiced', 'paid'].includes(String(updateData.inv_stat).toLowerCase());
+		if (statusChanged) {
+			const io = getSocketIOInstance();
+			if (io) {
+				try {
+					const unseenCount = await maintenanceModel.getUnseenBillsCount();
+					const maintenanceCount = await maintenanceModel.getVehicleMtnRequests();
+					const maintenanceCountNum = Array.isArray(maintenanceCount) ? maintenanceCount.length : 0;
+
+					// Emit updated counts
+					io.emit('mtn:counts', {
+						maintenanceBilling: maintenanceCountNum,
+						unseenBills: unseenCount
+					});
+				} catch (countErr) {
+					console.warn('Failed to emit mtn:counts after billing update:', countErr);
+				}
+			}
+		}
+	} catch (socketErr) {
+		console.warn('Failed to emit Socket.IO event on billing update:', socketErr);
+	}
 
 	res.json({ status: 'success', message: 'Vehicle maintenance billing updated successfully' });
 };

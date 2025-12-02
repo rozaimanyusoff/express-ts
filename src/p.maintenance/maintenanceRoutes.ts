@@ -8,6 +8,7 @@ const router = Router();
 const mtnUploader = createUploader('admin/vehiclemtn2');
 
 // ========== MAINTENANCE RECORDS CRUD ==========
+router.get('/bills/unseen-count', asyncHandler(maintenanceController.getUnseenBillsCount)); // Get badge count for unseen/unprocessed bills
 router.get('/request/record/:asset_id', asyncHandler(maintenanceController.getVehicleMtnRequestByAssetId)); // Get maintenance records by vehicle ID including invoice details
 router.get('/request/:id', asyncHandler(maintenanceController.getVehicleMtnRequestById));
 

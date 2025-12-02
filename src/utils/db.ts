@@ -49,8 +49,8 @@ const pool2Config = {
   waitForConnections: true,
 };
 
-const pool = mysql.createPool(poolConfig);
-const pool2 = mysql.createPool(pool2Config);
+const pool: mysql.Pool = mysql.createPool(poolConfig);
+const pool2: mysql.Pool = mysql.createPool(pool2Config);
 
 // Note: mysql2/promise pools don't emit 'error' events directly
 // Use dbHealthCheck utility for connection monitoring instead
