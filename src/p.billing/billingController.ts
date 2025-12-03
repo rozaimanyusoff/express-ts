@@ -178,8 +178,15 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				const formUpload = (req as any).form_upload;
 				let formUploadUrl: string | null = null;
 				if (formUpload) {
+					let finalPath = formUpload;
+					
+					// If only filename is stored (no path), prepend default upload path
+					if (!formUpload.includes('/')) {
+						finalPath = `uploads/admin/vehiclemtn2/${formUpload}`;
+					}
+					
 					// Split path and filename to encode only the filename part
-					const pathParts = formUpload.split('/');
+					const pathParts = finalPath.split('/');
 					const filename = pathParts.pop();
 					const encodedFilename = encodeURIComponent(filename);
 					const encodedPath = [...pathParts, encodedFilename].join('/');
