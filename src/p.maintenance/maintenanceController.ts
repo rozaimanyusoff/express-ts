@@ -42,19 +42,11 @@ function getApiBaseUrl(): string {
  */
 export const getUnseenBillsCount = async (req: Request, res: Response) => {
 	try {
-		// Get current user ID from auth context
+		// Get current user ID from auth context (optional)
 		const userId = (req as any).user?.userId ?? (req as any).userId;
 		
-		if (!userId) {
-			return res.status(401).json({
-				status: 'error',
-				message: 'Unauthorized - user context required',
-				data: { count: 0 }
-			});
-		}
-
-		// Query count scoped to current user (requester)
-		const count = await maintenanceModel.getUnseenBillsCount(userId);
+		// Query count - scoped to current user if provided, otherwise global count
+		const count = await maintenanceModel.getUnseenBillsCount(userId || undefined);
 
 		return res.json({
 			status: 'success',

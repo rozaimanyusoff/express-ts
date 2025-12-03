@@ -784,11 +784,11 @@ export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => 
         let query = `
             SELECT COUNT(DISTINCT vs.req_id) as count
             FROM ${vehicleMaintenanceTable} vs
-            LEFT JOIN ${maintenanceBillingTable} inv 
+            LEFT JOIN ${maintenanceBillingTable} inv
                 ON vs.req_id = inv.svc_order OR vs.req_id = CAST(inv.svc_order AS UNSIGNED)
             WHERE vs.form_upload IS NOT NULL
             AND vs.form_upload != ''
-            AND (inv.inv_id IS NULL OR inv.inv_stat IS NULL OR inv.inv_stat NOT IN ('processed', 'invoiced', 'paid'))
+            AND (inv.inv_no IS NULL OR inv.inv_date IS NULL)
         `;
         
         const params: any[] = [];
@@ -799,7 +799,7 @@ export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => 
             params.push(ramcoId);
         }
         
-        const [rows]: any = await pool.query(query, params);
+        const [rows]: any = await pool2.query(query, params);
         const result = rows?.[0];
         return result?.count ?? 0;
     } catch (error) {
