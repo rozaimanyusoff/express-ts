@@ -1261,12 +1261,37 @@ export const removeAllDistrictsFromZone = async (zone_id: number) => {
 
 /* =========== EMPLOYEES =========== */
 export const createEmployee = async (data: any) => {
-  const { name, email, phone, department_id, position_id, location_id, image, section_id } = data;
-  const [result] = await pool.query(
-    `INSERT INTO ${employeeTable} (name, email, phone, department_id, position_id, location_id, image, section_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [name, email, phone, department_id, position_id, location_id, image, section_id]
-  );
-  return result;
+	// Map incoming fields to database columns
+	const {
+		ramco_id,
+		full_name,
+		email,
+		contact,
+		gender,
+		dob,
+		avatar,
+		hire_date,
+		resignation_date,
+		employment_type,
+		employment_status,
+		grade,
+		position_id,
+		department_id,
+		costcenter_id,
+		location_id
+	} = data;
+
+	const [result] = await pool.query(
+		`INSERT INTO ${employeeTable} 
+		(ramco_id, full_name, email, contact, gender, dob, avatar, hire_date, 
+		 resignation_date, employment_type, employment_status, grade, 
+		 position_id, department_id, costcenter_id, location_id) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		[ramco_id, full_name, email, contact, gender, dob, avatar, hire_date,
+		 resignation_date, employment_type, employment_status, grade,
+		 position_id, department_id, costcenter_id, location_id]
+	);
+	return result;
 };
 
 export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
@@ -1357,10 +1382,10 @@ export const getEmployeeByContact = async (contact: number) => {
 };
 
 export const updateEmployee = async (id: number, data: any) => {
-  const { full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_status } = data;
+  const { full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_type, employment_status } = data;
   const [result] = await pool.query(
-    `UPDATE ${employeeTable} SET full_name = ?, email = ?, contact = ?, department_id = ?, costcenter_id = ?, position_id = ?, location_id = ?, avatar = ?, resignation_date = ?, employment_status = ? WHERE id = ?`,
-    [full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_status, id]
+    `UPDATE ${employeeTable} SET full_name = ?, email = ?, contact = ?, department_id = ?, costcenter_id = ?, position_id = ?, location_id = ?, avatar = ?, resignation_date = ?, employment_type = ?, employment_status = ? WHERE id = ?`,
+    [full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_type, employment_status, id]
   );
   return result;
 };

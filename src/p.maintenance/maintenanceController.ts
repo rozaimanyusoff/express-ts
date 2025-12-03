@@ -19,6 +19,7 @@ import { getSupervisorBySubordinate } from '../utils/employeeHelper';
 import { getWorkflowPic } from '../utils/workflowHelper';
 import { sendRecommendationEmail, sendApprovalEmail, sendRequesterApprovalEmail } from '../utils/workflowService';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
+import * as notificationService from '../utils/notificationService';
 
 // Admin CC list for pool car submission notifications (comma-separated in env or define directly)
 const POOLCAR_ADMIN_CC: string[] = (process.env.POOLCAR_ADMIN_CC || '')
@@ -954,6 +955,16 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 			console.error('Failed to send maintenance notification email', mailErr);
 		}
 
+		// Notify admins via Socket.IO about new request and badge count update
+		try {
+			if (createdId) {
+				await notificationService.notifyNewMtnRequest(createdId, ramco_id);
+			}
+		} catch (notifErr) {
+			// do not fail the request creation if notification fails; log and continue
+			console.error('Failed to emit notification for new maintenance request', notifErr);
+		}
+
 		res.status(201).json({
 			status: 'success',
 			message: 'Maintenance record created successfully',
@@ -1520,6 +1531,20 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		} catch (mailErr) {
 			console.error('Failed to send recommendation notification (service)', mailErr);
 		}
+
+		// Notify admins via Socket.IO about request update and badge count change
+		try {
+			if (verification_stat === 1) {
+				// Admin verified - this counts as a response, so badge count decreases
+				await notificationService.notifyMtnRequestUpdate(reqId, 'verified', (req as any).user?.ramco_id);
+			} else if (verification_stat === 2) {
+				// Admin rejected
+				await notificationService.notifyMtnRequestUpdate(reqId, 'rejected', (req as any).user?.ramco_id);
+			}
+		} catch (notifErr) {
+			console.error('Failed to emit notification for maintenance request update', notifErr);
+		}
+
 		return res.json({ status: 'success', message: 'Maintenance record updated successfully', data: result });
 	} catch (error) {
 		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
