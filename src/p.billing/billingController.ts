@@ -174,11 +174,17 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				const rLocId = (req as any).location_id ?? (req as any).loc_id;
 				const rWsId = (req as any).ws_id;
 				
-				// Build full URL for form_upload if it exists
+				// Build full URL for form_upload if it exists with proper URL encoding
 				const formUpload = (req as any).form_upload;
-				const formUploadUrl = formUpload 
-					? `${process.env.BACKEND_URL || 'http://localhost:3000'}/${formUpload}`
-					: null;
+				let formUploadUrl: string | null = null;
+				if (formUpload) {
+					// Split path and filename to encode only the filename part
+					const pathParts = formUpload.split('/');
+					const filename = pathParts.pop();
+					const encodedFilename = encodeURIComponent(filename);
+					const encodedPath = [...pathParts, encodedFilename].join('/');
+					formUploadUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/${encodedPath}`;
+				}
 				
 				svcOrderDetails = {
 					req_id: (req as any).req_id,
