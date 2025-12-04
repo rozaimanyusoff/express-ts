@@ -13,6 +13,36 @@ import { setUtilityBillRef } from './billingModel';
 import { toPublicUrl } from '../utils/uploadUtil';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
 
+/* ============== HELPER FUNCTIONS =============== */
+
+/**
+ * Calculate invoice status based on field values
+ * - invoiced: inv_no & inv_date not null & inv_total > 0 (form_upload_date is optional)
+ * - accrued: inv_no & inv_date null, form_upload_date not null & inv_total > 0
+ * - form uploaded: inv_no & inv_date null, form_upload_date not null & inv_total = 0
+ * - draft: inv_no & inv_date & form_upload_date null & inv_total = 0
+ */
+const calculateInvStat = (inv_no: any, inv_date: any, form_upload_date: any, inv_total: any): string => {
+	const hasInvNo = inv_no !== null && inv_no !== undefined && String(inv_no).trim() !== '';
+	const hasInvDate = inv_date !== null && inv_date !== undefined;
+	const hasFormUpload = form_upload_date !== null && form_upload_date !== undefined;
+	const amount = Number(inv_total) || 0;
+	const hasAmount = amount > 0;
+
+	// invoiced: has invoice number & date, with amount > 0 (form_upload_date is optional)
+	if (hasInvNo && hasInvDate && hasAmount) {
+		return 'invoiced';
+	}
+	// accrued: no invoice number & date, but form uploaded with amount > 0
+	if (!hasInvNo && !hasInvDate && hasFormUpload && hasAmount) {
+		return 'accrued';
+	}
+	if (!hasInvNo && !hasInvDate && hasFormUpload && !hasAmount) {
+		return 'form uploaded';
+	}
+	return 'draft'; // default when inv_no, inv_date, form_upload_date are null and inv_total = 0
+};
+
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
@@ -47,33 +77,35 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const data = vehicleMtn.map(b => {
 			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
 			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
-			const loc_id = (b as any).loc_id ?? (b as any).location_id;
+			const loc_id = (b as any).location_id ?? (b as any).loc_id;
 			const svc_order = (b as any).svc_order;
 			const mtnReq = mtnReqMap.get(Number(svc_order));
+			const form_upload_date = mtnReq?.form_upload_date ?? null;
+			const inv_stat = calculateInvStat((b as any).inv_no, (b as any).inv_date, form_upload_date, (b as any).inv_total);
 			return {
 				inv_id: (b as any).inv_id,
 				entry_date: (b as any).entry_date,
 				inv_no: (b as any).inv_no,
 				inv_date: (b as any).inv_date,
 				svc_order: svc_order,
-				form_upload_date: mtnReq?.form_upload_date ?? null,
+				form_upload_date: form_upload_date,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
 					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
 					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
-					location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
+					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
 				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
 				svc_date: (b as any).svc_date,
 				svc_odo: (b as any).svc_odo,
 				inv_total: (b as any).inv_total,
-				inv_stat: (b as any).inv_stat,
+				inv_stat: inv_stat,
 				inv_remarks: (b as any).inv_remarks,
 				running_no: (b as any).running_no
 			};
 		});
-		return res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully`, data });
+		return res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully total entries: ${data.length}`, data });
 	} catch (err: any) {
 		logger.error(err);
 		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings', data: null });
@@ -109,7 +141,7 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		const data = vehicleMtn.map(b => {
 			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
 			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
-			const loc_id = (b as any).loc_id ?? (b as any).location_id;
+			const loc_id = (b as any).location_id ?? (b as any).loc_id;
 			return {
 				inv_id: (b as any).inv_id,
 				entry_date: (b as any).entry_date,
@@ -121,7 +153,7 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
 					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
-					location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
+					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
 				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
 				svc_date: (b as any).svc_date,
@@ -210,7 +242,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	// Structure the billing data with nested objects
 	const asset_id = (billing as any).asset_id;
 	const cc_id = (billing as any).cc_id;
-	const loc_id = (billing as any).loc_id;
+	const loc_id = (billing as any).location_id ?? (billing as any).loc_id;
 
 	// Enrich parts: resolve autopart_id -> part_name using bulk fetch
 	const autopartIds = Array.from(new Set((parts || []).map((p: any) => Number(p.autopart_id)).filter(n => Number.isFinite(n))));
@@ -223,6 +255,10 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		const part_name = p.part_name || (ap ? ap.part_name : null) || (ap ? ap.part_name : null);
 		return { ...p, part_name };
 	});
+
+	// Calculate invoice status
+	const form_upload_date = svcOrderDetails?.form_upload_date ?? null;
+	const inv_stat = calculateInvStat(billing.inv_no, billing.inv_date, form_upload_date, billing.inv_total);
 
 	const structuredBilling = {
 		inv_id: billing.inv_id,
@@ -237,9 +273,9 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				id: cc_id,
 				name: (ccMap.get(cc_id) as any)?.name
 			} : null,
-			location: locationMap.has(loc_id) ? {
-				id: loc_id,
-				name: (locationMap.get(loc_id) as any)?.code
+			location: (loc_id && locationMap.has(loc_id)) ? {
+				id: (locationMap.get(loc_id) as any)?.id,
+				code: (locationMap.get(loc_id) as any)?.code
 			} : null
 		} : null,
 		workshop: wsMap.has(billing.ws_id) ? {
@@ -249,7 +285,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		svc_date: billing.svc_date,
 		svc_odo: billing.svc_odo,
 		inv_total: billing.inv_total,
-		inv_stat: billing.inv_stat,
+		inv_stat: inv_stat,
 		inv_remarks: billing.inv_remarks,
 		running_no: billing.running_no,
 		parts: enrichedParts,
@@ -303,7 +339,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 		const structuredBillings = validBillings.map(billing => {
 			const asset_id = (billing as any).asset_id;
 			const cc_id = (billing as any).cc_id;
-			const loc_id = (billing as any).loc_id;
+			const loc_id = (billing as any).location_id ?? (billing as any).loc_id;
 
 			// Extract service details from svc_type array (already populated by billingModel)
 			let serviceDetails = null;
@@ -327,9 +363,9 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 						id: cc_id,
 						name: (ccMap.get(cc_id) as any)?.name
 					} : null,
-					location: locationMap.has(loc_id) ? {
-						id: loc_id,
-						name: (locationMap.get(loc_id) as any)?.code
+					location: (loc_id && locationMap.has(loc_id)) ? {
+						id: (locationMap.get(loc_id) as any)?.id,
+						code: (locationMap.get(loc_id) as any)?.code
 					} : null
 				} : null,
 				workshop: wsMap.has(billing.ws_id) ? {
@@ -579,7 +615,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 				id: b.costcenter_id,
 				name: (ccMap.get(b.costcenter_id) as any)?.name
 			} : null,
-			district: locationMap.has(b.location_id) ? {
+			location: locationMap.has(b.location_id) ? {
 				id: b.location_id,
 				name: (locationMap.get(b.location_id) as any)?.code
 			} : null,
@@ -715,7 +751,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 			const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) as any : null;
 			const ccId = (maintenance as any).cc_id ?? maintenance.costcenter_id;
 			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
-			const locId = (maintenance as any).loc_id ?? maintenance.location_id;
+			const locId = (maintenance as any).location_id ?? (maintenance as any).loc_id;
 			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
 			summary[asset_id] = {
 				asset: asset_id,
@@ -729,7 +765,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
 				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
 				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
-				district: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
+				location: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
 				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
 				total_maintenance: 0,
@@ -776,7 +812,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 
 	res.json({
 		status: 'success',
-		message: 'Vehicle maintenance summary by date range retrieved successfully',
+		message: `Vehicle maintenance summary from date range ${from} to ${to} retrieved successfully with a total entries: ` + result.length,
 		data: result,
 	});
 };
@@ -1297,14 +1333,22 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	// Use ramco_id as key for employeeMap (since we match by ramco_id from vehicle records)
 	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
+	// Parse cost center filter - support comma-separated cost center IDs
+	let costcenterIds: number[] = [];
+	if (cc) {
+		// Support comma-separated cost center IDs
+		const ccIds = (cc as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+		costcenterIds = ccIds;
+	}
+
 	// Fetch all vehicle amount detail rows within date range (primary source for amount and usage)
 	const detailsInRange = await billingModel.getFuelVehicleAmountByDateRange(from as string, to as string);
 	// Group by asset_id
 	const summary: Record<string, any> = {};
 	for (const d of (Array.isArray(detailsInRange) ? detailsInRange : [])) {
-		// If cc filter is provided, skip if not matching
+		// If cost center filter is provided, skip if not matching
 		const ccId = d.cc_id ?? d.costcenter_id;
-		if (cc && String(ccId) !== String(cc)) continue;
+		if (costcenterIds.length > 0 && !costcenterIds.includes(ccId)) continue;
 		const asset_id = d.asset_id;
 		// Resolve category, brand, and model objects using asset mapping
 		let category = null;
@@ -1343,7 +1387,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		if (!summary[asset_id]) {
 			const vehicleObj = asset_id && assetMap.has(asset_id) ? assetMap.get(asset_id) : null;
 			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
-			const locId = d.loc_id ?? d.location_id;
+			const locId = d.location_id ?? d.loc_id;
 			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
 			summary[asset_id] = {
 				asset_id: asset_id,
@@ -1439,7 +1483,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 
 	res.json({
 		status: 'success',
-		message: `Fuel billing summary by date range retrieved successfully with ${result.length} entries`,
+		message: `Fuel billing summary from ${from} to ${to} retrieved successfully with ${result.length} entries`,
 		data: result,
 	});
 };

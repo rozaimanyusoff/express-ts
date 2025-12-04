@@ -788,7 +788,7 @@ export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => 
                 ON vs.req_id = inv.svc_order OR vs.req_id = CAST(inv.svc_order AS UNSIGNED)
             WHERE vs.form_upload IS NOT NULL
             AND vs.form_upload != ''
-            AND (inv.inv_no IS NULL OR inv.inv_date IS NULL)
+            AND (inv.inv_no IS NULL OR inv.inv_date IS NULL AND inv.inv_total = 0.00)
         `;
         
         const params: any[] = [];
