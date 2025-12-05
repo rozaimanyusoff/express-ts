@@ -18,6 +18,8 @@ import poolCarSupervisorEmail from '../utils/emailTemplates/poolCarSupervisor';
 import { getSupervisorBySubordinate } from '../utils/employeeHelper';
 import { getWorkflowPic } from '../utils/workflowHelper';
 import { sendRecommendationEmail, sendApprovalEmail, sendRequesterApprovalEmail } from '../utils/workflowService';
+import { getSocketIOInstance } from '../utils/socketIoInstance';
+import * as notificationService from '../utils/notificationService';
 
 // Admin CC list for pool car submission notifications (comma-separated in env or define directly)
 const POOLCAR_ADMIN_CC: string[] = (process.env.POOLCAR_ADMIN_CC || '')
@@ -33,8 +35,36 @@ function getApiBaseUrl(): string {
 	return hasApi ? noTrail : `${noTrail}/api`;
 }
 
+/* ================== BADGE INDICATOR / UNSEEN BILLS COUNT ================== */
+/**
+ * GET /api/mtn/bills/unseen-count
+ * Returns count of new/unprocessed maintenance form uploads awaiting billing
+ * Scoped to current user (ramco_id from auth context)
+ */
+export const getUnseenBillsCount = async (req: Request, res: Response) => {
+	try {
+		// Get current user ID from auth context (optional)
+		const userId = (req as any).user?.userId ?? (req as any).userId;
+		
+		// Query count - scoped to current user if provided, otherwise global count
+		const count = await maintenanceModel.getUnseenBillsCount(userId || undefined);
 
-/* ================== INSURANCE + ROADTAX ================== */
+		return res.json({
+			status: 'success',
+			message: 'Unseen bills count retrieved successfully',
+			data: { count }
+		});
+	} catch (error) {
+		console.error('Error getting unseen bills count:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Failed to get unseen bills count',
+			data: { count: 0 }
+		});
+	}
+};
+
+
 export const getInsurances = async (req: Request, res: Response) => {
 	try {
 		const insurances = await maintenanceModel.getInsurances();
@@ -925,6 +955,16 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 			console.error('Failed to send maintenance notification email', mailErr);
 		}
 
+		// Notify admins via Socket.IO about new request and badge count update
+		try {
+			if (createdId) {
+				await notificationService.notifyNewMtnRequest(createdId, ramco_id);
+			}
+		} catch (notifErr) {
+			// do not fail the request creation if notification fails; log and continue
+			console.error('Failed to emit notification for new maintenance request', notifErr);
+		}
+
 		res.status(201).json({
 			status: 'success',
 			message: 'Maintenance record created successfully',
@@ -1012,13 +1052,121 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	}
 };
 
-// Dedicated controller for uploading maintenance form; reuses updateVehicleMtnRequest logic
+/**
+ * Upload maintenance form with Socket.IO events
+ * PUT /api/mtn/request/:id/form-upload
+ * Emits:
+ *  - mtn:form-uploaded → { requestId, assetId, uploadedBy, uploadedAt }
+ *  - mtn:counts → { maintenanceBilling, unseenBills }
+ */
 export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
-	// This endpoint expects:
-	// - binary file in field 'form_upload' (handled by multer in routes)
-	// - optional form_upload_date (string)
-	// We reuse updateVehicleMtnRequest which already processes req.file and sets fields accordingly.
-	return updateVehicleMtnRequest(req, res);
+	try {
+		const { id: requestId } = req.params;
+		const reqId = Number(requestId);
+		
+		// Get current user for audit trail
+		const uploadedBy = (req as any).user?.userId ?? (req as any).userId ?? 'unknown';
+
+		// Call updateVehicleMtnRequest to handle file upload
+		// We'll handle the response and add Socket.IO emissions
+		let updateResult: any = null;
+		let assetId: number | null = null;
+
+		try {
+			const { id } = req.params;
+			const data = { ...(req.body || {}) } as any;
+
+			// If a maintenance form is uploaded
+			if (req.file) {
+				try {
+					const originalAbs = req.file.path;
+					const epochSec = Math.floor(Date.now() / 1000);
+					const rand9 = Math.floor(100000000 + Math.random() * 900000000);
+					const extRaw = (req.file.originalname ? path.extname(req.file.originalname) : '') || path.extname(originalAbs) || '';
+					const ext = (extRaw && /^[.a-zA-Z0-9]+$/.test(extRaw)) ? extRaw.toLowerCase() : '';
+					const finalFilename = `${id}-${epochSec}-${rand9}${ext}`;
+					const destAbs = await buildStoragePath('admin/vehiclemtn2', finalFilename);
+					await safeMove(originalAbs, destAbs);
+					const dbPath = toDbPath('admin/vehiclemtn2', finalFilename);
+					data.form_upload = dbPath;
+					if (!('form_upload_date' in data) || !data.form_upload_date) {
+						data.form_upload_date = dayjs().format('YYYY-MM-DD HH:mm:ss');
+					}
+				} catch (fileErr) {
+					console.error('uploadVehicleMtnForm: failed handling form_upload file', fileErr);
+				}
+			}
+
+			updateResult = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
+
+			// Fetch the updated record to get asset_id for socket event
+			const updatedRecord = await maintenanceModel.getVehicleMtnRequestById(Number(id)) as any;
+			assetId = updatedRecord?.asset_id ?? null;
+
+			// If this update includes verification_stat = 1, notify recommender
+			try {
+				const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
+				if (verificationFlag) {
+					await sendRecommendationEmail(Number(id));
+				}
+			} catch (emailErr) {
+				console.error('Failed to send recommender notification email', emailErr);
+			}
+		} catch (updateErr) {
+			console.error('uploadVehicleMtnForm: update failed', updateErr);
+			return res.status(500).json({
+				status: 'error',
+				message: updateErr instanceof Error ? updateErr.message : 'Unknown error occurred',
+				data: null
+			});
+		}
+
+		// Emit Socket.IO events on successful form upload
+		try {
+			const io = getSocketIOInstance();
+			if (io) {
+				// Emit form-uploaded event for real-time UI update
+				io.emit('mtn:form-uploaded', {
+					requestId: reqId,
+					assetId,
+					uploadedBy,
+					uploadedAt: dayjs().toISOString()
+				});
+
+				// Get updated counts and emit mtn:counts
+				try {
+					const unseenCount = await maintenanceModel.getUnseenBillsCount();
+					const maintenanceCount = await maintenanceModel.getVehicleMtnRequests();
+					const maintenanceCountNum = Array.isArray(maintenanceCount) ? maintenanceCount.length : 0;
+
+					io.emit('mtn:counts', {
+						maintenanceBilling: maintenanceCountNum,
+						unseenBills: unseenCount
+					});
+				} catch (countErr) {
+					console.warn('Failed to emit mtn:counts event:', countErr);
+				}
+			} else {
+				console.warn('Socket.IO instance not available for emitting events');
+			}
+		} catch (socketErr) {
+			console.warn('Failed to emit Socket.IO events:', socketErr);
+			// Don't fail the request if socket emit fails
+		}
+
+		return res.json({
+			status: 'success',
+			message: 'Maintenance form uploaded successfully',
+			data: updateResult
+		});
+	} catch (error) {
+		console.error('uploadVehicleMtnForm error:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			data: null
+		});
+	}
 };
 
 export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
@@ -1383,6 +1531,20 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		} catch (mailErr) {
 			console.error('Failed to send recommendation notification (service)', mailErr);
 		}
+
+		// Notify admins via Socket.IO about request update and badge count change
+		try {
+			if (verification_stat === 1) {
+				// Admin verified - this counts as a response, so badge count decreases
+				await notificationService.notifyMtnRequestUpdate(reqId, 'verified', (req as any).user?.ramco_id);
+			} else if (verification_stat === 2) {
+				// Admin rejected
+				await notificationService.notifyMtnRequestUpdate(reqId, 'rejected', (req as any).user?.ramco_id);
+			}
+		} catch (notifErr) {
+			console.error('Failed to emit notification for maintenance request update', notifErr);
+		}
+
 		return res.json({ status: 'success', message: 'Maintenance record updated successfully', data: result });
 	} catch (error) {
 		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
@@ -2342,7 +2504,7 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 		}
 		if (car.asset_id && assetMap.has(Number(car.asset_id))) {
 			const a = assetMap.get(Number(car.asset_id));
-			obj.asset = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
+			obj.assigned_poolcar = { id: Number(a.id), register_number: a.register_number || a.vehicle_regno || null };
 		}
 		if (car.recommendation && empMap.has(String(car.recommendation))) {
 			const e = empMap.get(String(car.recommendation));

@@ -63,19 +63,41 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
   }
 };
 
-// Update user's last navigation path
+// Update user's last navigation path with timeout protection
 export const routeTracker = async (path: string, userId: number): Promise<void> => {
+  const timeoutMs = 5000; // 5 second timeout for route tracking
+  
   try {
-    const [result]: any = await pool.query(
+    // Create a timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Route tracking timeout')), timeoutMs);
+    });
+
+    // Race between query and timeout
+    const queryPromise = pool.query(
       `UPDATE auth.users SET last_nav = ? WHERE id = ?`,
       [path, userId]
     );
+
+    const [result]: any = await Promise.race([queryPromise, timeoutPromise]);
+    
     if (result.affectedRows === 0) {
-      throw new Error(`No user found with id: ${userId}`);
+      console.warn(`Route tracking: No user found with id: ${userId}`);
     }
-  } catch (error) {
-    console.error('Error tracking route:', error);
-    throw error;
+  } catch (error: any) {
+    // Log but don't throw - route tracking should not crash the app
+    if (error.message === 'Route tracking timeout') {
+      console.error('Route tracking timeout - database may be slow or unresponsive');
+    } else if (error.code === 'ETIMEDOUT' || error.errno === -110) {
+      console.error('Route tracking database timeout (ETIMEDOUT):', {
+        userId,
+        path,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('Error tracking route:', error);
+    }
+    // Do not re-throw - this is a non-critical operation
   }
 };
 

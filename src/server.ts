@@ -4,6 +4,8 @@ import logger from './utils/logger.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
+import { setSocketIOInstance } from './utils/socketIoInstance.js';
 
 dotenv.config();
 
@@ -42,7 +44,21 @@ io.on('connection', (socket) => {
   });
 });
 
+// Set the io instance globally so controllers can emit events
+setSocketIOInstance(io);
+
 export { io }; // Export the WebSocket instance
+
+// Test database connection before starting server
+testConnection().then((isConnected) => {
+  if (isConnected) {
+    logger.info('✅ Database connection test successful');
+    // Start periodic health monitoring (every 30 seconds)
+    startPeriodicHealthCheck(30000);
+  } else {
+    logger.error('⚠️ Database connection test failed - server starting anyway');
+  }
+});
 
 httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

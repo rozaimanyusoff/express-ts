@@ -47,13 +47,26 @@ const normalizeNavigationData = (nav: CreateNavigationBody | UpdateNavigationBod
 export const trackRoute = async (req: Request, res: Response): Promise<Response> => {
     const { path, userId } = req.body;
 
-    try {
-        await routeTracker(path, userId);
-        return res.status(200).json({ message: 'Route tracked successfully' });
-    } catch (error) {
-        console.error('Error tracking route:', error);
-        return res.status(500).json({ message: 'Error tracking route', error: (error as Error).message });
+    // Validate input
+    if (!path || !userId) {
+        return res.status(400).json({ 
+            status: 'error',
+            message: 'Path and userId are required' 
+        });
     }
+
+    // Fire-and-forget: don't await, respond immediately
+    // Route tracking is non-critical and shouldn't block user requests
+    routeTracker(path, userId).catch((error) => {
+        // This catch ensures unhandled promise rejections don't crash the app
+        console.error('Background route tracking failed:', error);
+    });
+
+    // Respond immediately without waiting for database operation
+    return res.status(200).json({ 
+        status: 'success',
+        message: 'Route tracked successfully' 
+    });
 };
 
 // Remove getNavigationsUnstructured and getNavigationByIds as getNavigations covers both structured and unstructured needs

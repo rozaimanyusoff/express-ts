@@ -768,3 +768,42 @@ export const deleteTngDetail = async (id: number) => {
     const [result] = await pool2.query(`DELETE FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
     return result;
 };
+
+/* ============= UNSEEN BILLS COUNT ================== */
+/**
+ * Count new/unprocessed form uploads awaiting billing
+ * Returns count of maintenance requests that have form_upload but no linked invoice
+ * or invoice status indicates not yet processed
+ * 
+ * @param ramcoId - Optional: filter by requester ID (current user's scope)
+ * @returns Count of unseen/unprocessed maintenance forms
+ */
+export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => {
+    try {
+        // Query: form_upload is NOT NULL but no invoice yet or invoice not processed
+        let query = `
+            SELECT COUNT(DISTINCT vs.req_id) as count
+            FROM ${vehicleMaintenanceTable} vs
+            LEFT JOIN ${maintenanceBillingTable} inv
+                ON vs.req_id = inv.svc_order OR vs.req_id = CAST(inv.svc_order AS UNSIGNED)
+            WHERE vs.form_upload IS NOT NULL
+            AND vs.form_upload != ''
+            AND (inv.inv_no IS NULL OR inv.inv_date IS NULL AND inv.inv_total = 0.00)
+        `;
+        
+        const params: any[] = [];
+        
+        // Optional: scope to specific requester
+        if (ramcoId && Number.isFinite(ramcoId) && ramcoId > 0) {
+            query += ` AND vs.ramco_id = ?`;
+            params.push(ramcoId);
+        }
+        
+        const [rows]: any = await pool2.query(query, params);
+        const result = rows?.[0];
+        return result?.count ?? 0;
+    } catch (error) {
+        console.error('Error getting unseen bills count:', error);
+        throw error;
+    }
+};

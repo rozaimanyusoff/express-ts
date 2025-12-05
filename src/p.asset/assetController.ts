@@ -1888,47 +1888,65 @@ export const getEmployeeByContact = async (req: Request, res: Response) => {
 }
 
 export const createEmployee = async (req: Request, res: Response) => {
-	const {
-		ramco_id,
-		full_name,
-		email,
-		contact,
-		gender,
-		dob,
-		avatar,
-		hire_date,
-		resignation_date,
-		employment_type,
-		employment_status,
-		grade,
-		position_id,
-		department_id,
-		costcenter_id,
-		district_id
-	} = req.body;
-	const result = await assetModel.createEmployee({
-		ramco_id,
-		full_name,
-		email,
-		contact,
-		gender,
-		dob,
-		avatar,
-		hire_date,
-		resignation_date,
-		employment_type,
-		employment_status,
-		grade,
-		position_id,
-		department_id,
-		costcenter_id,
-		district_id
-	});
-	res.json({
-		status: 'success',
-		message: 'Employee created successfully',
-		result
-	});
+	try {
+		const {
+			ramco_id,
+			full_name,
+			email,
+			contact,
+			gender,
+			dob,
+			avatar,
+			hire_date,
+			resignation_date,
+			employment_type,
+			employment_status,
+			grade,
+			position_id,
+			department_id,
+			costcenter_id,
+			location_id
+		} = req.body;
+
+		// Validate required fields
+		if (!full_name || !email) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'full_name and email are required'
+			});
+		}
+
+		const result = await assetModel.createEmployee({
+			ramco_id,
+			full_name,
+			email,
+			contact,
+			gender,
+			dob,
+			avatar,
+			hire_date,
+			resignation_date,
+			employment_type,
+			employment_status,
+			grade,
+			position_id,
+			department_id,
+			costcenter_id,
+			location_id
+		});
+		res.json({
+			status: 'success',
+			message: 'Employee created successfully',
+			result
+		});
+	} catch (error) {
+		console.error('createEmployee error:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error instanceof Error ? error.message : 'Failed to create employee',
+			error: process.env.NODE_ENV === 'development' ? error : undefined
+		});
+	}
 };
 
 export const updateEmployee = async (req: Request, res: Response) => {
