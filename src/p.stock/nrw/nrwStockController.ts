@@ -1,105 +1,6 @@
 import { Request, Response } from 'express';
 import * as nrwStockModel from './nrwStockModel';
-
-// ---- STOCK PURCHASES ----
-
-export const createStockPurchase = async (req: Request, res: Response) => {
-  const data = req.body;
-  const result = await nrwStockModel.createStockPurchase(data);
-  res.status(201).json({
-    status: 'success',
-    message: 'Stock purchase created',
-    data: result
-  });
-};
-
-export const getStockPurchases = async (req: Request, res: Response) => {
-  const purchases = await nrwStockModel.getStockPurchases();
-
-  // Enrich with items if needed
-  const purchaseIds = (purchases as any[]).map((p: any) => p.id);
-  const allItems = await nrwStockModel.getStockPurchaseItemsForPurchases(purchaseIds);
-
-  // Group items by purchase_id
-  const itemsByPurchase = (allItems as any[]).reduce((acc: any, item: any) => {
-    if (!acc[item.purchase_id]) acc[item.purchase_id] = [];
-    acc[item.purchase_id].push(item);
-    return acc;
-  }, {});
-
-  // Enrich with supplier details
-  const manufacturerIds = [...new Set((purchases as any[]).map((p: any) => p.manufacturer_id).filter(Boolean))];
-  const manufacturers = await nrwStockModel.getManufacturersByIds(manufacturerIds);
-  const manufacturersById = (manufacturers as any[]).reduce((acc: any, s: any) => {
-    acc[s.id] = s;
-    return acc;
-  }, {});
-
-  const enrichedPurchases = (purchases as any[]).map((p: any) => ({
-    ...p,
-    items: itemsByPurchase[p.id] || [],
-    manufacturer: manufacturersById[p.manufacturer_id] || null
-  }));
-
-  res.json({
-    status: 'success',
-    message: 'Stock purchases retrieved',
-    data: enrichedPurchases
-  });
-};
-
-export const getStockPurchaseById = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const purchase = await nrwStockModel.getStockPurchaseById(Number(id));
-
-  if (!purchase) {
-    return res.status(404).json({
-      status: 'error',
-      message: 'Stock purchase not found',
-      data: null
-    });
-  }
-
-  // Get items
-  const items = await nrwStockModel.getStockPurchaseItems(Number(id));
-
-  // Get manufacturer
-  const manufacturer = (purchase as any).manufacturer_id
-    ? await nrwStockModel.getManufacturerById((purchase as any).manufacturer_id)
-    : null;
-
-  res.json({
-    status: 'success',
-    message: 'Stock purchase retrieved',
-    data: {
-      ...purchase,
-      items,
-      manufacturer
-    }
-  });
-};
-
-export const updateStockPurchase = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const data = req.body;
-  const result = await nrwStockModel.updateStockPurchase(Number(id), data);
-  res.json({
-    status: 'success',
-    message: 'Stock purchase updated',
-    data: result
-  });
-};
-
-export const deleteStockPurchase = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const result = await nrwStockModel.deleteStockPurchase(Number(id));
-  res.json({
-    status: 'success',
-    message: 'Stock purchase deleted',
-    data: result
-  });
-};
-
+import * as nrwEmployeeModel from './nrwEmployeeModel';
 
 // ---- TEAM ----
 
@@ -170,19 +71,50 @@ export const deleteTeam = async (req: Request, res: Response) => {
 export const createStockCard = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStockCard(data);
+  
+  // Enrich with item data
+  const item = await nrwStockModel.getItemById((result as any).item_id);
+  const { item_id, ...cardWithoutItemId } = result as any;
+  const enrichedResult = {
+    ...cardWithoutItemId,
+    item: item ? { id: (item as any).id, name: (item as any).name } : null
+  };
+  
   res.status(201).json({
     status: 'success',
     message: 'Stock card created',
-    data: result
+    data: enrichedResult
   });
 };
 
 export const getStockCards = async (req: Request, res: Response) => {
   const cards = await nrwStockModel.getStockCards();
+  
+  // Get all unique item IDs from cards
+  const itemIds = [...new Set((cards as any[]).map((card: any) => card.item_id).filter(Boolean))];
+  
+  // Fetch item details
+  const items = itemIds.length > 0
+    ? await nrwStockModel.getItemsByIds(itemIds)
+    : [];
+  const itemsById = (items as any[]).reduce((acc: any, item: any) => {
+    acc[item.id] = { id: item.id, name: item.name };
+    return acc;
+  }, {});
+
+  // Enrich cards with item data and remove item_id
+  const enrichedCards = (cards as any[]).map((card: any) => {
+    const { item_id, ...cardWithoutItemId } = card;
+    return {
+      ...cardWithoutItemId,
+      item: itemsById[card.item_id] || null
+    };
+  });
+
   res.json({
     status: 'success',
     message: 'Stock cards retrieved',
-    data: cards
+    data: enrichedCards
   });
 };
 
@@ -190,11 +122,31 @@ export const updateStockCard = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockCard(Number(id), data);
-  res.json({
-    status: 'success',
-    message: 'Stock card updated',
-    data: result
-  });
+  
+  // Fetch the card by id to get updated data
+  const cards = await nrwStockModel.getStockCards();
+  const updatedCard = (cards as any[]).find((card: any) => card.id === Number(id));
+  
+  if (updatedCard) {
+    const item = await nrwStockModel.getItemById((updatedCard as any).item_id);
+    const { item_id, ...cardWithoutItemId } = updatedCard;
+    const enrichedResult = {
+      ...cardWithoutItemId,
+      item: item ? { id: (item as any).id, name: (item as any).name } : null
+    };
+    
+    res.json({
+      status: 'success',
+      message: 'Stock card updated',
+      data: enrichedResult
+    });
+  } else {
+    res.json({
+      status: 'success',
+      message: 'Stock card updated',
+      data: result
+    });
+  }
 };
 
 export const deleteStockCard = async (req: Request, res: Response) => {
@@ -204,6 +156,62 @@ export const deleteStockCard = async (req: Request, res: Response) => {
     status: 'success',
     message: 'Stock card deleted',
     data: result
+  });
+};
+
+export const getStockCardByItemId = async (req: Request, res: Response) => {
+  const { itemId } = req.params;
+  const card = await nrwStockModel.getStockCardByItemId(Number(itemId));
+  
+  if (card) {
+    const item = await nrwStockModel.getItemById(Number(itemId));
+    const { item_id, ...cardWithoutItemId } = card as any;
+    const enrichedCard = {
+      ...cardWithoutItemId,
+      item: item ? { id: (item as any).id, name: (item as any).name } : null
+    };
+    res.json({
+      status: 'success',
+      message: 'Stock card retrieved',
+      data: enrichedCard
+    });
+  } else {
+    res.json({
+      status: 'success',
+      message: 'No stock card found',
+      data: null
+    });
+  }
+};
+
+export const getStockCardsWithItems = async (req: Request, res: Response) => {
+  const cards = await nrwStockModel.getStockCards();
+  
+  // Get all unique item IDs from cards
+  const itemIds = [...new Set((cards as any[]).map((card: any) => card.item_id).filter(Boolean))];
+  
+  // Fetch item details
+  const items = itemIds.length > 0
+    ? await nrwStockModel.getItemsByIds(itemIds)
+    : [];
+  const itemsById = (items as any[]).reduce((acc: any, item: any) => {
+    acc[item.id] = { id: item.id, name: item.name };
+    return acc;
+  }, {});
+
+  // Enrich cards with item data and remove item_id
+  const enrichedCards = (cards as any[]).map((card: any) => {
+    const { item_id, ...cardWithoutItemId } = card;
+    return {
+      ...cardWithoutItemId,
+      item: itemsById[card.item_id] || null
+    };
+  });
+
+  res.json({
+    status: 'success',
+    message: 'Stock cards with items retrieved',
+    data: enrichedCards
   });
 };
 
@@ -645,6 +653,19 @@ export const getItemsByIds = async (req: Request, res: Response) => {
     };
     return acc;
   }, {});
+
+  // Fetch stock cards to get stock balances
+  const stockCards = await Promise.all(
+    (items as any[]).map((item: any) => nrwStockModel.getStockCardByItemId(item.id))
+  );
+  const stockBalanceById = (stockCards as any[]).reduce((acc: any, card: any, index: number) => {
+    if (card) {
+      acc[(items as any[])[index].id] = card.stock_bal || 0;
+    } else {
+      acc[(items as any[])[index].id] = 0;
+    }
+    return acc;
+  }, {});
   
   const enrichedItems = (items as any[]).map((item: any) => {
     const { mfg_id, supplier_ids, size_ids, ...itemWithoutMfgId } = item;
@@ -669,6 +690,7 @@ export const getItemsByIds = async (req: Request, res: Response) => {
 
     return {
       ...itemWithoutMfgId,
+      stock_bal: stockBalanceById[item.id] || 0,
       manufacturer: manufacturersById[item.mfg_id] || null,
       suppliers: itemSuppliers,
       sizes: itemSizes
@@ -734,6 +756,20 @@ export const getItems = async (req: Request, res: Response) => {
     };
     return acc;
   }, {});
+
+  // Fetch stock cards to get stock balances
+  const itemIds = (items as any[]).map((item: any) => item.id);
+  const stockCards = await Promise.all(
+    itemIds.map((itemId: number) => nrwStockModel.getStockCardByItemId(itemId))
+  );
+  const stockBalanceById = (stockCards as any[]).reduce((acc: any, card: any, index: number) => {
+    if (card) {
+      acc[itemIds[index]] = card.stock_bal || 0;
+    } else {
+      acc[itemIds[index]] = 0;
+    }
+    return acc;
+  }, {});
   
   const enrichedItems = (items as any[]).map((item: any) => {
     const { mfg_id, supplier_ids, size_ids, ...itemWithoutMfgId } = item;
@@ -758,6 +794,7 @@ export const getItems = async (req: Request, res: Response) => {
 
     return {
       ...itemWithoutMfgId,
+      stock_bal: stockBalanceById[item.id] || 0,
       manufacturer: manufacturersById[item.mfg_id] || null,
       suppliers: itemSuppliers,
       sizes: itemSizes
@@ -840,16 +877,6 @@ export const getStockById = async (req: Request, res: Response) => {
     status: 'success',
     message: 'Stock item retrieved',
     data: item
-  });
-};
-
-export const getStockTransactions = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const transactions = await nrwStockModel.getStockTransactionsByItemId(Number(id));
-  res.json({
-    status: 'success',
-    message: 'Stock transactions retrieved',
-    data: transactions
   });
 };
 
@@ -1012,6 +1039,250 @@ export const deleteSize = async (req: Request, res: Response) => {
   res.json({
     status: 'success',
     message: 'Item size deleted',
+    data: result
+  });
+};
+
+// ---- STOCK PURCHASES (Enhanced) ----
+export const createStockPurchase = async (req: Request, res: Response) => {
+  const { purchase, items } = req.body;
+  
+  if (!purchase || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Purchase data and items array are required',
+      data: null
+    });
+  }
+
+  const result = await nrwStockModel.createStockPurchase(purchase, items);
+  res.status(201).json({
+    status: 'success',
+    message: 'Stock purchase with items created',
+    data: result
+  });
+};
+
+export const getStockPurchases = async (req: Request, res: Response) => {
+  const purchases = await nrwStockModel.getStockPurchases();
+  
+  // Fetch related data (departments, users, costcenters)
+  const departmentIds = new Set<number>();
+  const userIds = new Set<number>();
+  const costcenterIds = new Set<number>();
+
+  (purchases as any[]).forEach((purchase: any) => {
+    if (purchase.department_id) departmentIds.add(purchase.department_id);
+    if (purchase.requested_by) userIds.add(purchase.requested_by);
+    if (purchase.authorized_by) userIds.add(purchase.authorized_by);
+    if (purchase.costcenter_id) costcenterIds.add(purchase.costcenter_id);
+  });
+
+  const [deptData, users, costcenters] = await Promise.all([
+    departmentIds.size > 0 ? nrwEmployeeModel.getDepartmentsByIds(Array.from(departmentIds)) : [],
+    userIds.size > 0 ? nrwEmployeeModel.getEmployeesByIds(Array.from(userIds)) : [],
+    costcenterIds.size > 0 ? nrwEmployeeModel.getCostcentersByIds(Array.from(costcenterIds)) : []
+  ]);
+
+  const departmentsById = (deptData as any[]).reduce((acc: any, dept: any) => {
+    acc[dept.id] = { id: dept.id, name: dept.name };
+    return acc;
+  }, {});
+
+  const usersById = (users as any[]).reduce((acc: any, user: any) => {
+    acc[user.id] = { id: user.id, name: user.full_name || user.name };
+    return acc;
+  }, {});
+
+  const costcentersById = (costcenters as any[]).reduce((acc: any, cc: any) => {
+    acc[cc.id] = { id: cc.id, name: cc.name };
+    return acc;
+  }, {});
+
+  const enrichedPurchases = (purchases as any[]).map((purchase: any) => {
+    const { requested_by, department_id, authorized_by, costcenter_id, ...rest } = purchase;
+    return {
+      ...rest,
+      department: departmentsById[purchase.department_id] || null,
+      requestedByUser: usersById[purchase.requested_by] || null,
+      authorizedByUser: purchase.authorized_by ? usersById[purchase.authorized_by] || null : null,
+      costcenter: costcentersById[purchase.costcenter_id] || null
+    };
+  });
+
+  res.json({
+    status: 'success',
+    message: 'Stock purchases retrieved',
+    data: enrichedPurchases
+  });
+};
+
+export const getStockPurchaseById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const purchase = await nrwStockModel.getStockPurchaseById(Number(id));
+
+  if (!purchase) {
+    return res.status(404).json({
+      status: 'error',
+      message: 'Purchase not found',
+      data: null
+    });
+  }
+
+  // Enrich with related data
+  const itemIds = new Set<number>();
+  const userIds = new Set<number>();
+  const departmentIds = new Set<number>();
+  const supplierIds = new Set<number>();
+  const costcenterIds = new Set<number>();
+
+  departmentIds.add(purchase.department_id);
+  userIds.add(purchase.requested_by);
+  if (purchase.authorized_by) userIds.add(purchase.authorized_by);
+  if (purchase.costcenter_id) costcenterIds.add(purchase.costcenter_id);
+
+  if (purchase.items && Array.isArray(purchase.items)) {
+    purchase.items.forEach((item: any) => {
+      if (item.item_id) itemIds.add(item.item_id);
+      if (item.preferred_supplier_id) supplierIds.add(item.preferred_supplier_id);
+    });
+  }
+
+  const [deptData, users, stockItems, suppliers, costcenters] = await Promise.all([
+    departmentIds.size > 0 ? nrwEmployeeModel.getDepartmentsByIds(Array.from(departmentIds)) : [],
+    userIds.size > 0 ? nrwEmployeeModel.getEmployeesByIds(Array.from(userIds)) : [],
+    itemIds.size > 0 ? nrwStockModel.getItemsByIds(Array.from(itemIds)) : [],
+    supplierIds.size > 0 ? nrwStockModel.getSuppliersByIds(Array.from(supplierIds)) : [],
+    costcenterIds.size > 0 ? nrwEmployeeModel.getCostcentersByIds(Array.from(costcenterIds)) : []
+  ]);
+
+  const departmentsById = (deptData as any[]).reduce((acc: any, dept: any) => {
+    acc[dept.id] = { id: dept.id, name: dept.name };
+    return acc;
+  }, {});
+
+  const usersById = (users as any[]).reduce((acc: any, user: any) => {
+    acc[user.id] = { id: user.id, name: user.full_name || user.name };
+    return acc;
+  }, {});
+
+  const itemsById = (stockItems as any[]).reduce((acc: any, item: any) => {
+    acc[item.id] = { id: item.id, name: item.name };
+    return acc;
+  }, {});
+
+  const suppliersById = (suppliers as any[]).reduce((acc: any, sup: any) => {
+    acc[sup.id] = { id: sup.id, name: sup.name || sup.supplier_name || sup.companyName || '' };
+    return acc;
+  }, {});
+
+  const costcentersById = (costcenters as any[]).reduce((acc: any, cc: any) => {
+    acc[cc.id] = { id: cc.id, name: cc.name };
+    return acc;
+  }, {});
+
+  const { requested_by, department_id, authorized_by, costcenter_id, ...purchaseRest } = purchase as any;
+  const enrichedPurchase = {
+    ...purchaseRest,
+    department: departmentsById[purchase.department_id] || null,
+    requestedByUser: usersById[purchase.requested_by] || null,
+    authorizedByUser: purchase.authorized_by ? usersById[purchase.authorized_by] || null : null,
+    costcenter: costcentersById[purchase.costcenter_id] || null,
+    items: (purchase.items || []).map((item: any) => {
+      const { item_id, preferred_supplier_id, ...itemRest } = item;
+      return {
+        ...itemRest,
+        item: itemsById[item.item_id] || null,
+        preferredSupplier: suppliersById[item.preferred_supplier_id] || null
+      };
+    })
+  };
+
+  res.json({
+    status: 'success',
+    message: 'Stock purchase retrieved',
+    data: enrichedPurchase
+  });
+};
+
+export const updateStockPurchase = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+  const result = await nrwStockModel.updateStockPurchase(Number(id), data);
+  res.json({
+    status: 'success',
+    message: 'Stock purchase updated',
+    data: result
+  });
+};
+
+export const deleteStockPurchase = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await nrwStockModel.deleteStockPurchase(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Stock purchase deleted',
+    data: result
+  });
+};
+
+// ---- STOCK TRANSACTIONS ----
+export const createStockTransaction = async (req: Request, res: Response) => {
+  const data = req.body;
+  const result = await nrwStockModel.createStockTransaction(data);
+  res.status(201).json({
+    status: 'success',
+    message: 'Stock transaction created',
+    data: result
+  });
+};
+
+export const getStockTransactions = async (req: Request, res: Response) => {
+  const transactions = await nrwStockModel.getStockTransactions();
+  res.json({
+    status: 'success',
+    message: 'Stock transactions retrieved',
+    data: transactions
+  });
+};
+
+export const getStockTransactionById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const transaction = await nrwStockModel.getStockTransactionById(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Stock transaction retrieved',
+    data: transaction
+  });
+};
+
+export const getStockTransactionsByItemId = async (req: Request, res: Response) => {
+  const { itemId } = req.params;
+  const transactions = await nrwStockModel.getStockTransactionsByItemId(Number(itemId));
+  res.json({
+    status: 'success',
+    message: 'Stock transactions retrieved',
+    data: transactions
+  });
+};
+
+export const updateStockTransaction = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+  const result = await nrwStockModel.updateStockTransaction(Number(id), data);
+  res.json({
+    status: 'success',
+    message: 'Stock transaction updated',
+    data: result
+  });
+};
+
+export const deleteStockTransaction = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await nrwStockModel.deleteStockTransaction(Number(id));
+  res.json({
+    status: 'success',
+    message: 'Stock transaction deleted',
     data: result
   });
 };

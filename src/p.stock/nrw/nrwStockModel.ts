@@ -3,104 +3,21 @@ import { ResultSetHeader, RowDataPacket } from "mysql2";
 
 // --- DB & TABLE DECLARATIONS ---
 const dbName = 'web_stock';
-const stockPurchaseTable = `${dbName}.nrw_stock_purchase`;
-const stockPurchaseItemsTable = `${dbName}.nrw_stock_purchase_items`;
+const stockPurchaseTable = `${dbName}.stock_purchases`;
+const stockPurchaseItemsTable = `${dbName}.stock_purchase_items`;
 
-const teamTable = `${dbName}.nrw_team`;
+const teamTable = `${dbName}.team`;
 const fixedAssetTable = `${dbName}.fixed_asset`; //collection of all stock items with unique serial numbers
 const itemsTable = `${dbName}.items`; // collected unique items that obtained from stocks
 const sizesTable = `${dbName}.item_sizes`;
 const manufacturerTable = `${dbName}.manufacturers`; // collected unique manufacturers/suppliers from stocks items
 const supplierTable = `${dbName}.suppliers`;
-const stockCardTable = `${dbName}.nrw_stock_card`;
-const stockTrackingTable = `${dbName}.nrw_stock_tracking`;
-const stockRequestTable = `${dbName}.nrw_stock_request`;
-const stockRequestItemsTable = `${dbName}.nrw_stock_request_items`;
+const stockCardTable = `${dbName}.stockcard`;
+const stockTrackingTable = `${dbName}.stock_tracking`;
+const stockRequestTable = `${dbName}.stock_requests`;
+const stockRequestItemsTable = `${dbName}.stock_request_items`;
 
-// ---- STOCK PURCHASES ----
 
-export const createStockPurchase = async (data: any) => {
-    const {
-        request_ref_no, requested_by, requested_at,
-        verified_by, verified_at, verification_status,
-        approved_by, approved_at, approval_status,
-        po_no, po_date, supplier_id, inv_no, inv_date,
-        do_no, do_date, received_by, received_at,
-        total_items, remarks
-    } = data;
-    const [result] = await pool.query(
-        `INSERT INTO ${stockPurchaseTable} (
-        request_ref_no, requested_by, requested_at,
-        verified_by, verified_at, verification_status,
-        approved_by, approved_at, approval_status,
-        po_no, po_date, supplier_id, inv_no, inv_date,
-        do_no, do_date, received_by, received_at,
-        total_items, remarks
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            request_ref_no, requested_by, requested_at,
-            verified_by, verified_at, verification_status,
-            approved_by, approved_at, approval_status,
-            po_no, po_date, supplier_id, inv_no, inv_date,
-            do_no, do_date, received_by, received_at,
-            total_items, remarks
-        ]
-    );
-    return result;
-};
-
-export const getStockPurchases = async () => {
-    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseTable} ORDER BY id DESC`);
-    return rows;
-};
-
-export const getStockPurchaseById = async (id: number) => {
-    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseTable} WHERE id = ?`, [id]);
-    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-};
-
-export const updateStockPurchase = async (id: number, data: any) => {
-    const [result] = await pool.query(`UPDATE ${stockPurchaseTable} SET ? WHERE id = ?`, [data, id]);
-    return result;
-};
-
-export const deleteStockPurchase = async (id: number) => {
-    const [result] = await pool.query(`DELETE FROM ${stockPurchaseTable} WHERE id = ?`, [id]);
-    return result;
-};
-
-// ---- STOCK PURCHASE ITEMS ----
-
-export const createStockPurchaseItem = async (data: any) => {
-    const [result] = await pool.query(`INSERT INTO ${stockPurchaseItemsTable} SET ?`, [data]);
-    return result;
-};
-
-export const getStockPurchaseItems = async (purchaseId: number) => {
-    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE purchase_id = ?`, [purchaseId]);
-    return rows;
-};
-
-export const getStockPurchaseItemById = async (id: number) => {
-    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE id = ?`, [id]);
-    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-};
-
-export const getStockPurchaseItemsForPurchases = async (purchaseIds: number[]) => {
-    if (!purchaseIds || purchaseIds.length === 0) return [];
-    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE purchase_id IN (?)`, [purchaseIds]);
-    return rows;
-};
-
-export const updateStockPurchaseItem = async (id: number, data: any) => {
-    const [result] = await pool.query(`UPDATE ${stockPurchaseItemsTable} SET ? WHERE id = ?`, [data, id]);
-    return result;
-};
-
-export const deleteStockPurchaseItem = async (id: number) => {
-    const [result] = await pool.query(`DELETE FROM ${stockPurchaseItemsTable} WHERE id = ?`, [id]);
-    return result;
-};
 
 
 // ---- TEAM ----
@@ -401,5 +318,174 @@ export const updateSize = async (id: number, data: any) => {
 
 export const deleteSize = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${sizesTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+// ---- STOCK PURCHASES (Enhanced) ----
+export const createStockPurchase = async (purchaseData: any, itemsData: any[]) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // Insert purchase without request_no (will be generated after getting insertId)
+        const [purchaseResult] = await connection.query(
+            `INSERT INTO ${stockPurchaseTable} (
+                requested_by, requested_at, total_items,
+                department_id, costcenter_id, remarks, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                purchaseData.requested_by,
+                purchaseData.requested_at,
+                purchaseData.total_items || itemsData.length,
+                purchaseData.department_id || null,
+                purchaseData.costcenter_id || null,
+                purchaseData.remarks || null,
+                purchaseData.status || 'pending',
+                new Date(),
+                new Date()
+            ]
+        );
+
+        const purchaseId = (purchaseResult as any).insertId;
+        const currentYear = new Date().getFullYear();
+        const paddedId = String(purchaseId).padStart(5, '0');
+        const requestNo = `SP/${paddedId}/${currentYear}`;
+
+        // Update purchase with generated request_no
+        await connection.query(
+            `UPDATE ${stockPurchaseTable} SET request_no = ? WHERE id = ?`,
+            [requestNo, purchaseId]
+        );
+
+        // Insert purchase items
+        for (const item of itemsData) {
+            await connection.query(
+                `INSERT INTO ${stockPurchaseItemsTable} (
+                    purchase_id, item_id, quantity, preferred_supplier_id
+                ) VALUES (?, ?, ?, ?)`,
+                [
+                    purchaseId,
+                    item.item_id,
+                    item.qty,
+                    item.preferred_supplier_id || null
+                ]
+            );
+        }
+
+        await connection.commit();
+        return { id: purchaseId, request_no: requestNo, ...purchaseData, items: itemsData };
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
+};
+
+export const getStockPurchases = async () => {
+    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseTable} ORDER BY id DESC`);
+    return rows;
+};
+
+export const getStockPurchaseById = async (id: number) => {
+    const [purchases] = await pool.query(`SELECT * FROM ${stockPurchaseTable} WHERE id = ?`, [id]);
+    
+    if (!Array.isArray(purchases) || purchases.length === 0) return null;
+
+    const [items] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE purchase_id = ?`, [id]);
+
+    return {
+        ...(purchases as any[])[0],
+        items: items
+    };
+};
+
+export const updateStockPurchase = async (id: number, data: any) => {
+    const [result] = await pool.query(`UPDATE ${stockPurchaseTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteStockPurchase = async (id: number) => {
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+        await connection.query(`DELETE FROM ${stockPurchaseItemsTable} WHERE purchase_id = ?`, [id]);
+        await connection.query(`DELETE FROM ${stockPurchaseTable} WHERE id = ?`, [id]);
+        await connection.commit();
+        return { success: true };
+    } catch (error) {
+        await connection.rollback();
+        throw error;
+    } finally {
+        connection.release();
+    }
+};
+
+// ---- STOCK PURCHASE ITEMS ----
+export const createStockPurchaseItem = async (data: any) => {
+    const [result] = await pool.query(`INSERT INTO ${stockPurchaseItemsTable} SET ?`, [data]);
+    return result;
+};
+
+export const getStockPurchaseItems = async (purchaseId: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE purchase_id = ?`, [purchaseId]);
+    return rows;
+};
+
+export const getStockPurchaseItemById = async (id: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${stockPurchaseItemsTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const updateStockPurchaseItem = async (id: number, data: any) => {
+    const [result] = await pool.query(`UPDATE ${stockPurchaseItemsTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteStockPurchaseItem = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${stockPurchaseItemsTable} WHERE id = ?`, [id]);
+    return result;
+};
+
+// ---- STOCK TRANSACTIONS ----
+
+export const createStockTransaction = async (data: any) => {
+    const [result] = await pool.query(
+        `INSERT INTO ${stockTrackingTable} (
+            item_id, transaction_type, reference_table, reference_id, qty, is_stock_bal_affected, prev_bal, latest_bal, performed_by, performed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            data.item_id,
+            data.transaction_type,
+            data.reference_table,
+            data.reference_id,
+            data.qty,
+            data.is_stock_bal_affected,
+            data.prev_bal,
+            data.latest_bal,
+            data.performed_by,
+            new Date()
+        ]
+    );
+    return result;
+};
+
+export const getStockTransactions = async () => {
+    const [rows] = await pool.query(`SELECT * FROM ${stockTrackingTable} ORDER BY performed_at DESC`);
+    return rows;
+};
+
+export const getStockTransactionById = async (id: number) => {
+    const [rows] = await pool.query(`SELECT * FROM ${stockTrackingTable} WHERE id = ?`, [id]);
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+};
+
+export const updateStockTransaction = async (id: number, data: any) => {
+    const [result] = await pool.query(`UPDATE ${stockTrackingTable} SET ? WHERE id = ?`, [data, id]);
+    return result;
+};
+
+export const deleteStockTransaction = async (id: number) => {
+    const [result] = await pool.query(`DELETE FROM ${stockTrackingTable} WHERE id = ?`, [id]);
     return result;
 };
