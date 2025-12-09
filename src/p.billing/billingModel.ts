@@ -168,8 +168,8 @@ export const updateVehicleMtnBilling = async (id: number, data: Partial<VehicleM
   // Prefer data.upload if provided by controller; fall back to data.attachment for compatibility
   const uploadValue = (data as any).upload ?? (data as any).attachment ?? null;
   await pool2.query(
-    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
-    [data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.inv_remarks, uploadValue, id]
+    `UPDATE ${vehicleMtnBillingTable} SET inv_no = ?, inv_date = ?, svc_date = ?, svc_odo = ?, inv_total = ?, inv_stat = ?, ws_id = ?, inv_remarks = ?, upload = ? WHERE inv_id = ?`,
+    [data.inv_no, data.inv_date, data.svc_date, data.svc_odo, data.inv_total, data.inv_stat, data.ws_id, data.inv_remarks, uploadValue, id]
   );
 };
 

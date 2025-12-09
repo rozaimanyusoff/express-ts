@@ -483,7 +483,8 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		svc_odo: body.svc_odo,
 		inv_remarks: body.inv_remarks,
 		inv_total: body.inv_total,
-		inv_stat: body.inv_stat
+		inv_stat: body.inv_stat,
+		ws_id: body.ws_id
 	};
 
 	// Handle file upload from either 'attachment' or 'upload' field names.
