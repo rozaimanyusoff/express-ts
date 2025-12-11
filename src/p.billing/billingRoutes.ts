@@ -26,11 +26,11 @@ router.put('/mtn/options/:id', asyncHandler(billingController.updateServiceOptio
 
 /* =================== SERVICE PARTS (autoparts) ROUTES =================== */
 router.get('/mtn/parts', asyncHandler(billingController.getServiceParts));
+router.get('/mtn/parts/search', asyncHandler(billingController.searchServiceParts));
 router.get('/mtn/parts/:id', asyncHandler(billingController.getServicePartById));
 router.post('/mtn/parts', asyncHandler(billingController.createServicePart));
 router.put('/mtn/parts/:id', asyncHandler(billingController.updateServicePart));
 router.delete('/mtn/parts/:id', asyncHandler(billingController.deleteServicePart));
-router.get('/mtn/parts/search', asyncHandler(billingController.searchServiceParts));
 
 /* ================== VEHICLE MAINTENANCE BILLINGS ================== */
 // Same list endpoint but filters by inv_date instead of entry_date

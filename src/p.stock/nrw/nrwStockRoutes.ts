@@ -14,7 +14,7 @@ router.delete('/teams/:id', asyncHandler(nrwStockController.deleteTeam));
 
 
 // ---- STOCK PURCHASES ----
-router.post('/purchases', asyncHandler(nrwStockController.createStockPurchase));
+router.post('/purchases/with-items', asyncHandler(nrwStockController.createStockPurchase));
 router.get('/purchases', asyncHandler(nrwStockController.getStockPurchases));
 router.get('/purchases/:id', asyncHandler(nrwStockController.getStockPurchaseById));
 router.put('/purchases/:id', asyncHandler(nrwStockController.updateStockPurchase));
@@ -26,8 +26,18 @@ router.get('/purchases/:purchaseId/items', asyncHandler(nrwStockController.getSt
 router.put('/purchase-items/:id', asyncHandler(nrwStockController.updateStockPurchaseItem));
 router.delete('/purchase-items/:id', asyncHandler(nrwStockController.deleteStockPurchaseItem));
 
+// ---- STOCK TRANSACTIONS ----
+router.post('/transactions', asyncHandler(nrwStockController.createStockTransaction));
+router.get('/transactions', asyncHandler(nrwStockController.getStockTransactions));
+router.get('/transactions/:id', asyncHandler(nrwStockController.getStockTransactionById));
+router.get('/transactions/item/:itemId', asyncHandler(nrwStockController.getStockTransactionsByItemId));
+router.put('/transactions/:id', asyncHandler(nrwStockController.updateStockTransaction));
+router.delete('/transactions/:id', asyncHandler(nrwStockController.deleteStockTransaction));
+
 // ---- STOCK CARD ----
 router.post('/cards', asyncHandler(nrwStockController.createStockCard));
+router.get('/cards/with-items', asyncHandler(nrwStockController.getStockCardsWithItems));
+router.get('/cards/item/:itemId', asyncHandler(nrwStockController.getStockCardByItemId));
 router.get('/cards', asyncHandler(nrwStockController.getStockCards));
 router.put('/cards/:id', asyncHandler(nrwStockController.updateStockCard));
 router.delete('/cards/:id', asyncHandler(nrwStockController.deleteStockCard));
@@ -95,7 +105,6 @@ router.delete('/sizes/:id', asyncHandler(nrwStockController.deleteSize));
 router.post('/', asyncHandler(nrwStockController.createStock));
 router.get('/:id', asyncHandler(nrwStockController.getStockById));
 router.get('/', asyncHandler(nrwStockController.getStocks));
-router.get('/:id/transactions', asyncHandler(nrwStockController.getStockTransactions));
 router.get('/:id/in-stock', asyncHandler(nrwStockController.getStockInStock));
 router.put('/:id', asyncHandler(nrwStockController.updateStock));
 router.delete('/:id', asyncHandler(nrwStockController.deleteStock));

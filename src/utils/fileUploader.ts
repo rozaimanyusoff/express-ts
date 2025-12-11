@@ -32,10 +32,11 @@ const ALLOWED_MIME_TYPES = [
 /**
  * Creates a multer upload instance with a dynamic storage path.
  * @param subfolder - The subfolder within the base upload directory to store files.
+ * @param allowedMimeTypes - Optional array of allowed MIME types. If not provided, uses ALLOWED_MIME_TYPES.
  * @returns A multer instance configured for the specified subfolder.
  */
 // subfolder is the module_directory to store files under (e.g., 'purchases/docs')
-export const createUploader = (subfolder: string) => {
+export const createUploader = (subfolder: string, allowedMimeTypes?: string[]) => {
 	const storage = multer.diskStorage({
 		destination: (req: Request, file: Express.Multer.File, cb) => {
 			const base = getUploadBaseSync();
@@ -57,8 +58,10 @@ export const createUploader = (subfolder: string) => {
 		},
 	});
 
+	const mimeTypesToCheck = allowedMimeTypes || ALLOWED_MIME_TYPES;
+
 	const fileFilter = (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
-		if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+		if (mimeTypesToCheck.includes(file.mimetype)) {
 			cb(null, true); // Accept file
 		} else {
 			logger.warn(`Upload rejected for file '${file.originalname}' with unsupported mimetype: ${file.mimetype}`);

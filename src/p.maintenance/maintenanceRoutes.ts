@@ -6,6 +6,13 @@ import { createUploader } from '../utils/fileUploader';
 
 const router = Router();
 const mtnUploader = createUploader('admin/vehiclemtn2');
+// Restricted uploader for maintenance forms: images (JPEG, PNG, WebP) and PDF only
+const mtnFormUploader = createUploader('admin/vehiclemtn2', [
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+	'application/pdf'
+]);
 
 // ========== MAINTENANCE RECORDS CRUD ==========
 router.get('/bills/unseen-count', asyncHandler(maintenanceController.getUnseenBillsCount)); // Get badge count for unseen/unprocessed bills
@@ -17,7 +24,7 @@ router.post('/request', mtnUploader.single('req_upload'), asyncHandler(maintenan
 // General update (no file upload middleware)
 router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
 // Dedicated endpoint to upload maintenance form
-router.put('/request/:id/form-upload', mtnUploader.single('form_upload'), asyncHandler(maintenanceController.uploadVehicleMtnForm));
+router.put('/request/:id/form-upload', mtnFormUploader.single('form_upload'), asyncHandler(maintenanceController.uploadVehicleMtnForm));
 router.put('/request/:id/admin', asyncHandler(maintenanceController.adminUpdateVehicleMtnRequest));
 // Recommend / Approve single endpoints (actor ramco from ?authorize or body)
 router.put('/request/:id/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestSingle));

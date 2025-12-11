@@ -1099,18 +1099,17 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 
 			updateResult = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
 
-			// Fetch the updated record to get asset_id for socket event
+			// Fetch the updated record to get asset_id for socket event (already done in update, use it)
 			const updatedRecord = await maintenanceModel.getVehicleMtnRequestById(Number(id)) as any;
 			assetId = updatedRecord?.asset_id ?? null;
 
-			// If this update includes verification_stat = 1, notify recommender
-			try {
-				const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
-				if (verificationFlag) {
-					await sendRecommendationEmail(Number(id));
-				}
-			} catch (emailErr) {
-				console.error('Failed to send recommender notification email', emailErr);
+			// If this update includes verification_stat = 1, notify recommender (non-blocking)
+			const verificationFlag = data.verification_stat === 1 || data.verification_stat === '1' || data.verification_stat === true;
+			if (verificationFlag) {
+				// Send email asynchronously without awaiting - don't block response
+				sendRecommendationEmail(Number(id)).catch((emailErr) => {
+					console.error('Failed to send recommender notification email', emailErr);
+				});
 			}
 		} catch (updateErr) {
 			console.error('uploadVehicleMtnForm: update failed', updateErr);
@@ -1121,38 +1120,41 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 			});
 		}
 
-		// Emit Socket.IO events on successful form upload
-		try {
-			const io = getSocketIOInstance();
-			if (io) {
-				// Emit form-uploaded event for real-time UI update
-				io.emit('mtn:form-uploaded', {
-					requestId: reqId,
-					assetId,
-					uploadedBy,
-					uploadedAt: dayjs().toISOString()
-				});
-
-				// Get updated counts and emit mtn:counts
-				try {
-					const unseenCount = await maintenanceModel.getUnseenBillsCount();
-					const maintenanceCount = await maintenanceModel.getVehicleMtnRequests();
-					const maintenanceCountNum = Array.isArray(maintenanceCount) ? maintenanceCount.length : 0;
-
-					io.emit('mtn:counts', {
-						maintenanceBilling: maintenanceCountNum,
-						unseenBills: unseenCount
+		// Emit Socket.IO events on successful form upload (non-blocking)
+		const emitSocketEvents = async () => {
+			try {
+				const io = getSocketIOInstance();
+				if (io) {
+					// Emit form-uploaded event for real-time UI update
+					io.emit('mtn:form-uploaded', {
+						requestId: reqId,
+						assetId,
+						uploadedBy,
+						uploadedAt: dayjs().toISOString()
 					});
-				} catch (countErr) {
-					console.warn('Failed to emit mtn:counts event:', countErr);
+
+					// Get updated counts and emit mtn:counts
+					try {
+						const unseenCount = await maintenanceModel.getUnseenBillsCount();
+						// Use efficient COUNT query instead of fetching all records
+						const maintenanceCountNum = await maintenanceModel.countVehicleMtnRequests();
+
+						io.emit('mtn:counts', {
+							maintenanceBilling: maintenanceCountNum,
+							unseenBills: unseenCount
+						});
+					} catch (countErr) {
+						console.warn('Failed to emit mtn:counts event:', countErr);
+					}
+				} else {
+					console.warn('Socket.IO instance not available for emitting events');
 				}
-			} else {
-				console.warn('Socket.IO instance not available for emitting events');
+			} catch (socketErr) {
+				console.warn('Failed to emit Socket.IO events:', socketErr);
 			}
-		} catch (socketErr) {
-			console.warn('Failed to emit Socket.IO events:', socketErr);
-			// Don't fail the request if socket emit fails
-		}
+		};
+		// Emit socket events without blocking response
+		emitSocketEvents().catch(console.warn);
 
 		return res.json({
 			status: 'success',

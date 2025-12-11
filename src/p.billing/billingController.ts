@@ -483,7 +483,8 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		svc_odo: body.svc_odo,
 		inv_remarks: body.inv_remarks,
 		inv_total: body.inv_total,
-		inv_stat: body.inv_stat
+		inv_stat: body.inv_stat,
+		ws_id: body.ws_id
 	};
 
 	// Handle file upload from either 'attachment' or 'upload' field names.
@@ -514,14 +515,16 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 	}
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i];
-		if (part && part.is_custom && part.autopart_id && part.autopart_id < 0) {
+		const autopartId = Number(part?.autopart_id);
+		// Check if autopart_id is a negative number (indicating a new/custom part not yet saved)
+		if (part && Number.isFinite(autopartId) && autopartId < 0) {
 			// Insert custom part into service parts table
-			const autopartId = await billingModel.createServicePart({
+			const newAutopartId = await billingModel.createServicePart({
 				part_name: part.part_name,
 				part_uprice: part.part_uprice,
 				part_stat: 1,
 			});
-			parts[i] = { ...part, autopart_id: autopartId };
+			parts[i] = { ...part, autopart_id: newAutopartId };
 		}
 	}
 

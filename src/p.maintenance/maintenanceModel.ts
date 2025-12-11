@@ -126,6 +126,46 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string, yea
     }));
 };
 
+// Efficient count function for maintenance requests (used for badge counts)
+export const countVehicleMtnRequests = async (status?: string) => {
+    let query = `SELECT COUNT(*) as count FROM ${vehicleMaintenanceTable}`;
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    // Add status filtering if provided
+    if (status) {
+        const s = status.toLowerCase();
+        switch (s) {
+            case 'approved':
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=1)`);
+                break;
+            case 'recommended':
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
+                break;
+            case 'verified':
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
+                break;
+            case 'cancelled':
+                conditions.push(`IFNULL(drv_stat,0) = 2`);
+                break;
+            case 'rejected':
+                conditions.push(`(IFNULL(verification_stat,0)=2 OR IFNULL(recommendation_stat,0)=2 OR IFNULL(approval_stat,0)=2)`);
+                break;
+            case 'pending':
+                conditions.push(`(IFNULL(verification_stat,0)=0 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0 AND IFNULL(drv_stat,0)!=2)`);
+                break;
+        }
+    }
+
+    if (conditions.length > 0) {
+        query += ` WHERE ` + conditions.join(' AND ');
+    }
+
+    const [rows] = await pool2.query(query, params);
+    const result = rows as any[];
+    return result[0]?.count ?? 0;
+};
+
 // Helper function to determine status based on verification, recommendation, approval and driver stats
 const getRequestStatus = (record: any): string => {
     const v = Number(record?.verification_stat ?? 0);
