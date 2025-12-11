@@ -196,6 +196,9 @@ export const getAssets = async (req: Request, res: Response) => {
 	// Build asset data
 	const data = assets.map((asset: any) => {
 		const type = typeMap.get(asset.type_id);
+		const unitPrice = asset.unit_price;
+		const nbv = assetModel.calculateNBV(unitPrice, asset.purchase_year);
+		const age = assetModel.calculateAge(asset.purchase_year);
 
 		return {
 			id: asset.id,
@@ -209,9 +212,11 @@ export const getAssets = async (req: Request, res: Response) => {
 			purchase_date: asset.purchase_date,
 			purchase_year: asset.purchase_year,
 			purchase_id: asset.purchase_id,
+			unit_price: unitPrice,
+			nbv: nbv,
+			age: age,
 			fuel_type: asset.fuel_type,
 			transmission: asset.transmission,
-			//unit_price: asset.unit_price,
 			//depreciation_length: asset.depreciation_length,
 			costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 				? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
@@ -360,6 +365,8 @@ export const getAssetById = async (req: Request, res: Response) => {
 		purchase_date: asset.purchase_date,
 		purchase_year: asset.purchase_year,
 		unit_price: asset.unit_price,
+		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
+		age: assetModel.calculateAge(asset.purchase_year),
 		depreciation_length: asset.depreciation_length,
 		depreciation_rate: asset.depreciation_rate,
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)

@@ -560,6 +560,30 @@ export const createMasterAssetsFromRegistryBatch = async (
 ): Promise<number[]> => {
   const insertAssetIds: number[] = [];
 
+  // Fetch handover_at from the purchase request item to extract purchase_date and purchase_year
+  let purchaseDate: string | null = null;
+  let purchaseYear: number | null = null;
+  try {
+    const [itemRows] = await pool.query(
+      `SELECT handover_at FROM ${purchaseRequestItemTable} WHERE id = ? LIMIT 1`,
+      [purchase_id]
+    );
+    if (Array.isArray(itemRows) && itemRows.length > 0) {
+      const handoverAt = (itemRows as any[])[0]?.handover_at;
+      if (handoverAt) {
+        // Extract date portion (YYYY-MM-DD)
+        const dateStr = String(handoverAt).split(' ')[0]; // Get date part before time
+        if (dateStr && dateStr !== '0000-00-00') {
+          purchaseDate = dateStr;
+          // Extract year
+          purchaseYear = parseInt(dateStr.split('-')[0], 10);
+        }
+      }
+    }
+  } catch (e) {
+    // Non-blocking error; continue without purchase_date/purchase_year
+  }
+
   for (const a of assets) {
     try {
       // First, prevent duplicate register_number in assets.assetdata
@@ -630,6 +654,11 @@ export const createMasterAssetsFromRegistryBatch = async (
       pushCol('record_status', 'active');
       // include linkage to purchase id on assetdata (pr_id) if present in schema
       pushCol('purchase_id', purchase_id);
+      // condition status
+      pushCol('condition_status', 'in-use');
+      // Include purchase_date and purchase_year if available
+      if (purchaseDate) pushCol('purchase_date', purchaseDate);
+      if (purchaseYear) pushCol('purchase_year', purchaseYear);
 
       const sql = `INSERT INTO ${assetDataTable} (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
       const [result] = await pool.query(sql, vals);

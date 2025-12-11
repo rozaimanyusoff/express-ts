@@ -42,11 +42,34 @@ const transferChecklistTable = `${db}.transfer_checklists`;
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
 
+// Helper function to calculate Net Book Value (NBV) based on depreciation
+// Depreciation: 20% per year, max 5 years
+// Returns formatted string with 2 decimal places
+export const calculateNBV = (unitPrice: number | null | undefined, purchaseYear: number | null | undefined): string | null => {
+  if (!unitPrice || unitPrice <= 0 || !purchaseYear) return null;
+  
+  const currentYear = new Date().getFullYear();
+  const yearsOld = currentYear - purchaseYear;
+  
+  // Cap at 5 years maximum depreciation
+  const depreciationYears = Math.min(yearsOld, 5);
+  const remainingPercentage = Math.max(0, 1 - (depreciationYears * 0.2));
+  
+  const nbv = unitPrice * remainingPercentage;
+  return nbv.toFixed(2);
+};
 
+// Helper function to calculate asset age in years
+export const calculateAge = (purchaseYear: number | null | undefined): number | null => {
+  if (!purchaseYear) return null;
+  const currentYear = new Date().getFullYear();
+  return currentYear - purchaseYear;
+};
 
 /* ============ ASSETS ============ */
 export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
-  let sql = `SELECT * FROM ${assetTable}`;
+  let sql = `SELECT ${assetTable}.*, pi.unit_price FROM ${assetTable}
+    LEFT JOIN purchases2.purchase_items pi ON ${assetTable}.purchase_id = pi.id`;
   let params: any[] = [];
   const conditions: string[] = [];
   if (typeof manager === 'number' && !isNaN(manager)) {
@@ -218,10 +241,11 @@ export const getAssetsPaged = async (
 
   const whereSql = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
-  // Joins for searching by related names (brand/model)
+  // Joins for searching by related names (brand/model) and fetch unit_price from purchase items
   const fromSql = `FROM ${assetTable} a
     LEFT JOIN ${brandTable} b ON b.id = a.brand_id
-    LEFT JOIN ${modelTable} m ON m.id = a.model_id`;
+    LEFT JOIN ${modelTable} m ON m.id = a.model_id
+    LEFT JOIN purchases2.purchase_items pi ON a.purchase_id = pi.id`;
 
   // Count total
   const countSql = `SELECT COUNT(*) AS count ${fromSql}${whereSql}`;
@@ -247,7 +271,7 @@ export const getAssetsPaged = async (
     orderBy = `a.${sortBy} ${sortDir}`;
   }
 
-  const dataSql = `SELECT a.* ${fromSql}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
+  const dataSql = `SELECT a.*, pi.unit_price ${fromSql}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
   const [rows] = await pool.query(dataSql, [...params, pageSize, offset]);
   const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
   return { rows: mapped, total };
@@ -257,7 +281,12 @@ export const getAssetById = async (id: number) => {
   if (typeof id !== 'number' || isNaN(id)) {
     throw new Error('Invalid asset id');
   }
-  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(
+    `SELECT ${assetTable}.*, pi.unit_price FROM ${assetTable}
+    LEFT JOIN purchases2.purchase_items pi ON ${assetTable}.purchase_id = pi.id
+    WHERE ${assetTable}.id = ?`,
+    [id]
+  );
   return (rows as RowDataPacket[])[0];
 };
 
