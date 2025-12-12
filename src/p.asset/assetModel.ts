@@ -42,42 +42,64 @@ const transferChecklistTable = `${db}.transfer_checklists`;
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
 
+// Helper function to calculate Net Book Value (NBV) based on depreciation
+// Depreciation: 20% per year, max 5 years
+// Returns formatted string with 2 decimal places
+export const calculateNBV = (unitPrice: number | null | undefined, purchaseYear: number | null | undefined): string | null => {
+  if (!unitPrice || unitPrice <= 0 || !purchaseYear) return null;
+  
+  const currentYear = new Date().getFullYear();
+  const yearsOld = currentYear - purchaseYear;
+  
+  // Cap at 5 years maximum depreciation
+  const depreciationYears = Math.min(yearsOld, 5);
+  const remainingPercentage = Math.max(0, 1 - (depreciationYears * 0.2));
+  
+  const nbv = unitPrice * remainingPercentage;
+  return nbv.toFixed(2);
+};
 
+// Helper function to calculate asset age in years
+export const calculateAge = (purchaseYear: number | null | undefined): number | null => {
+  if (!purchaseYear) return null;
+  const currentYear = new Date().getFullYear();
+  return currentYear - purchaseYear;
+};
 
 /* ============ ASSETS ============ */
 export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
-  let sql = `SELECT * FROM ${assetTable}`;
+  let sql = `SELECT ${assetTable}.* FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
   if (typeof manager === 'number' && !isNaN(manager)) {
-    conditions.push('manager_id = ?');
+    conditions.push(`${assetTable}.manager_id = ?`);
     params.push(manager);
   }
   if (Array.isArray(type_ids) && type_ids.length > 0) {
-    conditions.push(`type_id IN (${type_ids.map(() => '?').join(',')})`);
+    conditions.push(`${assetTable}.type_id IN (${type_ids.map(() => '?').join(',')})`);
     params.push(...type_ids);
   } else if (typeof type_ids === 'number' && !isNaN(type_ids)) {
-    conditions.push('type_id = ?');
+    conditions.push(`${assetTable}.type_id = ?`);
     params.push(type_ids);
   }
   if (typeof classification === 'string' && classification !== '') {
-    conditions.push('classification = ?');
+    conditions.push(`${assetTable}.classification = ?`);
     params.push(classification);
   }
   if (typeof status === 'string' && status !== '') {
-    conditions.push('record_status = ?');
+    conditions.push(`${assetTable}.record_status = ?`);
     params.push(status);
   }
   if (typeof purpose === 'string' && purpose !== '') {
-    conditions.push('purpose = ?');
+    conditions.push(`${assetTable}.purpose = ?`);
     params.push(purpose);
   } else if (Array.isArray(purpose) && purpose.length > 0) {
     const placeholders = purpose.map(() => '?').join(',');
-    conditions.push(`purpose IN (${placeholders})`);
+    conditions.push(`${assetTable}.purpose IN (${placeholders})`);
     params.push(...purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
-    conditions.push('register_number = ?');
+    conditions.push(`${assetTable}.register_number = ?`);
     params.push(registerNumber);
   }
   // owner may be a single ramco_id or array/comma-separated list; match either current asset.ramco_id
@@ -99,19 +121,26 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
     }
   }
   if (typeof brandId === 'number' && !isNaN(brandId)) {
-    conditions.push('brand_id = ?');
+    conditions.push(`${assetTable}.brand_id = ?`);
     params.push(brandId);
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
   // Sort by type_id first, then by register_number within each type group
-  sql += ' ORDER BY type_id ASC, register_number ASC';
+  sql += ` ORDER BY ${assetTable}.type_id ASC, ${assetTable}.register_number ASC`;
   const [rows] = await pool.query(sql, params);
   // Ensure compatibility: some callers expect `asset_id` field (billing code).
   // Mirror `id` to `asset_id` when `asset_id` is not present.
   const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
   return mapped;
+};
+
+// Helper function to fetch purchase items by asset purchase_ids
+export const getPurchaseItemsByAssetIds = async (purchaseIds: number[]) => {
+  if (!purchaseIds || purchaseIds.length === 0) return [];
+  const [rows] = await pool.query(`SELECT id, unit_price FROM purchases2.purchase_items WHERE id IN (?)`, [purchaseIds]);
+  return rows;;
 };
 
 // Server-side pagination + free-text search for assets
@@ -218,7 +247,7 @@ export const getAssetsPaged = async (
 
   const whereSql = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
-  // Joins for searching by related names (brand/model)
+  // Joins for searching by related names (brand/model) - removed purchase_items JOIN
   const fromSql = `FROM ${assetTable} a
     LEFT JOIN ${brandTable} b ON b.id = a.brand_id
     LEFT JOIN ${modelTable} m ON m.id = a.model_id`;
@@ -257,7 +286,11 @@ export const getAssetById = async (id: number) => {
   if (typeof id !== 'number' || isNaN(id)) {
     throw new Error('Invalid asset id');
   }
-  const [rows] = await pool.query(`SELECT * FROM ${assetTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(
+    `SELECT ${assetTable}.* FROM ${assetTable}
+    WHERE ${assetTable}.id = ?`,
+    [id]
+  );
   return (rows as RowDataPacket[])[0];
 };
 
