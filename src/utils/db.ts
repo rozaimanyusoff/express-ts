@@ -1,6 +1,10 @@
 // filepath: /Users/rozaiman/express-ts/src/utils/dbPool.ts
 import * as mysql from 'mysql2/promise';
 import * as dotenv from 'dotenv';
+import { post } from 'axios';
+import { Pool } from 'pg';
+import { betterAuth } from 'better-auth';
+import { username } from "better-auth/plugins"
 
 dotenv.config();
 
@@ -55,4 +59,41 @@ const pool2: mysql.Pool = mysql.createPool(pool2Config);
 // Note: mysql2/promise pools don't emit 'error' events directly
 // Use dbHealthCheck utility for connection monitoring instead
 
-export { pool, pool2 };
+const pool3 = mysql.createPool({
+  host: process.env.DB_HOST_AQS,
+  port: parseInt(process.env.DB_PORT_AQS as string),
+  user: process.env.DB_USER_AQS,
+  password: process.env.DB_PASSWORD_AQS,
+  database: process.env.DB_NAME_AQS || 'ranhill',
+});
+
+const auth = betterAuth({
+  basePath: '/api/aqs/auth',
+  user: {
+    modelName: 'users',
+  },
+  database: new Pool({
+    host: process.env.PG_DB_HOST_LOCAL,
+    port: parseInt(process.env.PG_DB_PORT_LOCAL as string),
+    user: process.env.PG_DB_USER_LOCAL,
+    password: process.env.PG_DB_PASSWORD_LOCAL,
+    database: process.env.PG_DB_NAME_LOCAL,
+    options: "-c search_path=auth"
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  plugins: [
+    username()
+  ]
+});
+
+const pgPool = new Pool({
+  host: process.env.PG_DB_HOST_LOCAL,
+  port: parseInt(process.env.PG_DB_PORT_LOCAL as string),
+  user: process.env.PG_DB_USER_LOCAL,
+  password: process.env.PG_DB_PASSWORD_LOCAL,
+  database: process.env.PG_DB_NAME_LOCAL,
+});
+
+export { pool, pool2, pool3, pgPool, auth };

@@ -1,4 +1,6 @@
 import express, { Express, urlencoded, json } from 'express';
+import { toNodeHandler } from "better-auth/node";
+import { pgPool } from './utils/db';
 import authRoutes from './p.auth/adms/authRoutes';
 import navRoutes from './p.nav/navRoutes';
 import userRoutes from './p.user/userRoutes';
@@ -19,6 +21,11 @@ import webstockRoutes from './s.webstock/webstockRoutes';
 import summonRoutes from './p.compliance/complianceRoutes';
 import notificationRoutes from './p.notification/notificationRoutes';
 import projectRoutes from './p.project/projectRoutes';
+import siteRoutes from './p.site/siteRoutes';
+import aqsRoleRoutes from './aqs/a.role/roleRoutes';
+import aqsModuleRoutes from './aqs/a.module/moduleRoutes'
+import organizationRoutes from './aqs/a.organization/organizationRoutes';
+import districtRoutes from './aqs/a.district/districtRoutes';
 import errorHandler from './middlewares/errorHandler';
 import corsMiddleware from './middlewares/cors';
 import tokenValidator from './middlewares/tokenValidator';
@@ -29,6 +36,8 @@ import path from 'path';
 import fs from 'fs';
 import { getUploadBaseSync } from './utils/uploadUtil';
 import { checkDatabaseHealth } from './utils/dbHealthCheck';
+import aqsAuthRoutes from './aqs/a.auth/authRoutes';
+import aqsRequestRoutes from './aqs/a.request/requestRoutes';
 
 const app: Express = express();
 
@@ -109,7 +118,13 @@ app.use('/api/webstock', webstockRoutes);
 app.use('/api/compliance', summonRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/projects', projectRoutes);
-
+app.use('/api/sites', siteRoutes);
+app.use('/api/aqs/roles', aqsRoleRoutes);
+app.use('/api/aqs/modules', aqsModuleRoutes);
+app.use('/api/aqs/organizations', organizationRoutes);
+app.use('/api/aqs/districts', districtRoutes);
+app.use('/api/aqs/auth', aqsAuthRoutes);
+app.use('/api/aqs/requests', aqsRequestRoutes);
 app.use(errorHandler);
 
 export default app;
