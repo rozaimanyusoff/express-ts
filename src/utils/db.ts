@@ -3,6 +3,8 @@ import * as mysql from 'mysql2/promise';
 import * as dotenv from 'dotenv';
 import { post } from 'axios';
 import { Pool } from 'pg';
+import { betterAuth } from 'better-auth';
+import { username } from "better-auth/plugins"
 
 dotenv.config();
 
@@ -65,6 +67,27 @@ const pool3 = mysql.createPool({
   database: process.env.DB_NAME_AQS || 'ranhill',
 });
 
+const auth = betterAuth({
+  basePath: '/api/aqs/auth',
+  user: {
+    modelName: 'users',
+  },
+  database: new Pool({
+    host: process.env.PG_DB_HOST_LOCAL,
+    port: parseInt(process.env.PG_DB_PORT_LOCAL as string),
+    user: process.env.PG_DB_USER_LOCAL,
+    password: process.env.PG_DB_PASSWORD_LOCAL,
+    database: process.env.PG_DB_NAME_LOCAL,
+    options: "-c search_path=auth"
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  plugins: [
+    username()
+  ]
+});
+
 const pgPool = new Pool({
   host: process.env.PG_DB_HOST_LOCAL,
   port: parseInt(process.env.PG_DB_PORT_LOCAL as string),
@@ -73,4 +96,4 @@ const pgPool = new Pool({
   database: process.env.PG_DB_NAME_LOCAL,
 });
 
-export { pool, pool2, pool3, pgPool };
+export { pool, pool2, pool3, pgPool, auth };
