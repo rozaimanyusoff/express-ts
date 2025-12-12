@@ -68,8 +68,7 @@ export const calculateAge = (purchaseYear: number | null | undefined): number | 
 
 /* ============ ASSETS ============ */
 export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
-  let sql = `SELECT ${assetTable}.*, pi.unit_price FROM ${assetTable}
-    LEFT JOIN purchases2.purchase_items pi ON ${assetTable}.purchase_id = pi.id`;
+  let sql = `SELECT ${assetTable}.* FROM ${assetTable}`;
   let params: any[] = [];
   const conditions: string[] = [];
   if (typeof manager === 'number' && !isNaN(manager)) {
@@ -135,6 +134,13 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   // Mirror `id` to `asset_id` when `asset_id` is not present.
   const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
   return mapped;
+};
+
+// Helper function to fetch purchase items by asset purchase_ids
+export const getPurchaseItemsByAssetIds = async (purchaseIds: number[]) => {
+  if (!purchaseIds || purchaseIds.length === 0) return [];
+  const [rows] = await pool.query(`SELECT id, unit_price FROM purchases2.purchase_items WHERE id IN (?)`, [purchaseIds]);
+  return rows;;
 };
 
 // Server-side pagination + free-text search for assets
@@ -241,11 +247,10 @@ export const getAssetsPaged = async (
 
   const whereSql = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
 
-  // Joins for searching by related names (brand/model) and fetch unit_price from purchase items
+  // Joins for searching by related names (brand/model) - removed purchase_items JOIN
   const fromSql = `FROM ${assetTable} a
     LEFT JOIN ${brandTable} b ON b.id = a.brand_id
-    LEFT JOIN ${modelTable} m ON m.id = a.model_id
-    LEFT JOIN purchases2.purchase_items pi ON a.purchase_id = pi.id`;
+    LEFT JOIN ${modelTable} m ON m.id = a.model_id`;
 
   // Count total
   const countSql = `SELECT COUNT(*) AS count ${fromSql}${whereSql}`;
@@ -271,7 +276,7 @@ export const getAssetsPaged = async (
     orderBy = `a.${sortBy} ${sortDir}`;
   }
 
-  const dataSql = `SELECT a.*, pi.unit_price ${fromSql}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
+  const dataSql = `SELECT a.* ${fromSql}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
   const [rows] = await pool.query(dataSql, [...params, pageSize, offset]);
   const mapped = (rows as RowDataPacket[]).map((r: any) => ({ ...r, asset_id: r.asset_id !== undefined && r.asset_id !== null ? r.asset_id : r.id }));
   return { rows: mapped, total };
@@ -282,8 +287,7 @@ export const getAssetById = async (id: number) => {
     throw new Error('Invalid asset id');
   }
   const [rows] = await pool.query(
-    `SELECT ${assetTable}.*, pi.unit_price FROM ${assetTable}
-    LEFT JOIN purchases2.purchase_items pi ON ${assetTable}.purchase_id = pi.id
+    `SELECT ${assetTable}.* FROM ${assetTable}
     WHERE ${assetTable}.id = ?`,
     [id]
   );

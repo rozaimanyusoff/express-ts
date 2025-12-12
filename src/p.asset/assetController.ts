@@ -172,6 +172,16 @@ export const getAssets = async (req: Request, res: Response) => {
 	const employeesRaw = await assetModel.getEmployees();
 
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
+	
+	// Fetch purchase items for enrichment (enrich with unit_price)
+	const purchaseIds = Array.from(new Set(
+		assets
+			.map((a: any) => a.purchase_id)
+			.filter((pid: any) => pid !== null && pid !== undefined && pid !== 0)
+	));
+	const purchaseItemsRaw = purchaseIds.length > 0 ? (await assetModel.getPurchaseItemsByAssetIds(purchaseIds) as any[]) : [];
+	const purchaseItemMap = new Map(purchaseItemsRaw.map((pi: any) => [pi.id, pi]));
+	
 	const types = Array.isArray(typesRaw) ? typesRaw : [];
 	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
@@ -196,7 +206,9 @@ export const getAssets = async (req: Request, res: Response) => {
 	// Build asset data
 	const data = assets.map((asset: any) => {
 		const type = typeMap.get(asset.type_id);
-		const unitPrice = asset.unit_price;
+		// Enrich with unit_price from purchase items
+		const purchaseItem = asset.purchase_id ? purchaseItemMap.get(asset.purchase_id) : null;
+		const unitPrice = (purchaseItem as any)?.unit_price ?? asset.unit_price;
 		const nbv = assetModel.calculateNBV(unitPrice, asset.purchase_year);
 		const age = assetModel.calculateAge(asset.purchase_year);
 
@@ -276,6 +288,14 @@ export const getAssetById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const asset = await assetModel.getAssetById(id);
 	if (!asset) return res.status(404).json({ status: 'error', message: 'Asset not found' });
+
+	// Enrich with unit_price from purchase items
+	const purchaseItem = (asset as any).purchase_id 
+		? (await assetModel.getPurchaseItemsByAssetIds([(asset as any).purchase_id]) as any[])[0]
+		: null;
+	if (purchaseItem) {
+		(asset as any).unit_price = purchaseItem.unit_price;
+	}
 
 	// Fetch all related data for mapping
 	const [ownershipsRaw, employeesRaw, typesRaw, categoriesRaw, brandsRaw, modelsRaw, departmentsRaw, costcentersRaw, districtsRaw, locationsRaw] = await Promise.all([
