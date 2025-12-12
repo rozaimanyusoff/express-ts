@@ -73,34 +73,34 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
   let params: any[] = [];
   const conditions: string[] = [];
   if (typeof manager === 'number' && !isNaN(manager)) {
-    conditions.push('manager_id = ?');
+    conditions.push(`${assetTable}.manager_id = ?`);
     params.push(manager);
   }
   if (Array.isArray(type_ids) && type_ids.length > 0) {
-    conditions.push(`type_id IN (${type_ids.map(() => '?').join(',')})`);
+    conditions.push(`${assetTable}.type_id IN (${type_ids.map(() => '?').join(',')})`);
     params.push(...type_ids);
   } else if (typeof type_ids === 'number' && !isNaN(type_ids)) {
-    conditions.push('type_id = ?');
+    conditions.push(`${assetTable}.type_id = ?`);
     params.push(type_ids);
   }
   if (typeof classification === 'string' && classification !== '') {
-    conditions.push('classification = ?');
+    conditions.push(`${assetTable}.classification = ?`);
     params.push(classification);
   }
   if (typeof status === 'string' && status !== '') {
-    conditions.push('record_status = ?');
+    conditions.push(`${assetTable}.record_status = ?`);
     params.push(status);
   }
   if (typeof purpose === 'string' && purpose !== '') {
-    conditions.push('purpose = ?');
+    conditions.push(`${assetTable}.purpose = ?`);
     params.push(purpose);
   } else if (Array.isArray(purpose) && purpose.length > 0) {
     const placeholders = purpose.map(() => '?').join(',');
-    conditions.push(`purpose IN (${placeholders})`);
+    conditions.push(`${assetTable}.purpose IN (${placeholders})`);
     params.push(...purpose);
   }
   if (typeof registerNumber === 'string' && registerNumber !== '') {
-    conditions.push('register_number = ?');
+    conditions.push(`${assetTable}.register_number = ?`);
     params.push(registerNumber);
   }
   // owner may be a single ramco_id or array/comma-separated list; match either current asset.ramco_id
@@ -122,14 +122,14 @@ export const getAssets = async (type_ids?: number[] | number, classification?: s
     }
   }
   if (typeof brandId === 'number' && !isNaN(brandId)) {
-    conditions.push('brand_id = ?');
+    conditions.push(`${assetTable}.brand_id = ?`);
     params.push(brandId);
   }
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
   // Sort by type_id first, then by register_number within each type group
-  sql += ' ORDER BY type_id ASC, register_number ASC';
+  sql += ` ORDER BY ${assetTable}.type_id ASC, ${assetTable}.register_number ASC`;
   const [rows] = await pool.query(sql, params);
   // Ensure compatibility: some callers expect `asset_id` field (billing code).
   // Mirror `id` to `asset_id` when `asset_id` is not present.
