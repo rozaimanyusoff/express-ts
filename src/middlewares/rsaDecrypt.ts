@@ -1,11 +1,11 @@
-import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { NextFunction, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 
 const privateKey = fs.readFileSync(path.join(__dirname, '../../certs/private.pem'), 'utf8');
 
-export const rsaDecryptMiddleware = (req: Request, res: Response, next: NextFunction): void | Promise<void> => {
+export const rsaDecryptMiddleware = (req: Request, res: Response, next: NextFunction): Promise<void> | void => {
   const encrypted = req.body?.password;
 
   if (!encrypted || typeof encrypted !== 'string') {
@@ -21,8 +21,8 @@ export const rsaDecryptMiddleware = (req: Request, res: Response, next: NextFunc
     const decrypted = crypto.privateDecrypt(
       {
         key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
         oaepHash: 'sha256',
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
       },
       Buffer.from(encrypted, 'base64')
     );

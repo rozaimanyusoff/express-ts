@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import * as nrwEmployeeController from './nrwEmployeeController';
+
 import asyncHandler from '../../utils/asyncHandler';
+import * as nrwEmployeeController from './nrwEmployeeController';
 
 const router = Router();
 

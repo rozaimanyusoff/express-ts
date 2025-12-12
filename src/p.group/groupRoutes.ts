@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { getAllGroupsStructured, getAllGroups1, getGroupById1, createGroup1, updateGroup1 } from '../p.group/groupController.js';
+
+import { createGroup1, getAllGroups1, getAllGroupsStructured, getGroupById1, updateGroup1 } from '../p.group/groupController.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
 const router = Router();

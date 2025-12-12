@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
-import * as siteModel from './siteModel';
+
 import { District } from './interface';
+import * as siteModel from './siteModel';
 
 export async function getSiteInfo(req: Request, res: Response) {
     try {
@@ -19,14 +20,14 @@ export async function getSiteInfo(req: Request, res: Response) {
         });
 
         return res.status(200).json({
-            success: true,
+            data: enrichedSiteInfo,
             message: 'Site information fetched successfully',
             pagination: {
                 offset: Number(offset),
                 pageSize: Number(pageSize),
                 totalRecords: enrichedSiteInfo.length
             },
-            data: enrichedSiteInfo
+            success: true
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch site information' });

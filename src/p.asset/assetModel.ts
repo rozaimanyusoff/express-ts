@@ -1,6 +1,7 @@
-import { pool, pool2 } from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import path from 'path';
+
+import { pool, pool2 } from "../utils/db";
 
 // Database and table declarations for easy swapping/testing
 const db = 'assets';
@@ -45,7 +46,7 @@ const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd()
 // Helper function to calculate Net Book Value (NBV) based on depreciation
 // Depreciation: 20% per year, max 5 years
 // Returns formatted string with 2 decimal places
-export const calculateNBV = (unitPrice: number | null | undefined, purchaseYear: number | null | undefined): string | null => {
+export const calculateNBV = (unitPrice: null | number | undefined, purchaseYear: null | number | undefined): null | string => {
   if (!unitPrice || unitPrice <= 0 || !purchaseYear) return null;
   
   const currentYear = new Date().getFullYear();
@@ -60,16 +61,16 @@ export const calculateNBV = (unitPrice: number | null | undefined, purchaseYear:
 };
 
 // Helper function to calculate asset age in years
-export const calculateAge = (purchaseYear: number | null | undefined): number | null => {
+export const calculateAge = (purchaseYear: null | number | undefined): null | number => {
   if (!purchaseYear) return null;
   const currentYear = new Date().getFullYear();
   return currentYear - purchaseYear;
 };
 
 /* ============ ASSETS ============ */
-export const getAssets = async (type_ids?: number[] | number, classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | Array<string>, brandId?: number, purpose?: string | string[]) => {
+export const getAssets = async (type_ids?: number | number[], classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | string[], brandId?: number, purpose?: string | string[]) => {
   let sql = `SELECT ${assetTable}.* FROM ${assetTable}`;
-  let params: any[] = [];
+  const params: any[] = [];
   const conditions: string[] = [];
   if (typeof manager === 'number' && !isNaN(manager)) {
     conditions.push(`${assetTable}.manager_id = ?`);
@@ -146,15 +147,15 @@ export const getPurchaseItemsByAssetIds = async (purchaseIds: number[]) => {
 // Server-side pagination + free-text search for assets
 export const getAssetsPaged = async (
   filters: {
-    type_ids?: number[] | number;
-    classification?: string;
-    status?: string;
-    manager?: number;
-    registerNumber?: string;
-    owner?: string | string[];
     brandId?: number;
-    q?: string;
+    classification?: string;
+    manager?: number;
+    owner?: string | string[];
     purpose?: string | string[];
+    q?: string;
+    registerNumber?: string;
+    status?: string;
+    type_ids?: number | number[];
   },
   options: {
     page: number;
@@ -164,19 +165,19 @@ export const getAssetsPaged = async (
   }
 ) => {
   const {
-    type_ids,
-    classification,
-    status,
-    manager,
-    registerNumber,
-    owner,
     brandId,
+    classification,
+    manager,
+    owner,
+    purpose,
     q,
-    purpose
+    registerNumber,
+    status,
+    type_ids
   } = filters || {};
 
-  const page = Number.isFinite(options?.page) && options.page > 0 ? Math.floor(options.page) : 1;
-  const pageSize = Number.isFinite(options?.pageSize) && options.pageSize > 0 ? Math.floor(options.pageSize) : 25;
+  const page = Number.isFinite(options.page) && options.page > 0 ? Math.floor(options.page) : 1;
+  const pageSize = Number.isFinite(options.pageSize) && options.pageSize > 0 ? Math.floor(options.pageSize) : 25;
   const offset = (page - 1) * pageSize;
 
   const conditions: string[] = [];
@@ -259,19 +260,19 @@ export const getAssetsPaged = async (
 
   // Sorting allowlist
   const sortAllowlist = new Set([
-    'id',
-    'type_id',
-    'register_number',
-    'entry_code',
     'asset_code',
+    'classification',
+    'entry_code',
+    'id',
     'purchase_date',
     'purchase_year',
     'record_status',
-    'classification'
+    'register_number',
+    'type_id'
   ]);
   let orderBy = 'a.type_id ASC, a.register_number ASC';
-  const sortBy = (options?.sortBy || '').toString();
-  const sortDir = (options?.sortDir || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  const sortBy = (options.sortBy || '').toString();
+  const sortDir = (options.sortDir || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
   if (sortBy && sortAllowlist.has(sortBy)) {
     orderBy = `a.${sortBy} ${sortDir}`;
   }
@@ -300,7 +301,7 @@ export const getAssetByCode = async (asset_code: string) => {
 };
 
 export const createAsset = async (data: any) => {
-  const { register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id } = data;
+  const { brand_id, category_id, depreciation_rate, finance_tag, model_id, procurement_id, register_number, status, type_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${assetTable} (register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
@@ -317,7 +318,7 @@ export const updateAsset = async (id: number, data: any) => {
   // insert into asset_history on successful update
   try {
     const resAny: any = result as any;
-    if (resAny && resAny.affectedRows && resAny.affectedRows > 0) {
+    if (resAny?.affectedRows && resAny.affectedRows > 0) {
       const asset = await getAssetById(id);
       if (asset) {
         await pool.query(
@@ -340,7 +341,7 @@ export const updateAsset = async (id: number, data: any) => {
     }
   } catch (err) {
     // do not fail the update if history insertion fails; log and continue
-    // eslint-disable-next-line no-console
+     
     console.error('Failed to insert asset history for asset', id, err);
   }
 
@@ -348,7 +349,7 @@ export const updateAsset = async (id: number, data: any) => {
 };
 
 // Get the last entry_code for a given type_id (ordered by numeric suffix)
-export const getLastEntryCodeByType = async (typeId: number): Promise<string | null> => {
+export const getLastEntryCodeByType = async (typeId: number): Promise<null | string> => {
   const prefix = String(typeId);
   const prefixLen = prefix.length;
   const [rows] = await pool.query(
@@ -369,7 +370,7 @@ export const deleteAsset = async (id: number) => {
 
 /* =============== ASSET-OWNERSHIP CRUD (using pc_ownership join table)] =============== */
 export const createAssetOwnership = async (data: any) => {
-  const { asset_code, ramco_id, effective_date } = data;
+  const { asset_code, effective_date, ramco_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${assetHistoryTable} (asset_code, ramco_id, effective_date) VALUES (?, ?, ?)`,
     [asset_code, ramco_id, effective_date]
@@ -388,7 +389,7 @@ export const getAssetOwnershipById = async (id: number) => {
 };
 
 export const updateAssetOwnership = async (id: number, data: any) => {
-  const { asset_code, ramco_id, effective_date } = data;
+  const { asset_code, effective_date, ramco_id } = data;
   const [result] = await pool.query(
     `UPDATE ${assetHistoryTable} SET asset_code = ?, ramco_id = ?, effective_date = ? WHERE id = ?`,
     [asset_code, ramco_id, effective_date, id]
@@ -440,6 +441,21 @@ export const deleteAssetManager = async (id: number) => {
 }
 
 
+function mapDataTypeToSql(dataType: string): string {
+  switch ((dataType || '').toLowerCase()) {
+    case 'boolean': return 'TINYINT(1)';
+    case 'date': return 'DATE';
+    case 'datetime': return 'DATETIME'; case 'decimal': return 'DECIMAL(18,4)';
+    case 'float': return 'DOUBLE';
+    case 'int':
+    case 'integer': return 'INT';
+    case 'json': return 'JSON';
+    case 'string': return 'VARCHAR(255)';
+    case 'text': return 'TEXT';
+    default: return 'VARCHAR(255)';
+  }
+}
+
 /* ================ SPEC PROPERTIES (master) + schema application helpers ================ */
 /**
  * Sanitize a user-provided name into a safe SQL column name.
@@ -458,23 +474,13 @@ function sanitizeColumnName(name: string): string {
   return s.substring(0, 120);
 }
 
-function mapDataTypeToSql(dataType: string): string {
-  switch ((dataType || '').toLowerCase()) {
-    case 'string': return 'VARCHAR(255)';
-    case 'text': return 'TEXT';
-    case 'integer': case 'int': return 'INT';
-    case 'float': return 'DOUBLE';
-    case 'decimal': return 'DECIMAL(18,4)';
-    case 'boolean': return 'TINYINT(1)';
-    case 'date': return 'DATE';
-    case 'datetime': return 'DATETIME';
-    case 'json': return 'JSON';
-    default: return 'VARCHAR(255)';
-  }
-}
-
 // Prefer legacy spec schema if provided (many existing installs keep specs in `assetdata`)
 const SPEC_SCHEMA = process.env.ASSET_SPEC_SCHEMA || 'assetdata';
+
+function getPrimarySpecTableName(type_id: number): null | string {
+  if (!Number.isFinite(type_id) || type_id <= 0) return null;
+  return `${SPEC_SCHEMA}.${type_id}_specs`;
+}
 
 function mapTypeIdToSpecTables(type_id: number): string[] {
   // Per-type spec tables are named '{type_id}_specs'. Try candidate schemas in order.
@@ -485,11 +491,6 @@ function mapTypeIdToSpecTables(type_id: number): string[] {
   candidates.add(`${db}.${type_id}_specs`);
   if (SPEC_SCHEMA !== 'assetdata') candidates.add(`assetdata.${type_id}_specs`);
   return Array.from(candidates);
-}
-
-function getPrimarySpecTableName(type_id: number): string | null {
-  if (!Number.isFinite(type_id) || type_id <= 0) return null;
-  return `${SPEC_SCHEMA}.${type_id}_specs`;
 }
 
 function quoteFullTableName(fullTableName: string): string {
@@ -513,23 +514,23 @@ export const getSpecsForAsset = async (type_id: number, asset_id: number) => {
   }
 
   // Build list of candidate predicates in order of likelihood
-  const predicates: Array<{ sql: string; params: any[] }> = [];
+  const predicates: { params: any[]; sql: string; }[] = [];
   // 1) Primary by asset_id
-  predicates.push({ sql: `asset_id = ?`, params: [asset_id] });
+  predicates.push({ params: [asset_id], sql: `asset_id = ?` });
   if (assetRow) {
     // 2) By asset_code if available
     const assetCode = assetRow.asset_code || assetRow.entry_code || null;
     if (assetCode) {
-      predicates.push({ sql: `asset_code = ?`, params: [assetCode] });
+      predicates.push({ params: [assetCode], sql: `asset_code = ?` });
     }
     // 3) By register_number
     if (assetRow.register_number) {
-      predicates.push({ sql: `register_number = ?`, params: [assetRow.register_number] });
+      predicates.push({ params: [assetRow.register_number], sql: `register_number = ?` });
     }
     // 4) By vehicle_id if present on asset row
     const vehicleId = assetRow.vehicle_id || null;
     if (vehicleId) {
-      predicates.push({ sql: `vehicle_id = ?`, params: [vehicleId] });
+      predicates.push({ params: [vehicleId], sql: `vehicle_id = ?` });
     }
   }
 
@@ -569,7 +570,7 @@ export const getSpecPropertyById = async (id: number) => {
 };
 
 export const createSpecProperty = async (data: any) => {
-  const { type_id, name, label, data_type, nullable = 1, default_value = null, visible_on_form = 1, options = null, created_by = null, column_name } = data;
+  const { column_name, created_by = null, data_type, default_value = null, label, name, nullable = 1, options = null, type_id, visible_on_form = 1 } = data;
   const col = column_name ? sanitizeColumnName(column_name) : sanitizeColumnName(name);
   // Insert metadata record
   const [result] = await pool.query(
@@ -582,13 +583,13 @@ export const createSpecProperty = async (data: any) => {
     const specRow = await getSpecPropertyById(insertId);
     if (specRow) {
       const applyRes: any = await applySpecPropertyToType(specRow);
-      return { insertId, column_name: col, applied: applyRes && applyRes.ok, applyError: applyRes && applyRes.error ? applyRes.error : null };
+      return { applied: applyRes?.ok, applyError: applyRes?.error ? applyRes.error : null, column_name: col, insertId };
     }
   } catch (err) {
     // swallow errors here; caller can call applyPendingSpecProperties if needed
-    return { insertId, column_name: col, applied: false, applyError: err instanceof Error ? err.message : String(err) };
+    return { applied: false, applyError: err instanceof Error ? err.message : String(err), column_name: col, insertId };
   }
-  return { insertId, column_name: col, applied: false };
+  return { applied: false, column_name: col, insertId };
 };
 
 // Helper to check whether a column exists in a given schema.table
@@ -596,7 +597,7 @@ async function columnExistsInTable(fullTableName: string, columnName: string) {
   // fullTableName format: `${schema}.${table}`
   const parts = String(fullTableName).split('.');
   let schema = parts.length > 1 ? parts[0] : null;
-  let table = parts.length > 1 ? parts[1] : parts[0];
+  const table = parts.length > 1 ? parts[1] : parts[0];
   if (!schema) schema = db; // fallback
   const [rows] = await pool.query(
     `SELECT COUNT(1) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
@@ -636,7 +637,7 @@ export const applySpecPropertyToType = async (specProperty: any) => {
     await pool.query(`UPDATE ${assetSpecsTable} SET is_active = 1, updated_at = NOW() WHERE id = ?`, [specProperty.id]);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { error: (err as Error).message, ok: false };
   }
 };
 
@@ -724,7 +725,7 @@ export const updateSpecProperty = async (id: number, data: any) => {
   return result;
 };
 
-export const deleteSpecProperty = async (id: number, dropColumn: boolean = false) => {
+export const deleteSpecProperty = async (id: number, dropColumn = false) => {
   const spec = await getSpecPropertyById(id);
   if (!spec) throw new Error('Spec property not found');
   if (dropColumn) {
@@ -761,12 +762,12 @@ export const applyPendingSpecProperties = async (type_id?: number) => {
     try {
       const res = await applySpecPropertyToType(r);
       if (res && res.ok) {
-        results.push({ id: r.id, column_name: r.column_name, ok: true });
+        results.push({ column_name: r.column_name, id: r.id, ok: true });
       } else {
-        results.push({ id: r.id, column_name: r.column_name, ok: false, error: res && res.error ? res.error : 'unknown' });
+        results.push({ column_name: r.column_name, error: res.error ? res.error : 'unknown', id: r.id, ok: false });
       }
     } catch (err) {
-      results.push({ id: r.id, column_name: r.column_name, ok: false, error: (err as Error).message });
+      results.push({ column_name: r.column_name, error: (err as Error).message, id: r.id, ok: false });
     }
   }
   return results;
@@ -781,7 +782,7 @@ export function getStringParam(param: any): string | undefined {
 
 /* =========== TYPES =========== */
 export const createType = async (data: any) => {
-  const { name, description, image, ramco_id } = data;
+  const { description, image, name, ramco_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${typeTable} (name, description, image, manager) VALUES (?, ?, ?, ?)`,
     [name, description, image, ramco_id]
@@ -800,7 +801,7 @@ export const getTypeById = async (id: number) => {
 };
 
 export const updateType = async (id: number, data: any) => {
-  const { name, description, image, ramco_id } = data;
+  const { description, image, name, ramco_id } = data;
   const [result] = await pool.query(
     `UPDATE ${typeTable} SET name = ?, description = ?, image = ?, manager = ? WHERE id = ?`,
     [name, description, image, ramco_id, id]
@@ -823,7 +824,7 @@ export const createCategory = async (data: any) => {
   return result;
 };
 
-export const getCategories = async (manager?: string | number | string[]) => {
+export const getCategories = async (manager?: number | string | string[]) => {
   // Normalize manager input into a deduplicated array of string ids
   let managerIds: string[] = [];
   if (manager !== undefined && manager !== null && manager !== '') {
@@ -857,7 +858,7 @@ export const getCategoryById = async (id: number) => {
 };
 
 export const updateCategory = async (id: number, data: any) => {
-  const { name, image, type_id } = data;
+  const { image, name, type_id } = data;
   const sets: string[] = [];
   const params: any[] = [];
   if (name !== undefined) { sets.push('name = ?'); params.push(name); }
@@ -876,7 +877,7 @@ export const deleteCategory = async (id: number) => {
 
 /* =========== BRANDS =========== */
 export const createBrand = async (data: any) => {
-  const { name, logo, type_id, category_ids } = data;
+  const { category_ids, logo, name, type_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${brandTable} (name, image${type_id ? ', type_id' : ''}) VALUES (?, ?${type_id ? ', ?' : ''})`,
     type_id ? [name, logo, type_id] : [name, logo]
@@ -904,7 +905,7 @@ export const getBrandById = async (id: number) => {
 };
 
 export const updateBrand = async (id: number, data: any) => {
-  const { name, logo, type_id, category_ids } = data;
+  const { category_ids, logo, name, type_id } = data;
   const sets: string[] = [];
   const params: any[] = [];
   if (name !== undefined) { sets.push('name = ?'); params.push(name); }
@@ -935,7 +936,7 @@ export const deleteBrand = async (id: number) => {
 
 /* =========== MODELS =========== */
 export const createModel = async (data: any) => {
-  const { name, image, brand_id, category_id, type_id, specification, generation, status } = data;
+  const { brand_id, category_id, generation, image, name, specification, status, type_id } = data;
   // Check for duplicate by name and type_id
   const [dupRows] = await pool.query(
     `SELECT id FROM ${modelTable} WHERE name = ? AND type_id = ?`,
@@ -975,7 +976,7 @@ export const getModelById = async (id: number) => {
 };
 
 export const updateModel = async (id: number, data: any) => {
-  const { name, image, brand_id, category_id, type_id, item_code, specification, generation, status } = data;
+  const { brand_id, category_id, generation, image, item_code, name, specification, status, type_id } = data;
   const sets: string[] = [];
   const params: any[] = [];
   if (name !== undefined) { sets.push('name = ?'); params.push(name); }
@@ -1007,7 +1008,7 @@ export const getModelsByBrand = async (brand_id: number) => {
 
 // COSTCENTERS CRUD
 export const createCostcenter = async (data: any) => {
-  const { name = null, description = null } = data;
+  const { description = null, name = null } = data;
   const [result] = await pool.query(`INSERT INTO ${costcenterTable} (name, description) VALUES (?, ?)`, [name, description]);
   return result;
 };
@@ -1023,7 +1024,7 @@ export const getCostcenterById = async (id: number) => {
 };
 
 export const updateCostcenter = async (id: number, data: any) => {
-  const { name = null, description = null } = data;
+  const { description = null, name = null } = data;
   const [result] = await pool.query(`UPDATE ${costcenterTable} SET name = ?, description = ? WHERE id = ?`, [name, description, id]);
   return result;
 };
@@ -1064,7 +1065,7 @@ export const deleteDepartment = async (id: number) => {
 
 /* =========== SECTIONS =========== */
 export const createSection = async (data: any) => {
-  const { name, department_id } = data;
+  const { department_id, name } = data;
   const [result] = await pool.query(`INSERT INTO ${sectionTable} (name, department_id) VALUES (?, ?)`, [name, department_id]);
   return result;
 };
@@ -1080,7 +1081,7 @@ export const getSectionById = async (id: number) => {
 };
 
 export const updateSection = async (id: number, data: any) => {
-  const { name, department_id } = data;
+  const { department_id, name } = data;
   const [result] = await pool.query(`UPDATE ${sectionTable} SET name = ?, department_id = ? WHERE id = ?`, [name, department_id, id]);
   return result;
 };
@@ -1121,7 +1122,7 @@ export const deleteLocation = async (id: number) => {
 
 /* ========== DISTRICTS ========== */
 export const createDistrict = async (data: any) => {
-  const { name, code } = data;
+  const { code, name } = data;
   const [result] = await pool.query(
     `INSERT INTO ${districtTable} (name, code) VALUES (?, ?)`,
     [name, code]
@@ -1140,7 +1141,7 @@ export const getDistrictById = async (id: number) => {
 };
 
 export const updateDistrict = async (id: number, data: any) => {
-  const { name, code } = data;
+  const { code, name } = data;
   const [result] = await pool.query(
     `UPDATE ${districtTable} SET name = ?, code = ? WHERE id = ?`,
     [name, code, id]
@@ -1155,7 +1156,7 @@ export const deleteDistrict = async (id: number) => {
 
 /* ========== SITES ========== */
 export const createSite = async (data: any) => {
-  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const { address = null, code = null, description = null, email = null, name = null, phone = null } = data;
   const [result] = await pool.query(
     `INSERT INTO ${siteTable} (name, code, address, phone, email, description) VALUES (?, ?, ?, ?, ?, ?)`,
     [name, code, address, phone, email, description]
@@ -1174,7 +1175,7 @@ export const getSiteById = async (id: number) => {
 };
 
 export const updateSite = async (id: number, data: any) => {
-  const { name = null, code = null, address = null, phone = null, email = null, description = null } = data;
+  const { address = null, code = null, description = null, email = null, name = null, phone = null } = data;
   const [result] = await pool.query(
     `UPDATE ${siteTable} SET name = ?, code = ?, address = ?, phone = ?, email = ?, description = ? WHERE id = ?`,
     [name, code, address, phone, email, description, id]
@@ -1202,7 +1203,7 @@ export const getSitesCount = async () => {
 
 /* ========== ZONES ========== */
 export const createZone = async (data: any) => {
-  const { name, code, employee_id } = data;
+  const { code, employee_id, name } = data;
   const [result] = await pool.query(
     `INSERT INTO ${zoneTable} (name, code, employee_id) VALUES (?, ?, ?)`,
     [name, code, employee_id]
@@ -1221,7 +1222,7 @@ export const getZoneById = async (id: number) => {
 };
 
 export const updateZone = async (id: number, data: any) => {
-  const { name, code, employee_id } = data;
+  const { code, employee_id, name } = data;
   const [result] = await pool.query(
     `UPDATE ${zoneTable} SET name = ?, code = ?, employee_id = ? WHERE id = ?`,
     [name, code, employee_id, id]
@@ -1296,22 +1297,22 @@ export const removeAllDistrictsFromZone = async (zone_id: number) => {
 export const createEmployee = async (data: any) => {
 	// Map incoming fields to database columns
 	const {
-		ramco_id,
-		full_name,
-		email,
-		contact,
-		gender,
-		dob,
 		avatar,
-		hire_date,
-		resignation_date,
-		employment_type,
-		employment_status,
-		grade,
-		position_id,
-		department_id,
+		contact,
 		costcenter_id,
-		location_id
+		department_id,
+		dob,
+		email,
+		employment_status,
+		employment_type,
+		full_name,
+		gender,
+		grade,
+		hire_date,
+		location_id,
+		position_id,
+		ramco_id,
+		resignation_date
 	} = data;
 
 	const [result] = await pool.query(
@@ -1415,7 +1416,7 @@ export const getEmployeeByContact = async (contact: number) => {
 };
 
 export const updateEmployee = async (id: number, data: any) => {
-  const { full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_type, employment_status } = data;
+  const { avatar, contact, costcenter_id, department_id, email, employment_status, employment_type, full_name, location_id, position_id, resignation_date } = data;
   const [result] = await pool.query(
     `UPDATE ${employeeTable} SET full_name = ?, email = ?, contact = ?, department_id = ?, costcenter_id = ?, position_id = ?, location_id = ?, avatar = ?, resignation_date = ?, employment_type = ?, employment_status = ? WHERE id = ?`,
     [full_name, email, contact, department_id, costcenter_id, position_id, location_id, avatar, resignation_date, employment_type, employment_status, id]
@@ -1474,7 +1475,7 @@ export const deletePosition = async (id: number) => {
 
 // VENDORS CRUD
 export const createVendor = async (data: any) => {
-  const { name, quote_number, quote_date, quote_status } = data;
+  const { name, quote_date, quote_number, quote_status } = data;
   const [result] = await pool.query(
     `INSERT INTO ${vendorTable} (name, quote_number, quote_date, quote_status) VALUES (?, ?, ?, ?)`,
     [name, quote_number, quote_date, quote_status]
@@ -1493,7 +1494,7 @@ export const getVendorById = async (id: number) => {
 };
 
 export const updateVendor = async (id: number, data: any) => {
-  const { name, quote_number, quote_date, quote_status } = data;
+  const { name, quote_date, quote_number, quote_status } = data;
   const [result] = await pool.query(
     `UPDATE ${vendorTable} SET name = ?, quote_number = ?, quote_date = ?, quote_status = ? WHERE id = ?`,
     [name, quote_number, quote_date, quote_status, id]
@@ -1508,7 +1509,7 @@ export const deleteVendor = async (id: number) => {
 
 // PROCUREMENTS CRUD
 export const createProcurement = async (data: any) => {
-  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
+  const { conditions, cost_center_id, currency, delivery_date, delivery_status, department_id, develivery_order, invoice_date, invoice_number, invoice_status, price, purchase_date, purchase_order, purchase_order_date, purchase_order_status, requisition_number, vendor_id, warranty_period } = data;
   const [result] = await pool.query(
     `INSERT INTO ${procurementTable} (requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period]
@@ -1527,7 +1528,7 @@ export const getProcurementById = async (id: number) => {
 };
 
 export const updateProcurement = async (id: number, data: any) => {
-  const { requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period } = data;
+  const { conditions, cost_center_id, currency, delivery_date, delivery_status, department_id, develivery_order, invoice_date, invoice_number, invoice_status, price, purchase_date, purchase_order, purchase_order_date, purchase_order_status, requisition_number, vendor_id, warranty_period } = data;
   const [result] = await pool.query(
     `UPDATE ${procurementTable} SET requisition_number = ?, vendor_id = ?, purchase_order = ?, purchase_order_date = ?, purchase_order_status = ?, delivery_date = ?, delivery_status = ?, develivery_order = ?, invoice_number = ?, invoice_date = ?, invoice_status = ?, cost_center_id = ?, department_id = ?, conditions = ?, price = ?, currency = ?, purchase_date = ?, warranty_period = ? WHERE id = ?`,
     [requisition_number, vendor_id, purchase_order, purchase_order_date, purchase_order_status, delivery_date, delivery_status, develivery_order, invoice_number, invoice_date, invoice_status, cost_center_id, department_id, conditions, price, currency, purchase_date, warranty_period, id]
@@ -1545,7 +1546,7 @@ export const deleteProcurement = async (id: number) => {
 
 // MODULES CRUD
 export const createModule = async (data: any) => {
-  const { name = null, code = null } = data;
+  const { code = null, name = null } = data;
   const [result] = await pool.query(`INSERT INTO ${moduleTable} (name, code) VALUES (?, ?)`, [name, code]);
   return result;
 };
@@ -1561,7 +1562,7 @@ export const getModuleById = async (id: number) => {
 };
 
 export const updateModule = async (id: number, data: any) => {
-  const { name = null, code = null } = data;
+  const { code = null, name = null } = data;
   const [result] = await pool.query(`UPDATE ${moduleTable} SET name = ?, code = ? WHERE id = ?`, [name, code, id]);
   return result;
 };
@@ -1664,17 +1665,17 @@ export const deleteSoftware = async (id: number) => {
 };
 
 // Resolve codes to IDs for model creation/update
-export const getTypeByCode = async (code: string | number) => {
+export const getTypeByCode = async (code: number | string) => {
   const [rows] = await pool.query(`SELECT * FROM ${typeTable} WHERE code = ? OR id = ?`, [code, code]);
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
-export const getCategoryByCode = async (code: string | number) => {
+export const getCategoryByCode = async (code: number | string) => {
   const [rows] = await pool.query(`SELECT * FROM ${categoryTable} WHERE code = ? OR id = ?`, [code, code]);
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
-export const getBrandByCode = async (code: string | number) => {
+export const getBrandByCode = async (code: number | string) => {
   const [rows] = await pool.query(`SELECT * FROM ${brandTable} WHERE code = ? OR id = ?`, [code, code]);
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
@@ -1793,7 +1794,7 @@ export const createAssetTransferItem = async (data: any) => {
 };
 
 export const updateAssetTransfer = async (id: number, data: any) => {
-  const { request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager } = data;
+  const { action_date, approval_date, approval_id, asset_mgr_id, qa_date, qa_id, request_date, request_no, requestor, return_to_asset_manager, verified_date, verifier_id } = data;
   const [result] = await pool.query(
     `UPDATE ${assetTransferRequestTable} SET request_no = ?, requestor = ?, request_date = ?, verifier_id = ?, verified_date = ?, approval_id = ?, approval_date = ?, asset_mgr_id = ?, qa_id = ?, qa_date = ?, action_date = ?, return_to_asset_manager = ?, updated_at = NOW() WHERE id = ?`,
     [request_no, requestor, request_date, verifier_id, verified_date, approval_id, approval_date, asset_mgr_id, qa_id, qa_date, action_date, return_to_asset_manager ? 1 : 0, id]
@@ -1802,7 +1803,7 @@ export const updateAssetTransfer = async (id: number, data: any) => {
 };
 
 // Bulk/individual update of transfer approvals
-export const bulkUpdateAssetTransfersApproval = async (ids: number[], status: string, approved_by: string, approved_date?: string | Date) => {
+export const bulkUpdateAssetTransfersApproval = async (ids: number[], status: string, approved_by: string, approved_date?: Date | string) => {
   if (!Array.isArray(ids) || ids.length === 0) return { affectedRows: 0 } as any;
   const placeholders = ids.map(() => '?').join(',');
   const dateVal = approved_date ?? new Date();
@@ -1858,7 +1859,7 @@ export const updateAssetTransferItem = async (id: number, data: any) => {
   for (const key of allowedFields) {
     if (Object.prototype.hasOwnProperty.call(data, key)) {
       sets.push(`${key} = ?`);
-      params.push((data as any)[key]);
+      params.push((data)[key]);
     }
   }
   if (!sets.length) {
@@ -1905,7 +1906,7 @@ export const generateNextRequestNo = async () => {
   let nextNumber = 1;
   if (Array.isArray(rows) && rows.length > 0) {
     const last = (rows[0] as any).request_no;
-    const match = last && last.match(/AR\/(\d{4})\//);
+    const match = last?.match(/AR\/(\d{4})\//);
     if (match) {
       nextNumber = parseInt(match[1], 10) + 1;
     }
@@ -1927,7 +1928,7 @@ export const getTransferChecklistById = async (id: number) => {
   return (rows as RowDataPacket[])[0];
 };
 export const createTransferChecklist = async (data: any) => {
-  const { type_id, item, is_required, created_by } = data;
+  const { created_by, is_required, item, type_id } = data;
   const [result] = await pool.query(
     `INSERT INTO ${transferChecklistTable} (type_id, item, is_required, created_by, created_at)
      VALUES (?, ?, ?, ?, NOW())`,
@@ -1936,7 +1937,7 @@ export const createTransferChecklist = async (data: any) => {
   return result;
 }
 export const updateTransferChecklist = async (id: number, data: any) => {
-  const { type_id, item, is_required, sort_order, created_by } = data;
+  const { created_by, is_required, item, sort_order, type_id } = data;
   const [result] = await pool.query(
     `UPDATE ${transferChecklistTable} SET type_id = ?, item = ?, is_required = ?, created_by = ?, created_at = NOW() WHERE id = ?`,
     [type_id, item, is_required ? 1 : 0, created_by, id]
@@ -1950,11 +1951,11 @@ export const deleteTransferChecklist = async (id: number) => {
 
 // Update acceptance metadata for a transfer request (dynamic fields)
 export const setAssetTransferAcceptance = async (id: number, data: {
-  acceptance_by?: string | null;
-  acceptance_date?: string | null; // expect 'YYYY-MM-DD hh:mm:ss'
-  acceptance_remarks?: string | null;
   acceptance_attachments?: string[]; // stored as JSON array string
+  acceptance_by?: null | string;
   acceptance_checklist_items?: number[]; // will be stored as comma-separated string
+  acceptance_date?: null | string; // expect 'YYYY-MM-DD hh:mm:ss'
+  acceptance_remarks?: null | string;
 }) => {
   const sets: string[] = [];
   const params: any[] = [];
@@ -1982,13 +1983,13 @@ export const setAssetTransferAcceptance = async (id: number, data: {
 // Insert asset movement record into asset_history
 export const insertAssetHistory = async (data: {
   asset_id: number;
-  register_number?: string | null;
-  type_id?: number | null;
-  costcenter_id?: number | null;
-  department_id?: number | null;
-  location_id?: number | null;
-  ramco_id?: string | null;
-  effective_date?: string | Date;
+  costcenter_id?: null | number;
+  department_id?: null | number;
+  effective_date?: Date | string;
+  location_id?: null | number;
+  ramco_id?: null | string;
+  register_number?: null | string;
+  type_id?: null | number;
 }) => {
   const [result] = await pool.query(
     `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date)
@@ -2009,10 +2010,10 @@ export const insertAssetHistory = async (data: {
 
 // Update asset current ownership data in assetdata table
 export const updateAssetCurrentOwner = async (asset_id: number, data: {
-  ramco_id?: string | null;
-  costcenter_id?: number | null;
-  department_id?: number | null;
-  location_id?: number | null;
+  costcenter_id?: null | number;
+  department_id?: null | number;
+  location_id?: null | number;
+  ramco_id?: null | string;
 }) => {
   const sets: string[] = [];
   const params: any[] = [];

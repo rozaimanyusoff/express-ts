@@ -1,16 +1,17 @@
 import { Request, Response } from 'express';
+
 import * as importerModel from './importerModel';
 
 export const importTempTable = async (req: Request, res: Response) => {
-  const { tableName, headers, data } = req.body;
+  const { data, headers, tableName } = req.body;
   if (!tableName || !Array.isArray(headers) || !Array.isArray(data)) {
-    return res.status(400).json({ status: 'error', message: 'Invalid payload' });
+    return res.status(400).json({ message: 'Invalid payload', status: 'error' });
   }
   try {
     const result = await importerModel.importTempTable(tableName, headers, data);
-    res.json({ status: 'success', message: result.message, table: result.table, rows: result.rows });
+    res.json({ message: result.message, rows: result.rows, status: 'success', table: result.table });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message });
+    res.status(500).json({ message: err.message, status: 'error' });
   }
 };
 
@@ -18,7 +19,7 @@ export const getTempTables = async (req: Request, res: Response) => {
   try {
     const tables = await importerModel.getTempTables();
     if (!tables.length) {
-      return res.json({ status: 'success', message: 'No tables found', data: [] });
+      return res.json({ data: [], message: 'No tables found', status: 'success' });
     }
     // For each table, get columns and format as requested
     const result = [];
@@ -42,18 +43,18 @@ export const getTempTables = async (req: Request, res: Response) => {
           constraints.push(`DEFAULT ${col.COLUMN_DEFAULT}`);
         }
         return {
+          constraints,
           name: col.COLUMN_NAME,
-          type,
-          constraints
+          type
         };
       });
-      result.push({ table_name: tableName, columns });
+      result.push({ columns, table_name: tableName });
     }
     // If only one table, return as object, else as array
     const data = result.length === 1 ? result[0] : result;
-    res.json({ status: 'success', message: 'Data processed successfully', data });
+    res.json({ data, message: 'Data processed successfully', status: 'success' });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message });
+    res.status(500).json({ message: err.message, status: 'error' });
   }
 };
 

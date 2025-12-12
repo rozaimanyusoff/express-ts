@@ -1,5 +1,6 @@
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
+
 import { pool, pool2 } from '../utils/db';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 
 // Database and table declarations
@@ -33,21 +34,21 @@ const vehicleMtnAppTable = `${dbApps}.vehicle_svc`; // index field: req_id
 /* =========== VEHICLE MAINTENANCE BILLING PARENT TABLE =========== */
 
 export interface VehicleMaintenance {
+  attachment: null | string;
+  costcenter_id: number;
+  inv_date: string;
   inv_id: number;
   inv_no: string;
-  inv_date: string;
-  svc_order: string;
-  vehicle_id: number;
-  costcenter_id: number;
+  inv_remarks: null | string;
+  inv_stat: string;
+  inv_total: string;
   location_id: number;
-  ws_id: number;
+  running_no: number;
   svc_date: string;
   svc_odo: string;
-  inv_total: string;
-  inv_stat: string;
-  inv_remarks: string | null;
-  attachment: string | null;
-  running_no: number;
+  svc_order: string;
+  vehicle_id: number;
+  ws_id: number;
 }
 
 export const getVehicleMtnBillings = async (
@@ -110,7 +111,7 @@ export const getVehicleMtnBillingsByInvDate = async (
   return rows as VehicleMaintenance[];
 };
 
-export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaintenance | null> => {
+export const getVehicleMtnBillingById = async (id: number): Promise<null | VehicleMaintenance> => {
   const [rows] = await pool2.query(`SELECT * FROM ${vehicleMtnBillingTable} WHERE inv_id = ?`, [id]);
   const billing = (rows as VehicleMaintenance[])[0];
   
@@ -128,7 +129,7 @@ export const getVehicleMtnBillingById = async (id: number): Promise<VehicleMaint
       );
       const mtnRecord = (mtnRows as any[])[0];
       
-      if (mtnRecord && mtnRecord.svc_opt) {
+      if (mtnRecord?.svc_opt) {
         // Fetch service types
         const [serviceTypesRows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable}`);
         const serviceTypes = serviceTypesRows as any[];
@@ -220,7 +221,7 @@ export const createVehicleMtnBillingParts = async (inv_id: number, parts: any[])
   );
 };
 
-export const getVehicleMtnBillingPartById = async (id: number): Promise<VehicleMaintenance | null> => {
+export const getVehicleMtnBillingPartById = async (id: number): Promise<null | VehicleMaintenance> => {
   const [rows] = await pool2.query(
     `SELECT * FROM ${vehicleMtnBillingPartTable} WHERE inv_id = ?`,
     [id]
@@ -266,17 +267,17 @@ export const countVehicleMtnByInvNo = async (inv_no: string, excludeInvId?: numb
 
 /* =================== SERVICE OPTION TABLE ========================== */
 export interface ServiceOption {
-  svcTypeId: number;
-  svcType: string;
-  svcOpt: string;
   group_desc: string;
+  svcOpt: string;
+  svcType: string;
+  svcTypeId: number;
 }
 
 export const getServiceOptions = async (): Promise<ServiceOption[]> => {
   const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} ORDER BY svcTypeId DESC`);
   return rows as ServiceOption[];
 };
-export const getServiceOptionById = async (id: number): Promise<ServiceOption | null> => {
+export const getServiceOptionById = async (id: number): Promise<null | ServiceOption> => {
   const [rows] = await pool2.query(`SELECT * FROM ${serviceOptionsTable} WHERE svcTypeId = ?`, [id]);
   const serviceOption = (rows as ServiceOption[])[0];
   return serviceOption || null;
@@ -301,17 +302,17 @@ export const updateServiceOption = async (id: number, data: ServiceOption): Prom
 
 /* =================== SERVICE PARTS (autoparts) CRUD =================== */
 export interface ServicePart {
-  autopart_id: number;
   autocat_id?: string;
-  vtype_id?: string;
-  part_name?: string;
-  part_uprice?: string;
-  part_sst_rate?: number;
-  part_sst_amount?: string;
+  autopart_id: number;
   part_disc_amount?: string;
   part_final_amount?: string;
+  part_name?: string;
+  part_sst_amount?: string;
+  part_sst_rate?: number;
   part_stat?: number;
-  reg_date?: string | null;
+  part_uprice?: string;
+  reg_date?: null | string;
+  vtype_id?: string;
 }
 
 export const getServiceParts = async (): Promise<ServicePart[]> => {
@@ -319,7 +320,7 @@ export const getServiceParts = async (): Promise<ServicePart[]> => {
   return rows as ServicePart[];
 };
 
-export const getServicePartById = async (id: number): Promise<ServicePart | null> => {
+export const getServicePartById = async (id: number): Promise<null | ServicePart> => {
   const [rows] = await pool2.query(`SELECT * FROM ${servicePartsTable} WHERE autopart_id = ?`, [id]);
   const part = (rows as ServicePart[])[0];
   return part || null;
@@ -375,7 +376,7 @@ export const countServiceParts = async (q?: string, category?: number): Promise<
 };
 
 // Paginated fetch for service parts with optional search q and category filter
-export const getServicePartsPaged = async (q?: string, page: number = 1, per_page: number = 50, category?: number): Promise<ServicePart[]> => {
+export const getServicePartsPaged = async (q?: string, page = 1, per_page = 50, category?: number): Promise<ServicePart[]> => {
   page = Number(page) || 1;
   per_page = Number(per_page) || 50;
   const offset = (page - 1) * per_page;
@@ -397,7 +398,7 @@ export const getServicePartsPaged = async (q?: string, page: number = 1, per_pag
 };
 
 // Quick search endpoint for typeahead or global search (not paginated)
-export const searchServiceParts = async (q: string, limit: number = 10): Promise<ServicePart[]> => {
+export const searchServiceParts = async (q: string, limit = 10): Promise<ServicePart[]> => {
   const like = `%${q}%`;
   const [rows] = await pool2.query(`SELECT * FROM ${servicePartsTable} WHERE part_name LIKE ? ORDER BY autopart_id DESC LIMIT ?`, [like, Number(limit) || 10]);
   return rows as ServicePart[];
@@ -711,7 +712,7 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
       }
       // Maintain fleet_asset join links: remove old link, add new link if present
       try {
-        if (current && current.asset_id) {
+        if (current?.asset_id) {
           await pool2.query(`DELETE FROM ${fleetAssetJoinTable} WHERE asset_id = ? AND card_id = ?`, [current.asset_id, id]);
         }
         if (data.asset_id) {
@@ -734,7 +735,7 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
 // - billings.fleet2: set asset_id, purpose, card_no by id = card_id
 // - billings.fuel_stmt_detail: set asset_id, cc_id, purpose for rows matching (stmt_id, card_id)
 export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
-  const { card_id, asset_id, costcenter_id, purpose, stmt_id, card_no } = data || {};
+  const { asset_id, card_id, card_no, costcenter_id, purpose, stmt_id } = data || {};
   if (!card_id || !asset_id || !purpose || !stmt_id || !card_no || !costcenter_id) {
     throw new Error('Missing required fields for fleet card update from billing');
   }
@@ -755,60 +756,60 @@ export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 export interface TempVehicleRecord {
-  vehicle_id: number;
-  vehicle_regno: string;
-  vehicle_make: string;
-  make_id: number;
-  vehicle_model: string;
-  model_id: number;
-  vehicle_type: string;
-  vtype_id: number;
-  vchassis_no: string;
-  vengine_no: string;
-  vtrans_type: string;
-  vfuel_type: string;
+  [key: string]: any;
+  avls_availability: string;
+  avls_install_date: string;
+  avls_transfer_date: string;
+  avls_uninstall_date: string;
+  cc_id: number;
+  classification: string;
+  condition_status: string;
+  dept_id: number;
+  fc_id: number;
   ft_id: number;
   fuel_id: number;
-  fc_id: number;
-  vcubic: string;
-  v_dop: string;
-  v_lend: string;
-  v_hp: string;
-  v_instmt: string;
-  v_tenure: number;
-  v_insurer: string;
-  rt_id: number;
-  v_policy: string;
-  v_insexp: string;
-  v_ncdrate: string;
-  v_rtexp: string;
-  v_insdate: string;
-  vdept: string;
-  dept_id: number;
-  v_costctr: string;
-  vsect: string;
-  vloc: string;
-  cc_id: number;
   loc_id: number;
-  vdrv: string;
+  make_id: number;
+  model_id: number;
+  purpose: string;
   ramco_id: string;
-  vcod1: string;
-  vcod2: string;
-  v_stat: string;
+  record_status: string;
+  rt_id: number;
+  v_costctr: string;
+  v_disp: string;
+  v_dop: string;
   v_fcno: string;
   v_fcpin: string;
   v_fcrem: string;
-  v_disp: string;
+  v_hp: string;
+  v_insdate: string;
+  v_insexp: string;
+  v_instmt: string;
+  v_insurer: string;
+  v_lend: string;
+  v_ncdrate: string;
+  v_policy: string;
   v_return_date: string;
-  avls_availability: string;
-  avls_install_date: string;
-  avls_uninstall_date: string;
-  avls_transfer_date: string;
-  classification: string;
-  record_status: string;
-  purpose: string;
-  condition_status: string;
-  [key: string]: any;
+  v_rtexp: string;
+  v_stat: string;
+  v_tenure: number;
+  vchassis_no: string;
+  vcod1: string;
+  vcod2: string;
+  vcubic: string;
+  vdept: string;
+  vdrv: string;
+  vehicle_id: number;
+  vehicle_make: string;
+  vehicle_model: string;
+  vehicle_regno: string;
+  vehicle_type: string;
+  vengine_no: string;
+  vfuel_type: string;
+  vloc: string;
+  vsect: string;
+  vtrans_type: string;
+  vtype_id: number;
 }
 
 export const getTempVehicleRecords = async (): Promise<TempVehicleRecord[]> => {
@@ -816,7 +817,7 @@ export const getTempVehicleRecords = async (): Promise<TempVehicleRecord[]> => {
   return rows as TempVehicleRecord[];
 };
 
-export const getTempVehicleRecordById = async (id: number): Promise<TempVehicleRecord | null> => {
+export const getTempVehicleRecordById = async (id: number): Promise<null | TempVehicleRecord> => {
   const [rows] = await pool2.query(`SELECT vehicle_id, vehicle_regno, category_id, brand_id, model_id, vtrans_type, vfuel_type, v_dop, card_id, cc_id, dept_id, ramco_id, classification, record_status, purpose, condition_status FROM ${tempVehicleRecordTable} WHERE vehicle_id = ?`, [id]);
   const record = (rows as TempVehicleRecord[])[0];
   return record || null;
@@ -874,20 +875,20 @@ export const deleteTempVehicleRecord = async (id: number): Promise<void> => {
 // =================== UTILITIES TABLE CRUD ===================
 export interface UtilityBill {
   bill_id: number;
-  loc_id: number;
   cc_id: number;
-  ubill_date: string;
-  ubill_no: string;
-  ubill_stotal: string;
-  ubill_tax: string;
-  ubill_disc: string;
-  ubill_round: string;
-  ubill_rent: string;
+  loc_id: number;
   ubill_bw: string;
   ubill_color: string;
+  ubill_date: string;
+  ubill_disc: string;
   ubill_gtotal: string;
+  ubill_no: string;
   ubill_paystat: string;
   ubill_ref: string;
+  ubill_rent: string;
+  ubill_round: string;
+  ubill_stotal: string;
+  ubill_tax: string;
 }
 
 export const getUtilityBills = async (): Promise<UtilityBill[]> => {
@@ -910,8 +911,8 @@ export const getUtilityBillsByIds = async (ids: number[]): Promise<UtilityBill[]
 export const getPreviousUtilityBillsForAccount = async (
   bill_id: number,
   excludeUtilId?: number,
-  limit: number = 5
-): Promise<Array<Pick<UtilityBill, 'ubill_no' | 'ubill_date' | 'ubill_gtotal'>>> => {
+  limit = 5
+): Promise<Pick<UtilityBill, 'ubill_date' | 'ubill_gtotal' | 'ubill_no'>[]> => {
   if (!Number.isFinite(bill_id) || bill_id <= 0) return [];
   const params: any[] = [bill_id];
   let where = 'bill_id = ?';
@@ -922,7 +923,7 @@ export const getPreviousUtilityBillsForAccount = async (
   params.push(limit);
   const sql = `SELECT ubill_no, ubill_date, ubill_gtotal FROM ${utilitiesTable} WHERE ${where} ORDER BY ubill_date DESC, util_id DESC LIMIT ?`;
   const [rows] = await pool2.query(sql, params);
-  return rows as Array<Pick<UtilityBill, 'ubill_no' | 'ubill_date' | 'ubill_gtotal'>>;
+  return rows as Pick<UtilityBill, 'ubill_date' | 'ubill_gtotal' | 'ubill_no'>[];
 };
 
 // Count utility bills by ubill_no. Optionally exclude a specific util_id (useful during edit)
@@ -943,7 +944,7 @@ export const countUtilityByUbillNo = async (ubill_no: string, excludeUtilId?: nu
   return Number(cnt) || 0;
 };
 
-export const getUtilityBillById = async (util_id: number): Promise<UtilityBill | null> => {
+export const getUtilityBillById = async (util_id: number): Promise<null | UtilityBill> => {
   const [rows] = await pool2.query(`SELECT * FROM ${utilitiesTable} WHERE util_id = ?`, [util_id]);
   const bill = (rows as UtilityBill[])[0];
   return bill || null;
@@ -951,7 +952,7 @@ export const getUtilityBillById = async (util_id: number): Promise<UtilityBill |
 
 export const createUtilityBill = async (data: Partial<UtilityBill>): Promise<number> => {
   // Sanitize ubill_ref: accept only non-empty strings, otherwise null
-  const ubillRef: string | null = (typeof data.ubill_ref === 'string' && data.ubill_ref.trim() !== '') ? data.ubill_ref : null;
+  const ubillRef: null | string = (typeof data.ubill_ref === 'string' && data.ubill_ref.trim() !== '') ? data.ubill_ref : null;
 
   // Duplicate check: require bill_id, ubill_no and ubill_date to be present for the check
   if (data.bill_id && data.ubill_no && data.ubill_date) {
@@ -998,21 +999,21 @@ export const deleteUtilityBill = async (util_id: number): Promise<void> => {
 
 // =================== BILLING ACCOUNT TABLE CRUD ===================
 export interface BillingAccount {
-  bill_id: number;
   account: string;
-  category: string;
-  description: string;
   beneficiary_id: number;
-  costcenter_id: number;
-  location_id: number;
-  status: string;
-  contract_start: string;
+  bill_id: number;
+  category: string;
   contract_end: string;
+  contract_start: string;
+  costcenter_id: number;
   deposit: string;
+  description: string;
+  location_id: number;
   rental: string;
+  status: string;
 }
 // Helper: normalize various date inputs to MySQL DATE string (YYYY-MM-DD)
-const normalizeDateForMySQL = (val: any): string | null => {
+const normalizeDateForMySQL = (val: any): null | string => {
   if (val === undefined || val === null) return null;
   if (val instanceof Date) return val.toISOString().slice(0, 10);
   if (typeof val === 'string') {
@@ -1094,18 +1095,18 @@ export const deleteBillingAccount = async (bill_id: number): Promise<void> => {
 /* =================== BENEFICIARY (BILLING PROVIDERS) TABLE =================== */
 
 export interface Beneficiary {
-  id: number;
-  name?: string;
+  [key: string]: any;
+  address?: string;
   category?: string;
-  logo?: string;
+  contact_name?: string;
+  contact_no?: string;
   created_at?: Date;
   entry_by?: string;
   entry_position?: string;
-  contact_name?: string;
-  contact_no?: string;
-  address?: string;
   file_reference?: string;
-  [key: string]: any;
+  id: number;
+  logo?: string;
+  name?: string;
 }
 
 export const getBeneficiaries = async (services?: string | string[]): Promise<any[]> => {

@@ -8,25 +8,25 @@
 
 interface FlatNavItem {
     navId: number;
+    parent_nav_id: null | number | string;
+    path: null | string;
+    position: number;
+    section_id: null | number | string;
+    status: number;
     title: string;
     type: string;
-    position: number;
-    status: number;
-    path: string | null;
-    parent_nav_id: number | null | string;
-    section_id: number | null | string;
 }
 
 interface NavItem {
+    children: NavItem[] | null;
     navId: number;
+    parent_nav_id: null | number;
+    path: null | string;
+    position: number;
+    section_id: null | number;
+    status: number;
     title: string;
     type: string;
-    position: number;
-    status: number;
-    path: string | null;
-    parent_nav_id: number | null;
-    section_id: number | null;
-    children: NavItem[] | null;
 }
 
 const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
@@ -57,18 +57,18 @@ const buildNavigationTree = (flatNavItems: FlatNavItem[]): NavItem[] => {
         };
     });
 
-    const navMap: Map<number, NavItem> = new Map();
+    const navMap = new Map<number, NavItem>();
     normalizedItems.forEach(item => {
         navMap.set(item.navId, {
+            children: null,
             navId: item.navId,
+            parent_nav_id: item.parent_nav_id,
+            path: item.path,
+            position: item.position,
+            section_id: item.section_id,
+            status: item.status,
             title: item.title,
             type: item.type,
-            position: item.position,
-            status: item.status,
-            path: item.path,
-            parent_nav_id: item.parent_nav_id,
-            section_id: item.section_id,
-            children: null,
         });
     });
 

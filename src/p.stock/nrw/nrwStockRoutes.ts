@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import * as nrwStockController from './nrwStockController';
+
 import asyncHandler from '../../utils/asyncHandler';
+import * as nrwStockController from './nrwStockController';
 
 const router = Router();
 

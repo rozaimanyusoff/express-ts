@@ -1,37 +1,38 @@
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
+
 import {pool} from '../utils/db';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+
+export interface GroupNavPermission {
+  group_id: number;
+  nav_id: number;
+}
 
 // Type definitions
 export interface Navigation extends RowDataPacket {
-  id: number; // int, required (primary key)
-  title: string; // varchar(255), required
-  type: string; // varchar(50), required
-  position: number; // int, required
-  status: number; // tinyint, required
-  path: string | null; // varchar(255), nullable
-  parent_nav_id: number | null; // int, nullable
-  section_id: number | null; // int, nullable
   /**
    * Only present in navigation tree output, not in DB rows.
    */
   children?: Navigation[] | null; // recursive children
+  id: number; // int, required (primary key)
+  parent_nav_id: null | number; // int, nullable
+  path: null | string; // varchar(255), nullable
+  position: number; // int, required
+  section_id: null | number; // int, nullable
+  status: number; // tinyint, required
+  title: string; // varchar(255), required
+  type: string; // varchar(50), required
 }
 
 export interface NavigationInput {
   // id is not required for insert (auto-increment), so make it optional
   id?: number;
+  parent_nav_id: null | number;
+  path: null | string;
+  position: number;
+  section_id: null | number;
+  status: number;
   title: string;
   type: string;
-  position: number;
-  status: number;
-  path: string | null;
-  parent_nav_id: number | null;
-  section_id: number | null;
-}
-
-export interface GroupNavPermission {
-  nav_id: number;
-  group_id: number;
 }
 
 // Fetch all navigations
@@ -70,7 +71,7 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
   try {
     // Create a timeout promise
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Route tracking timeout')), timeoutMs);
+      setTimeout(() => { reject(new Error('Route tracking timeout')); }, timeoutMs);
     });
 
     // Race between query and timeout
@@ -90,9 +91,9 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
       console.error('Route tracking timeout - database may be slow or unresponsive');
     } else if (error.code === 'ETIMEDOUT' || error.errno === -110) {
       console.error('Route tracking database timeout (ETIMEDOUT):', {
-        userId,
         path,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        userId
       });
     } else {
       console.error('Error tracking route:', error);

@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { getNavigationPermissionsHandler, trackRoute, toggleStatusHandler, getNavigations, createNavigationHandler, updateNavigationHandler, updateNavigationPermissionsHandler, removeNavigationPermissionsHandler, getNavigationByUserIdHandler, deleteNavigationHandler, reorderNavigationHandler } from "../p.nav/navController";
+
+import { createNavigationHandler, deleteNavigationHandler, getNavigationByUserIdHandler, getNavigationPermissionsHandler, getNavigations, removeNavigationPermissionsHandler, reorderNavigationHandler, toggleStatusHandler, trackRoute, updateNavigationHandler, updateNavigationPermissionsHandler } from "../p.nav/navController";
 import asyncHandler from "../utils/asyncHandler";
 
 const router = Router();

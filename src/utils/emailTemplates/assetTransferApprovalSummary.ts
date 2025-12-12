@@ -2,15 +2,15 @@
 // Usage: assetTransferApprovalSummaryEmail({ approver, requestIds, approvedDate })
 
 interface AssetTransferApprovalSummaryParams {
-  approver: { full_name?: string; name?: string; email?: string; ramco_id?: string };
+  approvedDate?: Date | string;
+  approver: { email?: string; full_name?: string; name?: string; ramco_id?: string };
   requestIds: number[];
-  approvedDate?: string | Date;
 }
 
-export function assetTransferApprovalSummaryEmail({ approver, requestIds, approvedDate }: AssetTransferApprovalSummaryParams) {
-  const name = approver?.full_name || approver?.name || approver?.ramco_id || 'Approver';
+export function assetTransferApprovalSummaryEmail({ approvedDate, approver, requestIds }: AssetTransferApprovalSummaryParams) {
+  const name = approver.full_name || approver.name || approver.ramco_id || 'Approver';
   const subject = `You approved ${requestIds.length} asset transfer application(s)`;
-  const dateStr = approvedDate ? new Date(approvedDate).toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : new Date().toLocaleString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+  const dateStr = approvedDate ? new Date(approvedDate).toLocaleString('en-US', { day: '2-digit', hour: '2-digit', hour12: true, minute: '2-digit', month: '2-digit', second: '2-digit', year: 'numeric' }) : new Date().toLocaleString('en-US', { day: '2-digit', hour: '2-digit', hour12: true, minute: '2-digit', month: '2-digit', second: '2-digit', year: 'numeric' });
   const reqList = requestIds.map(id => `#${id}`).join(', ');
   
   // Green theme styles (matching assetTransferRequest)
@@ -48,5 +48,5 @@ export function assetTransferApprovalSummaryEmail({ approver, requestIds, approv
       <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
-  return { subject, html };
+  return { html, subject };
 }

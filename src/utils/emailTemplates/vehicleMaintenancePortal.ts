@@ -1,10 +1,10 @@
 export default function vehicleMaintenancePortalEmail(data: any): string {
   const {
+    footerName = 'Maintenance Team',
     portalUrl,
-    requestId,
     recipientName = 'Tuan/Puan',
     requesterName = '',
-    footerName = 'Maintenance Team',
+    requestId,
     testMode = false
   } = data || {};
 

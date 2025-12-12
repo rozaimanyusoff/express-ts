@@ -1,17 +1,18 @@
-import {pool} from "../utils/db";
 import { ResultSetHeader } from "mysql2";
 
+import {pool} from "../utils/db";
+
 export interface Role {
+    create_at: Date;
+    creates: number;
+    deletes: number;
+    desc?: string;
     id: number;
     name: string;
-    desc?: string;
-    views: number;
-    creates: number;
-    updates: number;
-    deletes: number;
     status: number;
-    create_at: Date;
     update_at: Date;
+    updates: number;
+    views: number;
 }
 
 // Get all roles
@@ -37,7 +38,7 @@ export const getRoleById = async (id: number): Promise<Role> => {
 };
 
 // Create new role
-export const createRole = async (role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
+export const createRole = async (role: Omit<Role, 'create_at' | 'id' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
         'INSERT INTO roles (name, `desc`, views, creates, updates, deletes, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status]
@@ -46,7 +47,7 @@ export const createRole = async (role: Omit<Role, 'id' | 'create_at' | 'update_a
 };
 
 // Update role
-export const updateRole = async (id: number, role: Omit<Role, 'id' | 'create_at' | 'update_at'>): Promise<ResultSetHeader> => {
+export const updateRole = async (id: number, role: Omit<Role, 'create_at' | 'id' | 'update_at'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
         'UPDATE roles SET name = ?, `desc` = ?, views = ?, creates = ?, updates = ?, deletes = ?, status = ? WHERE id = ?',
         [role.name, role.desc, role.views, role.creates, role.updates, role.deletes, role.status, id]

@@ -4,16 +4,16 @@ import { Role, RoleModulePermission } from "./interface";
 
 const rolesTable = "roles";
 const roleModulePermissionsTable = "role_module_permissions";
-type Permissions = 'read' | 'write' | 'update' | 'delete';
+type Permissions = 'delete' | 'read' | 'update' | 'write';
 
 export const findAllRoles = async (): Promise<Role[]> => {
 	try {
 		const { rows } = await pgPool.query<Role>(`SELECT * FROM auth.${rolesTable};`);
 		return rows.map((row: Role) => ({
-			id: row.id,
-			roleName: row.roleName,
 			description: row.description,
+			id: row.id,
 			isActive: row.isActive,
+			roleName: row.roleName,
 		}));
 	} catch (error) {
 		logger.error(`Database error in findAllRoles: ${error}`);
@@ -31,10 +31,10 @@ export const createRole = async (name: string, description: string): Promise<Rol
 		const newRole = rows[0];
 
 		return {
-			id: newRole.id,
-			roleName: newRole.roleName,
 			description: newRole.description,
+			id: newRole.id,
 			isActive: newRole.isActive,
+			roleName: newRole.roleName,
 		};
 	} catch (error) {
 		logger.error(`Database error in createRole: ${error}`);
@@ -79,10 +79,10 @@ export const updateRole = async (roleId: number, name: string, description: stri
 		// 	);
 		// }
 		return {
-			id: updatedRole.id,
-			roleName: updatedRole.roleName,
 			description: updatedRole.description,
+			id: updatedRole.id,
 			isActive: updatedRole.isActive,
+			roleName: updatedRole.roleName,
 		};
 	} catch (error) {
 		logger.error(`Database error in updateRole: ${error}`);
@@ -110,10 +110,10 @@ export const toggleRole = async (roleId: number): Promise<Role> => {
 		const updatedRole = updateRows[0];
 
 		return {
-			id: updatedRole.id,
-			roleName: updatedRole.roleName,
 			description: updatedRole.description,
+			id: updatedRole.id,
 			isActive: updatedRole.isActive,
+			roleName: updatedRole.roleName,
 		};
 	} catch (error) {
 		logger.error(`Database error in toggleRole: ${error}`);

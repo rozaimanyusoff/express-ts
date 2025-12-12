@@ -1,10 +1,11 @@
-import app from './app.js';
 import dotenv from 'dotenv';
-import logger from './utils/logger.js';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { Server } from 'socket.io';
+
+import app from './app.js';
 import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
+import logger from './utils/logger.js';
 import { setSocketIOInstance } from './utils/socketIoInstance.js';
 
 dotenv.config();
@@ -14,14 +15,14 @@ const PORT = process.env.SERVER_PORT;
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: '*', // Adjust this to match your frontend's origin
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
+    origin: '*' // Adjust this to match your frontend's origin
   }
 });
 
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-  if (!token) return next(new Error('unauthorized'));
+  const token = socket.handshake.auth.token || socket.handshake.query.token;
+  if (!token) { next(new Error('unauthorized')); return; }
   try {
     if (!process.env.JWT_SECRET) throw new Error('Missing JWT secret');
     const decoded: any = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });

@@ -17,9 +17,9 @@ export async function sendWebhook(url: string, payload: any, opts: SendWebhookOp
   const doFetch = async () => {
     try {
       const res = await fetch(url, {
-        method: 'POST',
-        headers,
         body: JSON.stringify(payload),
+        headers,
+        method: 'POST',
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');

@@ -2,13 +2,13 @@
 // Usage: assetTransferCurrentOwnerEmail({ request, item, currentOwner, supervisor })
 
 interface AssetTransferCurrentOwnerEmailParams {
-  request: any; // asset_transfer_requests row
-  item: any;    // asset_transfer_details row
   currentOwner: any; // employee object (with email, name, etc)
+  item: any;    // asset_transfer_details row
+  request: any; // asset_transfer_requests row
   supervisor: any;   // employee object (with name, email, etc)
 }
 
-export function assetTransferCurrentOwnerEmail({ request, item, currentOwner, supervisor }: AssetTransferCurrentOwnerEmailParams) {
+export function assetTransferCurrentOwnerEmail({ currentOwner, item, request, supervisor }: AssetTransferCurrentOwnerEmailParams) {
   const subject = `Asset Transfer Notification: Request #${request.request_no}`;
   const html = `
     <p>Dear ${currentOwner.full_name || 'Employee'},</p>
@@ -25,5 +25,5 @@ export function assetTransferCurrentOwnerEmail({ request, item, currentOwner, su
     <p>If you have any questions, please contact your supervisor.</p>
     <p>Thank you.</p>
   `;
-  return { subject, html };
+  return { html, subject };
 }

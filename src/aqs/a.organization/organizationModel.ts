@@ -8,11 +8,11 @@ export const findAllOrganizations = async (): Promise<Organization[]> => {
 	try {
 		const { rows } = await pgPool.query<Organization>(`SELECT * FROM auth.${organizationsTable} order BY id ASC`);
 		return rows.map((row: Organization) => ({
-			id: row.id,
-			name: row.name,
 			code: row.code,
 			description: row.description,
+			id: row.id,
 			isActive: row.isActive,
+			name: row.name,
 		}));
 	} catch (error) {
 		logger.error(`Database error in findAllOrganizations: ${error}`);

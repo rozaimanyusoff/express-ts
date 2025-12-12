@@ -1,7 +1,8 @@
 import { Router } from 'express';
+
+import asyncHandler from '../../utils/asyncHandler';
 import * as stockController from './stockController';
 import * as stockModel from './stockModel';
-import asyncHandler from '../../utils/asyncHandler';
 
 const router = Router();
 
@@ -82,25 +83,25 @@ router.post('/requests/:request_id/items', asyncHandler((req, res) => {
 }));
 router.get('/requests/:request_id/items', asyncHandler(async (req, res) => {
   const request_id = Number(req.params.request_id);
-  if (isNaN(request_id)) return res.status(400).json({ status: 'error', message: 'Invalid request_id', data: null });
+  if (isNaN(request_id)) return res.status(400).json({ data: null, message: 'Invalid request_id', status: 'error' });
   const request = await stockModel.getStockRequestById(request_id);
   res.json({
-    status: 'success',
+    data: request && Array.isArray(request.items) ? request.items : [],
     message: 'Stock request items retrieved',
-    data: request && Array.isArray(request.items) ? request.items : []
+    status: 'success'
   });
 }));
 router.get('/requests/items/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   // Fallback: get item by id from rt_stock_request_items
   const [rows] = await require('../../utils/db').query('SELECT * FROM stock.rt_stock_request_items WHERE id = ?', [id]);
   const item = Array.isArray(rows) && rows.length ? rows[0] : null;
-  if (!item) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+  if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
   res.json({
-    status: 'success',
+    data: item,
     message: 'Stock request item retrieved',
-    data: item
+    status: 'success'
   });
 }));
 router.put('/requests/items/:id', asyncHandler(stockController.updateStockRequestItem));

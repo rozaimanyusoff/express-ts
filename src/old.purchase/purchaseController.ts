@@ -1,7 +1,8 @@
 // src/p.purchase/purchaseController.ts
 import { Request, Response } from 'express';
-import * as purchaseModel from './purchaseModel';
+
 import * as assetModel from '../p.asset/assetModel';
+import * as purchaseModel from './purchaseModel';
 import { PurchaseRequest } from './purchaseModel';
 
 
@@ -32,7 +33,7 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
       ? departmentMap.get(req.department_id)
       : null;
     const costcenter = costcenterObj ? { id: costcenterObj.id, name: costcenterObj.name } : null;
-    const requestor = requestorObj ? { ramco_id: requestorObj.ramco_id, full_name: requestorObj.full_name } : null;
+    const requestor = requestorObj ? { full_name: requestorObj.full_name, ramco_id: requestorObj.ramco_id } : null;
     const department = departmentObj ? { id: departmentObj.id, name: departmentObj.name } : null;
     // Remove costcenter_id and department_id from the response
     const { costcenter_id, department_id, ...rest } = req;
@@ -43,13 +44,13 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
       requestor
     };
   });
-  res.json({ status: 'success', message: 'Purchase requests retrieved successfully', data: enriched });
+  res.json({ data: enriched, message: 'Purchase requests retrieved successfully', status: 'success' });
 };
 
 export const getPurchaseRequestById = async (req: Request, res: Response) => {
   const request = await purchaseModel.getPurchaseRequestById(Number(req.params.id));
   if (!request) {
-    return res.status(404).json({ status: 'error', message: 'Purchase request not found' });
+    return res.status(404).json({ message: 'Purchase request not found', status: 'error' });
   }
   // Fetch details
   let details = await purchaseModel.getPurchaseRequestDetails(Number(request.id));
@@ -78,52 +79,52 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
   details = details.map((item: any) => {
     const typeObj = typeMap.get(item.type_id);
     const categoryObj = categoryMap.get(item.category_id);
-    const { type_id, category_id, ...rest } = item;
+    const { category_id, type_id, ...rest } = item;
     return {
       ...rest,
-      type: typeObj ? { id: typeObj.id, name: typeObj.name } : null,
-      category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null
+      category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null,
+      type: typeObj ? { id: typeObj.id, name: typeObj.name } : null
     };
   });
   // Only enrich details with type/category mapping
   details = details.map((item: any) => {
     const typeObj = typeMap.get(item.type_id);
     const categoryObj = categoryMap.get(item.category_id);
-    const { type_id, category_id, ...rest } = item;
+    const { category_id, type_id, ...rest } = item;
     return {
       ...rest,
-      type: typeObj ? { id: typeObj.id, name: typeObj.name } : null,
-      category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null
+      category: categoryObj ? { id: categoryObj.id, name: categoryObj.name } : null,
+      type: typeObj ? { id: typeObj.id, name: typeObj.name } : null
     };
   });
   const enriched = {
     ...request,
-    total_items: details.length,
-    details
+    details,
+    total_items: details.length
   };
-  res.json({ status: 'success', message: 'Purchase request retrieved successfully', data: enriched });
+  res.json({ data: enriched, message: 'Purchase request retrieved successfully', status: 'success' });
 };
 
 export const createPurchaseRequest = async (req: Request, res: Response) => {
   try {
     // All fields in req.body are strings (from multipart/form-data)
     const {
-      request_type = '',
       backdated_purchase = 'false',
-      request_reference = '',
-      request_no = '',
-      request_date = '',
-      ramco_id = '',
       costcenter_id = '',
       department_id = '',
-      po_no = '',
-      po_date = '',
-      supplier = '',
-      do_no = '',
       do_date = '',
-      inv_no = '',
+      do_no = '',
       inv_date = '',
-      items = '[]'
+      inv_no = '',
+      items = '[]',
+      po_date = '',
+      po_no = '',
+      ramco_id = '',
+      request_date = '',
+      request_no = '',
+      request_reference = '',
+      request_type = '',
+      supplier = ''
     } = req.body;
 
     // Handle uploaded file: move from multer temp to correct location if present
@@ -145,23 +146,23 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
     }
 
     // Parse booleans and numbers, and ensure date fields are null if empty
-    let parent = {
-      request_type,
+    const parent = {
       backdated_purchase: backdated_purchase === 'true' || backdated_purchase === true,
-      request_reference,
-      request_no,
-      request_date: request_date && request_date !== '' ? request_date : null,
-      ramco_id: ramco_id,
       costcenter_id: costcenter_id ? Number(costcenter_id) : undefined,
       department_id: department_id ? Number(department_id) : undefined,
-      po_no,
-      po_date: po_date && po_date !== '' ? po_date : null,
-      supplier,
-      do_no,
       do_date: do_date && do_date !== '' ? do_date : null,
-      inv_no,
+      do_no,
       inv_date: inv_date && inv_date !== '' ? inv_date : null,
-      request_upload
+      inv_no,
+      po_date: po_date && po_date !== '' ? po_date : null,
+      po_no,
+      ramco_id: ramco_id,
+      request_date: request_date && request_date !== '' ? request_date : null,
+      request_no,
+      request_reference,
+      request_type,
+      request_upload,
+      supplier
     };
     // Insert first to get insertId
     const insertId = await purchaseModel.createPurchaseRequest(parent);
@@ -189,29 +190,29 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
     if (Array.isArray(itemsArr)) {
       for (const item of itemsArr) {
         const {
-          type_id = null,
           category_id = null,
-          qty = null,
+          delivery_remarks = '',
+          delivery_status = '',
           description = '',
           justification = '',
+          qty = null,
+          register_numbers = [],
           supplier = '',
-          unit_price = null,
-          delivery_status = '',
-          delivery_remarks = '',
-          register_numbers = []
+          type_id = null,
+          unit_price = null
         } = item;
         // Insert detail row (use correct property names for model)
         const detailId = await purchaseModel.createPurchaseRequestDetail({
-          pr_id: insertId,
-          type_id: type_id ? Number(type_id) : undefined,
           category_id: category_id ? Number(category_id) : undefined,
-          item_desc: description,
-          quantity: qty ? Number(qty) : undefined,
-          justification,
-          supplier,
-          unit_price: unit_price !== null && unit_price !== undefined && unit_price !== '' ? Number(unit_price) : undefined,
+          delivery_remarks,
           delivery_status,
-          delivery_remarks
+          item_desc: description,
+          justification,
+          pr_id: insertId,
+          quantity: qty ? Number(qty) : undefined,
+          supplier,
+          type_id: type_id ? Number(type_id) : undefined,
+          unit_price: unit_price !== null && unit_price !== undefined && unit_price !== '' ? Number(unit_price) : undefined
         });
         // Insert register_numbers if present
         if (Array.isArray(register_numbers) && register_numbers.length > 0) {
@@ -224,10 +225,10 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
         }
       }
     }
-    res.status(201).json({ status: 'success', message: 'Purchase request created successfully', id: insertId });
+    res.status(201).json({ id: insertId, message: 'Purchase request created successfully', status: 'success' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ status: 'error', message });
+    res.status(500).json({ message, status: 'error' });
   }
 };
 
@@ -235,5 +236,5 @@ export const deletePurchaseRequest = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   await purchaseModel.deletePurchaseRequest(id);
   await purchaseModel.deletePurchaseRequestDetails(id);
-  res.json({ status: 'success', message: 'Purchase request and details deleted successfully' });
+  res.json({ message: 'Purchase request and details deleted successfully', status: 'success' });
 };

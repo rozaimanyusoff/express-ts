@@ -1,60 +1,61 @@
-import { Request, Response, NextFunction } from 'express';
-import * as telcoModel from './telcoModel';
+import { NextFunction, Request, Response } from 'express';
+
 import * as assetModel from '../p.asset/assetModel';
-
-// Define the structure of the subscriber data
-type SubscriberData = {
-    id: number;
-    sub_no: string;
-    account_sub: string;
-    status: string;
-    register_date: string;
-    sims: SimCardData[];
-};
-
-// Define the structure of the sim card data
-type SimCardData = {
-    id: number;
-    sim_sn: string;
-    sub_no_id: number;
-    sub_no: string;
-    register_date: string;
-    reason: string;
-    note: string;
-};
+import * as telcoModel from './telcoModel';
 
 // Define the structure of the account data
-type AccountData = {
-    id: number;
+interface AccountData {
     account_master: string;
+    id: number;
     subs: {
-        sub_no_id: number;
-        sub_no: string;
         account_sub: string;
+        sub_no: string;
+        sub_no_id: number;
     }[];
-};
+}
 
 // Define the structure of the contract data
-type ContractData = {
-    id: number;
-    product_type: string;
-    contract_start_date: string;
-    contract_end_date: string;
-    plan: string;
-    status: string;
-    vendor_id: string;
-    price: number;
-    duration: number;
+interface ContractData {
     accounts: {
         account_id: number;
         account_master: string;
         subs: {
-            sub_no_id: number;
-            sub_no: string;
             account_sub: string;
+            sub_no: string;
+            sub_no_id: number;
         }[];
     }[];
-};
+    contract_end_date: string;
+    contract_start_date: string;
+    duration: number;
+    id: number;
+    plan: string;
+    price: number;
+    product_type: string;
+    status: string;
+    vendor_id: string;
+}
+
+// Define the structure of the sim card data
+interface SimCardData {
+    id: number;
+    note: string;
+    reason: string;
+    register_date: string;
+    sim_sn: string;
+    sub_no: string;
+    sub_no_id: number;
+}
+
+// Define the structure of the subscriber data
+interface SubscriberData {
+    account_sub: string;
+    id: number;
+    register_date: string;
+    sims: SimCardData[];
+    status: string;
+    sub_no: string;
+}
 
 // ===================== TELCO BILLING =====================
 
@@ -68,7 +69,7 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
             ids = req.body.ids.split(',').map((v: string) => Number(v)).filter((id: number) => !isNaN(id));
         }
         if (!ids.length) {
-            return res.status(400).json({ status: 'error', message: 'No valid IDs provided' });
+            return res.status(400).json({ message: 'No valid IDs provided', status: 'error' });
         }
         const [billings, accounts, costcentersArr, subscribers] = await Promise.all([
             telcoModel.getTelcoBillingsByIds(ids),
@@ -89,8 +90,8 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
             if (b.account && accountMap[b.account]) {
                 const acc = accountMap[b.account];
                 accountObj = {
-                    id: acc.id,
                     account_no: acc.account_master,
+                    id: acc.id,
                     provider: acc.provider || null
                 };
             }
@@ -103,12 +104,12 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
                     costcenter = costcenterMap[s.costcenter_id];
                 }
                 subscriberObj = {
-                    id: s.id,
-                    sub_no: s.sub_no,
                     account_sub: s.account_sub,
-                    status: s.status,
+                    costcenter,
+                    id: s.id,
                     register_date: s.register_date,
-                    costcenter
+                    status: s.status,
+                    sub_no: s.sub_no
                 };
             } else {
                 // If no subscriber found, try to get costcenter from billing details
@@ -119,12 +120,12 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
                         const detailWithCC = details.find((d: any) => d.costcenter_id && costcenterMap[d.costcenter_id]);
                         if (detailWithCC) {
                             subscriberObj = {
-                                id: null,
-                                sub_no: null,
                                 account_sub: null,
-                                status: null,
+                                costcenter: costcenterMap[detailWithCC.costcenter_id],
+                                id: null,
                                 register_date: null,
-                                costcenter: costcenterMap[detailWithCC.costcenter_id]
+                                status: null,
+                                sub_no: null
                             };
                         }
                     }
@@ -133,19 +134,19 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
                 }
             }
             return {
-                id: b.id,
-                bfcy_id: b.id ?? b.bfcy_id,
                 account: accountObj,
-                subscriber: subscriberObj,
+                bfcy_id: b.id ?? b.bfcy_id,
                 bill_date: b.bill_date,
                 bill_no: b.bill_no,
-                subtotal: b.subtotal,
                 discount: b.discount || 0,
-                tax: b.tax || 0,
-                rounding: b.rounding || 0,
                 grand_total: b.grand_total,
+                id: b.id,
                 reference: b.reference || null,
-                status: b.status
+                rounding: b.rounding || 0,
+                status: b.status,
+                subscriber: subscriberObj,
+                subtotal: b.subtotal,
+                tax: b.tax || 0
             };
         }));
         // Calculate grand_total summary
@@ -154,10 +155,10 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
             return sum + (isNaN(val) ? 0 : val);
         }, 0);
         res.status(200).json({
-            status: 'success',
+            data: formatted,
             message: 'Telco billings retrieved',
-            summary: { grand_total: grandTotal.toFixed(2) },
-            data: formatted
+            status: 'success',
+            summary: { grand_total: grandTotal.toFixed(2) }
         });
     } catch (error) {
         next(error);
@@ -180,27 +181,27 @@ export const getTelcoBillings = async (req: Request, res: Response, next: NextFu
             if (b.account && accountMap[b.account]) {
                 const acc = accountMap[b.account];
                 accountObj = {
-                    id: acc.id,
                     account_no: acc.account_master,
+                    id: acc.id,
                     provider: acc.provider || null,
                 };
             }
             return {
-                id: b.id,
-                bfcy_id: b.id ?? b.bfcy_id,
                 account: accountObj,
+                bfcy_id: b.id ?? b.bfcy_id,
                 bill_date: b.bill_date,
                 bill_no: b.bill_no,
-                subtotal: b.subtotal,
                 discount: b.discount || 0,
-                tax: b.tax || 0,
-                rounding: b.rounding || 0,
                 grand_total: b.grand_total,
+                id: b.id,
                 reference: b.reference || null,
-                status: b.status
+                rounding: b.rounding || 0,
+                status: b.status,
+                subtotal: b.subtotal,
+                tax: b.tax || 0
             };
         });
-        res.status(200).json({ status: 'success', message: 'Telco billing retrieved', data: formatted });
+        res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -212,13 +213,13 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
         const id = Number(req.params.id);
         const billing = await telcoModel.getTelcoBillingById(id);
         if (!billing) {
-            return res.status(404).json({ status: 'error', message: 'Telco billing not found' });
+            return res.status(404).json({ message: 'Telco billing not found', status: 'error' });
         }
         // Resolve sim_subno if sim_id exists
         let sim_subno = null;
         if (billing.sim_id) {
             const oldSub = await telcoModel.getOldSubscriberById(billing.sim_id);
-            sim_subno = oldSub?.sim_subno || null;
+            sim_subno = oldSub.sim_subno || null;
         }
         // Fetch accounts for mapping
         const accounts = await telcoModel.getAccounts();
@@ -227,10 +228,10 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
         if (billing.account && accountMap[billing.account]) {
             const acc = accountMap[billing.account];
             accountObj = {
-                id: acc.id,
                 account_no: acc.account_master,
-                provider: acc.provider || null,
-                old_id: acc.old_bill_id // Keep old_id for backward compatibility
+                id: acc.id,
+                old_id: acc.old_bill_id, // Keep old_id for backward compatibility
+                provider: acc.provider || null
             };
         }
         // Fetch billing details by util_id
@@ -252,7 +253,7 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                 let sim_subno = null;
                 if (d.sim_id) {
                     const oldSub = await telcoModel.getOldSubscriberById(d.sim_id);
-                    sim_subno = oldSub?.sim_subno || null;
+                    sim_subno = oldSub.sim_subno || null;
                 }
                 if (sim_subno) {
                     const subscriber = Array.isArray(subscribers)
@@ -278,22 +279,22 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                 let user = null;
                 if (d.ramco_id && employeeMap[d.ramco_id]) {
                     const emp = employeeMap[d.ramco_id];
-                    user = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+                    user = { full_name: emp.full_name, ramco_id: emp.ramco_id };
                 }
                 // Remove cc_id and loc_id from details
                 const { cc_id, loc_id, ramco_id, ...rest } = d;
                 return {
                     ...rest,
-                    old_sim_id: d.sim_id || null,
-                    subs: subsObj,
                     costcenter,
                     district,
+                    old_sim_id: d.sim_id || null,
+                    subs: subsObj,
                     user
                 };
             }));
         }
         // Build summary: sum util2_amt by costcenter object from details
-        let summary: Array<{ costcenter: { id: number | null, name: string }, cc_amount: number }> = [];
+        let summary: { cc_amount: number; costcenter: { id: null | number, name: string }, }[] = [];
         if (Array.isArray(details)) {
             // Use a Map to group by costcenter stringified
             const summaryMap = new Map();
@@ -302,28 +303,28 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
                 const key = JSON.stringify(cc);
                 const amt = parseFloat(d.amount) || 0;
                 if (!summaryMap.has(key)) {
-                    summaryMap.set(key, { costcenter: cc, cc_amount: 0 });
+                    summaryMap.set(key, { cc_amount: 0, costcenter: cc });
                 }
                 summaryMap.get(key).cc_amount += amt;
             }
             summary = Array.from(summaryMap.values());
         }
         const formatted = {
-            id: billing.id,
-            bfcy_id: billing.id ?? billing.bfcy_id,
             account: accountObj,
+            bfcy_id: billing.id ?? billing.bfcy_id,
             bill_date: billing.bill_date,
             bill_no: billing.bill_no,
-            subtotal: billing.subtotal,
-            tax: billing.tax,
-            rounding: billing.rounding,
+            details: Array.isArray(details) ? details : [],
             grand_total: billing.grand_total,
-            status: billing.status,
+            id: billing.id,
             reference: billing.reference || null,
+            rounding: billing.rounding,
+            status: billing.status,
+            subtotal: billing.subtotal,
             summary,
-            details: Array.isArray(details) ? details : []
+            tax: billing.tax
         };
-        res.status(200).json({ status: 'success', message: 'Telco billing retrieved', data: formatted });
+        res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -334,7 +335,7 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
     try {
         const accountId = Number(req.params.id);
         if (isNaN(accountId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+            return res.status(400).json({ message: 'Invalid account ID', status: 'error' });
         }
         const { from, to } = req.query;
         let fromDate: Date | null = null;
@@ -370,13 +371,13 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
         // For each bill, fetch details and aggregate by costcenter_id, resolving to {id, name}
         const matchedBills = await Promise.all(filteredBills.map(async (b: any) => {
             let provider = null;
-            if (b.account && b.account.provider) {
+            if (b.account?.provider) {
                 provider = b.account.provider;
             } else if (b.provider) {
                 provider = b.provider;
             }
             // Fetch details for this bill
-            let details: Array<{ costcenter: { id: any, name: string | null }, amount: any }> = [];
+            let details: { amount: any; costcenter: { id: any, name: null | string }, }[] = [];
             try {
                 const billDetails = await telcoModel.getTelcoBillingDetailsById(b.id);
                 if (Array.isArray(billDetails)) {
@@ -391,20 +392,20 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
                         aggMap.set(ccid, aggMap.get(ccid) + amt);
                     }
                     details = Array.from(aggMap.entries()).map(([costcenter_id, amount]) => ({
-                        costcenter: costcenter_id ? (costcenterMap[costcenter_id] || { id: costcenter_id, name: null }) : { id: null, name: null },
-                        amount: amount.toFixed(2)
+                        amount: amount.toFixed(2),
+                        costcenter: costcenter_id ? (costcenterMap[costcenter_id] || { id: costcenter_id, name: null }) : { id: null, name: null }
                     }));
                 }
             } catch (err) {
                 // If error, leave details empty
             }
             return {
-                id: b.id,
+                account: b.account?.account_no ? b.account.account_no : (b.account_no || null),
                 account_id: b.account_id !== undefined ? b.account_id : (b.account && b.account.id !== undefined ? b.account.id : null),
-                account: b.account && b.account.account_no ? b.account.account_no : (b.account_no || null),
-                provider,
                 bill_date: b.bill_date,
-                details
+                details,
+                id: b.id,
+                provider
             };
         }));
 
@@ -414,21 +415,21 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
             const b = matchedBills[0];
             const accObj = accountMap[b.account_id];
             accountInfo = accObj ? {
-                id: accObj.id,
                 account_no: accObj.account_master,
                 description: accObj.description || null,
+                id: accObj.id,
                 provider: accObj.provider || null
             } : {
-                id: b.account_id,
                 account_no: b.account,
-                name: null,
                 description: null,
+                id: b.account_id,
+                name: null,
                 provider: b.provider || null
             };
         }
 
         // Group bills by year and month, aggregate costcenters and total_amount
-        const yearMonthMap: Record<number, Record<number, { name: string, total_amount: string, costcenters: any[] }>> = {};
+        const yearMonthMap: Record<number, Record<number, { costcenters: any[]; name: string, total_amount: string, }>> = {};
         for (const bill of matchedBills) {
             const date = bill.bill_date ? new Date(bill.bill_date) : null;
             if (!date || isNaN(date.getTime())) continue;
@@ -439,7 +440,7 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
             const yearShort = String(year).slice(-2);
             const monthName = `${monthShort}'${yearShort}`;
             if (!yearMonthMap[year]) yearMonthMap[year] = {};
-            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { name: monthName, total_amount: '0.00', costcenters: [] };
+            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { costcenters: [], name: monthName, total_amount: '0.00' };
 
             // Aggregate costcenters for this bill into month
             for (const detail of bill.details) {
@@ -447,9 +448,9 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
                 const idx = yearMonthMap[year][monthNum].costcenters.findIndex((cc: any) => cc.id === detail.costcenter.id);
                 if (idx === -1 && detail.costcenter.id != null) {
                     yearMonthMap[year][monthNum].costcenters.push({
+                        amount: detail.amount,
                         id: detail.costcenter.id,
-                        name: detail.costcenter.name,
-                        amount: detail.amount
+                        name: detail.costcenter.name
                     });
                 } else if (idx !== -1) {
                     // Sum amounts for same costcenter
@@ -464,18 +465,18 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
 
         // Build final data array
         const data = Object.entries(yearMonthMap).map(([year, months]) => ({
-            year: Number(year),
-            month: Object.values(months)
+            month: Object.values(months),
+            year: Number(year)
         }));
 
         // Build response
         res.status(200).json({
-            status: 'success',
-            message: 'Telco costcenter summary retrieved successfully',
             account: accountInfo,
+            data,
             from_date: fromDate ? fromDate.toISOString() : null,
-            to_date: toDate ? toDate.toISOString() : null,
-            data
+            message: 'Telco costcenter summary retrieved successfully',
+            status: 'success',
+            to_date: toDate ? toDate.toISOString() : null
         });
     } catch (error) {
         next(error);
@@ -487,7 +488,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
     try {
         const costcenterId = Number(req.params.id);
         if (isNaN(costcenterId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid costcenter ID' });
+            return res.status(400).json({ message: 'Invalid costcenter ID', status: 'error' });
         }
         const { from, to } = req.query;
         let fromDate: Date | null = null;
@@ -538,19 +539,19 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
                         }
                         const detailsAgg = Array.from(aggMap.entries()).map(([account_id, amount]) => ({
                             account: account_id ? (accountMap[account_id] ? {
-                                id: accountMap[account_id].id,
                                 account_no: accountMap[account_id].account_master,
                                 description: accountMap[account_id].description || null,
+                                id: accountMap[account_id].id,
                                 provider: accountMap[account_id].provider || null
-                            } : { id: account_id, account_no: null, description: null, provider: null }) : null,
+                            } : { account_no: null, description: null, id: account_id, provider: null }) : null,
                             amount: amount.toFixed(2)
                         }));
                         matchedBills.push({
-                            id: b.id,
-                            costcenter_id: costcenterId,
-                            costcenter: costcenterMap[costcenterId] || { id: costcenterId, name: null },
                             bill_date: b.bill_date,
-                            details: detailsAgg
+                            costcenter: costcenterMap[costcenterId] || { id: costcenterId, name: null },
+                            costcenter_id: costcenterId,
+                            details: detailsAgg,
+                            id: b.id
                         });
                     }
                 }
@@ -560,7 +561,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
         }
 
         // Prepare costcenter info
-        let costcenterInfo = costcenterMap[costcenterId] ? {
+        const costcenterInfo = costcenterMap[costcenterId] ? {
             id: costcenterId,
             name: costcenterMap[costcenterId].name
         } : {
@@ -569,7 +570,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
         };
 
         // Group bills by year and month, aggregate accounts and total_amount
-        const yearMonthMap: Record<number, Record<number, { name: string, total_amount: string, accounts: any[] }>> = {};
+        const yearMonthMap: Record<number, Record<number, { accounts: any[]; name: string, total_amount: string, }>> = {};
         for (const bill of matchedBills) {
             const date = bill.bill_date ? new Date(bill.bill_date) : null;
             if (!date || isNaN(date.getTime())) continue;
@@ -580,19 +581,19 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
             const yearShort = String(year).slice(-2);
             const monthName = `${monthShort}'${yearShort}`;
             if (!yearMonthMap[year]) yearMonthMap[year] = {};
-            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { name: monthName, total_amount: '0.00', accounts: [] };
+            if (!yearMonthMap[year][monthNum]) yearMonthMap[year][monthNum] = { accounts: [], name: monthName, total_amount: '0.00' };
 
             // Aggregate accounts for this bill into month
             for (const detail of bill.details) {
                 // Find if account already exists in month
                 const idx = yearMonthMap[year][monthNum].accounts.findIndex((acc: any) => acc.id === (detail.account ? detail.account.id : null));
-                if (idx === -1 && detail.account && detail.account.id != null) {
+                if (idx === -1 && detail.account?.id != null) {
                     yearMonthMap[year][monthNum].accounts.push({
-                        id: detail.account.id,
                         account_no: detail.account.account_no,
+                        amount: detail.amount,
                         description: detail.account.description,
-                        provider: detail.account.provider,
-                        amount: detail.amount
+                        id: detail.account.id,
+                        provider: detail.account.provider
                     });
                 } else if (idx !== -1) {
                     // Sum amounts for same account
@@ -607,18 +608,18 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
 
         // Build final data array
         const data = Object.entries(yearMonthMap).map(([year, months]) => ({
-            year: Number(year),
-            month: Object.values(months)
+            month: Object.values(months),
+            year: Number(year)
         }));
 
         // Build response
         res.status(200).json({
-            status: 'success',
-            message: 'Telco account summary by costcenter retrieved successfully',
             costcenter: costcenterInfo,
+            data,
             from_date: fromDate ? fromDate.toISOString() : null,
-            to_date: toDate ? toDate.toISOString() : null,
-            data
+            message: 'Telco account summary by costcenter retrieved successfully',
+            status: 'success',
+            to_date: toDate ? toDate.toISOString() : null
         });
     } catch (error) {
         next(error);
@@ -633,20 +634,20 @@ export const createTelcoBilling = async (req: Request, res: Response, next: Next
         // Validate required fields
         if (!billing.account_id) {
             return res.status(400).json({
-                status: 'error',
-                message: 'account_id is required'
+                message: 'account_id is required',
+                status: 'error'
             });
         }
         if (!billing.bill_no) {
             return res.status(400).json({
-                status: 'error',
-                message: 'bill_no is required'
+                message: 'bill_no is required',
+                status: 'error'
             });
         }
         if (!billing.bill_date) {
             return res.status(400).json({
-                status: 'error',
-                message: 'bill_date is required'
+                message: 'bill_date is required',
+                status: 'error'
             });
         }
 
@@ -660,9 +661,9 @@ export const createTelcoBilling = async (req: Request, res: Response, next: Next
 
         if (duplicate) {
             return res.status(409).json({
-                status: 'error',
+                data: { existing_id: duplicate.id },
                 message: 'Billing record already exists for this account, bill number, and date',
-                data: { existing_id: duplicate.id }
+                status: 'error'
             });
         }
 
@@ -683,9 +684,9 @@ export const createTelcoBilling = async (req: Request, res: Response, next: Next
         }
 
         res.status(201).json({
-            status: 'success',
+            data: { id: insertId },
             message: 'Telco billing created successfully',
-            data: { id: insertId }
+            status: 'success'
         });
     } catch (error) {
         next(error);
@@ -712,7 +713,7 @@ export const updateTelcoBilling = async (req: Request, res: Response, next: Next
                 await telcoModel.updateTelcoBillingDetail(detail.util2_id, detail);
             }
         }
-        res.status(200).json({ status: 'success', message: 'Telco billing updated' });
+        res.status(200).json({ message: 'Telco billing updated', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -723,7 +724,7 @@ export const deleteTelcoBilling = async (req: Request, res: Response, next: Next
     try {
         const id = Number(req.params.id);
         await telcoModel.deleteTelcoBilling(id);
-        res.status(200).json({ status: 'success', message: 'Telco billing deleted' });
+        res.status(200).json({ message: 'Telco billing deleted', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -736,31 +737,31 @@ export const getSubscriberWithSimsById = async (req: Request, res: Response, nex
     try {
         const subscriberId = Number(req.params.id);
         if (isNaN(subscriberId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid subscriber ID' });
+            return res.status(400).json({ message: 'Invalid subscriber ID', status: 'error' });
         }
         const subscriber = await telcoModel.getSubscriberById(subscriberId);
         if (!subscriber) {
-            return res.status(404).json({ status: 'error', message: 'Subscriber not found', data: null });
+            return res.status(404).json({ data: null, message: 'Subscriber not found', status: 'error' });
         }
         // Use join method to get all historical sims for this subscriber
         const simCards = await (telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : []);
         const sims = Array.isArray(simCards)
             ? simCards.filter((sim: any) => sim.sub_no_id === subscriberId).map((sim: any) => ({
                 id: sim.sim_id || sim.id,
+                register_date: sim.register_date,
                 sim_no: sim.sim_sn || sim.sim_no,
                 status: sim.status,
-                register_date: sim.register_date,
             }))
             : [];
         const formattedData = {
-            id: subscriber.id,
-            sub_no: subscriber.sub_no,
             account_sub: subscriber.account_sub,
-            status: subscriber.status,
+            id: subscriber.id,
             register_date: subscriber.register_date,
             sims,
+            status: subscriber.status,
+            sub_no: subscriber.sub_no,
         };
-        res.status(200).json({ status: 'success', message: 'Show subscriber with historical sims by ID', data: formattedData });
+        res.status(200).json({ data: formattedData, message: 'Show subscriber with historical sims by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -790,9 +791,9 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
         const sims = Array.isArray(simCards)
             ? simCards.filter((sim: any) => sim.sub_no_id === id).map((sim: any) => ({
                 id: sim.sim_id || sim.id,
+                register_date: sim.register_date,
                 sim_no: sim.sim_sn || sim.sim_no,
                 status: sim.status,
-                register_date: sim.register_date,
             }))
             : [];
         const enriched = {
@@ -802,7 +803,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
             district: district_id ? districtMap[district_id] || null : null,
             sims,
         };
-        res.status(200).json({ status: 'success', message: 'Show subscriber by id', data: enriched });
+        res.status(200).json({ data: enriched, message: 'Show subscriber by id', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -862,27 +863,27 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
                 const brand = asset.brand_id && brandMap[asset.brand_id] ? { id: asset.brand_id, name: brandMap[asset.brand_id].name } : null;
                 const model = asset.model_id && modelMap[asset.model_id] ? { id: asset.model_id, name: modelMap[asset.model_id].name } : null;
                 assetData = {
-                    id: asset.id,
-                    register_number: asset.register_number,
                     brand,
-                    model
+                    id: asset.id,
+                    model,
+                    register_number: asset.register_number
                 };
             }
             // Find user
             const ramcoId = userSubMap[sub.id];
-            const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, full_name: employeeMap[ramcoId].full_name } : null;
+            const user = ramcoId && employeeMap[ramcoId] ? { full_name: employeeMap[ramcoId].full_name, ramco_id: ramcoId } : null;
             return {
                 ...rest,
-                account: account ? { id: account.id, account_master: account.account_master, provider: account.provider } : null,
-                simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
+                account: account ? { account_master: account.account_master, id: account.id, provider: account.provider } : null,
+                asset: assetData,
                 costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
                 department: department ? { id: department.id, name: department.code } : null,
-                asset: assetData,
+                simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                 user,
             };
         });
 
-        res.status(200).json({ status: 'success', message: 'Show all subscribers', data: formatted });
+        res.status(200).json({ data: formatted, message: 'Show all subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -944,9 +945,9 @@ export const getSubscribersFullData = async (req: Request, res: Response, next: 
         });
 
         if (!result.length) {
-            return res.status(404).json({ status: 'error', message: 'No subscribers found', data: [] });
+            return res.status(404).json({ data: [], message: 'No subscribers found', status: 'error' });
         }
-        res.status(200).json({ status: 'success', message: 'Subscribers full data', data: result });
+        res.status(200).json({ data: result, message: 'Subscribers full data', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -957,7 +958,7 @@ export const createSubscriber = async (req: Request, res: Response, next: NextFu
     try {
         const subscriber = req.body;
         const id = await telcoModel.createSubscriber(subscriber);
-        res.status(201).json({ message: 'Subscriber created', id });
+        res.status(201).json({ id, message: 'Subscriber created' });
     } catch (error) {
         next(error);
     }
@@ -992,10 +993,10 @@ export const moveSubscriberToAccount = async (req: Request, res: Response, next:
         const subscriberId = Number(req.params.id);
         const { account_id, old_account_id, updated_by } = req.body;
         if (isNaN(subscriberId) || !account_id) {
-            return res.status(400).json({ status: 'error', message: 'Invalid subscriber or account ID' });
+            return res.status(400).json({ message: 'Invalid subscriber or account ID', status: 'error' });
         }
         await telcoModel.moveSubscriberToAccount(subscriberId, account_id, old_account_id, updated_by);
-        res.status(200).json({ status: 'success', message: 'Subscriber moved to new account' });
+        res.status(200).json({ message: 'Subscriber moved to new account', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1017,7 +1018,7 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                 subs: sim.sub_no_id ? { id: sim.sub_no_id, sub_no: subNoMap[sim.sub_no_id] || null } : null,
             }))
             : [];
-        res.status(200).json({ status: 'success', message: 'Fetched sim card data successfully', data: formatted });
+        res.status(200).json({ data: formatted, message: 'Fetched sim card data successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1028,7 +1029,7 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
     try {
         const simCard = req.body;
         const id = await telcoModel.createSimCard(simCard);
-        res.status(201).json({ message: 'Sim card created', id });
+        res.status(201).json({ id, message: 'Sim card created' });
     } catch (error) {
         next(error);
     }
@@ -1050,7 +1051,7 @@ export const getAccounts = async (req: Request, res: Response, next: NextFunctio
             ...acc,
             total_subs: subsCountMap[acc.id] || 0
         }));
-        res.status(200).json({ status: 'success', message: 'Show all accounts', data: enriched });
+        res.status(200).json({ data: enriched, message: 'Show all accounts', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1061,7 +1062,7 @@ export const createAccount = async (req: Request, res: Response, next: NextFunct
     try {
         const account = req.body;
         const id = await telcoModel.createAccount(account);
-        res.status(201).json({ message: 'Account created', id });
+        res.status(201).json({ id, message: 'Account created' });
     } catch (error) {
         next(error);
     }
@@ -1072,7 +1073,7 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
     try {
         const accountId = Number(req.params.id);
         if (isNaN(accountId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+            return res.status(400).json({ message: 'Invalid account ID', status: 'error' });
         }
         const [accounts, accountSubs, subscribers, assets, brands, models, costcenters, departments, districts, simCards] = await Promise.all([
             telcoModel.getAccounts(),
@@ -1088,7 +1089,7 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
         ]);
         const account = accounts.find((acc: any) => acc.id === accountId);
         if (!account) {
-            return res.status(404).json({ status: 'error', message: 'Account not found', data: null });
+            return res.status(404).json({ data: null, message: 'Account not found', status: 'error' });
         }
         const subIds: number[] = accountSubs.filter((as: any) => as.account_id === accountId).map((as: any) => as.sub_no_id);
         // Build sim card map by sub_no_id
@@ -1110,21 +1111,21 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
             const sim = simMap[sub.id];
             const assetObj = sub.asset_id && assetMap[sub.asset_id] ? assetMap[sub.asset_id] : null;
             // Destructure to remove *_id fields
-            const { costcenter_id, department_id, district_id, asset_id, ...rest } = sub;
+            const { asset_id, costcenter_id, department_id, district_id, ...rest } = sub;
             let assetData = null;
             if (assetObj) {
                 const brand = assetObj.brand_id && brandMap[assetObj.brand_id] ? { id: assetObj.brand_id, name: brandMap[assetObj.brand_id].name } : null;
                 const model = assetObj.model_id && modelMap[assetObj.model_id] ? { id: assetObj.model_id, name: modelMap[assetObj.model_id].name } : null;
                 assetData = {
-                    id: assetObj.id,
-                    register_number: assetObj.register_number,
                     brand,
-                    model
+                    id: assetObj.id,
+                    model,
+                    register_number: assetObj.register_number
                 };
             }
             // Enrich user
             const ramcoId = userSubMap[sub.id];
-            const user = ramcoId && employeeMap[ramcoId] ? { ramco_id: ramcoId, full_name: employeeMap[ramcoId].full_name } : null;
+            const user = ramcoId && employeeMap[ramcoId] ? { full_name: employeeMap[ramcoId].full_name, ramco_id: ramcoId } : null;
             let simObj = null;
             if (sim) {
                 simObj = {
@@ -1134,10 +1135,10 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
             }
             return {
                 ...rest,
+                asset: assetData,
                 costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
                 department: department_id ? departmentMap[department_id] || null : null,
                 district: district_id ? districtMap[district_id] || null : null,
-                asset: assetData,
                 sim: simObj,
                 user
             };
@@ -1146,7 +1147,7 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
             ...account,
             subs,
         };
-        res.status(200).json({ status: 'success', message: 'Show specific account with its subscribers', data: formattedData });
+        res.status(200).json({ data: formattedData, message: 'Show specific account with its subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1179,7 +1180,7 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
             const subIds: number[] = accountSubs.filter((as: any) => as.account_id === account.id).map((as: any) => as.sub_no_id);
             const subs = subscribers.filter((sub: any) => subIds.includes(sub.id)).map((sub: any) => {
                 // Destructure to remove costcenter_id, department_id, district_id, asset_id
-                const { costcenter_id, department_id, district_id, asset_id, ...rest } = sub;
+                const { asset_id, costcenter_id, department_id, district_id, ...rest } = sub;
                 // Find asset
                 const assetObj = sub.asset_id && assetMap[sub.asset_id] ? assetMap[sub.asset_id] : null;
                 let assetData = null;
@@ -1187,18 +1188,18 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
                     const brand = assetObj.brand_id && brandMap[assetObj.brand_id] ? { id: assetObj.brand_id, name: brandMap[assetObj.brand_id].name } : null;
                     const model = assetObj.model_id && modelMap[assetObj.model_id] ? { id: assetObj.model_id, name: modelMap[assetObj.model_id].name } : null;
                     assetData = {
-                        id: assetObj.id,
-                        register_number: assetObj.register_number,
                         brand,
-                        model
+                        id: assetObj.id,
+                        model,
+                        register_number: assetObj.register_number
                     };
                 }
                 return {
                     ...rest,
+                    asset: assetData,
                     costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
                     department: department_id ? departmentMap[department_id] || null : null,
                     district: district_id ? districtMap[district_id] || null : null,
-                    asset: assetData,
                 };
             });
             return {
@@ -1207,9 +1208,9 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
             };
         });
         if (!result.length) {
-            return res.status(404).json({ status: 'error', message: 'Data not found', data: [] });
+            return res.status(404).json({ data: [], message: 'Data not found', status: 'error' });
         }
-        res.status(200).json({ status: 'success', message: 'Show all accounts with their subscribers', data: result });
+        res.status(200).json({ data: result, message: 'Show all accounts with their subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1218,12 +1219,12 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
 export const updateAccount = async (req: Request, res: Response, next: NextFunction) => {
     const accountId = Number(req.params.id);
     if (isNaN(accountId)) {
-        return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+        return res.status(400).json({ message: 'Invalid account ID', status: 'error' });
     }
     try {
         const accountData = req.body;
         await telcoModel.updateAccount(accountId, accountData);
-        res.status(200).json({ status: 'success', message: 'Account updated successfully' });
+        res.status(200).json({ message: 'Account updated successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1232,11 +1233,11 @@ export const updateAccount = async (req: Request, res: Response, next: NextFunct
 export const deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
     const accountId = Number(req.params.id);
     if (isNaN(accountId)) {
-        return res.status(400).json({ status: 'error', message: 'Invalid account ID' });
+        return res.status(400).json({ message: 'Invalid account ID', status: 'error' });
     }
     try {
         await telcoModel.deleteAccount(accountId);
-        res.status(200).json({ status: 'success', message: 'Account deleted successfully' });
+        res.status(200).json({ message: 'Account deleted successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1258,7 +1259,7 @@ export const createAccountSub = async (req: Request, res: Response, next: NextFu
     try {
         const accountSub = req.body;
         const id = await telcoModel.createAccountSub(accountSub);
-        res.status(201).json({ message: 'Account subscription created', id });
+        res.status(201).json({ id, message: 'Account subscription created' });
     } catch (error) {
         next(error);
     }
@@ -1281,30 +1282,30 @@ export const getContractById = async (req: Request, res: Response, next: NextFun
         const contractId = Number(req.params.id);
 
         if (isNaN(contractId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid contract ID' });
+            return res.status(400).json({ message: 'Invalid contract ID', status: 'error' });
         }
 
         const contract = await telcoModel.getContractById(contractId);
 
         if (!contract) {
-            return res.status(404).json({ status: 'error', message: 'Contract not found', data: null });
+            return res.status(404).json({ data: null, message: 'Contract not found', status: 'error' });
         }
 
         const formattedData = {
-            id: contract.id,
             account_id: contract.account_id,
-            product_type: contract.product_type,
-            contract_start_date: contract.contract_start_date,
             contract_end_date: contract.contract_end_date,
-            plan: contract.plan,
-            status: contract.status,
-            vendor_id: contract.vendor_id,
-            vendor: contract.name,
-            price: contract.price,
+            contract_start_date: contract.contract_start_date,
             duration: contract.duration,
+            id: contract.id,
+            plan: contract.plan,
+            price: contract.price,
+            product_type: contract.product_type,
+            status: contract.status,
+            vendor: contract.name,
+            vendor_id: contract.vendor_id,
         };
 
-        res.status(200).json({ status: 'success', message: 'Show contract by ID', data: formattedData });
+        res.status(200).json({ data: formattedData, message: 'Show contract by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1315,7 +1316,7 @@ export const getContractWithAccountsAndSubsById = async (req: Request, res: Resp
     try {
         const contractId = Number(req.params.id);
         if (isNaN(contractId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid contract ID' });
+            return res.status(400).json({ message: 'Invalid contract ID', status: 'error' });
         }
         const [contract, accounts, accountSubs, subscribers, vendors] = await Promise.all([
             telcoModel.getContractById(contractId),
@@ -1325,7 +1326,7 @@ export const getContractWithAccountsAndSubsById = async (req: Request, res: Resp
             telcoModel.getVendors(),
         ]);
         if (!contract) {
-            return res.status(404).json({ status: 'error', message: 'Contract not found', data: null });
+            return res.status(404).json({ data: null, message: 'Contract not found', status: 'error' });
         }
         const vendor = vendors.find((v: any) => v.id === contract.vendor_id) || null;
         const account = accounts.find((a: any) => a.id === contract.account_id);
@@ -1336,10 +1337,10 @@ export const getContractWithAccountsAndSubsById = async (req: Request, res: Resp
         }
         const formattedData = {
             ...contract,
-            vendor,
             accounts: account ? [{ ...account, subs }] : [],
+            vendor,
         };
-        res.status(200).json({ status: 'success', message: 'Show contract with accounts and subscribers by ID', data: formattedData });
+        res.status(200).json({ data: formattedData, message: 'Show contract with accounts and subscribers by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1350,7 +1351,7 @@ export const createContract = async (req: Request, res: Response, next: NextFunc
     try {
         const contract = req.body;
         const id = await telcoModel.createContract(contract);
-        res.status(201).json({ message: 'Contract created', id });
+        res.status(201).json({ id, message: 'Contract created' });
     } catch (error) {
         next(error);
     }
@@ -1361,7 +1362,7 @@ export const createContract = async (req: Request, res: Response, next: NextFunc
 export const getVendors = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const vendors = await telcoModel.getVendors();
-        res.status(200).json({ status: 'Success', message: 'Vendors data retrieved succesfully', data: vendors });
+        res.status(200).json({ data: vendors, message: 'Vendors data retrieved succesfully', status: 'Success' });
     } catch (error) {
         next(error);
     }
@@ -1373,28 +1374,28 @@ export const getVendorById = async (req: Request, res: Response, next: NextFunct
         const vendorId = Number(req.params.id);
 
         if (isNaN(vendorId)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid vendor ID' });
+            return res.status(400).json({ message: 'Invalid vendor ID', status: 'error' });
         }
 
         const vendor = await telcoModel.getVendorById(vendorId);
 
         if (!vendor) {
-            return res.status(404).json({ status: 'error', message: 'Vendor not found', data: null });
+            return res.status(404).json({ data: null, message: 'Vendor not found', status: 'error' });
         }
 
         const formattedData = {
-            id: vendor.id,
-            name: vendor.name,
-            service_type: vendor.service_type,
-            register_date: vendor.register_date,
             address: vendor.address,
+            contact_email: vendor.contact_email,
             contact_name: vendor.contact_name,
             contact_no: vendor.contact_no,
-            contact_email: vendor.contact_email,
+            id: vendor.id,
+            name: vendor.name,
+            register_date: vendor.register_date,
+            service_type: vendor.service_type,
             status: vendor.status,
         };
 
-        res.status(200).json({ status: 'success', message: 'Show vendor by ID', data: formattedData });
+        res.status(200).json({ data: formattedData, message: 'Show vendor by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1405,7 +1406,7 @@ export const createVendor = async (req: Request, res: Response, next: NextFuncti
     try {
         const vendor = req.body;
         const id = await telcoModel.createVendor(vendor);
-        res.status(201).json({ message: 'Vendor created', id });
+        res.status(201).json({ id, message: 'Vendor created' });
     } catch (error) {
         next(error);
     }

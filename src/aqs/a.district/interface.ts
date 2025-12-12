@@ -1,7 +1,7 @@
 export interface District {
-    id: string
-    organizationId: string,
-    name: string,
     code: string,
+    id: string
     isActive: boolean
+    name: string,
+    organizationId: string,
 }

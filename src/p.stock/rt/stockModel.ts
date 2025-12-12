@@ -1,5 +1,6 @@
-import {pool} from "../../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
+
+import {pool} from "../../utils/db";
 
 // --- DB & TABLE DECLARATIONS ---
 const dbName = 'diana';
@@ -17,12 +18,12 @@ const stockRequestItemsTable = `${dbName}.rt_stock_request_items`;
 
 export const createStockPurchase = async (data: any) => {
     const {
-        request_ref_no, requested_by, requested_at,
-        verified_by, verified_at, verification_status,
-        approved_by, approved_at, approval_status,
-        po_no, po_date, supplier_id, inv_no, inv_date,
-        do_no, do_date, received_by, received_at,
-        total_items, remarks
+        approval_status, approved_at, approved_by,
+        do_date, do_no, inv_date,
+        inv_no, po_date, po_no,
+        received_at, received_by, remarks, request_ref_no, requested_at,
+        requested_by, supplier_id, total_items, verification_status,
+        verified_at, verified_by
     } = data;
     const [result] = await pool.query(
         `INSERT INTO ${stockPurchaseTable} (
@@ -58,12 +59,12 @@ export const getStockPurchaseById = async (id: number) => {
 
 export const updateStockPurchase = async (id: number, data: any) => {
     const {
-        request_ref_no, requested_by, requested_at,
-        verified_by, verified_at, verification_status,
-        approved_by, approved_at, approval_status,
-        po_no, po_date, supplier_id, inv_no, inv_date,
-        do_no, do_date, received_by, received_at,
-        total_items, remarks
+        approval_status, approved_at, approved_by,
+        do_date, do_no, inv_date,
+        inv_no, po_date, po_no,
+        received_at, received_by, remarks, request_ref_no, requested_at,
+        requested_by, supplier_id, total_items, verification_status,
+        verified_at, verified_by
     } = data;
     const [result] = await pool.query(
         `UPDATE ${stockPurchaseTable} SET
@@ -94,7 +95,7 @@ export const deleteStockPurchase = async (id: number) => {
 // ---- STOCK PURCHASE ITEMS ----
 
 export const createStockPurchaseItem = async (data: any) => {
-    const { purchase_id, item_id, item_code, item_name, qty, received_qty } = data;
+    const { item_code, item_id, item_name, purchase_id, qty, received_qty } = data;
     const [result] = await pool.query(
         `INSERT INTO ${stockPurchaseItemsTable} (purchase_id, item_id, item_code, item_name, qty, received_qty) VALUES (?, ?, ?, ?, ?, ?)`,
         [purchase_id, item_id, item_code, item_name, qty, received_qty]
@@ -114,7 +115,7 @@ export const getStockPurchaseItemById = async (id: number) => {
 };
 
 export const updateStockPurchaseItem = async (id: number, data: any) => {
-    const { item_id, item_code, item_name, qty, received_qty } = data;
+    const { item_code, item_id, item_name, qty, received_qty } = data;
     const [result] = await pool.query(
         `UPDATE ${stockPurchaseItemsTable} SET item_id=?, item_code=?, item_name=?, qty=?, received_qty=? WHERE id=?`,
         [item_id, item_code, item_name, qty, received_qty, id]
@@ -139,7 +140,7 @@ export const getStockPurchaseItemsForPurchases = async (purchaseIds: number[]) =
 
 // ---- SUPPLIERS ----
 export const createSupplier = async (data: any) => {
-    const { name, contact_name, contact_no } = data;
+    const { contact_name, contact_no, name } = data;
     const [result] = await pool.query(
         `INSERT INTO ${suppliersTable} (name, contact_name, contact_no) VALUES (?, ?, ?)`,
         [name, contact_name, contact_no]
@@ -155,7 +156,7 @@ export const getSupplierById = async (id: number) => {
     return (rows as RowDataPacket[])[0];
 };
 export const updateSupplier = async (id: number, data: any) => {
-    const { name, contact_name, contact_no } = data;
+    const { contact_name, contact_no, name } = data;
     const [result] = await pool.query(
         `UPDATE ${suppliersTable} SET name=?, contact_name=?, contact_no=? WHERE id=?`,
         [name, contact_name, contact_no, id]
@@ -209,7 +210,7 @@ export const deleteTeam = async (id: number) => {
 
 // ---- STOCK ITEMS ----
 export const createStockItem = async (data: any) => {
-    const { item_code, item_name, type_id, category_id, brand_id, model_id, specification, image } = data;
+    const { brand_id, category_id, image, item_code, item_name, model_id, specification, type_id } = data;
     const [result] = await pool.query(
         `INSERT INTO ${stockItemsTable} (item_code, item_name, type_id, category_id, brand_id, model_id, specification, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [item_code, item_name, type_id, category_id, brand_id, model_id, specification, image]
@@ -225,7 +226,7 @@ export const getStockItemById = async (id: number) => {
     return (rows as RowDataPacket[])[0];
 };
 export const updateStockItem = async (id: number, data: any) => {
-    const { item_code, item_name, type_id, category_id, brand_id, model_id, specification, image } = data;
+    const { brand_id, category_id, image, item_code, item_name, model_id, specification, type_id } = data;
     const [result] = await pool.query(
         `UPDATE ${stockItemsTable} SET item_code=?, item_name=?, type_id=?, category_id=?, brand_id=?, model_id=?, specification=?, image=? WHERE id=?`,
         [item_code, item_name, type_id, category_id, brand_id, model_id, specification, image, id]
@@ -248,7 +249,7 @@ export const getStockCardByItemId = async (itemId: number) => {
     return rows;
 };
 
-export const createStockCard = async (data: { item_id: number; total_in: number; total_out: number; balance: number; data_issue: string; }) => {
+export const createStockCard = async (data: { balance: number; data_issue: string; item_id: number; total_in: number; total_out: number; }) => {
     const [result] = await pool.query(
         `INSERT INTO ${stockCardTable} (item_id, total_in, total_out, balance, data_issue) VALUES (?, ?, ?, ?, ?)`,
         [data.item_id, data.total_in, data.total_out, data.balance, data.data_issue]
@@ -256,7 +257,7 @@ export const createStockCard = async (data: { item_id: number; total_in: number;
     return result;
 };
 
-export const updateStockCard = async (id: number, data: { total_in?: number; total_out?: number; balance?: number; data_issue?: string; }) => {
+export const updateStockCard = async (id: number, data: { balance?: number; data_issue?: string; total_in?: number; total_out?: number; }) => {
     const fields = Object.keys(data).map(key => `${key} = ?`).join(', ');
     const values = [...Object.values(data), id];
     const [result] = await pool.query(
@@ -273,7 +274,7 @@ export const deleteStockCard = async (id: number) => {
 
 // ---- STOCK TRACKING ----
 export const createStockTracking = async (data: any) => {
-    const { item_id, purchase_id, delivery_date, item_code, item_name, serial_no, store, status, issue_date, issue_no, issue_to, installed_location, department, team_name, registered_by, updated_by, created_at, updated_at, is_duplicate } = data;
+    const { created_at, delivery_date, department, installed_location, is_duplicate, issue_date, issue_no, issue_to, item_code, item_id, item_name, purchase_id, registered_by, serial_no, status, store, team_name, updated_at, updated_by } = data;
     const [result] = await pool.query(
         `INSERT INTO ${stockTrackingTable} (
       item_id, purchase_id, delivery_date, item_code, item_name, serial_no, store, status, issue_date, issue_no, issue_to, installed_location, department, team_name, registered_by, updated_by, created_at, updated_at, is_duplicate
@@ -294,7 +295,7 @@ export const getStockTrackingById = async (id: number) => {
 };
 
 export const updateStockTracking = async (id: number, data: any) => {
-    const { item_id, purchase_id, delivery_date, item_code, item_name, serial_no, store, status, issue_date, issue_no, issue_to, installed_location, department, team_name, registered_by, updated_by, created_at, updated_at, is_duplicate } = data;
+    const { created_at, delivery_date, department, installed_location, is_duplicate, issue_date, issue_no, issue_to, item_code, item_id, item_name, purchase_id, registered_by, serial_no, status, store, team_name, updated_at, updated_by } = data;
     const [result] = await pool.query(
         `UPDATE ${stockTrackingTable} SET item_id=?, purchase_id=?, delivery_date=?, item_code=?, item_name=?, serial_no=?, store=?, status=?, issue_date=?, issue_no=?, issue_to=?, installed_location=?, department=?, team_name=?, registered_by=?, updated_by=?, created_at=?, updated_at=?, is_duplicate=? WHERE id=?`,
         [item_id, purchase_id, delivery_date, item_code, item_name, serial_no, store, status, issue_date, issue_no, issue_to, installed_location, department, team_name, registered_by, updated_by, created_at, updated_at, is_duplicate, id]
@@ -312,9 +313,9 @@ import { PoolConnection } from 'mysql2/promise';
 
 export const createStockRequest = async (data: any) => {
     const {
-        request_ref_no, requested_by, requested_at, verified_by, verified_at, verification_status,
-        processed_by, processed_at, collected_by, collected_at, date_out, department, team_name,
-        use_for, pic, remarks, total_items, created_at, items
+        collected_at, collected_by, created_at, date_out, department, items,
+        pic, processed_at, processed_by, remarks, request_ref_no, requested_at, requested_by,
+        team_name, total_items, use_for, verification_status, verified_at, verified_by
     } = data;
     const conn = await pool.getConnection();
     try {
@@ -332,7 +333,7 @@ export const createStockRequest = async (data: any) => {
         const requestId = result.insertId;
         if (Array.isArray(items) && items.length > 0) {
             for (const item of items) {
-                const { item_id, item_code, item_name, qty, approved_qty, remarks } = item;
+                const { approved_qty, item_code, item_id, item_name, qty, remarks } = item;
                 await conn.query(
                     `INSERT INTO ${stockRequestItemsTable} (stock_out_id, item_id, item_code, item_name, qty, approved_qty, remarks)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -367,9 +368,9 @@ export const getStockRequestById = async (id: number) => {
 export const updateStockRequest = async (id: number, data: any) => {
     // Only update parent table fields, not items
     const {
-        request_ref_no, requested_by, requested_at, verified_by, verified_at, verification_status,
-        processed_by, processed_at, collected_by, collected_at, date_out, department, team_name,
-        use_for, pic, remarks, total_items, created_at
+        collected_at, collected_by, created_at, date_out, department, pic,
+        processed_at, processed_by, remarks, request_ref_no, requested_at, requested_by, team_name,
+        total_items, use_for, verification_status, verified_at, verified_by
     } = data;
     const [result] = await pool.query(
         `UPDATE ${stockRequestTable} SET
@@ -391,7 +392,7 @@ export const deleteStockRequest = async (id: number) => {
 };
 
 export const addStockRequestItem = async (stock_out_id: number, item: any) => {
-    const { item_id, item_code, item_name, qty, approved_qty, remarks } = item;
+    const { approved_qty, item_code, item_id, item_name, qty, remarks } = item;
     const [result] = await pool.query(
         `INSERT INTO ${stockRequestItemsTable} (stock_out_id, item_id, item_code, item_name, qty, approved_qty, remarks)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -401,7 +402,7 @@ export const addStockRequestItem = async (stock_out_id: number, item: any) => {
 };
 
 export const updateStockRequestItem = async (id: number, data: any) => {
-    const { item_id, item_code, item_name, qty, approved_qty, remarks } = data;
+    const { approved_qty, item_code, item_id, item_name, qty, remarks } = data;
     const [result] = await pool.query(
         `UPDATE ${stockRequestItemsTable} SET item_id=?, item_code=?, item_name=?, qty=?, approved_qty=?, remarks=? WHERE id=?`,
         [item_id, item_code, item_name, qty, approved_qty, remarks, id]

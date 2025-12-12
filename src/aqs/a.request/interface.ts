@@ -1,15 +1,15 @@
 export interface RequestAccess {
+    approvalNote?: string;
+    contactNo: string;
+    createdAt: Date;
+    department: string;
+    email: string;
+    employmentType: string;
     id: string;
     name: string;
-    email: string;
-    contactNo: string;
-    employmentType: string;
-    department: string;
     position: string;
     reasonAccess: string;
-    status: string;
     reasonReject?: string;
-    approvalNote?: string;
-    createdAt: Date;
+    status: string;
     updatedAt: Date;
 }

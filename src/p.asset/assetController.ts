@@ -1,16 +1,17 @@
 import { Request, Response } from 'express';
-import * as assetModel from './assetModel';
-import * as billingModel from '../p.billing/billingModel';
-import { sendMail } from '../utils/mailer';
 import jwt, { SignOptions } from 'jsonwebtoken';
+
+import * as billingModel from '../p.billing/billingModel';
+import * as purchaseModel from '../p.purchase/purchaseModel';
+import { assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail, assetTransferAcceptedRequestorEmail } from '../utils/emailTemplates/assetTransferAccepted';
+import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/assetTransferApprovalSummary';
+import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferApprovedNewOwner';
+import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferApprovedRequestor';
+import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
-import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/assetTransferApprovalSummary';
-import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferApprovedRequestor';
-import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferApprovedNewOwner';
-import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
-import { assetTransferAcceptedRequestorEmail, assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail } from '../utils/emailTemplates/assetTransferAccepted';
-import * as purchaseModel from '../p.purchase/purchaseModel';
+import { sendMail } from '../utils/mailer';
+import * as assetModel from './assetModel';
 
 
 /* ========== ASSETS ========== */
@@ -145,20 +146,20 @@ export const getAssets = async (req: Request, res: Response) => {
 	let total = 0;
 	if (usePaged) {
 		const { rows, total: t } = await assetModel.getAssetsPaged({
-			type_ids: typeIds,
-			classification,
-			status,
-			purpose,
-			manager,
-			registerNumber,
-			owner,
 			brandId,
-			q
+			classification,
+			manager,
+			owner,
+			purpose,
+			q,
+			registerNumber,
+			status,
+			type_ids: typeIds
 		}, { page, pageSize, sortBy, sortDir: (sortDir as any) });
-		assetsRaw = rows as any[];
+		assetsRaw = rows;
 		total = t;
 	} else {
-		assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId, purpose) as any[];
+		assetsRaw = await assetModel.getAssets(typeIds, classification, status, manager, registerNumber, owner, brandId, purpose);
 		total = Array.isArray(assetsRaw) ? assetsRaw.length : 0;
 	}
 	const typesRaw = await assetModel.getTypes();
@@ -208,27 +209,27 @@ export const getAssets = async (req: Request, res: Response) => {
 		const type = typeMap.get(asset.type_id);
 		// Enrich with unit_price from purchase items
 		const purchaseItem = asset.purchase_id ? purchaseItemMap.get(asset.purchase_id) : null;
-		const unitPrice = (purchaseItem as any)?.unit_price ?? asset.unit_price;
+		const unitPrice = (purchaseItem)?.unit_price ?? asset.unit_price;
 		const nbv = assetModel.calculateNBV(unitPrice, asset.purchase_year);
 		const age = assetModel.calculateAge(asset.purchase_year);
 
 		return {
-			id: asset.id,
-			entry_code: asset.entry_code,
-			classification: asset.classification,
-			record_status: asset.record_status,
-			purpose: asset.purpose,
-			condition_status: asset.condition_status,
-			asset_code: asset.asset_code,
-			register_number: asset.register_number,
-			purchase_date: asset.purchase_date,
-			purchase_year: asset.purchase_year,
-			purchase_id: asset.purchase_id,
-			unit_price: unitPrice,
-			nbv: nbv,
 			age: age,
-			fuel_type: asset.fuel_type,
-			transmission: asset.transmission,
+			asset_code: asset.asset_code,
+			brand: asset.brand_id && brandMap.has(asset.brand_id)
+				? {
+					id: asset.brand_id,
+					name: brandMap.get(asset.brand_id)?.name || null
+				}
+				: null,
+			category: asset.category_id && categoryMap.has(asset.category_id)
+				? {
+					id: asset.category_id,
+					name: categoryMap.get(asset.category_id)?.name || null
+				}
+				: null,
+			classification: asset.classification,
+			condition_status: asset.condition_status,
 			//depreciation_length: asset.depreciation_length,
 			costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 				? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
@@ -236,29 +237,15 @@ export const getAssets = async (req: Request, res: Response) => {
 			department: asset.department_id && departmentMap.has(asset.department_id)
 				? { id: asset.department_id, name: departmentMap.get(asset.department_id)?.code || null }
 				: null,
+			disposed_date: asset.disposed_date,
+			entry_code: asset.entry_code,
+			fuel_type: asset.fuel_type,
+			id: asset.id,
 			/* district: asset.district_id && districtMap.has(asset.district_id)
 			  ? { id: asset.district_id, code: districtMap.get(asset.district_id)?.code || null }
 			  : null, */
 			location: asset.location_id && locationMap.has(asset.location_id)
 				? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
-				: null,
-			status: asset.status,
-			disposed_date: asset.disposed_date,
-			type: type ? {
-				id: type.id,
-				name: type.name
-			} : null,
-			category: asset.category_id && categoryMap.has(asset.category_id)
-				? {
-					id: asset.category_id,
-					name: categoryMap.get(asset.category_id)?.name || null
-				}
-				: null,
-			brand: asset.brand_id && brandMap.has(asset.brand_id)
-				? {
-					id: asset.brand_id,
-					name: brandMap.get(asset.brand_id)?.name || null
-				}
 				: null,
 			model: asset.model_id && modelMap.has(asset.model_id)
 				? {
@@ -266,28 +253,42 @@ export const getAssets = async (req: Request, res: Response) => {
 					name: modelMap.get(asset.model_id)?.name || null
 				}
 				: null,
+			nbv: nbv,
 			owner: asset.ramco_id && employeeMap.has(asset.ramco_id)
 				? {
-					ramco_id: employeeMap.get(asset.ramco_id)?.ramco_id || null,
-					full_name: employeeMap.get(asset.ramco_id)?.full_name || null
+					full_name: employeeMap.get(asset.ramco_id)?.full_name || null,
+					ramco_id: employeeMap.get(asset.ramco_id)?.ramco_id || null
 				}
 				: null,
+			purchase_date: asset.purchase_date,
+			purchase_id: asset.purchase_id,
+			purchase_year: asset.purchase_year,
+			purpose: asset.purpose,
+			record_status: asset.record_status,
+			register_number: asset.register_number,
+			status: asset.status,
+			transmission: asset.transmission,
+			type: type ? {
+				id: type.id,
+				name: type.name
+			} : null,
+			unit_price: unitPrice,
 		};
 	});
 
 	const meta = { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / (pageSize || 1))) };
 	res.json({
-		status: 'success',
-		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${total} total` : ''})`,
 		data,
-		meta
+		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${total} total` : ''})`,
+		meta,
+		status: 'success'
 	});
 };
 
 export const getAssetById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const asset = await assetModel.getAssetById(id);
-	if (!asset) return res.status(404).json({ status: 'error', message: 'Asset not found' });
+	if (!asset) return res.status(404).json({ message: 'Asset not found', status: 'error' });
 
 	// Enrich with unit_price from purchase items
 	const purchaseItem = (asset as any).purchase_id 
@@ -340,15 +341,15 @@ export const getAssetById = async (req: Request, res: Response) => {
 		const emp = employeeMap.get(o.ramco_id);
 		if (emp) {
 			ownershipsByAsset[o.asset_id].push({
-				ramco_id: emp.ramco_id,
-				name: emp.full_name,
-				email: emp.email,
 				contact: emp.contact,
-				department: asset.department_id ? (departmentMap.get(asset.department_id)?.code || null) : null,
 				costcenter: asset.costcenter_id ? (costcenterMap.get(asset.costcenter_id)?.name || null) : null,
+				department: asset.department_id ? (departmentMap.get(asset.department_id)?.code || null) : null,
 				district: asset.district_id ? (districtMap.get(asset.district_id)?.code || null) : null,
+				effective_date: (o as any).effective_date || null,
+				email: emp.email,
 				location: asset.location_id ? (locationMap.get(asset.location_id)?.name || null) : null,
-				effective_date: (o as any).effective_date || null
+				name: emp.full_name,
+				ramco_id: emp.ramco_id
 			});
 		}
 	}
@@ -376,44 +377,44 @@ export const getAssetById = async (req: Request, res: Response) => {
 	}
 
 	const assetWithNested = {
-		id: asset.id,
-		entry_code: asset.entry_code,
-		classification: asset.classification,
-		status: asset.record_status,
-		condition: asset.condition_status,
-		register_number: asset.register_number,
-		purchase_date: asset.purchase_date,
-		purchase_year: asset.purchase_year,
-		unit_price: asset.unit_price,
-		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
 		age: assetModel.calculateAge(asset.purchase_year),
-		depreciation_length: asset.depreciation_length,
-		depreciation_rate: asset.depreciation_rate,
+		brand: asset.brand_id && brandMap.has(asset.brand_id)
+			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+			: null,
+		category: asset.category_id && categoryMap.has(asset.category_id)
+			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+			: null,
+		classification: asset.classification,
+		condition: asset.condition_status,
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
 			: null,
+		depreciation_length: asset.depreciation_length,
+		depreciation_rate: asset.depreciation_rate,
 		disposed_date: asset.disposed_date,
+		entry_code: asset.entry_code,
+		id: asset.id,
+		model: asset.model_id && modelMap.has(asset.model_id)
+			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+			: null,
+		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
+		owner: ownershipsByAsset[asset.id] || [],
+		purchase_date: asset.purchase_date,
+		purchase_year: asset.purchase_year,
+		register_number: asset.register_number,
+		specs,
+		status: asset.record_status,
 		type: type ? {
 			id: type.id,
 			name: type.name
 		} : null,
-		category: asset.category_id && categoryMap.has(asset.category_id)
-			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
-			: null,
-		brand: asset.brand_id && brandMap.has(asset.brand_id)
-			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
-			: null,
-		model: asset.model_id && modelMap.has(asset.model_id)
-			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
-			: null,
-		owner: ownershipsByAsset[asset.id] || [],
-		specs,
+		unit_price: asset.unit_price,
 	};
 
 	res.json({
-		status: 'success',
+		data: assetWithNested,
 		message: 'Asset data by ID retrieved successfully',
-		data: assetWithNested
+		status: 'success'
 	});
 };
 
@@ -421,9 +422,9 @@ export const createAsset = async (req: Request, res: Response) => {
 	const assetData = req.body;
 	const result = await assetModel.createAsset(assetData);
 	res.status(201).json({
-		status: 'success',
 		message: 'Asset created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -432,9 +433,9 @@ export const updateAsset = async (req: Request, res: Response) => {
 	const data = req.body;
 	const result = await assetModel.updateAsset(Number(id), data);
 	res.json({
-		status: 'success',
 		message: 'Asset updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -442,9 +443,9 @@ export const deleteAsset = async (req: Request, res: Response) => {
 	const { id } = req.params;
 	const result = await assetModel.deleteAsset(Number(id));
 	res.json({
-		status: 'success',
 		message: 'Asset deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -454,7 +455,7 @@ export const getAssetManagers = async (req: Request, res: Response) => {
 	// Fetch all asset managers
 	const managers = await assetModel.getAssetManagers();
 	if (!Array.isArray(managers)) {
-		return res.status(500).json({ status: 'error', message: 'Failed to fetch asset managers' });
+		return res.status(500).json({ message: 'Failed to fetch asset managers', status: 'error' });
 	}
 	// Fetch departments, locations, costcenters and all employees for mapping
 	const [departmentsRaw, locationsRaw, costcentersRaw, employeesRaw] = await Promise.all([
@@ -477,13 +478,13 @@ export const getAssetManagers = async (req: Request, res: Response) => {
 		return {
 			...mgr,
 			employee: emp ? {
-				ramco_id: emp.ramco_id,
-				full_name: emp.full_name,
-				email: emp.email,
 				contact: emp.contact,
 				costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap.get(emp.costcenter_id)?.name || null } : null,
 				department: emp.department_id ? { id: emp.department_id, name: deptMap.get(emp.department_id)?.code || null } : null,
-				location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null
+				email: emp.email,
+				full_name: emp.full_name,
+				location: emp.location_id ? { id: emp.location_id, name: locMap.get(emp.location_id)?.name || null } : null,
+				ramco_id: emp.ramco_id
 			} : null
 		};
 	});
@@ -492,18 +493,18 @@ export const getAssetManagers = async (req: Request, res: Response) => {
 	if (ramco) {
 		enrichedManagers = enrichedManagers.filter((mgr: any) => String(mgr.ramco_id) === ramco);
 	}
-	res.json({ status: 'success', message: 'Asset managers retrieved successfully', data: enrichedManagers });
+	res.json({ data: enrichedManagers, message: 'Asset managers retrieved successfully', status: 'success' });
 }
 
 export const getAssetManagerById = async (req: Request, res: Response) => {
 	const managerId = Number(req.params.id);
 	if (!managerId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
+		return res.status(400).json({ message: 'Invalid asset manager ID', status: 'error' });
 	}
 	// Fetch the asset manager
 	const manager = await assetModel.getAssetManagerById(managerId);
 	if (!manager) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
 	// Fetch employee details and related department/location
 	const emp = manager.ramco_id ? await assetModel.getEmployeeByRamco(manager.ramco_id) : null;
@@ -515,23 +516,23 @@ export const getAssetManagerById = async (req: Request, res: Response) => {
 			emp.costcenter_id ? assetModel.getCostcenterById(emp.costcenter_id) : null
 		]);
 		employee = {
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
 			contact: emp.contact,
 			costcenter: costcenter ? { id: costcenter.id, name: costcenter.name || null } : null,
 			department: dept ? { id: dept.id, name: dept.code || null } : null,
-			location: loc ? { id: loc.id, name: loc.name || null } : null
+			email: emp.email,
+			full_name: emp.full_name,
+			location: loc ? { id: loc.id, name: loc.name || null } : null,
+			ramco_id: emp.ramco_id
 		};
 	}
-	res.json({ status: 'success', message: 'Asset manager retrieved successfully', data: { ...manager, employee } });
+	res.json({ data: { ...manager, employee }, message: 'Asset manager retrieved successfully', status: 'success' });
 }
 
 export const createAssetManager = async (req: Request, res: Response) => {
 	const data = req.body;
 	// Create the asset manager
 	const insertId = await assetModel.createAssetManager(data);
-	res.status(201).json({ status: 'success', message: 'Asset manager created successfully', data: { id: insertId } });
+	res.status(201).json({ data: { id: insertId }, message: 'Asset manager created successfully', status: 'success' });
 }
 
 export const updateAssetManager = async (req: Request, res: Response) => {
@@ -540,27 +541,27 @@ export const updateAssetManager = async (req: Request, res: Response) => {
 	// Update the asset manager
 	const result = await assetModel.updateAssetManager(data, id);
 	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Asset manager updated successfully' });
+	res.json({ message: 'Asset manager updated successfully', status: 'success' });
 }
 
 export const deleteAssetManager = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	if (!id) {
-		return res.status(400).json({ status: 'error', message: 'Invalid asset manager ID' });
+		return res.status(400).json({ message: 'Invalid asset manager ID', status: 'error' });
 	}
 	// Validate asset manager exists
 	const manager = await assetModel.getAssetManagerById(id);
 	if (!manager) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
 	// Delete the asset manager
 	const result = await assetModel.deleteAssetManager(id);
 	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Asset manager not found' });
+		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Asset manager deleted successfully' });
+	res.json({ message: 'Asset manager deleted successfully', status: 'success' });
 }
 
 /* ============ SPEC PROPERTIES ============= */
@@ -579,25 +580,25 @@ export const getSpecProperties = async (req: Request, res: Response) => {
 			}
 		}
 		const grouped: any[] = [];
-		const groupMap = new Map<number, { type_id: number; type_name: string | null; properties: any[] }>();
+		const groupMap = new Map<number, { properties: any[]; type_id: number; type_name: null | string; }>();
 		for (const r of rows) {
 			const tid = Number(r.type_id);
 			if (!Number.isFinite(tid)) continue;
 			if (!groupMap.has(tid)) {
-				const group = { type_id: tid, type_name: typeNameMap.get(tid) ?? null, properties: [] as any[] };
+				const group = { properties: [] as any[], type_id: tid, type_name: typeNameMap.get(tid) ?? null };
 				groupMap.set(tid, group);
 				grouped.push(group);
 			}
 			// Exclude type_id inside individual property
-			const { type_id, ...prop } = r as any;
+			const { type_id, ...prop } = r;
 			groupMap.get(tid)!.properties.push(prop);
 		}
-		return res.json({ status: 'success', message: 'All spec properties retrieved', data: grouped });
+		return res.json({ data: grouped, message: 'All spec properties retrieved', status: 'success' });
 	}
 	const typeId = Number(typeParam);
-	if (!typeId || isNaN(typeId)) return res.status(400).json({ status: 'error', message: 'type_id is invalid' });
+	if (!typeId || isNaN(typeId)) return res.status(400).json({ message: 'type_id is invalid', status: 'error' });
 	const rows = await assetModel.getSpecPropertiesByType(typeId);
-	res.json({ status: 'success', message: 'Spec properties retrieved', data: rows });
+	res.json({ data: rows, message: 'Spec properties retrieved', status: 'success' });
 };
 
 export const createSpecProperty = async (req: Request, res: Response) => {
@@ -605,39 +606,39 @@ export const createSpecProperty = async (req: Request, res: Response) => {
 		const payload = req.body;
 		// payload: { type_id, name, label, data_type, nullable, default_value, options }
 		const result: any = await assetModel.createSpecProperty(payload);
-		res.status(201).json({ status: 'success', message: 'Spec property created', data: result });
+		res.status(201).json({ data: result, message: 'Spec property created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ status: 'error', message, data: null });
+		res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
 export const applySpecProperty = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
-	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const spec = await assetModel.getSpecPropertyById(id);
-	if (!spec) return res.status(404).json({ status: 'error', message: 'Spec property not found' });
+	if (!spec) return res.status(404).json({ message: 'Spec property not found', status: 'error' });
 	const result: any = await assetModel.applySpecPropertyToType(spec);
 	if (result.ok) {
-		res.json({ status: 'success', message: 'Spec applied to type table', data: null });
+		res.json({ data: null, message: 'Spec applied to type table', status: 'success' });
 	} else {
-		res.status(500).json({ status: 'error', message: 'Failed to apply spec', data: result.error });
+		res.status(500).json({ data: result.error, message: 'Failed to apply spec', status: 'error' });
 	}
 };
 
 export const updateSpecProperty = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
-	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const result = await assetModel.updateSpecProperty(id, req.body);
-	res.json({ status: 'success', message: 'Spec property updated', data: result });
+	res.json({ data: result, message: 'Spec property updated', status: 'success' });
 };
 
 export const deleteSpecProperty = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
-	if (!id) return res.status(400).json({ status: 'error', message: 'id is required' });
+	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const drop = req.query.drop === '1' || req.query.drop === 'true';
 	const result = await assetModel.deleteSpecProperty(id, drop);
-	res.json({ status: 'success', message: 'Spec property deleted', data: result });
+	res.json({ data: result, message: 'Spec property deleted', status: 'success' });
 };
 
 export const applyPendingSpecProperties = async (req: Request, res: Response) => {
@@ -645,10 +646,10 @@ export const applyPendingSpecProperties = async (req: Request, res: Response) =>
 	let typeId: number | undefined = undefined;
 	if (typeParam !== undefined && typeParam !== null && String(typeParam).trim() !== '') {
 		typeId = Number(typeParam);
-		if (isNaN(typeId)) return res.status(400).json({ status: 'error', message: 'type_id is invalid' });
+		if (isNaN(typeId)) return res.status(400).json({ message: 'type_id is invalid', status: 'error' });
 	}
 	const results = await assetModel.applyPendingSpecProperties(typeId);
-	res.json({ status: 'success', message: 'Apply results', data: results });
+	res.json({ data: results, message: 'Apply results', status: 'success' });
 };
 
 
@@ -660,22 +661,22 @@ function isPlainObjectArray(arr: any): arr is Record<string, any>[] {
 // Register batch of assets into purchase registry table
 export const registerAssetsBatch = async (req: Request, res: Response) => {
 	try {
-		const { pr_id, assets, created_by } = req.body || {};
+		const { assets, created_by, pr_id } = req.body || {};
 		const prIdNum = Number(pr_id);
 		if (!prIdNum || !Array.isArray(assets) || assets.length === 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid payload: pr_id and non-empty assets[] are required', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid payload: pr_id and non-empty assets[] are required', status: 'error' });
 		}
 
 		// Basic normalization is handled in model; perform minimal structure check here
 		const insertIds = await purchaseModel.createPurchaseAssetRegistryBatch(prIdNum, assets, created_by || null);
 
 		return res.status(201).json({
-			status: 'success',
+			data: { insertIds, pr_id: prIdNum },
 			message: `Registered ${insertIds.length} assets for PR ${prIdNum}`,
-			data: { pr_id: prIdNum, insertIds }
+			status: 'success'
 		});
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets batch', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to register assets batch', status: 'error' });
 	}
 }
 
@@ -689,7 +690,7 @@ export const getTypes = async (req: Request, res: Response) => {
 		let manager = null;
 		if (type.manager && employeeMap.has(type.manager)) {
 			const emp = employeeMap.get(type.manager);
-			manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+			manager = { full_name: emp.full_name, ramco_id: emp.ramco_id };
 		}
 		// Add full image URL if image exists
 		let image = type.image;
@@ -703,16 +704,16 @@ export const getTypes = async (req: Request, res: Response) => {
 		};
 	});
 	res.json({
-		status: 'success',
+		data,
 		message: 'Asset type retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getTypeById = async (req: Request, res: Response) => {
 	const row = await assetModel.getTypeById(Number(req.params.id));
 	if (!row) {
-		return res.status(404).json({ status: 'error', message: 'Type not found', data: null });
+		return res.status(404).json({ data: null, message: 'Type not found', status: 'error' });
 	}
 	// Enhance: fetch all employees for manager lookup
 	const employees = await assetModel.getEmployees();
@@ -720,52 +721,52 @@ export const getTypeById = async (req: Request, res: Response) => {
 	let manager = null;
 	if (row.manager && employeeMap.has(row.ramco_id)) {
 		const emp = employeeMap.get(row.ramco_id);
-		manager = { ramco_id: emp.ramco_id, full_name: emp.full_name };
+		manager = { full_name: emp.full_name, ramco_id: emp.ramco_id };
 	}
 	const data = { ...row, manager };
 	res.json({
-		status: 'success',
+		data,
 		message: 'Asset type retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const createType = async (req: Request, res: Response) => {
 	try {
-		const { name, description, image, manager, ramco_id } = req.body;
+		const { description, image, manager, name, ramco_id } = req.body;
 		// Accept ramco_id from either manager object or direct field
-		const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
-		const result = await assetModel.createType({ name, description, image, ramco_id: resolvedRamcoId });
+		const resolvedRamcoId = (manager?.ramco_id) ? manager.ramco_id : ramco_id;
+		const result = await assetModel.createType({ description, image, name, ramco_id: resolvedRamcoId });
 		// Ensure correct type for insertId
 		const typeId = (result as import('mysql2').ResultSetHeader).insertId;
 		// Fetch the created type to return with full image URL
 		const type = await assetModel.getTypeById(typeId);
-		if (type && type.image) {
+		if (type.image) {
 			type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
 		}
-		res.status(201).json({ status: 'success', message: 'Type created', data: type });
+		res.status(201).json({ data: type, message: 'Type created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ status: 'error', message, data: null });
+		res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
 export const updateType = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		const { name, description, image, manager, ramco_id } = req.body;
+		const { description, image, manager, name, ramco_id } = req.body;
 		// Accept ramco_id from either manager object or direct field
-		const resolvedRamcoId = (manager && manager.ramco_id) ? manager.ramco_id : ramco_id;
-		await assetModel.updateType(id, { name, description, image, ramco_id: resolvedRamcoId });
+		const resolvedRamcoId = (manager?.ramco_id) ? manager.ramco_id : ramco_id;
+		await assetModel.updateType(id, { description, image, name, ramco_id: resolvedRamcoId });
 		// Fetch the updated type to return with full image URL
 		const type = await assetModel.getTypeById(id);
-		if (type && type.image) {
+		if (type.image) {
 			type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
 		}
-		res.json({ status: 'success', message: 'Type updated', data: type });
+		res.json({ data: type, message: 'Type updated', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ status: 'error', message, data: null });
+		res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
@@ -779,11 +780,11 @@ export const getCategories = async (req: Request, res: Response) => {
 	// Support ?type={type_id} param (optional) - can be comma-separated
 	let typeIds: number[] = [];
 	if (typeof req.query.type === 'string' && req.query.type !== '' && req.query.type !== 'all') {
-		const ids = (req.query.type as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+		const ids = (req.query.type).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
 		typeIds = ids;
 	}
 	const managerParam = req.query.manager;
-	let rowsRaw = await assetModel.getCategories(managerParam as any);
+	const rowsRaw = await assetModel.getCategories(managerParam as any);
 	let rows: any[] = Array.isArray(rowsRaw) ? rowsRaw : [];
 	if (typeIds.length > 0) {
 		rows = rows.filter((c: any) => typeIds.includes(c.type_id));
@@ -809,9 +810,9 @@ export const getCategories = async (req: Request, res: Response) => {
 		});
 	}
 	res.json({
-		status: 'success',
+		data,
 		message: 'Categories data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
@@ -822,17 +823,17 @@ export const getCategoryById = async (req: Request, res: Response) => {
 
 export const createCategory = async (req: Request, res: Response) => {
 	// Accept frontend payload with type_id (or typeId), map to type_id for DB
-	const { name, type_id, typeId, manager_id } = req.body;
+	const { manager_id, name, type_id, typeId } = req.body;
 	// Prefer type_id, fallback to typeId
 	const result = await assetModel.createCategory({
+		manager_id: manager_id ?? null,
 		name,
-		type_id: type_id ?? typeId,
-		manager_id: manager_id ?? null
+		type_id: type_id ?? typeId
 	});
 	res.json({
-		status: 'success',
 		message: 'Category created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -880,12 +881,12 @@ export const getBrands = async (req: Request, res: Response) => {
 	// Support ?categories={category_id} param (optional) - can be comma-separated
 	let categoryIds: number[] = [];
 	if (typeof req.query.categories === 'string' && req.query.categories !== '' && req.query.categories !== 'all') {
-		const catIds = (req.query.categories as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+		const catIds = (req.query.categories).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
 		categoryIds = catIds;
 	}
 
 	// Fetch all brands, categories, types, and models
-	let brandsRaw = await assetModel.getBrands();
+	const brandsRaw = await assetModel.getBrands();
 	let brands: any[] = Array.isArray(brandsRaw) ? brandsRaw : [];
 	if (typeId !== undefined) {
 		brands = brands.filter((b: any) => b.type_id === typeId);
@@ -954,18 +955,18 @@ export const getBrands = async (req: Request, res: Response) => {
 		const modelsForBrand = modelsMap.get(brand.id) || [];
 
 		data.push({
-			id: brand.id.toString(),
-			name: brand.name,
-			type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null,
 			categories: categoriesForBrand,
-			models: modelsForBrand
+			id: brand.id.toString(),
+			models: modelsForBrand,
+			name: brand.name,
+			type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null
 		});
 	}
 
 	res.json({
-		status: 'success',
+		data,
 		message: 'Models data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
@@ -978,9 +979,9 @@ export const createBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.createBrand(req.body);
 	res.json({
-		status: 'success',
 		message: 'Brand created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -988,9 +989,9 @@ export const updateBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.updateBrand(Number(req.params.id), req.body);
 	res.json({
-		status: 'success',
 		message: 'Brand updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -1004,25 +1005,25 @@ export const deleteBrand = async (req: Request, res: Response) => {
 export const assignCategoryToBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
 	await assetModel.addBrandCategory(brand_code, category_code);
-	res.json({ status: 'success', message: 'Category assigned to brand' });
+	res.json({ message: 'Category assigned to brand', status: 'success' });
 };
 
 export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
 	await assetModel.removeBrandCategory(brand_code, category_code);
-	res.json({ status: 'success', message: 'Category unassigned from brand' });
+	res.json({ message: 'Category unassigned from brand', status: 'success' });
 };
 
 export const getCategoriesForBrand = async (req: Request, res: Response) => {
 	const { brand_code } = req.params;
 	const categories = await assetModel.getCategoriesByBrand(brand_code);
-	res.json({ status: 'success', data: categories });
+	res.json({ data: categories, status: 'success' });
 };
 
 export const getBrandsForCategory = async (req: Request, res: Response) => {
 	const { category_code } = req.params;
 	const brands = await assetModel.getBrandsByCategory(category_code);
-	res.json({ status: 'success', data: brands });
+	res.json({ data: brands, status: 'success' });
 };
 
 export const getAllBrandCategoryMappings = async (req: Request, res: Response) => {
@@ -1030,16 +1031,16 @@ export const getAllBrandCategoryMappings = async (req: Request, res: Response) =
 	const brands = await assetModel.getBrands();
 	const categories = await assetModel.getCategories();
 	// Build lookup maps
-	const brandMap = new Map<string, { id: number; name: string; code: string }>();
+	const brandMap = new Map<string, { code: string; id: number; name: string; }>();
 	for (const b of brands as any[]) {
-		brandMap.set(b.code, { id: b.id, name: b.name, code: b.code });
+		brandMap.set(b.code, { code: b.code, id: b.id, name: b.name });
 	}
-	const categoryMap = new Map<string, { id: number; name: string; code: string }>();
+	const categoryMap = new Map<string, { code: string; id: number; name: string; }>();
 	for (const c of categories as any[]) {
-		categoryMap.set(c.code, { id: c.id, name: c.name, code: c.code });
+		categoryMap.set(c.code, { code: c.code, id: c.id, name: c.name });
 	}
 	// Brute-force all pairs using getCategoriesByBrand for each brand
-	let mappings: any[] = [];
+	const mappings: any[] = [];
 	for (const b of brands as any[]) {
 		const cats = await assetModel.getCategoriesByBrand(b.code);
 		const catArr = Array.isArray(cats) ? cats : [];
@@ -1062,7 +1063,7 @@ export const getAllBrandCategoryMappings = async (req: Request, res: Response) =
 			});
 		}
 	}
-	res.json({ status: 'success', data: mappings });
+	res.json({ data: mappings, status: 'success' });
 };
 
 /* =========== MODELS =========== */
@@ -1077,13 +1078,13 @@ export const getModels = async (req: Request, res: Response) => {
 	// Support ?brand={brand_id} param (optional) - can be comma-separated
 	let brandIds: number[] = [];
 	if (typeof req.query.brand === 'string' && req.query.brand !== '' && req.query.brand !== 'all') {
-		const ids = (req.query.brand as string).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
+		const ids = (req.query.brand).split(',').map(id => Number(id.trim())).filter(id => !isNaN(id));
 		brandIds = ids;
 	}
 
 	// Fetch models from DB with optional filters (type and brand)
-	let modelsRaw = await assetModel.getModels(typeId, brandIds.length > 0 ? brandIds : undefined);
-	let models: any[] = Array.isArray(modelsRaw) ? modelsRaw : [];
+	const modelsRaw = await assetModel.getModels(typeId, brandIds.length > 0 ? brandIds : undefined);
+	const models: any[] = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const brands = await assetModel.getBrands();
 	const categories = await assetModel.getCategories();
 	const types = await assetModel.getTypes();
@@ -1103,28 +1104,28 @@ export const getModels = async (req: Request, res: Response) => {
 	}
 
 	// Map models to include select fields plus brand, category and type objects
-	const data = (models as any[]).map((model) => {
+	const data = (models).map((model) => {
 		// remove deprecated/changed fields from response (e.g. code) and avoid exposing raw foreign keys
-		const { code, type_id, brand_id, category_id, ...rest } = model as any;
+		const { brand_id, category_id, code, type_id, ...rest } = model;
 		return {
 			...rest,
-			// attach type object from type_id
-			type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
 			brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
-			category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+			category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
+			// attach type object from type_id
+			type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 		};
 	});
 
 	res.json({
-		status: 'success',
+		data,
 		message: 'Models data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getModelById = async (req: Request, res: Response) => {
 	const row = await assetModel.getModelById(Number(req.params.id));
-	if (!row) return res.status(404).json({ status: 'error', message: 'Model not found' });
+	if (!row) return res.status(404).json({ message: 'Model not found', status: 'error' });
 	const brands = await assetModel.getBrands();
 	const categories = await assetModel.getCategories();
 	const types = await assetModel.getTypes();
@@ -1135,14 +1136,14 @@ export const getModelById = async (req: Request, res: Response) => {
 	const typeMap = new Map<number, { id: number; name: string }>();
 	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
 
-	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const { brand_id, category_id, code, type_id, ...rest } = row as any;
 	const data = {
 		...rest,
-		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
 		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
-		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.json({ status: 'success', message: 'Model retrieved successfully', data });
+	res.json({ data, message: 'Model retrieved successfully', status: 'success' });
 };
 
 export const createModel = async (req: Request, res: Response) => {
@@ -1167,14 +1168,14 @@ export const createModel = async (req: Request, res: Response) => {
 	for (const c of categories as any[]) categoryMap.set(c.id, { id: c.id, name: c.name });
 	const typeMap = new Map<number, { id: number; name: string }>();
 	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
-	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const { brand_id, category_id, code, type_id, ...rest } = row as any;
 	const mapped = {
 		...rest,
-		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
 		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
-		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.status(201).json({ status: 'success', message: 'Model created successfully', data: { id: insertId, ...mapped } });
+	res.status(201).json({ data: { id: insertId, ...mapped }, message: 'Model created successfully', status: 'success' });
 };
 
 export const updateModel = async (req: Request, res: Response) => {
@@ -1196,14 +1197,14 @@ export const updateModel = async (req: Request, res: Response) => {
 	for (const c of categories as any[]) categoryMap.set(c.id, { id: c.id, name: c.name });
 	const typeMap = new Map<number, { id: number; name: string }>();
 	for (const t of types as any[]) typeMap.set(t.id, { id: t.id, name: t.name });
-	const { code, type_id, brand_id, category_id, ...rest } = row as any;
+	const { brand_id, category_id, code, type_id, ...rest } = row as any;
 	const mapped = {
 		...rest,
-		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null,
 		brand: brand_id && brandMap.has(brand_id) ? brandMap.get(brand_id) : null,
-		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null
+		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
+		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.json({ status: 'success', message: 'Model updated successfully', data: { id: Number(id), ...mapped } });
+	res.json({ data: { id: Number(id), ...mapped }, message: 'Model updated successfully', status: 'success' });
 };
 
 export const deleteModel = async (req: Request, res: Response) => {
@@ -1214,7 +1215,7 @@ export const deleteModel = async (req: Request, res: Response) => {
 
 /* ASSETS */
 // Helper type guard for RowDataPacket with asset_id and ramco_id (used by getAssetById)
-function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; effective_date?: string } {
+function isOwnershipRow(obj: any): obj is { asset_id: number; effective_date?: string; ramco_id: string; } {
 	return obj && typeof obj === 'object' && 'asset_id' in obj && 'ramco_id' in obj;
 }
 
@@ -1223,45 +1224,45 @@ function isOwnershipRow(obj: any): obj is { asset_id: number; ramco_id: string; 
 export const getCostcenters = async (req: Request, res: Response) => {
 	const rows = await assetModel.getCostcenters();
 	res.json({
-		status: 'success',
+		data: rows,
 		message: 'Costcenters data retrieved successfully',
-		data: rows
+		status: 'success'
 	});
 };
 
 export const getCostcenterById = async (req: Request, res: Response) => {
 	const row = await assetModel.getCostcenterById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Costcenter data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 
 export const createCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.createCostcenter(req.body);
 	res.json({
-		status: 'success',
 		message: 'Costcenter created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const updateCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.updateCostcenter(Number(req.params.id), req.body);
 	res.json({
-		status: 'success',
 		message: 'Costcenter updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteCostcenter(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Costcenter deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -1270,45 +1271,45 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 export const getDepartments = async (req: Request, res: Response) => {
 	const rows = await assetModel.getDepartments();
 	res.json({
-		status: 'success',
+		data: rows,
 		message: 'Departments data retrieved successfully',
-		data: rows
+		status: 'success'
 	});
 };
 
 export const getDepartmentById = async (req: Request, res: Response) => {
 	const row = await assetModel.getDepartmentById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Department data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 
 export const createDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.createDepartment(req.body);
 	res.json({
-		status: 'success',
 		message: 'Department created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const updateDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.updateDepartment(Number(req.params.id), req.body);
 	res.json({
-		status: 'success',
 		message: 'Department updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteDepartment(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Department deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -1322,21 +1323,21 @@ export const getSections = async (req: Request, res: Response) => {
 		departmentMap.set(d.id, { id: d.id, name: d.name });
 	}
 	const data = (sections as any[]).map((section) => ({
+		department: section.department_id ? departmentMap.get(section.department_id) || null : null,
 		id: section.id,
-		name: section.name,
-		department: section.department_id ? departmentMap.get(section.department_id) || null : null
+		name: section.name
 	}));
 	res.json({
-		status: 'success',
+		data,
 		message: 'Sections data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getSectionById = async (req: Request, res: Response) => {
 	const section = await assetModel.getSectionById(Number(req.params.id));
 	if (!section) {
-		return res.status(404).json({ status: 'error', message: 'Section not found' });
+		return res.status(404).json({ message: 'Section not found', status: 'error' });
 	}
 	let department = null;
 	if (section.department_id) {
@@ -1344,50 +1345,50 @@ export const getSectionById = async (req: Request, res: Response) => {
 		if (dep) department = { id: dep.id, name: dep.name };
 	}
 	res.json({
-		status: 'success',
-		message: 'Section data retrieved successfully',
 		data: {
+			department,
 			id: section.id,
-			name: section.name,
-			department
-		}
+			name: section.name
+		},
+		message: 'Section data retrieved successfully',
+		status: 'success'
 	});
 };
 
 export const createSection = async (req: Request, res: Response) => {
 	// Accept frontend payload with departmentId, map to department_id
-	const { name, departmentId } = req.body;
+	const { departmentId, name } = req.body;
 	const result = await assetModel.createSection({
-		name,
-		department_id: departmentId
+		department_id: departmentId,
+		name
 	});
 	res.json({
-		status: 'success',
 		message: 'Section created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const updateSection = async (req: Request, res: Response) => {
 	// Accept frontend payload with departmentId, map to department_id
-	const { name, departmentId } = req.body;
+	const { departmentId, name } = req.body;
 	const result = await assetModel.updateSection(Number(req.params.id), {
-		name,
-		department_id: departmentId
+		department_id: departmentId,
+		name
 	});
 	res.json({
-		status: 'success',
 		message: 'Section updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteSection = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSection(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Section deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -1396,9 +1397,9 @@ export const getLocations = async (req: Request, res: Response) => {
 	// Fetch all locations
 	const locations = await assetModel.getLocations();
 	if (!Array.isArray(locations)) {
-		return res.status(500).json({ status: 'error', message: 'Failed to fetch locations' });
+		return res.status(500).json({ message: 'Failed to fetch locations', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Locations retrieved successfully', data: locations });
+	res.json({ data: locations, message: 'Locations retrieved successfully', status: 'success' });
 }
 
 /* =========== DISTRICTS =========== */
@@ -1407,53 +1408,53 @@ export const getDistricts = async (req: Request, res: Response) => {
 	const zoneDistricts = await assetModel.getAllZoneDistricts();
 	const zones = await assetModel.getZones();
 	// Build zone map with code
-	const zoneMap = new Map<number, { id: number; name: string; code: string }>();
+	const zoneMap = new Map<number, { code: string; id: number; name: string; }>();
 	for (const z of zones as any[]) {
-		zoneMap.set(z.id, { id: z.id, name: z.name, code: z.code });
+		zoneMap.set(z.id, { code: z.code, id: z.id, name: z.name });
 	}
 	const districtToZone = new Map<number, number>();
 	for (const zd of zoneDistricts as any[]) {
 		districtToZone.set(zd.district_id, zd.zone_id);
 	}
 	const data = (districts as any[]).map((d) => ({
+		code: d.code,
 		id: d.id,
 		name: d.name,
-		code: d.code,
 		zone: zoneMap.get(districtToZone.get(d.id)!) || null
 	}));
-	res.json({ status: 'success', message: 'Districts data retrieved successfully', data });
+	res.json({ data, message: 'Districts data retrieved successfully', status: 'success' });
 };
 
 export const getDistrictById = async (req: Request, res: Response) => {
 	const row = await assetModel.getDistrictById(Number(req.params.id));
-	res.json({ status: 'success', message: 'District data retrieved successfully', data: row });
+	res.json({ data: row, message: 'District data retrieved successfully', status: 'success' });
 };
 
 export const createDistrict = async (req: Request, res: Response) => {
-	const { name, code, zone_id } = req.body;
+	const { code, name, zone_id } = req.body;
 	// Create the district
-	const result = await assetModel.createDistrict({ name, code });
+	const result = await assetModel.createDistrict({ code, name });
 	// Get the new district's id
 	const districtId = (result as any).insertId;
 	// If zone_id is provided, create the join
 	if (zone_id) {
 		await assetModel.addDistrictToZone(zone_id, districtId);
 	}
-	res.json({ status: 'success', message: 'District created successfully', result });
+	res.json({ message: 'District created successfully', result, status: 'success' });
 };
 
 export const updateDistrict = async (req: Request, res: Response) => {
-	const { name, code, zone_id } = req.body;
+	const { code, name, zone_id } = req.body;
 	const districtId = Number(req.params.id);
 	// Update the district
-	const result = await assetModel.updateDistrict(districtId, { name, code });
+	const result = await assetModel.updateDistrict(districtId, { code, name });
 	// Remove all previous zone links for this district
 	await assetModel.removeAllZonesFromDistrict(districtId);
 	// Add new zone link if provided
 	if (zone_id) {
 		await assetModel.addDistrictToZone(zone_id, districtId);
 	}
-	res.json({ status: 'success', message: 'District updated successfully', result });
+	res.json({ message: 'District updated successfully', result, status: 'success' });
 };
 
 export const deleteDistrict = async (req: Request, res: Response) => {
@@ -1462,7 +1463,7 @@ export const deleteDistrict = async (req: Request, res: Response) => {
 	await assetModel.removeAllZonesFromDistrict(districtId);
 	// Delete the district
 	const result = await assetModel.deleteDistrict(districtId);
-	res.json({ status: 'success', message: 'District deleted successfully', result });
+	res.json({ message: 'District deleted successfully', result, status: 'success' });
 };
 
 
@@ -1477,7 +1478,7 @@ export const getSites = async (req: Request, res: Response) => {
 		sites = Array.from(sitesRaw as any);
 	}
 	// Fetch all related data for mapping
-	const assets = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() as any[] : [];
+	const assets = Array.isArray(await assetModel.getAssets()) ? await assetModel.getAssets() : [];
 	const types = Array.isArray(await assetModel.getTypes()) ? await assetModel.getTypes() as any[] : [];
 	const categories = Array.isArray(await assetModel.getCategories()) ? await assetModel.getCategories() as any[] : [];
 	const brands = Array.isArray(await assetModel.getBrands()) ? await assetModel.getBrands() as any[] : [];
@@ -1501,12 +1502,12 @@ export const getSites = async (req: Request, res: Response) => {
 		if (site.asset_id && assetMap.has(site.asset_id)) {
 			const a: any = assetMap.get(site.asset_id);
 			asset = {
-				id: a.id,
-				serial_no: a.register_number,
-				type: typeMap.get(a.type_id) || null,
-				category: categoryMap.get(a.category_id) || null,
 				brand: brandMap.get(a.brand_id) || null,
-				model: modelMap.get(a.model_id) || null
+				category: categoryMap.get(a.category_id) || null,
+				id: a.id,
+				model: modelMap.get(a.model_id) || null,
+				serial_no: a.register_number,
+				type: typeMap.get(a.type_id) || null
 			};
 		}
 		// Module nesting
@@ -1519,88 +1520,88 @@ export const getSites = async (req: Request, res: Response) => {
 			geocode = { lat: site.lat, lon: site.lon };
 		}
 		return {
-			id: site.id,
-			asset,
-			module,
-			district_id: district,
-			site_category: site.site_category,
-			site_code: site.site_code,
-			site_name: site.site_name,
-			dmafull: site.dmafull,
-			geocode,
 			address: site.address,
 			address2: site.address2,
-			boundary_coordinate: site.boundary_coordinate,
-			site_status: site.site_status,
-			site_picture: site.site_picture,
-			site_schematic: site.site_schematic,
-			site_certificate: site.site_certificate,
-			notes: site.notes,
 			agency: site.agency,
-			wss_group: site.wss_group,
-			monitoring_group: site.monitoring_group,
 			area: site.area,
+			asset,
 			assign_to: site.assign_to,
-			dirname: site.dirname,
-			db_id: site.db_id,
 			attended_onsite_date: site.attended_onsite_date,
-			team_id: site.team_id,
-			team_id2: site.team_id2,
-			last_upload: site.last_upload,
-			main_site_code: site.main_site_code,
-			mnf_baseline: site.mnf_baseline,
-			nnf_baseline: site.nnf_baseline,
-			dmz_baseline: site.dmz_baseline,
+			boundary_coordinate: site.boundary_coordinate,
 			cp_baseline: site.cp_baseline,
 			date_created: site.date_created,
-			min_mnf: site.min_mnf,
-			max_mnf: site.max_mnf,
+			db_id: site.db_id,
+			dirname: site.dirname,
+			district_id: district,
+			dmafull: site.dmafull,
+			dmz_baseline: site.dmz_baseline,
 			dmz_type: site.dmz_type,
-			operational_certificate: site.operational_certificate,
 			eit_certificate: site.eit_certificate,
-			remarks: site.remarks
+			geocode,
+			id: site.id,
+			last_upload: site.last_upload,
+			main_site_code: site.main_site_code,
+			max_mnf: site.max_mnf,
+			min_mnf: site.min_mnf,
+			mnf_baseline: site.mnf_baseline,
+			module,
+			monitoring_group: site.monitoring_group,
+			nnf_baseline: site.nnf_baseline,
+			notes: site.notes,
+			operational_certificate: site.operational_certificate,
+			remarks: site.remarks,
+			site_category: site.site_category,
+			site_certificate: site.site_certificate,
+			site_code: site.site_code,
+			site_name: site.site_name,
+			site_picture: site.site_picture,
+			site_schematic: site.site_schematic,
+			site_status: site.site_status,
+			team_id: site.team_id,
+			team_id2: site.team_id2,
+			wss_group: site.wss_group
 		};
 	});
 	res.json({
-		status: 'success',
+		data,
 		message: 'Sites data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getSiteById = async (req: Request, res: Response) => {
 	const row = await assetModel.getSiteById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Site data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 
 export const createSite = async (req: Request, res: Response) => {
 	const result = await assetModel.createSite(req.body);
 	res.json({
-		status: 'success',
 		message: 'Site created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const updateSite = async (req: Request, res: Response) => {
 	const result = await assetModel.updateSite(Number(req.params.id), req.body);
 	res.json({
-		status: 'success',
 		message: 'Site updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteSite = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSite(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Site deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -1611,39 +1612,39 @@ export const getZones = async (req: Request, res: Response) => {
 	const districts = await assetModel.getDistricts();
 	const employees = await assetModel.getEmployees();
 	// Build district map with code
-	const districtMap = new Map<number, { id: number; name: string; code: string }>();
+	const districtMap = new Map<number, { code: string; id: number; name: string; }>();
 	for (const d of districts as any[]) {
-		districtMap.set(d.id, { id: d.id, name: d.name, code: d.code });
+		districtMap.set(d.id, { code: d.code, id: d.id, name: d.name });
 	}
 	const employeeMap = new Map<number, { id: number; name: string }>();
 	for (const e of employees as any[]) {
 		employeeMap.set(e.id, { id: e.id, name: e.name });
 	}
-	const zoneToDistricts = new Map<number, { id: number; name: string; code: string }[]>();
+	const zoneToDistricts = new Map<number, { code: string; id: number; name: string; }[]>();
 	for (const zd of zoneDistricts as any[]) {
 		if (!zoneToDistricts.has(zd.zone_id)) zoneToDistricts.set(zd.zone_id, []);
 		const district = districtMap.get(zd.district_id);
 		if (district) zoneToDistricts.get(zd.zone_id)!.push(district);
 	}
 	const data = (zones as any[]).map((z) => ({
-		id: z.id,
-		name: z.name,
 		code: z.code,
+		districts: zoneToDistricts.get(z.id) || [],
 		employees: z.employee_id ? employeeMap.get(z.employee_id) || null : null,
-		districts: zoneToDistricts.get(z.id) || []
+		id: z.id,
+		name: z.name
 	}));
-	res.json({ status: 'success', message: 'Zones data retrieved successfully', data });
+	res.json({ data, message: 'Zones data retrieved successfully', status: 'success' });
 };
 
 export const getZoneById = async (req: Request, res: Response) => {
 	const row = await assetModel.getZoneById(Number(req.params.id));
-	res.json({ status: 'success', message: 'Zone data retrieved successfully', data: row });
+	res.json({ data: row, message: 'Zone data retrieved successfully', status: 'success' });
 };
 
 export const createZone = async (req: Request, res: Response) => {
-	const { name, code, employee_id, districts } = req.body;
+	const { code, districts, employee_id, name } = req.body;
 	// Create the zone
-	const result = await assetModel.createZone({ name, code, employee_id });
+	const result = await assetModel.createZone({ code, employee_id, name });
 	const zoneId = (result as any).insertId;
 	// Add districts to zone if provided
 	if (Array.isArray(districts)) {
@@ -1651,14 +1652,14 @@ export const createZone = async (req: Request, res: Response) => {
 			await assetModel.addDistrictToZone(zoneId, districtId);
 		}
 	}
-	res.json({ status: 'success', message: 'Zone created successfully', result });
+	res.json({ message: 'Zone created successfully', result, status: 'success' });
 };
 
 export const updateZone = async (req: Request, res: Response) => {
-	const { name, code, employee_id, districts } = req.body;
+	const { code, districts, employee_id, name } = req.body;
 	const zoneId = Number(req.params.id);
 	// Update the zone
-	const result = await assetModel.updateZone(zoneId, { name, code, employee_id });
+	const result = await assetModel.updateZone(zoneId, { code, employee_id, name });
 	// Remove all previous district links for this zone
 	await assetModel.removeAllDistrictsFromZone(zoneId);
 	// Add new district links if provided
@@ -1667,12 +1668,12 @@ export const updateZone = async (req: Request, res: Response) => {
 			await assetModel.addDistrictToZone(zoneId, districtId);
 		}
 	}
-	res.json({ status: 'success', message: 'Zone updated successfully', result });
+	res.json({ message: 'Zone updated successfully', result, status: 'success' });
 };
 
 export const deleteZone = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteZone(Number(req.params.id));
-	res.json({ status: 'success', message: 'Zone deleted successfully', result });
+	res.json({ message: 'Zone deleted successfully', result, status: 'success' });
 };
 
 
@@ -1710,9 +1711,9 @@ export const getEmployees = async (req: Request, res: Response) => {
 	const locations = await assetModel.getLocations();
 
 	// Build lookup maps
-	const departmentMap = new Map<number, { id: number; name: string, code: string }>();
+	const departmentMap = new Map<number, { code: string; id: number; name: string, }>();
 	for (const d of departments as any[]) {
-		departmentMap.set(d.id, { id: d.id, name: d.name, code: d.code });
+		departmentMap.set(d.id, { code: d.code, id: d.id, name: d.name });
 	}
 	const positionMap = new Map<number, { id: number; name: string }>();
 	for (const p of positions as any[]) {
@@ -1722,46 +1723,46 @@ export const getEmployees = async (req: Request, res: Response) => {
 	for (const c of costcenters as any[]) {
 		costcenterMap.set(c.id, { id: c.id, name: c.name });
 	}
-	const locationMap = new Map<number, { id: number; name: string, code?: string }>();
+	const locationMap = new Map<number, { code?: string; id: number; name: string, }>();
 	for (const l of locations as any[]) {
-		locationMap.set(l.id, { id: l.id, name: l.name, code: l.code });
+		locationMap.set(l.id, { code: l.code, id: l.id, name: l.name });
 	}
 
 	const data = (employees as any[]).map(emp => ({
-		id: emp.id,
-		ramco_id: emp.ramco_id,
-		full_name: emp.full_name,
-		email: emp.email,
-		contact: emp.contact,
-		gender: emp.gender,
-		dob: emp.dob,
 		avatar: emp.avatar
 			? (emp.avatar.startsWith('http')
 				? emp.avatar
 				: `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
 			: null,
-		hire_date: emp.hire_date,
-		resignation_date: emp.resignation_date,
-		employment_type: emp.employment_type,
-		employment_status: emp.employment_status,
-		grade: emp.grade,
-		position: emp.position_id ? positionMap.get(emp.position_id) || null : null,
-		department: emp.department_id ? departmentMap.get(emp.department_id) || null : null,
+		contact: emp.contact,
 		costcenter: emp.costcenter_id ? costcenterMap.get(emp.costcenter_id) || null : null,
-		location: emp.location_id ? locationMap.get(emp.location_id) || null : null
+		department: emp.department_id ? departmentMap.get(emp.department_id) || null : null,
+		dob: emp.dob,
+		email: emp.email,
+		employment_status: emp.employment_status,
+		employment_type: emp.employment_type,
+		full_name: emp.full_name,
+		gender: emp.gender,
+		grade: emp.grade,
+		hire_date: emp.hire_date,
+		id: emp.id,
+		location: emp.location_id ? locationMap.get(emp.location_id) || null : null,
+		position: emp.position_id ? positionMap.get(emp.position_id) || null : null,
+		ramco_id: emp.ramco_id,
+		resignation_date: emp.resignation_date
 	}));
 
 	res.json({
-		status: 'success',
+		data,
 		message: 'Employees data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getEmployeeById = async (req: Request, res: Response) => {
 	const emp = await assetModel.getEmployeeById(Number(req.params.id));
 	if (!emp) {
-		return res.status(404).json({ status: 'error', message: 'Employee not found' });
+		return res.status(404).json({ message: 'Employee not found', status: 'error' });
 	}
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
@@ -1769,31 +1770,31 @@ export const getEmployeeById = async (req: Request, res: Response) => {
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 
 	res.json({
-		status: 'success',
-		message: 'Employee data retrieved successfully',
 		data: {
-			id: emp.id,
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			gender: emp.gender,
-			dob: emp.dob,
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
 					? emp.avatar
 					: `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
 				: null,
-			hire_date: emp.hire_date,
-			resignation_date: emp.resignation_date,
-			employment_type: emp.employment_type,
-			employment_status: emp.employment_status,
-			grade: emp.grade,
-			position,
-			department,
+			contact: emp.contact,
 			costcenter,
-			district
-		}
+			department,
+			district,
+			dob: emp.dob,
+			email: emp.email,
+			employment_status: emp.employment_status,
+			employment_type: emp.employment_type,
+			full_name: emp.full_name,
+			gender: emp.gender,
+			grade: emp.grade,
+			hire_date: emp.hire_date,
+			id: emp.id,
+			position,
+			ramco_id: emp.ramco_id,
+			resignation_date: emp.resignation_date
+		},
+		message: 'Employee data retrieved successfully',
+		status: 'success'
 	});
 };
 
@@ -1801,38 +1802,38 @@ export const getEmployeeByRamco = async (req: Request, res: Response) => {
 	const ramcoId = req.params.ramco_id;
 	const emp = await assetModel.getEmployeeByRamco(ramcoId);
 	if (!emp) {
-		return res.status(404).json({ status: 'error', message: 'Employee not found' });
+		return res.status(404).json({ message: 'Employee not found', status: 'error' });
 	}
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 	res.json({
-		status: 'success',
-		message: 'Employee data retrieved successfully',
 		data: {
-			id: emp.id,
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			gender: emp.gender,
-			dob: emp.dob,
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
 					? emp.avatar
 					: `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
 				: null,
-			hire_date: emp.hire_date,
-			resignation_date: emp.resignation_date,
-			employment_type: emp.employment_type,
-			employment_status: emp.employment_status,
-			grade: emp.grade,
-			position,
-			department,
+			contact: emp.contact,
 			costcenter,
-			district
-		}
+			department,
+			district,
+			dob: emp.dob,
+			email: emp.email,
+			employment_status: emp.employment_status,
+			employment_type: emp.employment_type,
+			full_name: emp.full_name,
+			gender: emp.gender,
+			grade: emp.grade,
+			hire_date: emp.hire_date,
+			id: emp.id,
+			position,
+			ramco_id: emp.ramco_id,
+			resignation_date: emp.resignation_date
+		},
+		message: 'Employee data retrieved successfully',
+		status: 'success'
 	});
 }
 
@@ -1840,38 +1841,38 @@ export const getEmployeeByEmail = async (req: Request, res: Response) => {
 	const email = req.params.email;
 	const emp = await assetModel.getEmployeeByEmail(email);
 	if (!emp) {
-		return res.status(404).json({ status: 'error', message: 'Employee not found' });
+		return res.status(404).json({ message: 'Employee not found', status: 'error' });
 	}
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 	res.json({
-		status: 'success',
-		message: 'Employee data retrieved successfully',
 		data: {
-			id: emp.id,
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			gender: emp.gender,
-			dob: emp.dob,
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
 					? emp.avatar
 					: `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
 				: null,
-			hire_date: emp.hire_date,
-			resignation_date: emp.resignation_date,
-			employment_type: emp.employment_type,
-			employment_status: emp.employment_status,
-			grade: emp.grade,
-			position,
-			department,
+			contact: emp.contact,
 			costcenter,
-			district
-		}
+			department,
+			district,
+			dob: emp.dob,
+			email: emp.email,
+			employment_status: emp.employment_status,
+			employment_type: emp.employment_type,
+			full_name: emp.full_name,
+			gender: emp.gender,
+			grade: emp.grade,
+			hire_date: emp.hire_date,
+			id: emp.id,
+			position,
+			ramco_id: emp.ramco_id,
+			resignation_date: emp.resignation_date
+		},
+		message: 'Employee data retrieved successfully',
+		status: 'success'
 	});
 }
 
@@ -1879,160 +1880,160 @@ export const getEmployeeByContact = async (req: Request, res: Response) => {
 	const email = req.params.email;
 	const emp = await assetModel.getEmployeeByEmail(email);
 	if (!emp) {
-		return res.status(404).json({ status: 'error', message: 'Employee not found' });
+		return res.status(404).json({ message: 'Employee not found', status: 'error' });
 	}
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 	res.json({
-		status: 'success',
-		message: 'Employee data retrieved successfully',
 		data: {
-			id: emp.id,
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			gender: emp.gender,
-			dob: emp.dob,
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
 					? emp.avatar
 					: `https://${req.get('host')}/uploads/employees/${emp.avatar}`)
 				: null,
-			hire_date: emp.hire_date,
-			resignation_date: emp.resignation_date,
-			employment_type: emp.employment_type,
-			employment_status: emp.employment_status,
-			grade: emp.grade,
-			position,
-			department,
+			contact: emp.contact,
 			costcenter,
-			district
-		}
+			department,
+			district,
+			dob: emp.dob,
+			email: emp.email,
+			employment_status: emp.employment_status,
+			employment_type: emp.employment_type,
+			full_name: emp.full_name,
+			gender: emp.gender,
+			grade: emp.grade,
+			hire_date: emp.hire_date,
+			id: emp.id,
+			position,
+			ramco_id: emp.ramco_id,
+			resignation_date: emp.resignation_date
+		},
+		message: 'Employee data retrieved successfully',
+		status: 'success'
 	});
 }
 
 export const createEmployee = async (req: Request, res: Response) => {
 	try {
 		const {
-			ramco_id,
-			full_name,
-			email,
-			contact,
-			gender,
-			dob,
 			avatar,
-			hire_date,
-			resignation_date,
-			employment_type,
-			employment_status,
-			grade,
-			position_id,
-			department_id,
+			contact,
 			costcenter_id,
-			location_id
+			department_id,
+			dob,
+			email,
+			employment_status,
+			employment_type,
+			full_name,
+			gender,
+			grade,
+			hire_date,
+			location_id,
+			position_id,
+			ramco_id,
+			resignation_date
 		} = req.body;
 
 		// Validate required fields
 		if (!full_name || !email) {
 			return res.status(400).json({
-				status: 'error',
-				message: 'full_name and email are required'
+				message: 'full_name and email are required',
+				status: 'error'
 			});
 		}
 
 		const result = await assetModel.createEmployee({
-			ramco_id,
-			full_name,
-			email,
-			contact,
-			gender,
-			dob,
 			avatar,
-			hire_date,
-			resignation_date,
-			employment_type,
-			employment_status,
-			grade,
-			position_id,
-			department_id,
+			contact,
 			costcenter_id,
-			location_id
+			department_id,
+			dob,
+			email,
+			employment_status,
+			employment_type,
+			full_name,
+			gender,
+			grade,
+			hire_date,
+			location_id,
+			position_id,
+			ramco_id,
+			resignation_date
 		});
 		res.json({
-			status: 'success',
 			message: 'Employee created successfully',
-			result
+			result,
+			status: 'success'
 		});
 	} catch (error) {
 		console.error('createEmployee error:', error);
 		return res.status(500).json({
-			status: 'error',
+			error: process.env.NODE_ENV === 'development' ? error : undefined,
 			message: error instanceof Error ? error.message : 'Failed to create employee',
-			error: process.env.NODE_ENV === 'development' ? error : undefined
+			status: 'error'
 		});
 	}
 };
 
 export const updateEmployee = async (req: Request, res: Response) => {
 	const {
-		ramco_id,
-		full_name,
-		email,
-		contact,
-		gender,
-		dob,
 		avatar,
-		hire_date,
-		resignation_date,
-		employment_type,
-		employment_status,
-		grade,
-		position_id,
-		department_id,
+		contact,
 		costcenter_id,
+		department_id,
+		dob,
+		email,
+		employment_status,
+		employment_type,
+		full_name,
+		gender,
+		grade,
+		hire_date,
 		location_id,
+		position_id,
+		ramco_id,
+		resignation_date,
 	} = req.body;
 	const result = await assetModel.updateEmployee(Number(req.params.id), {
-		ramco_id,
-		full_name,
-		email,
-		contact,
-		gender,
-		dob,
 		avatar,
-		hire_date,
-		resignation_date,
-		employment_type,
-		employment_status,
-		grade,
-		position_id,
-		department_id,
+		contact,
 		costcenter_id,
-		location_id
+		department_id,
+		dob,
+		email,
+		employment_status,
+		employment_type,
+		full_name,
+		gender,
+		grade,
+		hire_date,
+		location_id,
+		position_id,
+		ramco_id,
+		resignation_date
 	});
 	res.json({
-		status: 'success',
 		message: 'Employee updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteEmployee = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteEmployee(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Employee deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 // PUT /api/assets/employees/update-resign
 // Body: { ramco_id: string[] | string, resignation_date: string (yyyy-mm-dd), employment_status?: string }
 export const updateEmployeeResignation = async (req: Request, res: Response) => {
-	const { ramco_id, resignation_date, employment_status } = req.body || {};
+	const { employment_status, ramco_id, resignation_date } = req.body || {};
 
 	// Normalize ramco_id(s)
 	let ids: string[] = [];
@@ -2044,7 +2045,7 @@ export const updateEmployeeResignation = async (req: Request, res: Response) => 
 	}
 
 	if (ids.length === 0 || typeof resignation_date !== 'string' || resignation_date.trim() === '') {
-		return res.status(400).json({ status: 'error', message: 'ramco_id[] and resignation_date are required', data: null });
+		return res.status(400).json({ data: null, message: 'ramco_id[] and resignation_date are required', status: 'error' });
 	}
 
 	// Default to 'resigned' if not provided
@@ -2053,11 +2054,11 @@ export const updateEmployeeResignation = async (req: Request, res: Response) => 
 		: 'resigned';
 
 	const result = await (assetModel as any).updateEmployeesResignation(ids, resignation_date, status);
-	const affected = (result && typeof result === 'object' && 'affectedRows' in result) ? (result as any).affectedRows : 0;
+	const affected = (result && typeof result === 'object' && 'affectedRows' in result) ? (result).affectedRows : 0;
 	res.json({
-		status: 'success',
+		data: { affected },
 		message: `Updated resignation details for ${affected} employee(s)`,
-		data: { affected }
+		status: 'success'
 	});
 };
 
@@ -2065,7 +2066,7 @@ export const updateEmployeeResignation = async (req: Request, res: Response) => 
 export const searchEmployees = async (req: Request, res: Response) => {
 	const qRaw = (req.query.q || '').toString().trim();
 	if (!qRaw || qRaw.length < 2) {
-		return res.json({ status: 'success', message: 'Query too short', data: [] });
+		return res.json({ data: [], message: 'Query too short', status: 'success' });
 	}
 	const employees = await assetModel.searchEmployeesAutocomplete(qRaw);
 	const data = Array.isArray(employees)
@@ -2084,17 +2085,17 @@ export const searchEmployees = async (req: Request, res: Response) => {
 				};
 
 				return {
-					ramco_id,
-					full_name,
-					position: makeRef(emp.position_id, emp.position_name),
 					costcenter: makeRef(emp.costcenter_id, emp.costcenter_name),
 					department: makeRef(emp.department_id, emp.department_name),
-					location: makeRef(emp.location_id, emp.location_name)
+					full_name,
+					location: makeRef(emp.location_id, emp.location_name),
+					position: makeRef(emp.position_id, emp.position_name),
+					ramco_id
 				};
 			})
 			.filter(Boolean)
 		: [];
-	res.json({ status: 'success', message: 'Employee search results', data });
+	res.json({ data, message: 'Employee search results', status: 'success' });
 };
 
 // Lookup employee by ramco_id, email, or contact
@@ -2114,7 +2115,7 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 		emp = await assetModel.getEmployeeByContact(Number(username));
 	}
 	if (!emp) {
-		return res.status(404).json({ status: 'error', message: 'Employee not found' });
+		return res.status(404).json({ message: 'Employee not found', status: 'error' });
 	}
 	const department = emp.department_id ? await assetModel.getDepartmentById(emp.department_id) : null;
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
@@ -2123,36 +2124,36 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 
 	// Limit nested objects to specific fields as requested
 	const departmentResp = department
-		? { id: department.id, code: (department as any).code ?? null, name: department.name ?? null }
+		? { code: (department as any).code ?? null, id: department.id, name: department.name ?? null }
 		: null;
 	const costcenterResp = costcenter
 		? { id: costcenter.id, name: costcenter.name ?? null }
 		: null;
 	const locationResp = location
-		? { id: location.id, name: location.name ?? null, code: (location as any).code ?? null }
+		? { code: (location as any).code ?? null, id: location.id, name: location.name ?? null }
 		: null;
 	res.json({
-		status: 'success',
-		message: 'Employee data retrieved successfully',
 		data: {
-			id: emp.id,
-			ramco_id: emp.ramco_id,
-			full_name: emp.full_name,
-			email: emp.email,
-			contact: emp.contact,
-			gender: emp.gender,
-			dob: emp.dob,
 			avatar: emp.avatar,
-			hire_date: emp.hire_date,
-			resignation_date: emp.resignation_date,
-			employment_type: emp.employment_type,
-			employment_status: emp.employment_status,
-			grade: emp.grade,
-			position,
-			department: departmentResp,
+			contact: emp.contact,
 			costcenter: costcenterResp,
-			location: locationResp
-		}
+			department: departmentResp,
+			dob: emp.dob,
+			email: emp.email,
+			employment_status: emp.employment_status,
+			employment_type: emp.employment_type,
+			full_name: emp.full_name,
+			gender: emp.gender,
+			grade: emp.grade,
+			hire_date: emp.hire_date,
+			id: emp.id,
+			location: locationResp,
+			position,
+			ramco_id: emp.ramco_id,
+			resignation_date: emp.resignation_date
+		},
+		message: 'Employee data retrieved successfully',
+		status: 'success'
 	});
 };
 
@@ -2161,45 +2162,45 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 export const getPositions = async (req: Request, res: Response) => {
 	const rows = await assetModel.getPositions();
 	res.json({
-		status: 'success',
+		data: rows,
 		message: 'Positions data retrieved successfully',
-		data: rows
+		status: 'success'
 	});
 };
 
 export const getPositionById = async (req: Request, res: Response) => {
 	const row = await assetModel.getPositionById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Position data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 
 export const createPosition = async (req: Request, res: Response) => {
 	const result = await assetModel.createPosition(req.body);
 	res.json({
-		status: 'success',
 		message: 'Position created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const updatePosition = async (req: Request, res: Response) => {
 	const result = await assetModel.updatePosition(Number(req.params.id), req.body);
 	res.json({
-		status: 'success',
 		message: 'Position updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deletePosition = async (req: Request, res: Response) => {
 	const result = await assetModel.deletePosition(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Position deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -2210,43 +2211,43 @@ export const deletePosition = async (req: Request, res: Response) => {
 export const getModules = async (req: Request, res: Response) => {
 	const rows = await assetModel.getModules();
 	res.json({
-		status: 'success',
+		data: rows,
 		message: 'Modules data retrieved successfully',
-		data: rows
+		status: 'success'
 	});
 };
 export const getModuleById = async (req: Request, res: Response) => {
 	const row = await assetModel.getModuleById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Module data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 export const createModule = async (req: Request, res: Response) => {
-	const { name, code } = req.body;
-	const result = await assetModel.createModule({ name, code });
+	const { code, name } = req.body;
+	const result = await assetModel.createModule({ code, name });
 	res.json({
-		status: 'success',
 		message: 'Module created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 export const updateModule = async (req: Request, res: Response) => {
-	const { name, code } = req.body;
-	const result = await assetModel.updateModule(Number(req.params.id), { name, code });
+	const { code, name } = req.body;
+	const result = await assetModel.updateModule(Number(req.params.id), { code, name });
 	res.json({
-		status: 'success',
 		message: 'Module updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 export const deleteModule = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteModule(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Module deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -2255,18 +2256,18 @@ export const deleteModule = async (req: Request, res: Response) => {
 export const getSoftwares = async (req: Request, res: Response) => {
 	const rows = await assetModel.getSoftwares();
 	res.json({
-		status: 'success',
+		data: rows,
 		message: 'Softwares data retrieved successfully',
-		data: rows
+		status: 'success'
 	});
 };
 
 export const getSoftwareById = async (req: Request, res: Response) => {
 	const row = await assetModel.getSoftwareById(Number(req.params.id));
 	res.json({
-		status: 'success',
+		data: row,
 		message: 'Software data retrieved successfully',
-		data: row
+		status: 'success'
 	});
 };
 
@@ -2274,9 +2275,9 @@ export const createSoftware = async (req: Request, res: Response) => {
 	const { name } = req.body;
 	const result = await assetModel.createSoftware({ name });
 	res.status(201).json({
-		status: 'success',
 		message: 'Software created successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -2284,18 +2285,18 @@ export const updateSoftware = async (req: Request, res: Response) => {
 	const { name } = req.body;
 	const result = await assetModel.updateSoftware(Number(req.params.id), { name });
 	res.json({
-		status: 'success',
 		message: 'Software updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
 export const deleteSoftware = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSoftware(Number(req.params.id));
 	res.json({
-		status: 'success',
 		message: 'Software deleted successfully',
-		result
+		result,
+		status: 'success'
 	});
 };
 
@@ -2379,7 +2380,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 	}
 
 	if (filteredReqArr.length === 0) {
-		return res.json({ status: 'success', message: 'Asset transfer requests retrieved successfully', data: [] });
+		return res.json({ data: [], message: 'Asset transfer requests retrieved successfully', status: 'success' });
 	}
 
 	// Collect lookup IDs from items for filtered requests to enrich nested structures
@@ -2403,7 +2404,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 		assetModel.getModels().catch(() => []),
 		assetModel.getLocations().catch(() => [])
 	]);
-	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a && a.id).map((a: any) => [Number(a.id), a]));
+	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a.id).map((a: any) => [Number(a.id), a]));
 	const typeMap = new Map<number, any>((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [Number(t.id), t]));
 	const categoryMap = new Map<number, any>((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [Number(c.id), c]));
 	const brandMap = new Map<number, any>((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [Number(b.id), b]));
@@ -2414,13 +2415,13 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 		const approval_status = (r.approved_date && r.approved_by) ? 'approved' : 'pending';
 		const emp = empMap.get(String(r.transfer_by));
 		const transfer_by_obj = emp ? {
-			ramco_id: emp.ramco_id,
 			full_name: emp.full_name || emp.name || null,
+			ramco_id: emp.ramco_id,
 		} : null;
 		const cc = r.costcenter_id != null ? costcenterMap.get(Number(r.costcenter_id)) : null;
 		const dept = r.department_id != null ? departmentMap.get(Number(r.department_id)) : null;
 		const costcenter = cc ? { id: Number(cc.id), name: cc.name || null } : null;
-		const department = dept ? { id: Number(dept.id), code: dept.code || null } : null;
+		const department = dept ? { code: dept.code || null, id: Number(dept.id) } : null;
 		// Raw items for this request
 		const itemsRawForReq = itemsMap.get(r.id) || [];
 		// Build new_owner array from items (legacy quick view)
@@ -2430,8 +2431,8 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 				const newOwnerEmp = empMap.get(String(it.new_owner));
 				return {
 					[`item_${idx + 1}`]: it.id,
-					ramco_id: newOwnerEmp?.ramco_id || String(it.new_owner),
 					full_name: newOwnerEmp?.full_name || newOwnerEmp?.name || null,
+					ramco_id: newOwnerEmp?.ramco_id || String(it.new_owner),
 				};
 			})
 			.filter((v: any) => v !== null);
@@ -2452,81 +2453,81 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 			// Asset nested with type/category/brand/model
 			const assetNested = assetObj
 				? {
-					id: assetObj.id,
-					register_number: assetObj.register_number || null,
-					type: (() => {
-						const t = typeMap.get(Number(assetObj.type_id));
-						return t ? { id: Number(t.id), name: t.name || null } : (assetObj.type_id ? { id: Number(assetObj.type_id), name: null } : null);
+					brand: (() => {
+						const b = brandMap.get(Number(assetObj.brand_id));
+						return b ? { id: Number(b.id), name: b.name || null } : (assetObj.brand_id ? { id: Number(assetObj.brand_id), name: null } : null);
 					})(),
 					category: (() => {
 						const c = categoryMap.get(Number(assetObj.category_id));
 						return c ? { id: Number(c.id), name: c.name || null } : (assetObj.category_id ? { id: Number(assetObj.category_id), name: null } : null);
 					})(),
-					brand: (() => {
-						const b = brandMap.get(Number(assetObj.brand_id));
-						return b ? { id: Number(b.id), name: b.name || null } : (assetObj.brand_id ? { id: Number(assetObj.brand_id), name: null } : null);
-					})(),
+					id: assetObj.id,
 					model: (() => {
 						const m = modelMap.get(Number(assetObj.model_id));
 						return m ? { id: Number(m.id), name: m.name || null } : (assetObj.model_id ? { id: Number(assetObj.model_id), name: null } : null);
+					})(),
+					register_number: assetObj.register_number || null,
+					type: (() => {
+						const t = typeMap.get(Number(assetObj.type_id));
+						return t ? { id: Number(t.id), name: t.name || null } : (assetObj.type_id ? { id: Number(assetObj.type_id), name: null } : null);
 					})()
 				}
-				: (it.asset_id ? { id: it.asset_id, register_number: null, type: it.type_id ? { id: it.type_id, name: null } : null, category: null, brand: null, model: null } : null);
+				: (it.asset_id ? { brand: null, category: null, id: it.asset_id, model: null, register_number: null, type: it.type_id ? { id: it.type_id, name: null } : null } : null);
 			return {
-				id: it.id,
-				transfer_id: it.transfer_id,
-				effective_date: it.effective_date,
-				asset: assetNested,
-				return_to_asset_manager: it.return_to_asset_manager,
-				reason: it.reason,
-				remarks: it.remarks,
-				attachment: it.attachment,
-				acceptance_date: it.acceptance_date || null,
+				acceptance_attachments: it.acceptance_attachments || null,
 				acceptance_by: it.acceptance_by || null,
 				acceptance_checklist_items: it.acceptance_checklist_items || null,
+				acceptance_date: it.acceptance_date || null,
 				acceptance_remarks: it.acceptance_remarks || null,
-				acceptance_attachments: it.acceptance_attachments || null,
+				asset: assetNested,
+				attachment: it.attachment,
 				created_at: it.created_at,
-				updated_at: it.updated_at,
-				current_owner: currOwnerEmp ? { ramco_id: currOwnerEmp.ramco_id, full_name: currOwnerEmp.full_name || currOwnerEmp.name || null } : (it.current_owner ? { ramco_id: String(it.current_owner), full_name: null } : null),
-				new_owner: newOwnerEmp ? { ramco_id: newOwnerEmp.ramco_id, full_name: newOwnerEmp.full_name || newOwnerEmp.name || null } : (it.new_owner ? { ramco_id: String(it.new_owner), full_name: null } : null),
 				current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof it.current_costcenter_id === 'number' ? { id: it.current_costcenter_id, name: null } : null),
-				new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof it.new_costcenter_id === 'number' ? { id: it.new_costcenter_id, name: null } : null),
-				current_department: currDept ? { id: currDept.id, code: currDept.code || null } : (typeof it.current_department_id === 'number' ? { id: it.current_department_id, code: null } : null),
-				new_department: newDept ? { id: newDept.id, code: newDept.code || null } : (typeof it.new_department_id === 'number' ? { id: it.new_department_id, code: null } : null),
+				current_department: currDept ? { code: currDept.code || null, id: currDept.id } : (typeof it.current_department_id === 'number' ? { code: null, id: it.current_department_id } : null),
 				current_location: currLocRow ? { id: currLocRow.id, name: currLocRow.name || null } : (typeof it.current_location_id === 'number' ? { id: it.current_location_id, name: null } : null),
-				new_location: newLocRow ? { id: newLocRow.id, name: newLocRow.name || null } : (typeof it.new_location_id === 'number' ? { id: it.new_location_id, name: null } : null)
+				current_owner: currOwnerEmp ? { full_name: currOwnerEmp.full_name || currOwnerEmp.name || null, ramco_id: currOwnerEmp.ramco_id } : (it.current_owner ? { full_name: null, ramco_id: String(it.current_owner) } : null),
+				effective_date: it.effective_date,
+				id: it.id,
+				new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof it.new_costcenter_id === 'number' ? { id: it.new_costcenter_id, name: null } : null),
+				new_department: newDept ? { code: newDept.code || null, id: newDept.id } : (typeof it.new_department_id === 'number' ? { code: null, id: it.new_department_id } : null),
+				new_location: newLocRow ? { id: newLocRow.id, name: newLocRow.name || null } : (typeof it.new_location_id === 'number' ? { id: it.new_location_id, name: null } : null),
+				new_owner: newOwnerEmp ? { full_name: newOwnerEmp.full_name || newOwnerEmp.name || null, ramco_id: newOwnerEmp.ramco_id } : (it.new_owner ? { full_name: null, ramco_id: String(it.new_owner) } : null),
+				reason: it.reason,
+				remarks: it.remarks,
+				return_to_asset_manager: it.return_to_asset_manager,
+				transfer_id: it.transfer_id,
+				updated_at: it.updated_at
 			};
 		});
 		return {
-			id: r.id,
-			transfer_date: r.transfer_date,
-			transfer_status: r.transfer_status,
 			approval_status,
+			approved_by: r.approved_by,
+			approved_date: r.approved_date,
+			costcenter,
 			created_at: r.created_at,
-			updated_at: r.updated_at,
+			department,
+			id: r.id,
+			items: enrichedItems,
+			new_owner,
 			total_items: countsMap.get(r.id) || 0,
 			transfer_by: transfer_by_obj,
-			approved_date: r.approved_date,
-			approved_by: r.approved_by,
-			costcenter,
-			department,
-			new_owner,
-			items: enrichedItems,
+			transfer_date: r.transfer_date,
+			transfer_status: r.transfer_status,
+			updated_at: r.updated_at,
 		};
 	});
 
 	res.json({
-		status: 'success',
+		data,
 		message: 'Asset transfer requests retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
 export const getAssetTransferById = async (req: Request, res: Response) => {
 	const request = await assetModel.getAssetTransferById(Number(req.params.id));
 	if (!request) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	// Fetch items and lookup data for enrichment
 	const [itemsRaw, employeesRaw, costcentersRaw, departmentsRaw, locationsRaw] = await Promise.all([
@@ -2550,14 +2551,14 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 
 	const transferByEmp = request.transfer_by ? empMap.get(String(request.transfer_by)) : null;
 	const transfer_by_user = transferByEmp ? {
-		ramco_id: transferByEmp.ramco_id,
 		full_name: transferByEmp.full_name || transferByEmp.name || null,
+		ramco_id: transferByEmp.ramco_id,
 	} : null;
 
 	const cc = request.costcenter_id != null ? costcenterMap.get(Number(request.costcenter_id)) : null;
 	const dept = request.department_id != null ? departmentMap.get(Number(request.department_id)) : null;
 	const costcenter = cc ? { id: Number(cc.id), name: cc.name || null } : null;
-	const department = dept ? { id: Number(dept.id), code: dept.code || null } : null;
+	const department = dept ? { code: dept.code || null, id: Number(dept.id) } : null;
 
 	// Gather asset and type ids and fetch related lookups (assets, types, checklists by type)
 	const assetIds = Array.from(new Set(items.map((it: any) => it.asset_id).filter((v: any) => typeof v === 'number')));
@@ -2567,14 +2568,14 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 		assetModel.getTypes().catch(() => []),
 		Promise.all(typeIds.map(id => assetModel.getTransferChecklists(id))).catch(() => []),
 	]);
-	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a && a.id).map((a: any) => [Number(a.id), a]));
+	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a.id).map((a: any) => [Number(a.id), a]));
 	const typeMap = new Map<number, any>((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [Number(t.id), t]));
 	const allChecklistsFlat: any[] = Array.isArray(checklistsByTypeRaw)
 		? (checklistsByTypeRaw as any[]).reduce((acc: any[], arr: any) => { if (Array.isArray(arr)) acc.push(...arr); return acc; }, [])
 		: [];
-	const checklistMap = new Map<number, any>(allChecklistsFlat.filter(c => c && c.id).map((c: any) => [Number(c.id), c]));
+	const checklistMap = new Map<number, any>(allChecklistsFlat.filter(c => c?.id).map((c: any) => [Number(c.id), c]));
 	// Fetch categories/brands/models for referenced assets
-	const assetsArr = (Array.isArray(assetsRaw) ? assetsRaw : []).filter((a: any) => a && a.id);
+	const assetsArr = (Array.isArray(assetsRaw) ? assetsRaw : []).filter((a: any) => a?.id);
 	const catIds = Array.from(new Set(assetsArr.map((a: any) => a.category_id).filter((v: any) => typeof v === 'number')));
 	const brandIds = Array.from(new Set(assetsArr.map((a: any) => a.brand_id).filter((v: any) => typeof v === 'number')));
 	const modelIds = Array.from(new Set(assetsArr.map((a: any) => a.model_id).filter((v: any) => typeof v === 'number')));
@@ -2601,7 +2602,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 
 		// acceptance checklist mapping
 		let acceptanceChecklist: any[] | null = null;
-		const rawChecklistVal = (it as any).acceptance_checklist_items;
+		const rawChecklistVal = (it).acceptance_checklist_items;
 		if (rawChecklistVal != null) {
 			let ids: number[] = [];
 			if (typeof rawChecklistVal === 'string') {
@@ -2610,79 +2611,79 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 				ids = rawChecklistVal.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n));
 			}
 			if (ids.length) {
-				acceptanceChecklist = ids.map(id => checklistMap.get(id)).filter(Boolean).map((c: any) => ({ id: c.id, type_id: c.type_id, item: c.item }));
+				acceptanceChecklist = ids.map(id => checklistMap.get(id)).filter(Boolean).map((c: any) => ({ id: c.id, item: c.item, type_id: c.type_id }));
 			}
 		}
 
 		return {
-			id: it.id,
-			transfer_id: it.transfer_id,
-			effective_date: it.effective_date,
+			acceptance_attachments: ((): null | string[] => {
+				const v = (it).acceptance_attachments;
+				if (!v) return null;
+				if (Array.isArray(v)) return v as string[];
+				if (typeof v === 'string') { try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : null; } catch { return null; } }
+				return null;
+			})(),
+			acceptance_by: (it).acceptance_by || null,
+			acceptance_checklist_items: acceptanceChecklist,
+			acceptance_date: (it).acceptance_date || null,
+			acceptance_remarks: (it).acceptance_remarks ?? null,
 			asset: assetObj ? {
-				id: assetObj.id,
-				register_number: assetObj.register_number || null,
-				type: (() => {
-					const tid = assetObj.type_id != null ? Number(assetObj.type_id) : null;
-					const t = tid != null ? typeMap.get(tid) : null;
-					return t ? { id: t.id, name: t.name || null } : (tid != null ? { id: tid, name: null } : null);
+				brand: (() => {
+					const bid = assetObj.brand_id != null ? Number(assetObj.brand_id) : null;
+					const b = bid != null ? brandMap.get(bid) : null;
+					return b ? { id: b.id, name: b.name || null } : (bid != null ? { id: bid, name: null } : null);
 				})(),
 				category: (() => {
 					const cid = assetObj.category_id != null ? Number(assetObj.category_id) : null;
 					const c = cid != null ? categoryMap.get(cid) : null;
 					return c ? { id: c.id, name: c.name || null } : (cid != null ? { id: cid, name: null } : null);
 				})(),
-				brand: (() => {
-					const bid = assetObj.brand_id != null ? Number(assetObj.brand_id) : null;
-					const b = bid != null ? brandMap.get(bid) : null;
-					return b ? { id: b.id, name: b.name || null } : (bid != null ? { id: bid, name: null } : null);
-				})(),
+				id: assetObj.id,
 				model: (() => {
 					const mid = assetObj.model_id != null ? Number(assetObj.model_id) : null;
 					const m = mid != null ? modelMap.get(mid) : null;
 					return m ? { id: m.id, name: m.name || null } : (mid != null ? { id: mid, name: null } : null);
+				})(),
+				register_number: assetObj.register_number || null,
+				type: (() => {
+					const tid = assetObj.type_id != null ? Number(assetObj.type_id) : null;
+					const t = tid != null ? typeMap.get(tid) : null;
+					return t ? { id: t.id, name: t.name || null } : (tid != null ? { id: tid, name: null } : null);
 				})()
 			} : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
-			return_to_asset_manager: it.return_to_asset_manager,
+			attachment: it.attachment,
+			created_at: it.created_at,
+			current_costcenter: currCC ? { id: Number(currCC.id), name: currCC.name || null } : (it.current_costcenter_id != null ? { id: Number(it.current_costcenter_id), name: null } : null),
+			current_department: currDept ? { code: currDept.code || null, id: Number(currDept.id) } : (it.current_department_id != null ? { code: null, id: Number(it.current_department_id) } : null),
+			current_location: currLoc ? { id: Number(currLoc.id), name: currLoc.name || null } : (it.current_location_id != null ? { id: Number(it.current_location_id), name: null } : null),
+			current_owner: currOwner ? { full_name: currOwner.full_name || currOwner.name || null, ramco_id: currOwner.ramco_id } : (it.current_owner ? { full_name: null, ramco_id: String(it.current_owner) } : null),
+			effective_date: it.effective_date,
+			id: it.id,
+			new_costcenter: newCC ? { id: Number(newCC.id), name: newCC.name || null } : (it.new_costcenter_id != null ? { id: Number(it.new_costcenter_id), name: null } : null),
+			new_department: newDept ? { code: newDept.code || null, id: Number(newDept.id) } : (it.new_department_id != null ? { code: null, id: Number(it.new_department_id) } : null),
+			new_location: newLoc ? { id: Number(newLoc.id), name: newLoc.name || null } : (it.new_location_id != null ? { id: Number(it.new_location_id), name: null } : null),
+			new_owner: newOwner ? { full_name: newOwner.full_name || newOwner.name || null, ramco_id: newOwner.ramco_id } : (it.new_owner ? { full_name: null, ramco_id: String(it.new_owner) } : null),
 			reason: it.reason,
 			remarks: it.remarks,
-			attachment: it.attachment,
-			acceptance_date: (it as any).acceptance_date || null,
-			acceptance_by: (it as any).acceptance_by || null,
-			acceptance_checklist_items: acceptanceChecklist,
-			acceptance_remarks: (it as any).acceptance_remarks ?? null,
-			acceptance_attachments: ((): string[] | null => {
-				const v = (it as any).acceptance_attachments;
-				if (!v) return null;
-				if (Array.isArray(v)) return v as string[];
-				if (typeof v === 'string') { try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : null; } catch { return null; } }
-				return null;
-			})(),
-			created_at: it.created_at,
+			return_to_asset_manager: it.return_to_asset_manager,
+			transfer_id: it.transfer_id,
 			updated_at: it.updated_at,
-			current_owner: currOwner ? { ramco_id: currOwner.ramco_id, full_name: currOwner.full_name || currOwner.name || null } : (it.current_owner ? { ramco_id: String(it.current_owner), full_name: null } : null),
-			new_owner: newOwner ? { ramco_id: newOwner.ramco_id, full_name: newOwner.full_name || newOwner.name || null } : (it.new_owner ? { ramco_id: String(it.new_owner), full_name: null } : null),
-			current_costcenter: currCC ? { id: Number(currCC.id), name: currCC.name || null } : (it.current_costcenter_id != null ? { id: Number(it.current_costcenter_id), name: null } : null),
-			new_costcenter: newCC ? { id: Number(newCC.id), name: newCC.name || null } : (it.new_costcenter_id != null ? { id: Number(it.new_costcenter_id), name: null } : null),
-			current_department: currDept ? { id: Number(currDept.id), code: currDept.code || null } : (it.current_department_id != null ? { id: Number(it.current_department_id), code: null } : null),
-			new_department: newDept ? { id: Number(newDept.id), code: newDept.code || null } : (it.new_department_id != null ? { id: Number(it.new_department_id), code: null } : null),
-			current_location: currLoc ? { id: Number(currLoc.id), name: currLoc.name || null } : (it.current_location_id != null ? { id: Number(it.current_location_id), name: null } : null),
-			new_location: newLoc ? { id: Number(newLoc.id), name: newLoc.name || null } : (it.new_location_id != null ? { id: Number(it.new_location_id), name: null } : null),
 		};
 	});
 
 	const data = {
 		...request,
-		total_items: itemsEnriched.length,
-		transfer_by_user,
 		costcenter,
 		department,
 		items: itemsEnriched,
+		total_items: itemsEnriched.length,
+		transfer_by_user,
 	};
 
 	res.json({
-		status: 'success',
+		data,
 		message: 'Asset transfer request data retrieved successfully',
-		data
+		status: 'success'
 	});
 };
 
@@ -2705,15 +2706,15 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 	}
 
 	if (!transfer_by || !Array.isArray(details) || details.length === 0) {
-		return res.status(400).json({ status: 'error', message: 'Invalid request data: missing transfer_by or details' });
+		return res.status(400).json({ message: 'Invalid request data: missing transfer_by or details', status: 'error' });
 	}
 
 	// Create the transfer request and get its ID (aligns with model signature)
 	const insertId = await assetModel.createAssetTransfer({
-		transfer_by,
-		transfer_date,
 		costcenter_id,
 		department_id,
+		transfer_by,
+		transfer_date,
 		transfer_status
 	});
 
@@ -2721,22 +2722,22 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 	for (const dRaw of details) {
 		const d = dRaw || {};
 		await assetModel.createAssetTransferItem({
-			transfer_id: insertId,
-			effective_date: d.effective_date || null,
 			asset_id: Number(d.asset_id) || null,
-			type_id: Number(d.type_id) || null,
-			current_owner: d.current_owner || null,
+			attachment: d.attachment || null,
 			current_costcenter_id: d.current_costcenter_id != null ? Number(d.current_costcenter_id) : null,
 			current_department_id: d.current_department_id != null ? Number(d.current_department_id) : null,
 			current_location_id: d.current_location_id != null ? Number(d.current_location_id) : null,
-			new_owner: d.new_owner || null,
+			current_owner: d.current_owner || null,
+			effective_date: d.effective_date || null,
 			new_costcenter_id: d.new_costcenter_id != null ? Number(d.new_costcenter_id) : null,
 			new_department_id: d.new_department_id != null ? Number(d.new_department_id) : null,
 			new_location_id: d.new_location_id != null ? Number(d.new_location_id) : null,
-			return_to_asset_manager: d.return_to_asset_manager ? 1 : 0,
+			new_owner: d.new_owner || null,
 			reason: d.reason || null,
 			remarks: d.remarks || null,
-			attachment: d.attachment || null
+			return_to_asset_manager: d.return_to_asset_manager ? 1 : 0,
+			transfer_id: insertId,
+			type_id: Number(d.type_id) || null
 		});
 	}
 
@@ -2768,20 +2769,20 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		const departmentMap = new Map(departmentArr.map((d: any) => [d.id, d]));
 		const districtMap = new Map(districtArr.map((d: any) => [d.id, d]));
 		// Build maps
-		const typeMap: Map<number, any> = new Map((Array.isArray(typesAll) ? typesAll : []).map((t: any) => [Number(t.id), t]));
-		const assetsMap: Map<number, any> = new Map((Array.isArray(assetsForItems) ? assetsForItems : []).map((a: any) => [Number(a.id), a]));
+		const typeMap = new Map<number, any>((Array.isArray(typesAll) ? typesAll : []).map((t: any) => [Number(t.id), t]));
+		const assetsMap = new Map<number, any>((Array.isArray(assetsForItems) ? assetsForItems : []).map((a: any) => [Number(a.id), a]));
 		// Enrich items for email
 		const enrichedItems = items.map((item: any) => {
 			// Identifier logic
 			const assetRow = item.asset_id ? assetsMap.get(Number(item.asset_id)) : null;
-			let identifierDisplay = assetRow && assetRow.register_number ? assetRow.register_number : item.identifier;
+			let identifierDisplay = assetRow?.register_number ? assetRow.register_number : item.identifier;
 			if (item.transfer_type === 'Employee' && item.identifier && empMap.has(item.identifier)) {
 				const emp = empMap.get(item.identifier);
 				identifierDisplay = emp && typeof emp === 'object' && 'full_name' in emp ? emp.full_name : item.identifier;
 			}
 			// Transfer type name
 			const typeName = item.type_id != null && typeMap.has(Number(item.type_id))
-				? String((typeMap.get(Number(item.type_id)) as any).name || '')
+				? String((typeMap.get(Number(item.type_id))).name || '')
 				: (item.transfer_type || '');
 			// Owners
 			const currOwnerEmp = item.current_owner && empMap.has(item.current_owner) ? empMap.get(item.current_owner) : null;
@@ -2791,36 +2792,36 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			// Costcenters (IDs may arrive as strings; normalize to number for Map lookups)
 			const currCostcenterKey = Number(item.current_costcenter_id);
 			const currCostcenterObj = Number.isFinite(currCostcenterKey) && costcenterMap.has(currCostcenterKey) ? costcenterMap.get(currCostcenterKey) : null;
-			const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj as any).name : (item.current_costcenter_id ?? '-');
+			const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj).name : (item.current_costcenter_id ?? '-');
 			const newCostcenterKey = Number(item.new_costcenter_id);
 			const newCostcenterObj = Number.isFinite(newCostcenterKey) && costcenterMap.has(newCostcenterKey) ? costcenterMap.get(newCostcenterKey) : null;
-			const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj as any).name : (item.new_costcenter_id ?? '-');
+			const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj).name : (item.new_costcenter_id ?? '-');
 			// Departments (show code)
 			const currDepartmentKey = Number(item.current_department_id);
 			const currDepartmentObj = Number.isFinite(currDepartmentKey) && departmentMap.has(currDepartmentKey) ? departmentMap.get(currDepartmentKey) : null;
-			const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj as any).code : (item.current_department_id ?? '-');
+			const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj).code : (item.current_department_id ?? '-');
 			const newDepartmentKey = Number(item.new_department_id);
 			const newDepartmentObj = Number.isFinite(newDepartmentKey) && departmentMap.has(newDepartmentKey) ? departmentMap.get(newDepartmentKey) : null;
-			const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj as any).code : (item.new_department_id ?? '-');
+			const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj).code : (item.new_department_id ?? '-');
 			// Districts/Locations (show code or name)
 			const currLocationKey = Number(item.current_location_id);
 			const currDistrictObj = Number.isFinite(currLocationKey) && districtMap.has(currLocationKey) ? districtMap.get(currLocationKey) : null;
-			const currDistrictCode = currDistrictObj ? ((currDistrictObj as any).code || (currDistrictObj as any).name || item.current_location_id || '-') : (item.current_location_id || '-');
+			const currDistrictCode = currDistrictObj ? ((currDistrictObj).code || (currDistrictObj).name || item.current_location_id || '-') : (item.current_location_id || '-');
 			const newLocationKey = Number(item.new_location_id);
 			const newDistrictObj = Number.isFinite(newLocationKey) && districtMap.has(newLocationKey) ? districtMap.get(newLocationKey) : null;
-			const newDistrictCode = newDistrictObj ? ((newDistrictObj as any).code || (newDistrictObj as any).name || item.new_location_id || '-') : (item.new_location_id || '-');
+			const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
 			return {
 				...item,
-				identifierDisplay,
-				transfer_type: typeName,
-				currOwnerName,
-				newOwnerName,
 				currCostcenterName,
-				newCostcenterName,
 				currDepartmentCode,
-				newDepartmentCode,
 				currDistrictCode,
-				newDistrictCode
+				currOwnerName,
+				identifierDisplay,
+				newCostcenterName,
+				newDepartmentCode,
+				newDistrictCode,
+				newOwnerName,
+				transfer_type: typeName
 			};
 		});
 
@@ -2828,22 +2829,22 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		const requestorObj = await assetModel.getEmployeeByRamco(transfer_by);
 		// Enrich requestor with readable org fields based on request's costcenter/department/district when available
 		if (typeof requestorObj === 'object' && requestorObj) {
-			(requestorObj as any).costcenter = request && request.costcenter_id != null ? costcenterMap.get(request.costcenter_id) || null : (requestorObj as any).costcenter || null;
-			(requestorObj as any).department = request && request.department_id != null ? departmentMap.get(request.department_id) || null : (requestorObj as any).department || null;
-			(requestorObj as any).district = request && request.district_id != null ? districtMap.get(request.district_id) || null : (requestorObj as any).district || null;
+			(requestorObj as any).costcenter = request.costcenter_id != null ? costcenterMap.get(request.costcenter_id) || null : (requestorObj as any).costcenter || null;
+			(requestorObj as any).department = request.department_id != null ? departmentMap.get(request.department_id) || null : (requestorObj as any).department || null;
+			(requestorObj as any).district = request.district_id != null ? districtMap.get(request.district_id) || null : (requestorObj as any).district || null;
 		}
 		// Determine approver as HOD (departmental_level = 1) using department_id from payload (preferred),
 		// fallback to requestor's department_id if payload missing
 		let supervisorObj: any = null;
 		const deptIdForHod = department_id != null
 			? Number(department_id)
-			: (requestorObj?.department_id != null ? Number(requestorObj.department_id) : undefined);
+			: (requestorObj.department_id != null ? Number(requestorObj.department_id) : undefined);
 		if (Number.isFinite(deptIdForHod as any)) {
 			supervisorObj = await (assetModel as any).getDepartmentHeadByDepartmentId(Number(deptIdForHod));
 		}
 		// Fallback: if no HOD or no email or HOD equals requestor, try requestor.wk_spv_id
-		if (!supervisorObj || !supervisorObj.email || (requestorObj && supervisorObj.email === requestorObj.email)) {
-			if (requestorObj && requestorObj.wk_spv_id) {
+		if (!supervisorObj?.email || (requestorObj && supervisorObj.email === requestorObj.email)) {
+			if (requestorObj.wk_spv_id) {
 				try {
 					supervisorObj = await assetModel.getEmployeeByRamco(String(requestorObj.wk_spv_id));
 				} catch {/* ignore */ }
@@ -2854,7 +2855,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		const actionBaseUrl = `${req.protocol}://${req.get('host')}/api/assets/asset-transfer`;
 		// Build frontend approval portal URL with signed credential token if approver is available
 		let portalUrl: string | undefined = undefined;
-		if (supervisorObj && supervisorObj.ramco_id) {
+		if (supervisorObj?.ramco_id) {
 			const secret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || 'default_secret_key';
 			const credData = { ramco_id: String(supervisorObj.ramco_id), transfer_id: insertId } as any;
 			const token = jwt.sign(credData, secret, { expiresIn: '3d' } as SignOptions);
@@ -2862,7 +2863,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			// Include applicant department_id in portal URL as ?dept= and credential as _cred
 			const deptForPortal = (Number.isFinite(deptIdForHod as any) && deptIdForHod != null)
 				? Number(deptIdForHod)
-				: (requestorObj?.department_id ?? request?.department_id ?? '');
+				: (requestorObj.department_id ?? request.department_id ?? '');
 			const deptParam = deptForPortal !== '' ? encodeURIComponent(String(deptForPortal)) : '';
 			portalUrl = `${frontendUrl}/assets/transfer/portal/${encodeURIComponent(String(insertId))}?action=approve&authorize=${encodeURIComponent(String(supervisorObj.ramco_id))}` +
 				(deptParam ? `&dept=${deptParam}` : '') +
@@ -2870,31 +2871,31 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		}
 		// Compose email content for requestor (no actionToken/actionBaseUrl)
 		const requestorEmailData = {
-			request,
 			items: enrichedItems,
+			request,
 			requestor: requestorObj,
-			supervisor: supervisorObj || { name: 'Supervisor', email: '-' }
+			supervisor: supervisorObj || { email: '-', name: 'Supervisor' }
 		};
 		// Compose email content for supervisor (with actionToken/actionBaseUrl)
 		const supervisorEmailData = {
-			request,
-			items: enrichedItems,
-			requestor: requestorObj,
-			supervisor: supervisorObj || { name: 'Supervisor', email: '-' },
+			actionBaseUrl,
 			actionToken,
-			actionBaseUrl
+			items: enrichedItems,
+			request,
+			requestor: requestorObj,
+			supervisor: supervisorObj || { email: '-', name: 'Supervisor' }
 		};
 		// Send to requestor (notification only)
-		if (requestorObj && requestorObj.email) {
-			const { subject, html } = assetTransferRequestEmail(requestorEmailData);
+		if (requestorObj.email) {
+			const { html, subject } = assetTransferRequestEmail(requestorEmailData);
 			await sendMail(requestorObj.email, subject, html);
 		}
 		// Send to supervisor (with action buttons + portal link) — even if same email as requestor (for testing and single-mailbox cases)
-		if (supervisorObj && supervisorObj.email) {
-			const { subject, html } = assetTransferSupervisorEmail({ ...supervisorEmailData, portalUrl });
+		if (supervisorObj?.email) {
+			const { html, subject } = assetTransferSupervisorEmail({ ...supervisorEmailData, portalUrl });
 			await sendMail(supervisorObj.email, subject, html);
 		} else {
-			// eslint-disable-next-line no-console
+			 
 			console.warn('createAssetTransfer: No approver email resolved (HOD/wk_spv_id)');
 		}
 	} catch (err) {
@@ -2904,75 +2905,75 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 	// --- END EMAIL LOGIC ---
 
 	res.status(201).json({
-		status: 'success',
 		message: 'Asset transfer request created successfully',
-		request_id: insertId
+		request_id: insertId,
+		status: 'success'
 	});
 };
 
 export const updateAssetTransfer = async (req: Request, res: Response) => {
 	const requestId = Number(req.params.id);
-	const { status, items } = req.body;
+	const { items, status } = req.body;
 	if (!requestId || !status || !Array.isArray(items)) {
-		return res.status(400).json({ status: 'error', message: 'Invalid request data' });
+		return res.status(400).json({ message: 'Invalid request data', status: 'error' });
 	}
 	// Validate request exists
 	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	// Validate each item
 	for (const item of items) {
 		if (!item.asset_id || !item.curr_owner || !item.new_department_id || !item.new_district_id || !item.new_costcenter_id) {
-			return res.status(400).json({ status: 'error', message: 'Invalid item data' });
+			return res.status(400).json({ message: 'Invalid item data', status: 'error' });
 		}
 		// Validate current owner exists
 		const currOwner = await assetModel.getEmployeeByRamco(item.curr_owner);
 		if (!currOwner) {
-			return res.status(404).json({ status: 'error', message: `Current owner ${item.curr_owner} not found` });
+			return res.status(404).json({ message: `Current owner ${item.curr_owner} not found`, status: 'error' });
 		}
 		// Validate new department, district, costcenter exist
 		if (item.new_department_id && !(await assetModel.getDepartmentById(item.new_department_id))) {
-			return res.status(404).json({ status: 'error', message: `New department ${item.new_department_id} not found` });
+			return res.status(404).json({ message: `New department ${item.new_department_id} not found`, status: 'error' });
 		}
 		if (item.new_district_id && !(await assetModel.getDistrictById(item.new_district_id))) {
-			return res.status(404).json({ status: 'error', message: `New district ${item.new_district_id} not found` });
+			return res.status(404).json({ message: `New district ${item.new_district_id} not found`, status: 'error' });
 		}
 		if (item.new_costcenter_id && !(await assetModel.getCostcenterById(item.new_costcenter_id))) {
-			return res.status(404).json({ status: 'error', message: `New cost center ${item.new_costcenter_id} not found` });
+			return res.status(404).json({ message: `New cost center ${item.new_costcenter_id} not found`, status: 'error' });
 		}
 	}
 	// Update the transfer request
 	const result = await assetModel.updateAssetTransfer(requestId, items);
 	res.json({
-		status: 'success',
 		message: 'Asset transfer request updated successfully',
-		result
+		result,
+		status: 'success'
 	});
 }
 
 export const deleteAssetTransfer = async (req: Request, res: Response) => {
 	const requestId = Number(req.params.id);
 	if (!requestId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid request ID' });
+		return res.status(400).json({ message: 'Invalid request ID', status: 'error' });
 	}
 	// Validate request exists
 	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	// Delete the transfer request
 	await assetModel.deleteAssetTransfer(requestId);
 	res.json({
-		status: 'success',
-		message: 'Asset transfer request deleted successfully'
+		message: 'Asset transfer request deleted successfully',
+		status: 'success'
 	});
 }
 
 // PUT /api/assets/transfers/approval
 // Body: { status: string, approved_by: string, approved_date?: string|Date, transfer_id: number[]|number|string }
 export const updateAssetTransfersApproval = async (req: Request, res: Response) => {
-	const { status, approved_by, approved_date, transfer_id } = req.body || {};
+	const { approved_by, approved_date, status, transfer_id } = req.body || {};
 	let ids: number[] = [];
 	if (Array.isArray(transfer_id)) {
 		ids = transfer_id.map((v: any) => Number(v)).filter(n => Number.isFinite(n));
@@ -2982,12 +2983,12 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 		ids = transfer_id.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
 	}
 	if (!status || !approved_by || ids.length === 0) {
-		return res.status(400).json({ status: 'error', message: 'status, approved_by and transfer_id are required', data: null });
+		return res.status(400).json({ data: null, message: 'status, approved_by and transfer_id are required', status: 'error' });
 	}
 	// Allowed statuses (can expand later)
-	const allowedStatuses = new Set(['approved', 'rejected', 'completed']);
+	const allowedStatuses = new Set(['approved', 'completed', 'rejected']);
 	if (!allowedStatuses.has(String(status).toLowerCase())) {
-		return res.status(400).json({ status: 'error', message: `Unsupported status '${status}'. Allowed: approved, rejected, completed`, data: null });
+		return res.status(400).json({ data: null, message: `Unsupported status '${status}'. Allowed: approved, rejected, completed`, status: 'error' });
 	}
 	const dateVal = approved_date && String(approved_date).trim() !== '' ? approved_date : new Date();
 	// Fetch requests BEFORE update for email context (per-request granularity)
@@ -3025,10 +3026,10 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 					const assetIds = Array.from(new Set(items.map((i: any) => Number(i.asset_id)).filter(n => Number.isFinite(n))));
 					return assetIds.length ? await (assetModel as any).getAssetsByIds(assetIds) : [];
 				})();
-				const assetsMap: Map<number, any> = new Map((Array.isArray(assetsForItems) ? assetsForItems : []).map((a: any) => [Number(a.id), a]));
+				const assetsMap = new Map<number, any>((Array.isArray(assetsForItems) ? assetsForItems : []).map((a: any) => [Number(a.id), a]));
 				const enrichedItems: any[] = items.map((it: any) => {
 					const assetRow = it.asset_id ? assetsMap.get(Number(it.asset_id)) : null;
-					let identifierDisplay = assetRow && assetRow.register_number ? assetRow.register_number : it.identifier;
+					let identifierDisplay = assetRow?.register_number ? assetRow.register_number : it.identifier;
 					if (it.transfer_type === 'Employee' && it.identifier && empMap.has(String(it.identifier))) {
 						const emp = empMap.get(String(it.identifier));
 						identifierDisplay = emp?.full_name || it.identifier;
@@ -3036,9 +3037,9 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 					return { ...it, identifierDisplay };
 				});
 				// Requestor email (if approved)
-				if (String(status).toLowerCase() === 'approved' && requestorEmp && requestorEmp.email) {
+				if (String(status).toLowerCase() === 'approved' && requestorEmp?.email) {
 					try {
-						const { subject, html } = assetTransferApprovedRequestorEmail({ request, items: enrichedItems, requestor: requestorEmp, approver: approverEmp });
+						const { html, subject } = assetTransferApprovedRequestorEmail({ approver: approverEmp, items: enrichedItems, request, requestor: requestorEmp });
 						await sendMail(requestorEmp.email, subject, html);
 					} catch (e) { console.warn('Failed to send requestor approval email', e); }
 				}
@@ -3054,9 +3055,9 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 					}
 					for (const [newOwnerRamco, ownerItems] of Object.entries(itemsByNewOwner)) {
 						const newOwnerEmp = empMap.get(newOwnerRamco);
-						if (newOwnerEmp && newOwnerEmp.email) {
+						if (newOwnerEmp?.email) {
 							try {
-								const { subject, html } = assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner: ownerItems, newOwner: newOwnerEmp, requestor: requestorEmp, approver: approverEmp });
+								const { html, subject } = assetTransferApprovedNewOwnerEmail({ approver: approverEmp, itemsForNewOwner: ownerItems, newOwner: newOwnerEmp, request, requestor: requestorEmp });
 								await sendMail(newOwnerEmp.email, subject, html);
 							} catch (e) { console.warn('Failed to send new owner approval email', e); }
 						}
@@ -3066,7 +3067,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 			// Send summary to approver (only once) if multiple approvals
 			if (approverEmp && (approverEmp as any).email && affected > 0) {
 				try {
-					const { subject, html } = assetTransferApprovalSummaryEmail({ approver: (approverEmp as any), requestIds: ids, approvedDate: dateVal });
+					const { html, subject } = assetTransferApprovalSummaryEmail({ approvedDate: dateVal, approver: (approverEmp as any), requestIds: ids });
 					await sendMail((approverEmp as any).email, subject, html);
 				} catch (e) { console.warn('Failed to send approver summary email', e); }
 			}
@@ -3076,9 +3077,9 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 	})();
 
 	return res.json({
-		status: 'success',
+		data: { transfer_id: ids, updated_count: affected },
 		message: `Updated approval for ${affected} transfer request(s)`,
-		data: { updated_count: affected, transfer_id: ids }
+		status: 'success'
 	});
 };
 
@@ -3087,18 +3088,18 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 export const setAssetTransferAcceptance = async (req: Request, res: Response) => {
 	const requestId = Number(req.params.id);
 	if (!requestId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid transfer request id' });
+		return res.status(400).json({ message: 'Invalid transfer request id', status: 'error' });
 	}
 	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	const body: any = req.body || {};
 	// Parse checklist items (comma-separated or array)
 	let checklistIds: number[] | undefined = undefined;
 	if (body['checklist-items'] !== undefined) {
 		if (Array.isArray(body['checklist-items'])) {
-			checklistIds = (body['checklist-items'] as any[]).map(v => Number(v)).filter(n => Number.isFinite(n));
+			checklistIds = (body['checklist-items']).map(v => Number(v)).filter(n => Number.isFinite(n));
 		} else if (typeof body['checklist-items'] === 'string') {
 			checklistIds = body['checklist-items']
 				.split(',')
@@ -3117,19 +3118,19 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	const ensureDbPath = (filename: string) => require('../utils/uploadUtil').toDbPath('assets/transfers/acceptance', filename);
 	if (Array.isArray(filesAny)) {
 		filePaths = filesAny.map(f => ensureDbPath(f.filename));
-	} else if (filesAny && typeof filesAny === 'object' && Array.isArray(filesAny['acceptance_attachments'])) {
-		filePaths = filesAny['acceptance_attachments'].map((f: any) => ensureDbPath(f.filename));
+	} else if (filesAny && typeof filesAny === 'object' && Array.isArray(filesAny.acceptance_attachments)) {
+		filePaths = filesAny.acceptance_attachments.map((f: any) => ensureDbPath(f.filename));
 	} else if ((req as any).file) {
 		filePaths = [ensureDbPath((req as any).file.filename)];
 	}
 
 	const result = await assetModel.setAssetTransferAcceptance(requestId, {
-		acceptance_by,
-		acceptance_date,
-		acceptance_remarks,
 		acceptance_attachments: filePaths,
+		acceptance_by,
 		// store as comma separated string (no brackets) handled in model
-		acceptance_checklist_items: checklistIds
+		acceptance_checklist_items: checklistIds,
+		acceptance_date,
+		acceptance_remarks
 	});
 
 	// Fetch transfer items to update ownership
@@ -3152,21 +3153,21 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 						// 1. Insert new movement record into asset_history
 						await assetModel.insertAssetHistory({
 							asset_id: itemData.asset_id,
-							register_number: asset.register_number || null,
-							type_id: itemData.new_type_id || asset.type_id || null,
 							costcenter_id: itemData.new_costcenter_id || null,
 							department_id: itemData.new_department_id || null,
+							effective_date: effectiveDate,
 							location_id: itemData.new_location_id || null,
 							ramco_id: itemData.new_owner,
-							effective_date: effectiveDate
+							register_number: asset.register_number || null,
+							type_id: itemData.new_type_id || asset.type_id || null
 						});
 
 						// 2. Update current ownership in assetdata table
 						await assetModel.updateAssetCurrentOwner(itemData.asset_id, {
-							ramco_id: itemData.new_owner,
 							costcenter_id: itemData.new_costcenter_id || asset.costcenter_id,
 							department_id: itemData.new_department_id || asset.department_id,
-							location_id: itemData.new_location_id || asset.location_id
+							location_id: itemData.new_location_id || asset.location_id,
+							ramco_id: itemData.new_owner
 						});
 					}
 				}
@@ -3180,7 +3181,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	// Send email notifications to: requestor, current owner, and new owner's HOD
 	try {
 		if (items.length === 0) {
-			return res.json({ status: 'success', message: 'Acceptance data saved', result });
+			return res.json({ message: 'Acceptance data saved', result, status: 'success' });
 		}
 
 		// Collect unique employee IDs
@@ -3210,24 +3211,24 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// Enrich items with display names
 		const enrichedItems = items.map((item: any) => ({
 			...item,
+			currOwnerName: item.current_owner ? ((employeeMap.get(String(item.current_owner)))?.full_name || item.current_owner) : '-',
 			identifierDisplay: item.identifier || item.asset_code || item.register_number || '-',
-			currOwnerName: item.current_owner ? ((employeeMap.get(String(item.current_owner)) as any)?.full_name || item.current_owner) : '-',
-			newOwnerName: item.new_owner ? ((employeeMap.get(String(item.new_owner)) as any)?.full_name || item.new_owner) : '-'
+			newOwnerName: item.new_owner ? ((employeeMap.get(String(item.new_owner)))?.full_name || item.new_owner) : '-'
 		}));
 
 		// 1. Notify Requestor/Applicant
 		if (requestor?.email) {
 			const newOwnerForEmail: any = newOwners.size > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null;
-			const { subject, html } = assetTransferAcceptedRequestorEmail({
-				request,
-				items: enrichedItems,
-				requestor,
-				newOwner: newOwnerForEmail,
+			const { html, subject } = assetTransferAcceptedRequestorEmail({
 				acceptanceDate: acceptance_date || new Date(),
-				acceptanceRemarks: acceptance_remarks
+				acceptanceRemarks: acceptance_remarks,
+				items: enrichedItems,
+				newOwner: newOwnerForEmail,
+				request,
+				requestor
 			});
 			await sendMail(requestor.email, subject, html).catch(err =>
-				console.error('Failed to send acceptance email to requestor:', err)
+				{ console.error('Failed to send acceptance email to requestor:', err); }
 			);
 		}
 
@@ -3237,16 +3238,16 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 			if (currentOwner?.email) {
 				const itemsForOwner = enrichedItems.filter((i: any) => String(i.current_owner) === ownerId);
 				const newOwnerForEmail: any = newOwners.size > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null;
-				const { subject, html } = assetTransferAcceptedCurrentOwnerEmail({
-					request,
-					items: itemsForOwner,
-					currentOwner,
-					newOwner: newOwnerForEmail,
+				const { html, subject } = assetTransferAcceptedCurrentOwnerEmail({
 					acceptanceDate: acceptance_date || new Date(),
-					acceptanceRemarks: acceptance_remarks
+					acceptanceRemarks: acceptance_remarks,
+					currentOwner,
+					items: itemsForOwner,
+					newOwner: newOwnerForEmail,
+					request
 				});
 				await sendMail(currentOwner.email, subject, html).catch(err =>
-					console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err)
+					{ console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err); }
 				);
 			}
 		}
@@ -3261,16 +3262,16 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 
 				if (hod?.email) {
 					const itemsForOwner = enrichedItems.filter((i: any) => String(i.new_owner) === ownerId);
-					const { subject, html } = assetTransferAcceptedHodEmail({
-						request,
+					const { html, subject } = assetTransferAcceptedHodEmail({
+						acceptanceDate: acceptance_date || new Date(),
+						acceptanceRemarks: acceptance_remarks,
 						items: itemsForOwner,
 						newOwner,
 						newOwnerHod: hod,
-						acceptanceDate: acceptance_date || new Date(),
-						acceptanceRemarks: acceptance_remarks
+						request
 					});
 					await sendMail(hod.email, subject, html).catch(err =>
-						console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err)
+						{ console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err); }
 					);
 				}
 			}
@@ -3280,26 +3281,26 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// Don't fail the request if emails fail
 	}
 
-	return res.json({ status: 'success', message: 'Acceptance data saved', result });
+	return res.json({ message: 'Acceptance data saved', result, status: 'success' });
 };
 
 /* ============ ASSET TRANSFER ITEMS (direct access) ============ */
 export const getAssetTransferItemsByTransfer = async (req: Request, res: Response) => {
 	const transferId = Number(req.params.id);
-	if (!transferId) return res.status(400).json({ status: 'error', message: 'Invalid transfer id' });
+	if (!transferId) return res.status(400).json({ message: 'Invalid transfer id', status: 'error' });
 	// Ensure request exists (optional strictness)
 	const request = await assetModel.getAssetTransferById(transferId);
-	if (!request) return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+	if (!request) return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	const items = await assetModel.getAssetTransferItemByRequestId(transferId);
-	return res.json({ status: 'success', message: 'Transfer items retrieved', data: Array.isArray(items) ? items : [] });
+	return res.json({ data: Array.isArray(items) ? items : [], message: 'Transfer items retrieved', status: 'success' });
 };
 
 export const getAssetTransferItem = async (req: Request, res: Response) => {
 	const itemId = Number(req.params.itemId);
-	if (!itemId) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+	if (!itemId) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
 	const item = await assetModel.getAssetTransferItemById(itemId);
-	if (!item) return res.status(404).json({ status: 'error', message: 'Transfer item not found' });
-	return res.json({ status: 'success', message: 'Transfer item retrieved', data: item });
+	if (!item) return res.status(404).json({ message: 'Transfer item not found', status: 'error' });
+	return res.json({ data: item, message: 'Transfer item retrieved', status: 'success' });
 };
 
 // GET /api/assets/transfers/:transferId/items/:itemId (enriched single item within a transfer)
@@ -3307,15 +3308,15 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 	const transferId = Number(req.params.transferId);
 	const itemId = Number(req.params.itemId);
 	if (!transferId || !itemId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid transferId or itemId' });
+		return res.status(400).json({ message: 'Invalid transferId or itemId', status: 'error' });
 	}
 	const transfer = await assetModel.getAssetTransferById(transferId);
 	if (!transfer) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	const item = await assetModel.getAssetTransferItemById(itemId);
 	if (!item || Number(item.transfer_id) !== transferId) {
-		return res.status(404).json({ status: 'error', message: 'Transfer item not found for this transfer' });
+		return res.status(404).json({ message: 'Transfer item not found for this transfer', status: 'error' });
 	}
 	// Collect lookup IDs
 	const employeeIds = new Set<string>();
@@ -3351,9 +3352,9 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 	const costcenterMap = new Map<number, any>((costcentersRaw as any[]).map(c => [Number(c.id), c]));
 	const departmentMap = new Map<number, any>((departmentsRaw as any[]).map(d => [Number(d.id), d]));
 	const locationMap = new Map<number, any>((locationsRaw as any[]).map(l => [Number(l.id), l]));
-	const assetMap = new Map<number, any>((assetsRaw as any[]).filter(a => a && a.id).map(a => [Number(a.id), a]));
+	const assetMap = new Map<number, any>((assetsRaw as any[]).filter(a => a?.id).map(a => [Number(a.id), a]));
 	const typeMap = new Map<number, any>((typesRaw as any[]).map(t => [Number(t.id), t]));
-	const checklistMap = new Map<number, any>((checklistsRaw as any[]).filter(c => c && c.id).map(c => [Number(c.id), c]));
+	const checklistMap = new Map<number, any>((checklistsRaw as any[]).filter(c => c?.id).map(c => [Number(c.id), c]));
 
 	const transfer_by_emp = transfer.transfer_by ? empMap.get(String(transfer.transfer_by)) : null;
 	const currentOwnerEmp = item.current_owner ? empMap.get(String(item.current_owner)) : null;
@@ -3378,36 +3379,12 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 			ids = rawChecklistVal.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n));
 		}
 		if (ids.length) {
-			acceptanceChecklist = ids.map(id => checklistMap.get(id)).filter(Boolean).map((c: any) => ({ id: c.id, type_id: c.type_id, item: c.item }));
+			acceptanceChecklist = ids.map(id => checklistMap.get(id)).filter(Boolean).map((c: any) => ({ id: c.id, item: c.item, type_id: c.type_id }));
 		}
 	}
 
 	const enriched = {
-		id: item.id,
-		transfer_id: item.transfer_id,
-		transfer_by: transfer_by_emp ? { ramco_id: transfer_by_emp.ramco_id, name: transfer_by_emp.full_name || transfer_by_emp.name || null } : null,
-		approved_by: transfer.approved_by,
-		approved_date: transfer.approved_date,
-		effective_date: item.effective_date,
-		asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (item.asset_id ? { id: item.asset_id, register_number: null } : null),
-		type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (item.type_id ? { id: item.type_id, name: null } : null),
-		current_owner: currentOwnerEmp ? { ramco_id: currentOwnerEmp.ramco_id, name: currentOwnerEmp.full_name || currentOwnerEmp.name || null } : (item.current_owner ? { ramco_id: String(item.current_owner), name: null } : null),
-		current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof item.current_costcenter_id === 'number' ? { id: item.current_costcenter_id, name: null } : null),
-		current_department: currDept ? { id: currDept.id, name: currDept.name || currDept.code || null } : (typeof item.current_department_id === 'number' ? { id: item.current_department_id, name: null } : null),
-		current_location: currLoc ? { id: currLoc.id, name: currLoc.name || null } : (typeof item.current_location_id === 'number' ? { id: item.current_location_id, name: null } : null),
-		new_owner: newOwnerEmp ? { ramco_id: newOwnerEmp.ramco_id, name: newOwnerEmp.full_name || newOwnerEmp.name || null } : (item.new_owner ? { ramco_id: String(item.new_owner), name: null } : null),
-		new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof item.new_costcenter_id === 'number' ? { id: item.new_costcenter_id, name: null } : null),
-		new_department: newDept ? { id: newDept.id, name: newDept.name || newDept.code || null } : (typeof item.new_department_id === 'number' ? { id: item.new_department_id, name: null } : null),
-		new_location: newLoc ? { id: newLoc.id, name: newLoc.name || null } : (typeof item.new_location_id === 'number' ? { id: item.new_location_id, name: null } : null),
-		acceptance_date: (item as any).acceptance_date || null,
-		acceptance_by: (() => {
-			const ramco = (item as any).acceptance_by;
-			if (!ramco) return null;
-			const emp = empMap.get(String(ramco));
-			return emp ? { ramco_id: emp.ramco_id, full_name: emp.full_name || emp.name || null } : { ramco_id: String(ramco), full_name: null };
-		})(),
-		acceptance_checklist_items: acceptanceChecklist,
-		acceptance_attachments: ((): string[] | null => {
+		acceptance_attachments: ((): null | string[] => {
 			const v = (item as any).acceptance_attachments;
 			if (!v) return null;
 			if (Array.isArray(v)) return v as string[];
@@ -3416,68 +3393,92 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 			}
 			return null;
 		})(),
+		acceptance_by: (() => {
+			const ramco = (item as any).acceptance_by;
+			if (!ramco) return null;
+			const emp = empMap.get(String(ramco));
+			return emp ? { full_name: emp.full_name || emp.name || null, ramco_id: emp.ramco_id } : { full_name: null, ramco_id: String(ramco) };
+		})(),
+		acceptance_checklist_items: acceptanceChecklist,
+		acceptance_date: (item as any).acceptance_date || null,
 		acceptance_remarks: (item as any).acceptance_remarks ?? null,
-		return_to_asset_manager: item.return_to_asset_manager,
-		reason: item.reason,
-		remarks: item.remarks,
+		approved_by: transfer.approved_by,
+		approved_date: transfer.approved_date,
+		asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (item.asset_id ? { id: item.asset_id, register_number: null } : null),
 		attachment: item.attachment,
 		created_at: item.created_at,
+		current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof item.current_costcenter_id === 'number' ? { id: item.current_costcenter_id, name: null } : null),
+		current_department: currDept ? { id: currDept.id, name: currDept.name || currDept.code || null } : (typeof item.current_department_id === 'number' ? { id: item.current_department_id, name: null } : null),
+		current_location: currLoc ? { id: currLoc.id, name: currLoc.name || null } : (typeof item.current_location_id === 'number' ? { id: item.current_location_id, name: null } : null),
+		current_owner: currentOwnerEmp ? { name: currentOwnerEmp.full_name || currentOwnerEmp.name || null, ramco_id: currentOwnerEmp.ramco_id } : (item.current_owner ? { name: null, ramco_id: String(item.current_owner) } : null),
+		effective_date: item.effective_date,
+		id: item.id,
+		new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof item.new_costcenter_id === 'number' ? { id: item.new_costcenter_id, name: null } : null),
+		new_department: newDept ? { id: newDept.id, name: newDept.name || newDept.code || null } : (typeof item.new_department_id === 'number' ? { id: item.new_department_id, name: null } : null),
+		new_location: newLoc ? { id: newLoc.id, name: newLoc.name || null } : (typeof item.new_location_id === 'number' ? { id: item.new_location_id, name: null } : null),
+		new_owner: newOwnerEmp ? { name: newOwnerEmp.full_name || newOwnerEmp.name || null, ramco_id: newOwnerEmp.ramco_id } : (item.new_owner ? { name: null, ramco_id: String(item.new_owner) } : null),
+		reason: item.reason,
+		remarks: item.remarks,
+		return_to_asset_manager: item.return_to_asset_manager,
+		transfer_by: transfer_by_emp ? { name: transfer_by_emp.full_name || transfer_by_emp.name || null, ramco_id: transfer_by_emp.ramco_id } : null,
+		transfer_id: item.transfer_id,
+		type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (item.type_id ? { id: item.type_id, name: null } : null),
 		updated_at: item.updated_at
 	};
 
-	return res.json({ status: 'success', message: 'Transfer item (enriched) retrieved', data: enriched });
+	return res.json({ data: enriched, message: 'Transfer item (enriched) retrieved', status: 'success' });
 };
 
 export const createAssetTransferItem = async (req: Request, res: Response) => {
 	const transferId = Number(req.params.id);
-	if (!transferId) return res.status(400).json({ status: 'error', message: 'Invalid transfer id' });
+	if (!transferId) return res.status(400).json({ message: 'Invalid transfer id', status: 'error' });
 	// Minimal required field: asset_id or type_id presence (business rule can expand later)
 	const body: any = req.body || {};
 	// Validate parent transfer exists
 	const parent = await assetModel.getAssetTransferById(transferId);
-	if (!parent) return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+	if (!parent) return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	const result = await assetModel.createAssetTransferItem({
-		transfer_id: transferId,
-		effective_date: body.effective_date || null,
 		asset_id: body.asset_id != null ? Number(body.asset_id) : null,
-		type_id: body.type_id != null ? Number(body.type_id) : null,
-		current_owner: body.current_owner || null,
+		attachment: body.attachment || null,
 		current_costcenter_id: body.current_costcenter_id != null ? Number(body.current_costcenter_id) : null,
 		current_department_id: body.current_department_id != null ? Number(body.current_department_id) : null,
 		current_location_id: body.current_location_id != null ? Number(body.current_location_id) : null,
-		new_owner: body.new_owner || null,
+		current_owner: body.current_owner || null,
+		effective_date: body.effective_date || null,
 		new_costcenter_id: body.new_costcenter_id != null ? Number(body.new_costcenter_id) : null,
 		new_department_id: body.new_department_id != null ? Number(body.new_department_id) : null,
 		new_location_id: body.new_location_id != null ? Number(body.new_location_id) : null,
-		return_to_asset_manager: body.return_to_asset_manager ? 1 : 0,
+		new_owner: body.new_owner || null,
 		reason: body.reason || null,
 		remarks: body.remarks || null,
-		attachment: body.attachment || null
+		return_to_asset_manager: body.return_to_asset_manager ? 1 : 0,
+		transfer_id: transferId,
+		type_id: body.type_id != null ? Number(body.type_id) : null
 	});
-	return res.status(201).json({ status: 'success', message: 'Transfer item created', data: { id: (result as any).insertId } });
+	return res.status(201).json({ data: { id: (result as any).insertId }, message: 'Transfer item created', status: 'success' });
 };
 
 export const updateAssetTransferItem = async (req: Request, res: Response) => {
 	const itemId = Number(req.params.itemId);
-	if (!itemId) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+	if (!itemId) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
 	const existing = await assetModel.getAssetTransferItemById(itemId);
-	if (!existing) return res.status(404).json({ status: 'error', message: 'Transfer item not found' });
+	if (!existing) return res.status(404).json({ message: 'Transfer item not found', status: 'error' });
 	const body: any = req.body || {};
 	const result = await assetModel.updateAssetTransferItem(itemId, body);
-	if ((result as any).affectedRows === 0) {
-		return res.status(400).json({ status: 'error', message: 'No fields updated' });
+	if ((result).affectedRows === 0) {
+		return res.status(400).json({ message: 'No fields updated', status: 'error' });
 	}
-	return res.json({ status: 'success', message: 'Transfer item updated' });
+	return res.json({ message: 'Transfer item updated', status: 'success' });
 };
 
 export const deleteAssetTransferItem = async (req: Request, res: Response) => {
 	const itemId = Number(req.params.itemId);
-	if (!itemId) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+	if (!itemId) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
 	const existing = await assetModel.getAssetTransferItemById(itemId);
-	if (!existing) return res.status(404).json({ status: 'error', message: 'Transfer item not found' });
+	if (!existing) return res.status(404).json({ message: 'Transfer item not found', status: 'error' });
 	const result = await assetModel.deleteAssetTransferItem(itemId);
-	if ((result as any).affectedRows === 0) return res.status(404).json({ status: 'error', message: 'Transfer item not found' });
-	return res.json({ status: 'success', message: 'Transfer item deleted' });
+	if ((result as any).affectedRows === 0) return res.status(404).json({ message: 'Transfer item not found', status: 'error' });
+	return res.json({ message: 'Transfer item deleted', status: 'success' });
 };
 
 export const getAssetTransferItems = async (req: Request, res: Response) => {
@@ -3529,9 +3530,9 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 	const costcenterMap = new Map<number, any>((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((c: any) => [Number(c.id), c]));
 	const departmentMap = new Map<number, any>((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
 	const locationMap = new Map<number, any>((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
-	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a && a.id).map((a: any) => [Number(a.id), a]));
+	const assetMap = new Map<number, any>((Array.isArray(assetsRaw) ? assetsRaw : []).filter(a => a.id).map((a: any) => [Number(a.id), a]));
 	const typeMap = new Map<number, any>((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [Number(t.id), t]));
-	const requestMap = new Map<number, any>((Array.isArray(requestsRaw) ? requestsRaw : []).filter(r => r && r.id).map((r: any) => [Number(r.id), r]));
+	const requestMap = new Map<number, any>((Array.isArray(requestsRaw) ? requestsRaw : []).filter(r => r.id).map((r: any) => [Number(r.id), r]));
 	// Flatten checklist arrays and map by id for fast lookup
 	const allChecklistsFlat: any[] = Array.isArray(checklistsByTypeRaw)
 		? (checklistsByTypeRaw as any[]).reduce((acc: any[], arr: any) => {
@@ -3539,7 +3540,7 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 			return acc;
 		}, [])
 		: [];
-	const checklistMap = new Map<number, any>(allChecklistsFlat.filter(c => c && c.id).map((c: any) => [Number(c.id), c]));
+	const checklistMap = new Map<number, any>(allChecklistsFlat.filter(c => c?.id).map((c: any) => [Number(c.id), c]));
 
 	const enriched = itemsArr.map(it => {
 		const transferReq = requestMap.get(Number(it.transfer_id));
@@ -3556,25 +3557,18 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 		const assetObj = typeof it.asset_id === 'number' ? assetMap.get(it.asset_id) : null;
 		const typeObj = typeof it.type_id === 'number' ? typeMap.get(it.type_id) : null;
 		return {
-			id: it.id,
-			transfer_id: it.transfer_id,
-			transfer_by: transfer_by_emp ? { ramco_id: transfer_by_emp.ramco_id, name: transfer_by_emp.full_name || transfer_by_emp.name || null } : null,
-			effective_date: it.effective_date,
-			asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
-			type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (it.type_id ? { id: it.type_id, name: null } : null),
-			current_owner: currentOwnerEmp ? { ramco_id: currentOwnerEmp.ramco_id, name: currentOwnerEmp.full_name || currentOwnerEmp.name || null } : (it.current_owner ? { ramco_id: String(it.current_owner), name: null } : null),
-			current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof it.current_costcenter_id === 'number' ? { id: it.current_costcenter_id, name: null } : null),
-			current_department: currDept ? { id: currDept.id, name: currDept.name || currDept.code || null } : (typeof it.current_department_id === 'number' ? { id: it.current_department_id, name: null } : null),
-			current_location: currLoc ? { id: currLoc.id, name: currLoc.name || null } : (typeof it.current_location_id === 'number' ? { id: it.current_location_id, name: null } : null),
-			new_owner: newOwnerEmp ? { ramco_id: newOwnerEmp.ramco_id, name: newOwnerEmp.full_name || newOwnerEmp.name || null } : (it.new_owner ? { ramco_id: String(it.new_owner), name: null } : null),
-			new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof it.new_costcenter_id === 'number' ? { id: it.new_costcenter_id, name: null } : null),
-			new_department: newDept ? { id: newDept.id, name: newDept.name || newDept.code || null } : (typeof it.new_department_id === 'number' ? { id: it.new_department_id, name: null } : null),
-			new_location: newLoc ? { id: newLoc.id, name: newLoc.name || null } : (typeof it.new_location_id === 'number' ? { id: it.new_location_id, name: null } : null),
-			// Acceptance fields
-			acceptance_date: it.acceptance_date || null,
+			acceptance_attachments: ((): null | string[] => {
+				const v = (it).acceptance_attachments;
+				if (!v) return null;
+				if (Array.isArray(v)) return v as string[];
+				if (typeof v === 'string') {
+					try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : null; } catch { return null; }
+				}
+				return null;
+			})(),
 			acceptance_by: it.acceptance_by || null,
 			acceptance_checklist_items: ((): any[] | null => {
-				const v = (it as any).acceptance_checklist_items;
+				const v = (it).acceptance_checklist_items;
 				if (v == null) return null;
 				let ids: number[] = [];
 				if (typeof v === 'string') {
@@ -3586,52 +3580,59 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 				return ids
 					.map(id => checklistMap.get(id))
 					.filter(Boolean)
-					.map((c: any) => ({ id: c.id, type_id: c.type_id, item: c.item }));
+					.map((c: any) => ({ id: c.id, item: c.item, type_id: c.type_id }));
 			})(),
-			acceptance_attachments: ((): string[] | null => {
-				const v = (it as any).acceptance_attachments;
-				if (!v) return null;
-				if (Array.isArray(v)) return v as string[];
-				if (typeof v === 'string') {
-					try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : null; } catch { return null; }
-				}
-				return null;
-			})(),
-			acceptance_remarks: (it as any).acceptance_remarks ?? null,
-			return_to_asset_manager: it.return_to_asset_manager,
-			reason: it.reason,
-			remarks: it.remarks,
+			// Acceptance fields
+			acceptance_date: it.acceptance_date || null,
+			acceptance_remarks: (it).acceptance_remarks ?? null,
+			asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
 			attachment: it.attachment,
 			created_at: it.created_at,
+			current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof it.current_costcenter_id === 'number' ? { id: it.current_costcenter_id, name: null } : null),
+			current_department: currDept ? { id: currDept.id, name: currDept.name || currDept.code || null } : (typeof it.current_department_id === 'number' ? { id: it.current_department_id, name: null } : null),
+			current_location: currLoc ? { id: currLoc.id, name: currLoc.name || null } : (typeof it.current_location_id === 'number' ? { id: it.current_location_id, name: null } : null),
+			current_owner: currentOwnerEmp ? { name: currentOwnerEmp.full_name || currentOwnerEmp.name || null, ramco_id: currentOwnerEmp.ramco_id } : (it.current_owner ? { name: null, ramco_id: String(it.current_owner) } : null),
+			effective_date: it.effective_date,
+			id: it.id,
+			new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : (typeof it.new_costcenter_id === 'number' ? { id: it.new_costcenter_id, name: null } : null),
+			new_department: newDept ? { id: newDept.id, name: newDept.name || newDept.code || null } : (typeof it.new_department_id === 'number' ? { id: it.new_department_id, name: null } : null),
+			new_location: newLoc ? { id: newLoc.id, name: newLoc.name || null } : (typeof it.new_location_id === 'number' ? { id: it.new_location_id, name: null } : null),
+			new_owner: newOwnerEmp ? { name: newOwnerEmp.full_name || newOwnerEmp.name || null, ramco_id: newOwnerEmp.ramco_id } : (it.new_owner ? { name: null, ramco_id: String(it.new_owner) } : null),
+			reason: it.reason,
+			remarks: it.remarks,
+			return_to_asset_manager: it.return_to_asset_manager,
+			transfer_by: transfer_by_emp ? { name: transfer_by_emp.full_name || transfer_by_emp.name || null, ramco_id: transfer_by_emp.ramco_id } : null,
+			transfer_id: it.transfer_id,
+			type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (it.type_id ? { id: it.type_id, name: null } : null),
 			updated_at: it.updated_at
 		};
 	});
 
-	return res.json({ status: 'success', message: 'All transfer items retrieved', data: enriched });
+	return res.json({ data: enriched, message: 'All transfer items retrieved', status: 'success' });
 };
 
 // TypeScript interface for asset transfer detail item
 export interface AssetTransferDetailItem {
+	acceptance_remarks: null | string;
+	accepted_at: null | string;
+	accepted_by: null | string;
+	asset_type: string;
+	attachment: null | string;
+	created_at: string;
+	curr_costcenter: null | number;
+	curr_department: null | number;
+	curr_district: null | number;
+	curr_owner: null | string;
+	effective_date: null | string;
 	id: number;
+	identifier: string;
+	new_costcenter: null | number;
+	new_department: null | number;
+	new_district: null | number;
+	new_owner: null | string;
+	reasons: null | string;
 	transfer_request_id: number;
 	transfer_type: string;
-	asset_type: string;
-	identifier: string;
-	curr_owner: string | null;
-	curr_department: number | null;
-	curr_district: number | null;
-	curr_costcenter: number | null;
-	new_owner: string | null;
-	new_department: number | null;
-	new_district: number | null;
-	new_costcenter: number | null;
-	effective_date: string | null;
-	reasons: string | null;
-	attachment: string | null;
-	accepted_by: string | null;
-	accepted_at: string | null;
-	acceptance_remarks: string | null;
-	created_at: string;
 	updated_at: string;
 	// ...add any other fields as needed
 }
@@ -3640,19 +3641,19 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 	const requestId = Number(req.params.id);
 	const { status, supervisorId } = req.body; // status: 'approved' or 'rejected', supervisorId: ramco_id
 	if (!requestId || !status || !supervisorId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid request data' });
+		return res.status(400).json({ message: 'Invalid request data', status: 'error' });
 	}
 	// Fetch the request
 	const request = await assetModel.getAssetTransferById(requestId);
 	if (!request) {
-		return res.status(404).json({ status: 'error', message: 'Transfer request not found' });
+		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	// Update approval fields
 	const now = new Date();
 	await assetModel.updateAssetTransfer(requestId, {
 		...request,
-		approval_id: supervisorId,
 		approval_date: now,
+		approval_id: supervisorId,
 		request_status: status
 	});
 	// Fetch requestor and supervisor
@@ -3666,12 +3667,12 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 			.map(item => item as any)
 		: [];
 	// Send notification to requestor
-	if (requestor?.email) {
+	if (requestor.email) {
 		await sendMail(requestor.email, `Asset Transfer Request ${status.toUpperCase()}`, `Your asset transfer request #${request.request_no} has been ${status} by your supervisor.`);
 	}
 	// Notify each item owner/employee
 	for (const item of items) {
-		let ownerRamcoId: string | null = null;
+		let ownerRamcoId: null | string = null;
 		if (item.transfer_type === 'Employee' && item.identifier) {
 			ownerRamcoId = item.identifier;
 		} else if (item.transfer_type === 'Asset' && item.curr_owner) {
@@ -3679,12 +3680,12 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 		}
 		if (ownerRamcoId) {
 			const emp = await assetModel.getEmployeeByRamco(ownerRamcoId);
-			if (emp?.email) {
+			if (emp.email) {
 				// Send asset transfer preparation email to current owner
-				const { subject, html } = assetTransferCurrentOwnerEmail({
-					request,
-					item,
+				const { html, subject } = assetTransferCurrentOwnerEmail({
 					currentOwner: emp,
+					item,
+					request,
 					supervisor
 				});
 				await sendMail(emp.email, subject, html);
@@ -3693,13 +3694,13 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 		// Existing notifications for transfer_type Employee/Asset
 		if (item.transfer_type === 'Employee' && item.identifier) {
 			const emp = await assetModel.getEmployeeByRamco(item.identifier);
-			if (emp?.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your transfer status has been updated for request #${request.request_no}.`);
+			if (emp.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your transfer status has been updated for request #${request.request_no}.`);
 		} else if (item.transfer_type === 'Asset' && item.curr_owner) {
 			const emp = await assetModel.getEmployeeByRamco(item.curr_owner);
-			if (emp?.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your asset transfer status has been updated for request #${request.request_no}.`);
+			if (emp.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your asset transfer status has been updated for request #${request.request_no}.`);
 		}
 	}
-	res.json({ status: 'success', message: `Asset transfer request ${status}. Notifications sent.` });
+	res.json({ message: `Asset transfer request ${status}. Notifications sent.`, status: 'success' });
 };
 
 // --- EMAIL APPROVAL/REJECTION HANDLERS FOR EMAIL LINKS ---
@@ -3715,13 +3716,13 @@ export const approveAssetTransferByEmail = async (req: Request, res: Response) =
 	if (!request) return res.status(404).send('Request not found.');
 	// Fetch requestor's employee record to get supervisor
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
-	const supervisorId = requestor?.wk_spv_id;
+	const supervisorId = requestor.wk_spv_id;
 	if (!supervisorId) return res.status(400).send('Supervisor not found.');
 	// Call approval logic directly
 	await updateAssetTransferApprovalStatusById({
 		...req,
-		params: { id },
 		body: { status: 'approved', supervisorId },
+		params: { id },
 	} as any, res);
 };
 // GET /api/assets/asset-transfer/reject?id=...&token=...
@@ -3736,13 +3737,13 @@ export const rejectAssetTransferByEmail = async (req: Request, res: Response) =>
 	if (!request) return res.status(404).send('Request not found.');
 	// Fetch requestor's employee record to get supervisor
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
-	const supervisorId = requestor?.wk_spv_id;
+	const supervisorId = requestor.wk_spv_id;
 	if (!supervisorId) return res.status(400).send('Supervisor not found.');
 	// Call rejection logic directly
 	await updateAssetTransferApprovalStatusById({
 		...req,
-		params: { id },
 		body: { status: 'rejected', supervisorId },
+		params: { id },
 	} as any, res);
 };
 
@@ -3751,12 +3752,12 @@ export const getTransferChecklist = async (req: Request, res: Response) => {
 	// Optional filter by ?type={type_id}
 	const typeParam = typeof req.query.type === 'string' ? Number(req.query.type) : undefined;
 	if (typeParam !== undefined && Number.isNaN(typeParam)) {
-		return res.status(400).json({ status: 'error', message: 'type must be a valid number' });
+		return res.status(400).json({ message: 'type must be a valid number', status: 'error' });
 	}
 	// Fetch basic transfer checklist items
 	const checklistItems = await assetModel.getTransferChecklists(typeParam);
 	if (!Array.isArray(checklistItems)) {
-		return res.status(500).json({ status: 'error', message: 'Failed to fetch checklist items' });
+		return res.status(500).json({ message: 'Failed to fetch checklist items', status: 'error' });
 	}
 
 	// Fetch all types for mapping
@@ -3772,18 +3773,18 @@ export const getTransferChecklist = async (req: Request, res: Response) => {
 			: { id: item.type_id, name: null }
 	}));
 
-	res.json({ status: 'success', message: 'Transfer checklist items retrieved successfully', data: enrichedChecklistItems });
+	res.json({ data: enrichedChecklistItems, message: 'Transfer checklist items retrieved successfully', status: 'success' });
 }
 
 export const getTransferChecklistById = async (req: Request, res: Response) => {
 	const checklistId = Number(req.params.id);
 	if (!checklistId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid checklist ID' });
+		return res.status(400).json({ message: 'Invalid checklist ID', status: 'error' });
 	}
 	// Fetch the checklist item
 	const checklistItem = await assetModel.getTransferChecklistById(checklistId);
 	if (!checklistItem) {
-		return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+		return res.status(404).json({ message: 'Checklist item not found', status: 'error' });
 	}
 	// Fetch all types for mapping
 	const typesRaw = await assetModel.getTypes();
@@ -3794,45 +3795,45 @@ export const getTransferChecklistById = async (req: Request, res: Response) => {
 		? typeMap.get(checklistItem.type_id)
 		: { id: checklistItem.type_id, name: null };
 
-	res.json({ status: 'success', message: 'Transfer checklist item retrieved successfully', data: checklistItem });
+	res.json({ data: checklistItem, message: 'Transfer checklist item retrieved successfully', status: 'success' });
 }
 
 
 export const createTransferChecklist = async (req: Request, res: Response) => {
-	const { item, type_id, is_required, created_by } = req.body;
+	const { created_by, is_required, item, type_id } = req.body;
 	if (!item || !type_id) {
-		return res.status(400).json({ status: 'error', message: 'Name and type_id are required' });
+		return res.status(400).json({ message: 'Name and type_id are required', status: 'error' });
 	}
 	// Create the checklist item
-	const insertId = await assetModel.createTransferChecklist({ item, type_id, is_required, created_by });
-	res.status(201).json({ status: 'success', message: 'Transfer checklist item created successfully', data: { id: insertId } });
+	const insertId = await assetModel.createTransferChecklist({ created_by, is_required, item, type_id });
+	res.status(201).json({ data: { id: insertId }, message: 'Transfer checklist item created successfully', status: 'success' });
 }
 
 export const updateTransferChecklist = async (req: Request, res: Response) => {
 	const checklistId = Number(req.params.id);
-	const { item, type_id, is_required } = req.body;
+	const { is_required, item, type_id } = req.body;
 	if (!checklistId || !item || !type_id) {
-		return res.status(400).json({ status: 'error', message: 'Invalid checklist ID or missing fields' });
+		return res.status(400).json({ message: 'Invalid checklist ID or missing fields', status: 'error' });
 	}
 	// Update the checklist item
-	const result = await assetModel.updateTransferChecklist(checklistId, { item, type_id, is_required });
+	const result = await assetModel.updateTransferChecklist(checklistId, { is_required, item, type_id });
 	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+		return res.status(404).json({ message: 'Checklist item not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Transfer checklist item updated successfully' });
+	res.json({ message: 'Transfer checklist item updated successfully', status: 'success' });
 }
 
 export const deleteTransferChecklist = async (req: Request, res: Response) => {
 	const checklistId = Number(req.params.id);
 	if (!checklistId) {
-		return res.status(400).json({ status: 'error', message: 'Invalid checklist ID' });
+		return res.status(400).json({ message: 'Invalid checklist ID', status: 'error' });
 	}
 	// Delete the checklist item
 	const result = await assetModel.deleteTransferChecklist(checklistId);
 	if ((result as any).affectedRows === 0) {
-		return res.status(404).json({ status: 'error', message: 'Checklist item not found' });
+		return res.status(404).json({ message: 'Checklist item not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Transfer checklist item deleted successfully' });
+	res.json({ message: 'Transfer checklist item deleted successfully', status: 'success' });
 }
 
 

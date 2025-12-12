@@ -1,12 +1,13 @@
+import bcrypt from 'bcrypt';
+import fs from 'fs';
+import { ResultSetHeader } from "mysql2";
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+
 // Purpose: Model for user operations.
 import {pool} from '../utils/db';
-import bcrypt from 'bcrypt';
 import logger from '../utils/logger';
-import { ResultSetHeader } from "mysql2";
-import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
-import fs from 'fs';
-const { hash, compare } = bcrypt;
+const { compare, hash } = bcrypt;
 
 // DB and table variables for easier maintenance
 const DB_NAME = process.env.DB_NAME || 'auth';
@@ -19,41 +20,41 @@ const moduleTable = 'modules';
 const moduleMembersTable = 'module_members';
 const permissionTable = 'permissions';
 
-// Define the interface
-export interface Users {
-    id: number;
-    username: string;
-    email: string;
-    password: string;
-    created_at: Date;
-    activation_code: string | null;
-    fname: string;
-    contact: string;
-    user_type: number;
-    last_login: Date | null;
-    last_nav: string | null;
-    last_ip: string | null;
-    last_host: string | null;
-    last_os: string | null;
-    status: number;
-    role: number; // role id, now references roles table with new schema
-    usergroups: string | null; // comma-separated group IDs
-    reset_token: string | null;
-    activated_at: Date | null;
-    avatar?: string | null;
-}
-
 // UserProfile interface and profile helpers
 export interface UserProfile {
+    dob: null | string;
+    job: null | string;
+    location: null | string;
+    profile_image_url: null | string;
     user_id: number;
-    dob: string | null;
-    location: string | null;
-    job: string | null;
-    profile_image_url: string | null;
+}
+
+// Define the interface
+export interface Users {
+    activated_at: Date | null;
+    activation_code: null | string;
+    avatar?: null | string;
+    contact: string;
+    created_at: Date;
+    email: string;
+    fname: string;
+    id: number;
+    last_host: null | string;
+    last_ip: null | string;
+    last_login: Date | null;
+    last_nav: null | string;
+    last_os: null | string;
+    password: string;
+    reset_token: null | string;
+    role: number; // role id, now references roles table with new schema
+    status: number;
+    user_type: number;
+    usergroups: null | string; // comma-separated group IDs
+    username: string;
 }
 
 // Helper to prepend backend URL to image path if needed
-function getFullImageUrl(imagePath: string | null): string | null {
+function getFullImageUrl(imagePath: null | string): null | string {
     if (!imagePath) return null;
     const baseUrl = process.env.BACKEND_URL || '';
     if (imagePath.startsWith('http')) return imagePath;
@@ -71,25 +72,25 @@ export const getAllUsers = async (): Promise<Users[]> => {
         );
 
         return rows.map((user: Users) => ({
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            password: '', // Password is omitted for security
-            created_at: new Date(user.created_at),
+            activated_at: user.activated_at ? new Date(user.activated_at) : null,
             activation_code: user.activation_code,
-            fname: user.fname,
             contact: user.contact,
-            user_type: user.user_type,
+            created_at: new Date(user.created_at),
+            email: user.email,
+            fname: user.fname,
+            id: user.id,
+            last_host: user.last_host,
+            last_ip: user.last_ip,
             last_login: user.last_login ? new Date(user.last_login) : null,
             last_nav: user.last_nav,
-            last_ip: user.last_ip,
-            last_host: user.last_host,
             last_os: user.last_os,
-            status: user.status,
-            role: user.role,
-            usergroups: user.usergroups || null, // Map usergroups as a string
+            password: '', // Password is omitted for security
             reset_token: user.reset_token,
-            activated_at: user.activated_at ? new Date(user.activated_at) : null,
+            role: user.role,
+            status: user.status,
+            user_type: user.user_type,
+            usergroups: user.usergroups || null, // Map usergroups as a string
+            username: user.username,
         }));
     } catch (error) {
         logger.error(`Database error in getAllUsers: ${error}`);
@@ -98,7 +99,7 @@ export const getAllUsers = async (): Promise<Users[]> => {
 };
 
 // Get single user by id (minimal fields)
-export const getUserById = async (userId: number): Promise<Users | null> => {
+export const getUserById = async (userId: number): Promise<null | Users> => {
     try {
         const [rows]: any[] = await pool.query(
             `SELECT id, username, email, contact, user_type, role, status, last_login, last_nav FROM ${usersTable} WHERE id = ? LIMIT 1`,
@@ -107,25 +108,25 @@ export const getUserById = async (userId: number): Promise<Users | null> => {
         if (!Array.isArray(rows) || rows.length === 0) return null;
         const u = rows[0];
         return {
-            id: u.id,
-            username: u.username,
-            email: u.email,
-            password: '',
-            created_at: new Date(),
+            activated_at: null,
             activation_code: null,
-            fname: '',
             contact: u.contact,
-            user_type: u.user_type,
+            created_at: new Date(),
+            email: u.email,
+            fname: '',
+            id: u.id,
+            last_host: null,
+            last_ip: null,
             last_login: u.last_login ? new Date(u.last_login) : null,
             last_nav: u.last_nav,
-            last_ip: null,
-            last_host: null,
             last_os: null,
-            status: u.status,
-            role: u.role,
-            usergroups: null,
+            password: '',
             reset_token: null,
-            activated_at: null,
+            role: u.role,
+            status: u.status,
+            user_type: u.user_type,
+            usergroups: null,
+            username: u.username,
         } as Users;
     } catch (error) {
         logger.error(`Database error in getUserById: ${error}`);
@@ -161,15 +162,15 @@ export const registerUser = async (name: string, email: string, contact: string,
 };
 
 // Validate user activation details
-export const validateActivation = async (email: string, contact: string, activationCode: string): Promise<{ valid: boolean; user?: any; error?: unknown }> => {
+export const validateActivation = async (email: string, contact: string, activationCode: string): Promise<{ error?: unknown; user?: any; valid: boolean; }> => {
     try {
         const [rows]: any[] = await pool.query(
             `SELECT * FROM ${usersTable} WHERE email = ? AND contact = ? AND activation_code = ?`,
             [email, contact, activationCode]
         );
         return {
-            valid: Array.isArray(rows) && rows.length > 0,
             user: rows[0],
+            valid: Array.isArray(rows) && rows.length > 0,
         };
     } catch (error) {
         logger.error(`Database error in validateActivation: ${error}`);
@@ -191,7 +192,7 @@ export const activateUser = async (email: string, contact: string, activationCod
 export const verifyLoginCredentials = async (
     emailOrUsername: string,
     password: string
-): Promise<{ success: boolean; user?: Users; message?: string; error?: unknown }> => {
+): Promise<{ error?: unknown; message?: string; success: boolean; user?: Users; }> => {
     try {
         const [rows]: any[] = await pool.query(
             `SELECT u.*, GROUP_CONCAT(ug.group_id) AS usergroups
@@ -204,43 +205,43 @@ export const verifyLoginCredentials = async (
         );
 
         if (Array.isArray(rows) && rows.length === 0) {
-            return { success: false, message: 'Invalid credentials' };
+            return { message: 'Invalid credentials', success: false };
         }
 
         const user = rows[0];
         const passwordMatch = await compare(password, user.password);
 
         if (!passwordMatch) {
-            return { success: false, message: 'Invalid credentials' };
+            return { message: 'Invalid credentials', success: false };
         }
 
         if (user.status !== 1) {
-            return { success: false, message: 'Account is inactive' };
+            return { message: 'Account is inactive', success: false };
         }
 
         delete user.password;
 
         const formattedUser: Users = {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            password: '', // Password is removed for security
-            created_at: new Date(user.created_at),
+            activated_at: user.activated_at ? new Date(user.activated_at) : null,
             activation_code: user.activation_code,
-            fname: user.fname,
+            avatar: user.avatar || null,
             contact: user.contact,
-            user_type: user.user_type,
+            created_at: new Date(user.created_at),
+            email: user.email,
+            fname: user.fname,
+            id: user.id,
+            last_host: user.last_host,
+            last_ip: user.last_ip,
             last_login: user.last_login ? new Date(user.last_login) : null,
             last_nav: user.last_nav,
-            last_ip: user.last_ip,
-            last_host: user.last_host,
             last_os: user.last_os,
-            status: user.status,
-            role: user.role,
-            usergroups: user.usergroups || null, // Map usergroups as a string
+            password: '', // Password is removed for security
             reset_token: user.reset_token,
-            activated_at: user.activated_at ? new Date(user.activated_at) : null,
-            avatar: user.avatar || null,
+            role: user.role,
+            status: user.status,
+            user_type: user.user_type,
+            usergroups: user.usergroups || null, // Map usergroups as a string
+            username: user.username,
         };
 
         return {
@@ -280,7 +281,7 @@ export const updateUserPassword = async (email: string, contact: string, newPass
 };
 
 // Find user by reset token
-export const findUserByResetToken = async (resetToken: string): Promise<Users | null> => {
+export const findUserByResetToken = async (resetToken: string): Promise<null | Users> => {
     try {
         const [rows]: any[] = await pool.query(`SELECT * FROM ${usersTable} WHERE reset_token = ?`, [resetToken]);
         logger.info(`findUserByResetToken query result: ${JSON.stringify(rows)}`);
@@ -318,21 +319,21 @@ export const reactivateUser = async (userId: number): Promise<void> => {
 };
 
 // Update user by admin
-export const updateUser = async (userId: number, { user_type, role, status }: Users): Promise<void> => {
+export const updateUser = async (userId: number, { role, status, user_type }: Users): Promise<void> => {
     // Backward-compatible wrapper around updateUserFields
-    await updateUserFields(userId, { user_type, role, status });
+    await updateUserFields(userId, { role, status, user_type });
 };
 
 // Allow controllers to update any subset of allowed fields dynamically
 export type UpdatableUserFields = Partial<{
-    user_type: number | null;
-    role: number | null;
-    status: number | null;
-    contact: string | null;
-    avatar: string | null;
-    fname: string | null;
-    email: string | null;
-    last_nav: string | null;
+    avatar: null | string;
+    contact: null | string;
+    email: null | string;
+    fname: null | string;
+    last_nav: null | string;
+    role: null | number;
+    status: null | number;
+    user_type: null | number;
 }>;
 
 export const updateUserFields = async (userId: number, fields: UpdatableUserFields): Promise<number> => {
@@ -373,7 +374,7 @@ export const updateUserRole = async (userId: number, role: number): Promise<void
 }
 
 // Update user's avatar (and optionally contact)
-export const updateUserAvatar = async (userId: number, avatarPath?: string | null, contact?: string | null): Promise<void> => {
+export const updateUserAvatar = async (userId: number, avatarPath?: null | string, contact?: null | string): Promise<void> => {
     const fields: string[] = [];
     const values: any[] = [];
     if (avatarPath !== undefined) { fields.push('avatar = ?'); values.push(avatarPath); }
@@ -421,7 +422,7 @@ export const getUserByEmailAndPassword = async (email: string, password: string)
 // Update user login details (IP, host, OS)
 export const updateUserLoginDetails = async (
     userId: number,
-    { ip, host, os }: { ip: string | string[] | null; host: string | null; os: string | null }
+    { host, ip, os }: { host: null | string; ip: null | string | string[]; os: null | string }
 ): Promise<void> => {
     try {
         await pool.query(
@@ -457,18 +458,18 @@ export const getAdminUserIds = async (): Promise<number[]> => {
 };
 
 // Set or clear the user's current session token
-export const setUserSessionToken = async (userId: number, token: string | null): Promise<void> => {
+export const setUserSessionToken = async (userId: number, token: null | string): Promise<void> => {
     await pool.query(`UPDATE ${usersTable} SET current_session_token = ? WHERE id = ?`, [token, userId]);
 };
 
 // Get the user's current session token
-export const getUserSessionToken = async (userId: number): Promise<string | null> => {
+export const getUserSessionToken = async (userId: number): Promise<null | string> => {
     const [rows]: any[] = await pool.query(`SELECT current_session_token FROM ${usersTable} WHERE id = ?`, [userId]);
     return rows[0]?.current_session_token || null;
 };
 
 // Get user profile
-export const getUserProfile = async (userId: number): Promise<UserProfile | null> => {
+export const getUserProfile = async (userId: number): Promise<null | UserProfile> => {
     const [rows]: any[] = await pool.query(`SELECT * FROM ${userProfileTable} WHERE user_id = ?`, [userId]);
     if (rows.length === 0) return null;
     const profile = rows[0];
@@ -487,7 +488,7 @@ export const upsertUserProfile = async (userId: number, profile: Partial<UserPro
         let buffer: Buffer;
         if (typeof profile.profileImage === 'string' && profile.profileImage.startsWith('data:')) {
             // base64 data URL
-            const matches = profile.profileImage.match(/^data:(.+);base64,(.+)$/);
+            const matches = /^data:(.+);base64,(.+)$/.exec(profile.profileImage);
             if (matches) {
                 buffer = Buffer.from(matches[2], 'base64');
                 const mime = matches[1];
@@ -513,6 +514,15 @@ export const upsertUserProfile = async (userId: number, profile: Partial<UserPro
   `, [userId, profile.dob, profile.location, profile.job, imageUrl]);
 };
 
+// Create a new task for a user
+export async function createUserTask(userId: number, title: string, progress = 0) {
+    const [result] = await pool.query(
+        `INSERT INTO ${userTasksTable} (user_id, title, progress) VALUES (?, ?, ?)`,
+        [userId, title, progress]
+    );
+    return result;
+}
+
 export async function getUserTasks(userId: number) {
     const [rows] = await pool.query(
         `SELECT id, title, completed, progress, created_at, updated_at FROM ${userTasksTable} WHERE user_id = ? ORDER BY created_at DESC`,
@@ -521,17 +531,8 @@ export async function getUserTasks(userId: number) {
     return rows;
 }
 
-// Create a new task for a user
-export async function createUserTask(userId: number, title: string, progress: number = 0) {
-    const [result] = await pool.query(
-        `INSERT INTO ${userTasksTable} (user_id, title, progress) VALUES (?, ?, ?)`,
-        [userId, title, progress]
-    );
-    return result;
-}
-
 // Update a task for a user
-export async function updateUserTask(userId: number, taskId: number, updates: { title?: string, completed?: boolean, progress?: number }) {
+export async function updateUserTask(userId: number, taskId: number, updates: { completed?: boolean, progress?: number; title?: string, }) {
     const fields = [];
     const values = [];
     if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
@@ -576,9 +577,9 @@ export const createWorkflow = async (data: any): Promise<number> => {
 
         // Map common authorize levels to stable ordering; fallback to index order
         const orderMap: Record<string, number> = {
-            verify: 1,
+            approval: 3,
             recommend: 2,
-            approval: 3
+            verify: 1
         };
 
         // Build rows to insert
@@ -588,12 +589,12 @@ export const createWorkflow = async (data: any): Promise<number> => {
             const ramcoId = String(e?.employee_ramco_id || '').trim();
             if (!ramcoId) throw new Error(`employees[${idx}].employee_ramco_id is required`);
             return {
-                module_name: moduleName,
-                level_order: levelOrder,
-                ramco_id: ramcoId,
-                level_name: levelName || `Level ${levelOrder}`,
                 description,
-                is_active: isActive
+                is_active: isActive,
+                level_name: levelName || `Level ${levelOrder}`,
+                level_order: levelOrder,
+                module_name: moduleName,
+                ramco_id: ramcoId
             };
         });
 
@@ -653,7 +654,7 @@ export const deleteWorkflow = async (id: number) => {
 };
 
 // Reorder workflows: accepts either array of ids (implied order) or array of { id, level_order }
-export const reorderWorkflows = async (payload: { module_name?: string; items: Array<number | { id: number; level_order: number }> }): Promise<number> => {
+export const reorderWorkflows = async (payload: { items: (number | { id: number; level_order: number })[]; module_name?: string; }): Promise<number> => {
     if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) {
         throw new Error('items array is required');
     }
@@ -662,11 +663,11 @@ export const reorderWorkflows = async (payload: { module_name?: string; items: A
         await conn.beginTransaction();
 
         // Normalize to {id, level_order}
-        let normalized: Array<{ id: number; level_order: number }> = [];
+        let normalized: { id: number; level_order: number }[] = [];
         if (typeof payload.items[0] === 'number') {
             normalized = (payload.items as number[]).map((id, idx) => ({ id, level_order: idx + 1 }));
         } else {
-            normalized = (payload.items as Array<{ id: number; level_order: number }>).map(x => ({ id: Number(x.id), level_order: Number(x.level_order) }))
+            normalized = (payload.items as { id: number; level_order: number }[]).map(x => ({ id: Number(x.id), level_order: Number(x.level_order) }))
                 .filter(x => Number.isFinite(x.id) && Number.isFinite(x.level_order));
         }
         if (normalized.length === 0) throw new Error('No valid items to reorder');
@@ -695,10 +696,10 @@ export const reorderWorkflows = async (payload: { module_name?: string; items: A
 
 /* ===== MODULES ======= */
 export interface Module {
+    created_at: Date;
+    description: string;
     id: number;
     name: string;
-    description: string;
-    created_at: Date;
     updated_at: Date;
 }
 
@@ -736,9 +737,9 @@ export const deleteModule = async (id: number): Promise<void> => {
 // MODULE MEMBERS CRUD
 export interface ModuleMember {
     id: number;
-    ramco_id: string;
     module_id: number;
     permission_id: number;
+    ramco_id: string;
 }
 
 export const getModuleMembers = async (): Promise<ModuleMember[]> => {
@@ -762,7 +763,7 @@ export const addModuleMember = async (ramco_id: string, module_id: number, permi
 };
 
 export const updateModuleMember = async (id: number, data: Partial<ModuleMember>) => {
-    const { ramco_id, module_id, permission_id } = data as any;
+    const { module_id, permission_id, ramco_id } = data as any;
     const [result] = await pool.query(`UPDATE ${moduleMembersTable} SET ramco_id = ?, module_id = ?, permission_id = ? WHERE id = ?`, [ramco_id, module_id, permission_id, id]);
     return result;
 };
@@ -774,9 +775,9 @@ export const deleteModuleMember = async (id: number) => {
 
 // PERMISSIONS
 export interface Permission {
+    description?: null | string;
     id: number;
     name: string;
-    description?: string | null;
 }
 
 export const getPermissions = async (): Promise<Permission[]> => {
@@ -791,19 +792,19 @@ export const getPermissionsByIds = async (ids: number[]): Promise<Permission[]> 
     return rows as Permission[];
 };
 
-export const getPermissionById = async (id: number): Promise<Permission | null> => {
+export const getPermissionById = async (id: number): Promise<null | Permission> => {
     const [rows]: any[] = await pool.query(`SELECT * FROM ${permissionTable} WHERE id = ?`, [id]);
     return Array.isArray(rows) && rows.length > 0 ? rows[0] as Permission : null;
 };
 
-export const createPermission = async (data: { code: string; name: string; description?: string | null; category?: string | null; is_active?: number }): Promise<number> => {
-    const { code, name, description = null, category = null, is_active = 1 } = data;
+export const createPermission = async (data: { category?: null | string; code: string; description?: null | string; is_active?: number; name: string; }): Promise<number> => {
+    const { category = null, code, description = null, is_active = 1, name } = data;
     const [result] = await pool.query(`INSERT INTO ${permissionTable} (code, name, description, category, is_active) VALUES (?, ?, ?, ?, ?)`, [code, name, description, category, is_active]);
     return (result as ResultSetHeader).insertId;
 };
 
-export const updatePermission = async (id: number, data: Partial<{ code: string; name: string; description?: string | null; category?: string | null; is_active?: number }>) => {
-    const { code, name, description = null, category = null, is_active = 1 } = data as any;
+export const updatePermission = async (id: number, data: Partial<{ category?: null | string; code: string; description?: null | string; is_active?: number; name: string; }>) => {
+    const { category = null, code, description = null, is_active = 1, name } = data as any;
     const [result] = await pool.query(`UPDATE ${permissionTable} SET code = ?, name = ?, description = ?, category = ?, is_active = ? WHERE id = ?`, [code, name, description, category, is_active, id]);
     return result;
 };

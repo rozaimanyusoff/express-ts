@@ -16,8 +16,57 @@ const T_CORE_FEATURES = `${projectDB}.app_core_features`;
 
 // --- Schema adaptability helpers ---
 type ProgressCol = 'overall_progress' | 'percent_complete';
-let cachedProjectProgressCol: ProgressCol | null = null;
-let cachedLogProgressCol: ProgressCol | null = null;
+let cachedProjectProgressCol: null | ProgressCol = null;
+const cachedLogProgressCol: null | ProgressCol = null;
+
+export type AssignmentRole = 'collaborator' | 'observer' | 'primary';
+
+export type AssignmentType = 'project' | 'support' | 'task';
+
+
+export interface NewProject {
+  assignment_type: AssignmentType;
+  code: string;
+  description?: null | string;
+  due_date?: null | string; // YYYY-MM-DD
+  name: string;
+  overall_progress?: number; // 0-100 (new)
+  percent_complete?: number; // 0-100 (legacy)
+  priority?: 'critical' | 'high' | 'low' | 'medium';
+  start_date?: null | string; // YYYY-MM-DD
+  status?: ProjectStatus;
+}
+export type ProjectStatus = 'at_risk' | 'completed' | 'in_progress' | 'not_started';
+export async function ensureTag(name: string): Promise<number> {
+  const tagName = name.trim();
+  if (!tagName) throw new Error('Tag name is required');
+  const tagSlug = slugify(tagName);
+  // Try find existing
+  const [rows]: any = await pool.query(`SELECT id FROM ${T_TAGS} WHERE slug = ? OR name = ? LIMIT 1`, [tagSlug, tagName]);
+  if (rows.length) return Number(rows[0].id);
+  const [res]: any = await pool.query(`INSERT INTO ${T_TAGS} (name, slug) VALUES (?, ?)`, [tagName, tagSlug]);
+  return Number(res.insertId);
+}
+
+// ----- Tags utilities -----
+
+export async function getProjectTagNames(projectId: number): Promise<string[]> {
+  const sql = `SELECT t.name FROM ${T_TAG_LINKS} l JOIN ${T_TAGS} t ON t.id = l.tag_id WHERE l.project_id = ? ORDER BY t.name ASC`;
+  const [rows]: any = await pool.query(sql, [projectId]);
+  return rows.map((r: any) => String(r.name));
+}
+
+export async function linkProjectTag(projectId: number, tagId: number): Promise<void> {
+  await pool.query(`INSERT IGNORE INTO ${T_TAG_LINKS} (project_id, tag_id) VALUES (?, ?)`, [projectId, tagId]);
+}
+
+export async function setProjectTags(projectId: number, tags: null | string[] | undefined): Promise<void> {
+  if (!tags?.length) return;
+  for (const t of tags) {
+    const id = await ensureTag(t);
+    await linkProjectTag(projectId, id);
+  }
+}
 
 async function detectProgressColumn(dbName: string, tableName: string): Promise<ProgressCol> {
   const sql = `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
@@ -35,12 +84,7 @@ async function getProjectProgressCol(): Promise<ProgressCol> {
   return cachedProjectProgressCol;
 }
 
-
-export type AssignmentType = 'task' | 'support' | 'project';
-export type ProjectStatus = 'not_started' | 'in_progress' | 'completed' | 'at_risk';
-export type AssignmentRole = 'primary' | 'collaborator' | 'observer';
-
-// ----- Tags utilities -----
+/* ======= PROJECTS ======= */
 
 function slugify(name: string): string {
   return name
@@ -50,50 +94,6 @@ function slugify(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)+/g, '')
     .slice(0, 100);
-}
-
-export async function ensureTag(name: string): Promise<number> {
-  const tagName = name.trim();
-  if (!tagName) throw new Error('Tag name is required');
-  const tagSlug = slugify(tagName);
-  // Try find existing
-  const [rows]: any = await pool.query(`SELECT id FROM ${T_TAGS} WHERE slug = ? OR name = ? LIMIT 1`, [tagSlug, tagName]);
-  if (rows.length) return Number(rows[0].id);
-  const [res]: any = await pool.query(`INSERT INTO ${T_TAGS} (name, slug) VALUES (?, ?)`, [tagName, tagSlug]);
-  return Number(res.insertId);
-}
-
-export async function linkProjectTag(projectId: number, tagId: number): Promise<void> {
-  await pool.query(`INSERT IGNORE INTO ${T_TAG_LINKS} (project_id, tag_id) VALUES (?, ?)`, [projectId, tagId]);
-}
-
-export async function setProjectTags(projectId: number, tags: string[] | null | undefined): Promise<void> {
-  if (!tags || !tags.length) return;
-  for (const t of tags) {
-    const id = await ensureTag(t);
-    await linkProjectTag(projectId, id);
-  }
-}
-
-export async function getProjectTagNames(projectId: number): Promise<string[]> {
-  const sql = `SELECT t.name FROM ${T_TAG_LINKS} l JOIN ${T_TAGS} t ON t.id = l.tag_id WHERE l.project_id = ? ORDER BY t.name ASC`;
-  const [rows]: any = await pool.query(sql, [projectId]);
-  return rows.map((r: any) => String(r.name));
-}
-
-/* ======= PROJECTS ======= */
-
-export interface NewProject {
-  code: string;
-  name: string;
-  description?: string | null;
-  assignment_type: AssignmentType;
-  status?: ProjectStatus;
-  start_date?: string | null; // YYYY-MM-DD
-  due_date?: string | null; // YYYY-MM-DD
-  percent_complete?: number; // 0-100 (legacy)
-  overall_progress?: number; // 0-100 (new)
-  priority?: 'low' | 'medium' | 'high' | 'critical';
 }
 
 export const getProjects = async (): Promise<any[]> => {
@@ -108,97 +108,122 @@ export const getProjectById = async (projectId: number): Promise<any | null> => 
   return null;
 };
 
+/* ======= ASSIGNMENTS (T_ASSIGN) ======= */
+export interface AssignmentRow {
+  actual_mandays: null | number;
+  assignee: null | string;
+  id?: number;
+  project_id: number;
+  scope_id: number;
+};
+
+/* ========= APP CORE FEATURES ========= */
+export interface CoreFeature {
+  category: null | string;
+  description: null | string;
+  example_module: null | string;
+  feature_key: string;
+  feature_name: string;
+  id: number;
+};
+
+
+/* ======= DEV CORE TASKS CRUD ======= */
+export interface DevCoreTask {
+  description: null | string;
+  example: null | string;
+  id: number;
+  title: string;
+};
+
+
+/* ======= SCOPE ======= */
+export interface NewScope {
+  actual_end_date?: null | string;
+  actual_mandays?: null | number;
+  actual_start_date?: null | string;
+  assignee?: null | string; // ramco_id
+  attachment?: null | string; // comma-separated or single path
+  description?: null | string;
+  order_index?: null | number;
+  planned_end_date?: null | string;
+  planned_mandays?: null | number;
+  planned_start_date?: null | string;
+  progress?: null | number; // 0-100
+  project_id: number;
+  status?: 'cancelled' | 'completed' | 'in_progress' | 'not_started' | 'on_hold' | null | string;
+  task_groups?: null | string;
+  title: string;
+}
+
+export async function appendScopeAttachments(scopeId: number, newPaths: string[]): Promise<void> {
+  if (!newPaths.length) return;
+  const existing = await getScopeById(scopeId);
+  const existingAtt = existing?.attachment ? String(existing.attachment) : '';
+  const existingArr = existingAtt ? existingAtt.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+  const combinedSet = new Set<string>([...existingArr, ...newPaths]);
+  const combined = Array.from(combinedSet).join(',');
+  await pool.query(`UPDATE ${T_SCOPES} SET attachment = ?, updated_at = NOW() WHERE id = ?`, [combined, scopeId]);
+};
+
+export async function createCoreFeature(feature: Omit<CoreFeature, 'id'>): Promise<number> {
+  const payload: any = {
+    category: feature.category ?? null,
+    description: feature.description ?? null,
+    example_module: feature.example_module ?? null,
+    feature_key: feature.feature_key,
+    feature_name: feature.feature_name
+  };
+  const [res]: any = await pool.query(`INSERT INTO ${T_CORE_FEATURES} SET ?`, [payload]);
+  return Number(res.insertId);
+}
+
+export async function createDevCoreTask(task: Omit<DevCoreTask, 'id'>): Promise<number> {
+  const payload: any = {
+    description: task.description ?? null,
+    example: task.example ?? null,
+    title: task.title
+  };
+  const [res]: any = await pool.query(`INSERT INTO ${T_DEV_TASKS} SET ?`, [payload]);
+  return Number(res.insertId);
+};
+
 export async function createProject(p: NewProject): Promise<number> {
   const payload: any = {
-    code: p.code,
-    name: p.name,
-    description: p.description ?? null,
     assignment_type: p.assignment_type,
-    status: p.status ?? 'not_started',
+    code: p.code,
+    description: p.description ?? null,
+    due_date: p.due_date ?? null,
+    name: p.name,
     start_date: p.start_date ?? null,
-    due_date: p.due_date ?? null
+    status: p.status ?? 'not_started'
   };
   if (p.priority) payload.priority = p.priority;
   // Map progress to the actual column present
   const progressValRaw = p.overall_progress ?? p.percent_complete ?? 0;
   const progressVal = Math.min(100, Math.max(0, Number(progressValRaw)));
   const progressCol = await getProjectProgressCol();
-  (payload as any)[progressCol] = progressVal;
+  (payload)[progressCol] = progressVal;
   const [res]: any = await pool.query(`INSERT INTO ${T_PROJECTS} SET ?`, [payload]);
   return Number(res.insertId);
-};
-
-export async function updateProject(projectId: number, updates: Partial<NewProject>): Promise<void> {
-  const payload: any = {};
-  if (updates.code !== undefined) payload.code = updates.code;
-  if (updates.name !== undefined) payload.name = updates.name;
-  if (updates.description !== undefined) payload.description = updates.description ?? null;
-  if (updates.assignment_type !== undefined) payload.assignment_type = updates.assignment_type;
-  if (updates.status !== undefined) payload.status = updates.status;
-  if (updates.start_date !== undefined) payload.start_date = updates.start_date ?? null;
-  if (updates.due_date !== undefined) payload.due_date = updates.due_date ?? null;
-  if (updates.priority !== undefined) payload.priority = updates.priority;
-  // Map progress to the actual column present
-  const progressValRaw = updates.overall_progress ?? updates.percent_complete;
-  if (progressValRaw !== undefined) {
-    const progressCol = await getProjectProgressCol();
-    (payload as any)[progressCol] = Math.min(100, Math.max(0, Number(progressValRaw)));
-  }
-  if (Object.keys(payload).length === 0) return; // Nothing to update
-  await pool.query(`UPDATE ${T_PROJECTS} SET ?, updated_at = NOW() WHERE id = ?`, [payload, projectId]);
-};
-
-
-export async function deleteProject(projectId: number): Promise<void> {
-  await pool.query(`DELETE FROM ${T_PROJECTS} WHERE id = ?`, [projectId]);
-};
-
-
-/* ======= SCOPE ======= */
-export interface NewScope {
-  project_id: number;
-  title: string;
-  task_groups?: string | null;
-  description?: string | null;
-  assignee?: string | null; // ramco_id
-  planned_start_date?: string | null;
-  planned_end_date?: string | null;
-  planned_mandays?: number | null;
-  attachment?: string | null; // comma-separated or single path
-  progress?: number | null; // 0-100
-  status?: 'not_started' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled' | string | null;
-  actual_start_date?: string | null;
-  actual_end_date?: string | null;
-  actual_mandays?: number | null;
-  order_index?: number | null;
-}
-
-export async function getScopeByProjectId(projectId: number): Promise<any[]> {
-  const [rows]: any = await pool.query(`SELECT * FROM ${T_SCOPES} WHERE project_id = ? ORDER BY order_index ASC, id ASC`, [projectId]);
-  return rows;
-};
-
-export async function getScopeById(scopeId: number): Promise<any | null> {
-  const [rows]: any = await pool.query(`SELECT * FROM ${T_SCOPES} WHERE id = ? LIMIT 1`, [scopeId]);
-  return rows.length ? rows[0] : null;
 }
 
 export async function createScope(scope: NewScope): Promise<number> {
   const payload: any = {
-    project_id: scope.project_id,
-    title: scope.title,
-    task_groups: scope.task_groups ?? null,
-    description: scope.description ?? null,
+    actual_end_date: scope.actual_end_date ?? null,
+    actual_mandays: scope.actual_mandays ?? null,
+    actual_start_date: scope.actual_start_date ?? null,
     assignee: scope.assignee ?? null,
-    planned_start_date: scope.planned_start_date ?? null,
+    attachment: scope.attachment ?? null,
+    description: scope.description ?? null,
     planned_end_date: scope.planned_end_date ?? null,
     planned_mandays: scope.planned_mandays ?? null,
-    attachment: scope.attachment ?? null,
+    planned_start_date: scope.planned_start_date ?? null,
     progress: scope.progress !== undefined && scope.progress !== null ? Math.min(100, Math.max(0, Number(scope.progress))) : null,
+    project_id: scope.project_id,
     status: scope.status ?? null,
-    actual_start_date: scope.actual_start_date ?? null,
-    actual_end_date: scope.actual_end_date ?? null,
-    actual_mandays: scope.actual_mandays ?? null
+    task_groups: scope.task_groups ?? null,
+    title: scope.title
   };
   // determine order_index: use provided or next available for the project
   if (scope.order_index !== undefined && scope.order_index !== null && Number.isFinite(Number(scope.order_index))) {
@@ -211,126 +236,24 @@ export async function createScope(scope: NewScope): Promise<number> {
   return Number(res.insertId);
 };
 
-export async function updateScope(scopeId: number, updates: Partial<NewScope>): Promise<void> {
-  const payload: any = {};
-  if (updates.title !== undefined) payload.title = updates.title;
-  if (updates.task_groups !== undefined) payload.task_groups = updates.task_groups ?? null;
-  if (updates.description !== undefined) payload.description = updates.description ?? null;
-  if (updates.assignee !== undefined) payload.assignee = updates.assignee ?? null;
-  if (updates.planned_start_date !== undefined) payload.planned_start_date = updates.planned_start_date ?? null;
-  if (updates.planned_end_date !== undefined) payload.planned_end_date = updates.planned_end_date ?? null;
-  if (updates.planned_mandays !== undefined) payload.planned_mandays = updates.planned_mandays ?? null;
-  if (updates.attachment !== undefined) payload.attachment = updates.attachment ?? null;
-  if (updates.progress !== undefined && updates.progress !== null) {
-    payload.progress = Math.min(100, Math.max(0, Number(updates.progress)));
-  }
-  if (updates.status !== undefined) payload.status = updates.status ?? null;
-  if (updates.actual_start_date !== undefined) payload.actual_start_date = updates.actual_start_date ?? null;
-  if (updates.actual_end_date !== undefined) payload.actual_end_date = updates.actual_end_date ?? null;
-  if (updates.actual_mandays !== undefined) payload.actual_mandays = updates.actual_mandays ?? null;
-  if (updates.order_index !== undefined) payload.order_index = updates.order_index ?? null;
-  if (Object.keys(payload).length === 0) return; // Nothing to update
-  await pool.query(`UPDATE ${T_SCOPES} SET ?, updated_at = NOW() WHERE id = ?`, [payload, scopeId]);
-}
-
-export async function deleteScope(scopeId: number): Promise<void> {
-  await pool.query(`DELETE FROM ${T_SCOPES} WHERE id = ?`, [scopeId]);
-};
-
-export async function appendScopeAttachments(scopeId: number, newPaths: string[]): Promise<void> {
-  if (!newPaths.length) return;
-  const existing = await getScopeById(scopeId);
-  const existingAtt = existing?.attachment ? String(existing.attachment) : '';
-  const existingArr = existingAtt ? existingAtt.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-  const combinedSet = new Set<string>([...existingArr, ...newPaths]);
-  const combined = Array.from(combinedSet).join(',');
-  await pool.query(`UPDATE ${T_SCOPES} SET attachment = ?, updated_at = NOW() WHERE id = ?`, [combined, scopeId]);
-}
-
-export async function replaceScopeAttachments(scopeId: number, newPaths: string[]): Promise<void> {
-  const value = newPaths.length ? newPaths.join(',') : null;
-  await pool.query(`UPDATE ${T_SCOPES} SET attachment = ?, updated_at = NOW() WHERE id = ?`, [value, scopeId]);
-}
-
-export async function getScopeIdsByProject(projectId: number): Promise<number[]> {
-  const [rows]: any = await pool.query(`SELECT id FROM ${T_SCOPES} WHERE project_id = ?`, [projectId]);
-  return rows.map((r: any) => Number(r.id));
-}
-
-export async function setScopesOrder(projectId: number, orderedScopeIds: number[]): Promise<void> {
-  if (!orderedScopeIds || !orderedScopeIds.length) return;
-  // Build CASE statement
-  const cases = orderedScopeIds.map((id, idx) => `WHEN ${id} THEN ${idx}`).join(' ');
-  const idsIn = orderedScopeIds.join(',');
-  const sql = `UPDATE ${T_SCOPES}
-               SET order_index = CASE id ${cases} END, updated_at = NOW()
-               WHERE project_id = ? AND id IN (${idsIn})`;
-  await pool.query(sql, [projectId]);
-}
-
-/* ======= ASSIGNMENTS (T_ASSIGN) ======= */
-export interface AssignmentRow {
-  id?: number;
-  project_id: number;
-  scope_id: number;
-  assignee: string | null;
-  actual_mandays: number | null;
-}
-
-export async function upsertAssignment(row: AssignmentRow): Promise<void> {
-  const [rows]: any = await pool.query(
-    `SELECT id, assignee, actual_mandays FROM ${T_ASSIGN} WHERE project_id = ? AND scope_id = ? LIMIT 1`,
-    [row.project_id, row.scope_id]
-  );
-  if (rows.length) {
-    const existing = rows[0];
-    const newAssignee = row.assignee ?? null;
-    const newMandays = row.actual_mandays ?? null;
-    // If nothing changed, skip write
-    if (String(existing.assignee ?? '') === String(newAssignee ?? '') && Number(existing.actual_mandays ?? null) === Number(newMandays ?? null)) {
-      return;
-    }
-    await pool.query(
-      `UPDATE ${T_ASSIGN} SET assignee = ?, actual_mandays = ?, updated_at = NOW() WHERE id = ?`,
-      [newAssignee, newMandays, existing.id]
-    );
-  } else {
-    await pool.query(
-      `INSERT INTO ${T_ASSIGN} (project_id, scope_id, assignee, actual_mandays) VALUES (?, ?, ?, ?)`,
-      [row.project_id, row.scope_id, row.assignee ?? null, row.actual_mandays ?? null]
-    );
-  }
-}
-
 export async function deleteAssignmentByProjectScope(projectId: number, scopeId: number): Promise<void> {
   await pool.query(`DELETE FROM ${T_ASSIGN} WHERE project_id = ? AND scope_id = ?`, [projectId, scopeId]);
 }
 
-export async function getAssignmentsByProjectId(projectId: number): Promise<any[]> {
-  const sql = `
-    SELECT 
-      a.id,
-      a.project_id,
-      a.scope_id,
-      a.assignee,
-      a.actual_mandays,
-      s.title as scope_title,
-      s.status as scope_status,
-      s.progress as scope_progress,
-      s.planned_start_date,
-      s.planned_end_date,
-      s.actual_start_date,
-      s.actual_end_date,
-      p.code as project_code,
-      p.name as project_name
-    FROM ${T_ASSIGN} a
-    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
-    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
-    WHERE a.project_id = ?
-    ORDER BY s.order_index ASC, s.id ASC
-  `;
-  const [rows]: any = await pool.query(sql, [projectId]);
-  return rows;
+export async function deleteCoreFeature(featureId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_CORE_FEATURES} WHERE id = ?`, [featureId]);
+}
+
+export async function deleteDevCoreTask(taskId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_DEV_TASKS} WHERE id = ?`, [taskId]);
+}
+
+export async function deleteProject(projectId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_PROJECTS} WHERE id = ?`, [projectId]);
+}
+
+export async function deleteScope(scopeId: number): Promise<void> {
+  await pool.query(`DELETE FROM ${T_SCOPES} WHERE id = ?`, [scopeId]);
 }
 
 export async function getAllAssignments(): Promise<any[]> {
@@ -390,6 +313,105 @@ export async function getAssignmentsByAssignee(assignee: string): Promise<any[]>
   return rows;
 }
 
+export async function getAssignmentsByProjectId(projectId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      a.id,
+      a.project_id,
+      a.scope_id,
+      a.assignee,
+      a.actual_mandays,
+      s.title as scope_title,
+      s.status as scope_status,
+      s.progress as scope_progress,
+      s.planned_start_date,
+      s.planned_end_date,
+      s.actual_start_date,
+      s.actual_end_date,
+      p.code as project_code,
+      p.name as project_name
+    FROM ${T_ASSIGN} a
+    LEFT JOIN ${T_SCOPES} s ON s.id = a.scope_id
+    LEFT JOIN ${T_PROJECTS} p ON p.id = a.project_id
+    WHERE a.project_id = ?
+    ORDER BY s.order_index ASC, s.id ASC
+  `;
+  const [rows]: any = await pool.query(sql, [projectId]);
+  return rows;
+}
+
+export async function getCoreFeatureById(featureId: number): Promise<CoreFeature | null> {
+  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} WHERE id = ? LIMIT 1`;
+  const [rows]: any = await pool.query(sql, [featureId]);
+  if (rows.length) {
+    const r = rows[0];
+    return {
+      category: r.category ? String(r.category) : null,
+      description: r.description ? String(r.description) : null,
+      example_module: r.example_module ? String(r.example_module) : null,
+      feature_key: String(r.feature_key),
+      feature_name: String(r.feature_name),
+      id: Number(r.id)
+    };
+  }
+  return null;
+}
+
+export async function getCoreFeatures(): Promise<CoreFeature[]> {
+  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} ORDER BY category ASC, feature_name ASC`;
+  const [rows]: any = await pool.query(sql);
+  return rows.map((r: any) => ({
+    category: r.category ? String(r.category) : null,
+    description: r.description ? String(r.description) : null,
+    example_module: r.example_module ? String(r.example_module) : null,
+    feature_key: String(r.feature_key),
+    feature_name: String(r.feature_name),
+    id: Number(r.id)
+  }));
+}
+
+export async function getDevCoreTaskById(taskId: number): Promise<DevCoreTask | null> {
+  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} WHERE id = ? LIMIT 1`;
+  const [rows]: any = await pool.query(sql, [taskId]);
+  if (rows.length) {
+    const r = rows[0];
+    return {
+      description: r.description ? String(r.description) : null,
+      example: r.example ? String(r.example) : null,
+      id: Number(r.id),
+      title: String(r.title)
+    };
+  }
+  return null;
+}
+
+
+export async function getDevCoreTasks(): Promise<DevCoreTask[]> {
+  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} ORDER BY id ASC`;
+  const [rows]: any = await pool.query(sql);
+  return rows.map((r: any) => ({
+    description: r.description ? String(r.description) : null,
+    example: r.example ? String(r.example) : null,
+    id: Number(r.id),
+    title: String(r.title)
+  }));
+}
+
+export async function getScopeById(scopeId: number): Promise<any | null> {
+  const [rows]: any = await pool.query(`SELECT * FROM ${T_SCOPES} WHERE id = ? LIMIT 1`, [scopeId]);
+  return rows.length ? rows[0] : null;
+}
+
+export async function getScopeByProjectId(projectId: number): Promise<any[]> {
+  const [rows]: any = await pool.query(`SELECT * FROM ${T_SCOPES} WHERE project_id = ? ORDER BY order_index ASC, id ASC`, [projectId]);
+  return rows;
+}
+
+export async function getScopeIdsByProject(projectId: number): Promise<number[]> {
+  const [rows]: any = await pool.query(`SELECT id FROM ${T_SCOPES} WHERE project_id = ?`, [projectId]);
+  return rows.map((r: any) => Number(r.id));
+}
+
 export async function getWorkloadSummary(): Promise<any[]> {
   const sql = `
     SELECT 
@@ -414,114 +436,20 @@ export async function getWorkloadSummary(): Promise<any[]> {
   return rows;
 }
 
-
-/* ======= DEV CORE TASKS CRUD ======= */
-export interface DevCoreTask {
-  id: number;
-  title: string;
-  description: string | null;
-  example: string | null;
+export async function replaceScopeAttachments(scopeId: number, newPaths: string[]): Promise<void> {
+  const value = newPaths.length ? newPaths.join(',') : null;
+  await pool.query(`UPDATE ${T_SCOPES} SET attachment = ?, updated_at = NOW() WHERE id = ?`, [value, scopeId]);
 }
 
-export async function getDevCoreTasks(): Promise<DevCoreTask[]> {
-  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} ORDER BY id ASC`;
-  const [rows]: any = await pool.query(sql);
-  return rows.map((r: any) => ({
-    id: Number(r.id),
-    title: String(r.title),
-    description: r.description ? String(r.description) : null,
-    example: r.example ? String(r.example) : null
-  }));
-}
-
-export async function getDevCoreTaskById(taskId: number): Promise<DevCoreTask | null> {
-  const sql = `SELECT id, title, description, example FROM ${T_DEV_TASKS} WHERE id = ? LIMIT 1`;
-  const [rows]: any = await pool.query(sql, [taskId]);
-  if (rows.length) {
-    const r = rows[0];
-    return {
-      id: Number(r.id),
-      title: String(r.title),
-      description: r.description ? String(r.description) : null,
-      example: r.example ? String(r.example) : null
-    };
-  }
-  return null;
-}
-
-export async function createDevCoreTask(task: Omit<DevCoreTask, 'id'>): Promise<number> {
-  const payload: any = {
-    title: task.title,
-    description: task.description ?? null,
-    example: task.example ?? null
-  };
-  const [res]: any = await pool.query(`INSERT INTO ${T_DEV_TASKS} SET ?`, [payload]);
-  return Number(res.insertId);
-}
-
-export async function updateDevCoreTask(taskId: number, updates: Partial<Omit<DevCoreTask, 'id'>>): Promise<void> {
-  const payload: any = {};
-  if (updates.title !== undefined) payload.title = updates.title;
-  if (updates.description !== undefined) payload.description = updates.description ?? null;
-  if (updates.example !== undefined) payload.example = updates.example ?? null;
-  if (Object.keys(payload).length === 0) return; // Nothing to update
-  await pool.query(`UPDATE ${T_DEV_TASKS} SET ? WHERE id = ?`, [payload, taskId]);
-}
-
-export async function deleteDevCoreTask(taskId: number): Promise<void> {
-  await pool.query(`DELETE FROM ${T_DEV_TASKS} WHERE id = ?`, [taskId]);
-}
-
-/* ========= APP CORE FEATURES ========= */
-export interface CoreFeature {
-  id: number;
-  category: string | null;
-  feature_key: string;
-  feature_name: string;
-  description: string | null;
-  example_module: string | null;
-}
-
-export async function getCoreFeatures(): Promise<CoreFeature[]> {
-  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} ORDER BY category ASC, feature_name ASC`;
-  const [rows]: any = await pool.query(sql);
-  return rows.map((r: any) => ({
-    id: Number(r.id),
-    category: r.category ? String(r.category) : null,
-    feature_key: String(r.feature_key),
-    feature_name: String(r.feature_name),
-    description: r.description ? String(r.description) : null,
-    example_module: r.example_module ? String(r.example_module) : null
-  }));
-}
-
-export async function getCoreFeatureById(featureId: number): Promise<CoreFeature | null> {
-  const sql = `SELECT id, category, feature_key, feature_name, description, example_module FROM ${T_CORE_FEATURES} WHERE id = ? LIMIT 1`;
-  const [rows]: any = await pool.query(sql, [featureId]);
-  if (rows.length) {
-    const r = rows[0];
-    return {
-      id: Number(r.id),
-      category: r.category ? String(r.category) : null,
-      feature_key: String(r.feature_key),
-      feature_name: String(r.feature_name),
-      description: r.description ? String(r.description) : null,
-      example_module: r.example_module ? String(r.example_module) : null
-    };
-  }
-  return null;
-}
-
-export async function createCoreFeature(feature: Omit<CoreFeature, 'id'>): Promise<number> {
-  const payload: any = {
-    category: feature.category ?? null,
-    feature_key: feature.feature_key,
-    feature_name: feature.feature_name,
-    description: feature.description ?? null,
-    example_module: feature.example_module ?? null
-  };
-  const [res]: any = await pool.query(`INSERT INTO ${T_CORE_FEATURES} SET ?`, [payload]);
-  return Number(res.insertId);
+export async function setScopesOrder(projectId: number, orderedScopeIds: number[]): Promise<void> {
+  if (!orderedScopeIds.length) return;
+  // Build CASE statement
+  const cases = orderedScopeIds.map((id, idx) => `WHEN ${id} THEN ${idx}`).join(' ');
+  const idsIn = orderedScopeIds.join(',');
+  const sql = `UPDATE ${T_SCOPES}
+               SET order_index = CASE id ${cases} END, updated_at = NOW()
+               WHERE project_id = ? AND id IN (${idsIn})`;
+  await pool.query(sql, [projectId]);
 }
 
 export async function updateCoreFeature(featureId: number, updates: Partial<Omit<CoreFeature, 'id'>>): Promise<void> {
@@ -535,6 +463,78 @@ export async function updateCoreFeature(featureId: number, updates: Partial<Omit
   await pool.query(`UPDATE ${T_CORE_FEATURES} SET ? WHERE id = ?`, [payload, featureId]);
 }
 
-export async function deleteCoreFeature(featureId: number): Promise<void> {
-  await pool.query(`DELETE FROM ${T_CORE_FEATURES} WHERE id = ?`, [featureId]);
+export async function updateDevCoreTask(taskId: number, updates: Partial<Omit<DevCoreTask, 'id'>>): Promise<void> {
+  const payload: any = {};
+  if (updates.title !== undefined) payload.title = updates.title;
+  if (updates.description !== undefined) payload.description = updates.description ?? null;
+  if (updates.example !== undefined) payload.example = updates.example ?? null;
+  if (Object.keys(payload).length === 0) return; // Nothing to update
+  await pool.query(`UPDATE ${T_DEV_TASKS} SET ? WHERE id = ?`, [payload, taskId]);
+}
+
+export async function updateProject(projectId: number, updates: Partial<NewProject>): Promise<void> {
+  const payload: any = {};
+  if (updates.code !== undefined) payload.code = updates.code;
+  if (updates.name !== undefined) payload.name = updates.name;
+  if (updates.description !== undefined) payload.description = updates.description ?? null;
+  if (updates.assignment_type !== undefined) payload.assignment_type = updates.assignment_type;
+  if (updates.status !== undefined) payload.status = updates.status;
+  if (updates.start_date !== undefined) payload.start_date = updates.start_date ?? null;
+  if (updates.due_date !== undefined) payload.due_date = updates.due_date ?? null;
+  if (updates.priority !== undefined) payload.priority = updates.priority;
+  // Map progress to the actual column present
+  const progressValRaw = updates.overall_progress ?? updates.percent_complete;
+  if (progressValRaw !== undefined) {
+    const progressCol = await getProjectProgressCol();
+    (payload)[progressCol] = Math.min(100, Math.max(0, Number(progressValRaw)));
+  }
+  if (Object.keys(payload).length === 0) return; // Nothing to update
+  await pool.query(`UPDATE ${T_PROJECTS} SET ?, updated_at = NOW() WHERE id = ?`, [payload, projectId]);
+}
+
+export async function updateScope(scopeId: number, updates: Partial<NewScope>): Promise<void> {
+  const payload: any = {};
+  if (updates.title !== undefined) payload.title = updates.title;
+  if (updates.task_groups !== undefined) payload.task_groups = updates.task_groups ?? null;
+  if (updates.description !== undefined) payload.description = updates.description ?? null;
+  if (updates.assignee !== undefined) payload.assignee = updates.assignee ?? null;
+  if (updates.planned_start_date !== undefined) payload.planned_start_date = updates.planned_start_date ?? null;
+  if (updates.planned_end_date !== undefined) payload.planned_end_date = updates.planned_end_date ?? null;
+  if (updates.planned_mandays !== undefined) payload.planned_mandays = updates.planned_mandays ?? null;
+  if (updates.attachment !== undefined) payload.attachment = updates.attachment ?? null;
+  if (updates.progress !== undefined && updates.progress !== null) {
+    payload.progress = Math.min(100, Math.max(0, Number(updates.progress)));
+  }
+  if (updates.status !== undefined) payload.status = updates.status ?? null;
+  if (updates.actual_start_date !== undefined) payload.actual_start_date = updates.actual_start_date ?? null;
+  if (updates.actual_end_date !== undefined) payload.actual_end_date = updates.actual_end_date ?? null;
+  if (updates.actual_mandays !== undefined) payload.actual_mandays = updates.actual_mandays ?? null;
+  if (updates.order_index !== undefined) payload.order_index = updates.order_index ?? null;
+  if (Object.keys(payload).length === 0) return; // Nothing to update
+  await pool.query(`UPDATE ${T_SCOPES} SET ?, updated_at = NOW() WHERE id = ?`, [payload, scopeId]);
+}
+
+export async function upsertAssignment(row: AssignmentRow): Promise<void> {
+  const [rows]: any = await pool.query(
+    `SELECT id, assignee, actual_mandays FROM ${T_ASSIGN} WHERE project_id = ? AND scope_id = ? LIMIT 1`,
+    [row.project_id, row.scope_id]
+  );
+  if (rows.length) {
+    const existing = rows[0];
+    const newAssignee = row.assignee ?? null;
+    const newMandays = row.actual_mandays ?? null;
+    // If nothing changed, skip write
+    if (String(existing.assignee ?? '') === String(newAssignee ?? '') && Number(existing.actual_mandays ?? null) === Number(newMandays ?? null)) {
+      return;
+    }
+    await pool.query(
+      `UPDATE ${T_ASSIGN} SET assignee = ?, actual_mandays = ?, updated_at = NOW() WHERE id = ?`,
+      [newAssignee, newMandays, existing.id]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO ${T_ASSIGN} (project_id, scope_id, assignee, actual_mandays) VALUES (?, ?, ?, ?)`,
+      [row.project_id, row.scope_id, row.assignee ?? null, row.actual_mandays ?? null]
+    );
+  }
 }

@@ -3,13 +3,13 @@ import { pool, pool2 } from './db';
 interface HealthCheckResult {
   pool1: {
     connected: boolean;
-    latency?: number;
     error?: string;
+    latency?: number;
   };
   pool2: {
     connected: boolean;
-    latency?: number;
     error?: string;
+    latency?: number;
   };
 }
 
@@ -58,7 +58,7 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
  * Periodic health check that logs warnings when database is slow or disconnected
  * @param intervalMs - Interval in milliseconds (default: 30000 = 30 seconds)
  */
-export const startPeriodicHealthCheck = (intervalMs: number = 30000): NodeJS.Timeout => {
+export const startPeriodicHealthCheck = (intervalMs = 30000): NodeJS.Timeout => {
   console.log(`Starting database health monitoring (interval: ${intervalMs}ms)`);
   
   return setInterval(async () => {
@@ -90,10 +90,10 @@ export const startPeriodicHealthCheck = (intervalMs: number = 30000): NodeJS.Tim
  * @param timeoutMs - Timeout in milliseconds
  * @returns true if connection is successful within timeout
  */
-export const testConnection = async (timeoutMs: number = 5000): Promise<boolean> => {
+export const testConnection = async (timeoutMs = 5000): Promise<boolean> => {
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection test timeout')), timeoutMs);
+      setTimeout(() => { reject(new Error('Connection test timeout')); }, timeoutMs);
     });
 
     const testPromise = pool.query('SELECT 1');

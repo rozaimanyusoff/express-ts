@@ -9,9 +9,9 @@ export const findAllModules = async (): Promise<Module[]> => {
 		const { rows } = await pgPool.query<Module>(`SELECT * FROM auth.${modulesTable} order BY id ASC`);
 		return rows.map((row: Module) => ({
 			id: row.id,
-			name: row.name,
-			items: row.items,
 			isActive: row.isActive,
+			items: row.items,
+			name: row.name,
 		}));
 	} catch (error) {
 		logger.error(`Database error in findAllModules: ${error}`);

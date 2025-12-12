@@ -4,27 +4,27 @@ import { toPublicUrl } from '../utils/uploadUtil';
 
 // Interface definitions live in the model per convention
 export interface TrainingEvent {
-   training_id: number;
-   course_title: string;
+   attendance: null | number;
+   attendance_upload: null | string; // full URL when present
+   contents: null | string;
+   cost_lodging: null | string;
+   cost_other: null | string;
+   cost_total: null | string;
+   cost_trainer: null | string;
+   cost_venue: null | string;
    course_id: number;
-   series: string | null;
-   sdate: string | null; // formatted d/m/yyyy h:mm a (controller formats)
-   edate: string | null; // formatted d/m/yyyy h:mm a (controller formats)
-   hrs: string | null;
-   days: string | null;
-   venue: string | null;
+   course_title: string;
+   days: null | string;
+   edate: null | string; // formatted d/m/yyyy h:mm a (controller formats)
+   event_cost: null | string;
+   hrs: null | string;
+   sdate: null | string; // formatted d/m/yyyy h:mm a (controller formats)
+   seat: null | number;
+   series: null | string;
+   session: null | string;
    training_count: number;
-   attendance: number | null;
-   session: string | null;
-   seat: number | null;
-   contents: string | null;
-   event_cost: string | null;
-   cost_trainer: string | null;
-   cost_venue: string | null;
-   cost_lodging: string | null;
-   cost_other: string | null;
-   cost_total: string | null;
-   attendance_upload: string | null; // full URL when present
+   training_id: number;
+   venue: null | string;
 }
 
 const dbTraining = 'training2';
@@ -39,14 +39,14 @@ const costingTable = `${dbTraining}.event_costing`; //index column is costing_id
 const decodeHtmlEntities = (str: any): any => {
    if (typeof str !== 'string') return str;
    const namedMap: Record<string, string> = {
-      '&amp;': '&',
-      '&lt;': '<',
-      '&gt;': '>',
-      '&quot;': '"',
       '&#34;': '"',
       '&#39;': "'",
+      '&amp;': '&',
       '&apos;': "'",
-      '&nbsp;': ' '
+      '&gt;': '>',
+      '&lt;': '<',
+      '&nbsp;': ' ',
+      '&quot;': '"'
    };
    let out = str.replace(/&(amp|lt|gt|quot|apos|nbsp);|&#(?:34|39);/g, (m) => namedMap[m] ?? m);
    out = out.replace(/&#(\d+);/g, (_, dec) => {
@@ -67,7 +67,7 @@ const decodeStringsShallow = (val: any): any => {
    if (val && typeof val === 'object') {
       const out: any = {};
       for (const k of Object.keys(val)) {
-         const v = (val as any)[k];
+         const v = (val)[k];
          out[k] = typeof v === 'string' ? decodeHtmlEntities(v) : v;
       }
       return out;
@@ -79,9 +79,9 @@ const decodeStringsShallow = (val: any): any => {
 export const getTrainings = async (year?: number) => {
    let sql = `SELECT * FROM ${trainingEventTable}`;
    const params: any[] = [];
-   if (Number.isFinite(year as number)) {
+   if (Number.isFinite(year!)) {
       sql += ' WHERE YEAR(sdate) = ?';
-      params.push(Math.floor(year as number));
+      params.push(Math.floor(year!));
    }
    sql += ' ORDER BY training_id DESC';
    const [rows] = await pool2.query(sql, params);

@@ -1,20 +1,6 @@
 import { Request, Response } from "express";
-import * as authModel from "./authModel";
+
 import { auth } from "../../utils/db";
-import { RequestAccess } from "./interface";
-
-export const requestAccess = async (req: Request, res: Response): Promise<Response> => {
-  const { email, contactNo, employmentType, department, position, reasonAccess } = req.body;
-
-  try {
-
-    const result = await authModel.createAccessRequest(email, contactNo, employmentType, department, position, reasonAccess, 'pending');
-
-    return res.status(201).json({ status: true, message: "Access request submitted successfully", requestId: result.insertId });
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Internal server error", error: (error as Error).message });
-  }
-};
 
 export const login = async (req: Request, res: Response): Promise<Response> => {
   const { email, password } = req.body;
@@ -28,18 +14,18 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     });
 
     if (user) {
-      return res.status(200).json({ status: true, message: "Login successful", user });
+      return res.status(200).json({ message: "Login successful", status: true, user });
     } else {
-      return res.status(401).json({ status: false, message: "Invalid credentials" });
+      return res.status(401).json({ message: "Invalid credentials", status: false });
     }
   } catch (error) {
-    return res.status(500).json({ status: false, message: "Internal server error", error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message, message: "Internal server error", status: false });
   }
 };
 
 export const signup = async (req: Request, res: Response): Promise<Response> => {
   // Implement your signup logic here
-  const { name, username, password, email } = req.body;
+  const { email, name, password, username } = req.body;
 
   try {
     // check if username is already taken
@@ -50,22 +36,22 @@ export const signup = async (req: Request, res: Response): Promise<Response> => 
     });
 
     if (!response.available) {
-      return res.status(400).json({ status: false, message: "Username is already taken" });
+      return res.status(400).json({ message: "Username is already taken", status: false });
     }
 
     const newUser = await auth.api.signUpEmail({
       body: {
-        name,
+        displayUsername: username,
         email,
+        name,
         password,
-        username,
-        displayUsername: username
+        username
       },
     });
 
-    return res.status(201).json({ status: true, message: "Signup successful", user: newUser });
+    return res.status(201).json({ message: "Signup successful", status: true, user: newUser });
   } catch (error) {
-    return res.status(500).json({ status: false, message: "Internal server error", error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message, message: "Internal server error", status: false });
   }
 };
 
@@ -78,8 +64,8 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
       },
     });
 
-    return res.status(200).json({ status: true, message: "Logout successful"});
+    return res.status(200).json({ message: "Logout successful", status: true});
   } catch (error) {
-    return res.status(500).json({ status: false, message: "Internal server error", error: (error as Error).message });
+    return res.status(500).json({ error: (error as Error).message, message: "Internal server error", status: false });
   }
 };

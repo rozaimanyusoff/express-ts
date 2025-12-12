@@ -1,31 +1,31 @@
 export function renderPurchaseRegistryCompleted(opts: {
-  recipientName?: string | null;
-  prNo?: string | null;
-  prDate?: string | null;
-  itemType?: string | null;
-  items?: string | null;
-  brand?: string | null;
-  costcenterName?: string | null;
-  itemCount?: number | null;
-  audience?: 'procurement' | 'manager';
+  audience?: 'manager' | 'procurement';
+  brand?: null | string;
+  costcenterName?: null | string;
+  itemCount?: null | number;
+  items?: null | string;
+  itemType?: null | string;
+  prDate?: null | string;
+  prNo?: null | string;
+  recipientName?: null | string;
 }) {
   const {
-    recipientName,
-    prNo,
-    prDate,
-    itemType,
-    items,
+    audience = 'manager',
     brand,
     costcenterName,
     itemCount,
-    audience = 'manager',
+    items,
+    itemType,
+    prDate,
+    prNo,
+    recipientName,
   } = opts || {};
 
   const intro = audience === 'procurement'
     ? `Assets for PR ${prNo || ''} have been registered by the asset management team. Details below.`
     : `Your asset registration has been recorded successfully for PR ${prNo || ''}. Details below for your reference.`;
 
-  const detailRow = (label: string, value?: string | null) => `
+  const detailRow = (label: string, value?: null | string) => `
     <tr>
       <td style="padding:8px 10px; color:#445; width:36%; border-bottom:1px solid rgba(17,24,39,0.06)"><strong>${label}</strong></td>
       <td style="padding:8px 10px; color:#111; border-bottom:1px solid rgba(17,24,39,0.06)">${value || '-'}</td>

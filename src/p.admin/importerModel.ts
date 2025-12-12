@@ -53,7 +53,7 @@ export const importTempTable = async (tableName: string, headers: string[], data
     }
     await pool.query(insertSQL, values);
   }
-  return { message: "Table created and data inserted", table: safeTable, rows: data.length };
+  return { message: "Table created and data inserted", rows: data.length, table: safeTable };
 };
 
 // Get all table names in 'temp' schema

@@ -1,58 +1,32 @@
-type PoolCarDetails = {
+interface PoolCarDetails {
+  applicant_name?: null | string;
+  date_from?: null | string;
+  date_to?: null | string;
   id: number;
-  subject: string;
-  pcar_datererq?: string | null;
+  pcar_datererq?: null | string;
+  pcar_day?: null | number;
+  pcar_dest?: null | string;
   pcar_empid: string;
-  applicant_name?: string | null;
-  pcar_dest?: string | null;
-  pcar_purp?: string | null;
-  date_from?: string | null;
-  date_to?: string | null;
-  pcar_day?: number | null;
-  pcar_hour?: number | null;
-};
+  pcar_hour?: null | number;
+  pcar_purp?: null | string;
+  subject: string;
+}
 
 const fmt = (v: any) => (v === null || v === undefined || v === '' ? '-' : String(v));
 
-function parseDateLocal(s?: string | null): Date | null {
-  if (!s || typeof s !== 'string') return null;
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (m) {
-    const [_, Y, M, D, h, m2, s2] = m;
-    return new Date(Number(Y), Number(M) - 1, Number(D), Number(h), Number(m2), s2 ? Number(s2) : 0);
-  }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function formatDateDMY12h(s?: string | null): string {
-  const d = parseDateLocal(s);
-  if (!d) return '-';
-  const day = d.getDate();
-  const month = d.getMonth() + 1;
-  const year = d.getFullYear();
-  let hours = d.getHours();
-  const minutes = d.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  const mm = minutes < 10 ? `0${minutes}` : String(minutes);
-  return `${day}/${month}/${year} ${hours}:${mm} ${ampm}`;
-}
-
 export default function poolCarApplicantEmail(details: PoolCarDetails) {
   const {
-    id,
-    subject,
-    pcar_datererq,
-    pcar_empid,
     applicant_name,
-    pcar_dest,
-    pcar_purp,
     date_from,
     date_to,
+    id,
+    pcar_datererq,
     pcar_day,
+    pcar_dest,
+    pcar_empid,
     pcar_hour,
+    pcar_purp,
+    subject,
   } = details;
 
   return `
@@ -97,4 +71,30 @@ export default function poolCarApplicantEmail(details: PoolCarDetails) {
       </div>
     </div>
   </div>`;
+}
+
+function formatDateDMY12h(s?: null | string): string {
+  const d = parseDateLocal(s);
+  if (!d) return '-';
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  const mm = minutes < 10 ? `0${minutes}` : String(minutes);
+  return `${day}/${month}/${year} ${hours}:${mm} ${ampm}`;
+}
+
+function parseDateLocal(s?: null | string): Date | null {
+  if (!s || typeof s !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (m) {
+    const [_, Y, M, D, h, m2, s2] = m;
+    return new Date(Number(Y), Number(M) - 1, Number(D), Number(h), Number(m2), s2 ? Number(s2) : 0);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }

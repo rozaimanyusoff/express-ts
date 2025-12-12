@@ -10,13 +10,13 @@ export const findAllPermissions = async (): Promise<Permission[]> => {
             `SELECT * FROM auth.${permissionsTable};`);
         return rows.map((row: Permission) => ({
             id: row.id,
-            roleId: row.roleId,
-            moduleId: row.moduleId,
             isActive: row.isActive,
-            isRead: row.isRead,
-            isWrite: row.isWrite,
-            isUpdate: row.isUpdate,
             isDelete: row.isDelete,
+            isRead: row.isRead,
+            isUpdate: row.isUpdate,
+            isWrite: row.isWrite,
+            moduleId: row.moduleId,
+            roleId: row.roleId,
         }));
     } catch (error) {
         logger.error(`Database error in findAllPermissionsByRoleId: ${error}`);

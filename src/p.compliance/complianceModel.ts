@@ -1,5 +1,6 @@
-import { pool, pool2 } from '../utils/db';
 import { ResultSetHeader } from 'mysql2';
+
+import { pool, pool2 } from '../utils/db';
 
 const dbName = 'compliance';
 const summonTable = `${dbName}.summon`;
@@ -14,32 +15,32 @@ const assessmentDetailTable = `${dbName}.v_assess_dt2`; // linked to v_assess2 v
 const criteriaOwnershipTable = `${dbName}.criteria_ownership`;
 
 
-export interface SummonType {
+export interface SummonAgency {
+  code?: null | string;
+  created_at?: null | string;
   id?: number;
-  name?: string | null;
-  description?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  name?: null | string;
+  updated_at?: null | string;
 }
 
-export interface SummonAgency {
+export interface SummonType {
+  created_at?: null | string;
+  description?: null | string;
   id?: number;
-  name?: string | null;
-  code?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  name?: null | string;
+  updated_at?: null | string;
 }
 
 export interface SummonTypeAgency {
+  agency_id?: null | number;
+  created_at?: null | string;
   id?: number;
-  type_id?: number | null;
-  agency_id?: number | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  type_id?: null | number;
+  updated_at?: null | string;
 }
 
 // Helper to format JS Date/ISO into MySQL DATETIME: 'YYYY-MM-DD HH:mm:ss'
-const formatToMySQLDatetime = (input?: any): string | null => {
+const formatToMySQLDatetime = (input?: any): null | string => {
   if (!input) return null;
   const d = (input instanceof Date) ? input : new Date(String(input));
   if (isNaN(d.getTime())) return null;
@@ -52,7 +53,7 @@ const formatToMySQLDatetime = (input?: any): string | null => {
   return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
 };
 
-const fromParts = (dateStr?: string | null, timeStr?: string | null) => {
+const fromParts = (dateStr?: null | string, timeStr?: null | string) => {
   if (!dateStr) return null;
   const datePart = String(dateStr).trim();
   const timePart = timeStr ? String(timeStr).trim() : '00:00:00';
@@ -63,7 +64,7 @@ const fromParts = (dateStr?: string | null, timeStr?: string | null) => {
 };
 
 // Normalize date-only to 'YYYY-MM-DD'
-const formatToDateOnly = (input?: any): string | null => {
+const formatToDateOnly = (input?: any): null | string => {
   if (!input) return null;
   const d = (input instanceof Date) ? input : new Date(String(input));
   if (isNaN(d.getTime())) return null;
@@ -74,7 +75,7 @@ const formatToDateOnly = (input?: any): string | null => {
 };
 
 // Normalize time-only to 'HH:MM:SS'
-const formatToTimeOnly = (input?: any): string | null => {
+const formatToTimeOnly = (input?: any): null | string => {
   if (!input) return null;
   // If input looks like 'HH:MM' or 'HH:MM:SS', try to parse directly
   const s = String(input).trim();
@@ -96,35 +97,35 @@ const formatToTimeOnly = (input?: any): string | null => {
 };
 
 export interface SummonRecord {
-  smn_id?: number;
+  asset_id?: null | number;
+  attachment_url?: null | string;
+  created_at?: null | string;
+  emailStat?: null | number;
+  entry_code?: null | string;
+  f_name?: null | string;
   id?: number; // optional alias for compatibility
-  vehicle_id?: number | null;
-  asset_id?: number | null;
-  entry_code?: string | null;
-  reg_no?: string | null;
-  summon_no?: string | null;
-  myeg_date?: string | null;
-  summon_date?: string | null;
-  summon_time?: string | null;
-  ramco_id?: string | null;
-  f_name?: string | null;
-  v_email?: string | null;
-  summon_loc?: string | null;
-  type_of_summon?: string | null;
-  summon_amt?: string | null;
-  summon_upl?: string | null;
-  receipt_date?: string | null;
-  summon_stat?: string | null;
-  summon_agency?: string | null;
-  summon_receipt?: string | null;
-  emailStat?: number | null;
-  notice?: string | null;
-  notice_date?: string | null;
-  summon_dt?: string | null;
-  running_no?: number | null;
-  attachment_url?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  myeg_date?: null | string;
+  notice?: null | string;
+  notice_date?: null | string;
+  ramco_id?: null | string;
+  receipt_date?: null | string;
+  reg_no?: null | string;
+  running_no?: null | number;
+  smn_id?: number;
+  summon_agency?: null | string;
+  summon_amt?: null | string;
+  summon_date?: null | string;
+  summon_dt?: null | string;
+  summon_loc?: null | string;
+  summon_no?: null | string;
+  summon_receipt?: null | string;
+  summon_stat?: null | string;
+  summon_time?: null | string;
+  summon_upl?: null | string;
+  type_of_summon?: null | string;
+  updated_at?: null | string;
+  v_email?: null | string;
+  vehicle_id?: null | number;
 }
 
 export const getSummons = async (): Promise<SummonRecord[]> => {
@@ -137,13 +138,13 @@ export const getSummonTypeAgencies = async (): Promise<SummonTypeAgency[]> => {
   return rows as SummonTypeAgency[];
 };
 
-export const getSummonTypeAgencyById = async (id: number): Promise<SummonTypeAgency | null> => {
+export const getSummonTypeAgencyById = async (id: number): Promise<null | SummonTypeAgency> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
   const data = rows as SummonTypeAgency[];
   return data.length > 0 ? data[0] : null;
 };
 
-export const getSummonTypeAgencyByPair = async (type_id: number, agency_id: number): Promise<SummonTypeAgency | null> => {
+export const getSummonTypeAgencyByPair = async (type_id: number, agency_id: number): Promise<null | SummonTypeAgency> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? AND agency_id = ? LIMIT 1`, [type_id, agency_id]);
   const data = rows as SummonTypeAgency[];
   return data.length > 0 ? data[0] : null;
@@ -162,22 +163,22 @@ export const getAgenciesByType = async (type_id: number): Promise<SummonAgency[]
   return rows as SummonAgency[];
 };
 
-export const getSummonTypesWithAgencies = async (): Promise<Array<{ type: SummonType; agencies: SummonAgency[] }>> => {
+export const getSummonTypesWithAgencies = async (): Promise<{ agencies: SummonAgency[]; type: SummonType; }[]> => {
   const types = await getSummonTypes();
   const allAgencies = await getSummonAgencies();
   // Build agency map for quick lookup
   const agencyMap = new Map<number, SummonAgency>();
   for (const a of allAgencies) if (a.id) agencyMap.set(a.id, a);
 
-  const result: Array<{ type: SummonType; agencies: SummonAgency[] }> = [];
+  const result: { agencies: SummonAgency[]; type: SummonType; }[] = [];
   for (const t of types) {
     const mappings = await getSummonTypeAgenciesByType(Number(t.id));
     const agencies: SummonAgency[] = [];
     for (const m of mappings) {
       const aid = Number(m.agency_id);
-      if (agencyMap.has(aid)) agencies.push(agencyMap.get(aid) as SummonAgency);
+      if (agencyMap.has(aid)) agencies.push(agencyMap.get(aid)!);
     }
-    result.push({ type: t, agencies });
+    result.push({ agencies, type: t });
   }
   return result;
 };
@@ -224,7 +225,7 @@ export const getSummonTypes = async (): Promise<SummonType[]> => {
   return rows as SummonType[];
 };
 
-export const getSummonTypeById = async (id: number): Promise<SummonType | null> => {
+export const getSummonTypeById = async (id: number): Promise<null | SummonType> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonTypeTable} WHERE id = ?`, [id]);
   const data = rows as SummonType[];
   return data.length > 0 ? data[0] : null;
@@ -253,7 +254,7 @@ export const deleteSummonType = async (id: number): Promise<void> => {
   if (r.affectedRows === 0) throw new Error('Summon type not found');
 };
 
-export const getSummonById = async (id: number): Promise<SummonRecord | null> => {
+export const getSummonById = async (id: number): Promise<null | SummonRecord> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonTable} WHERE smn_id = ?`, [id]);
   const data = rows as SummonRecord[];
   return data.length > 0 ? data[0] : null;
@@ -264,7 +265,7 @@ export const getSummonAgencies = async (): Promise<SummonAgency[]> => {
   return rows as SummonAgency[];
 };
 
-export const getSummonAgencyById = async (id: number): Promise<SummonAgency | null> => {
+export const getSummonAgencyById = async (id: number): Promise<null | SummonAgency> => {
   const [rows] = await pool2.query(`SELECT * FROM ${summonAgencyTable} WHERE id = ?`, [id]);
   const data = rows as SummonAgency[];
   return data.length > 0 ? data[0] : null;
@@ -301,7 +302,7 @@ export const createSummon = async (data: SummonRecord) => {
   return (result as ResultSetHeader).insertId;
 };
 
-export const updateSummon = async (id: number, data: Partial<Omit<SummonRecord, 'id' | 'created_at' | 'updated_at'>>): Promise<void> => {
+export const updateSummon = async (id: number, data: Partial<Omit<SummonRecord, 'created_at' | 'id' | 'updated_at'>>): Promise<void> => {
   // Normalize summon_date and summon_time (if present) and only format summon_dt when explicitly provided.
   if ('summon_date' in data && (data as any).summon_date) {
     const d = formatToDateOnly((data as any).summon_date);
@@ -334,17 +335,17 @@ export const deleteSummon = async (id: number): Promise<void> => {
 
 /* ========== ASSESSMENT CRITERIA ========== */
 export interface AssessmentCriteria {
-  qset_id?: number;
+  created_at?: null | string;
+  created_by?: null | string;
+  ownership?: null | number;
   q_id?: number;
+  qset_desc?: null | string;
+  qset_id?: number;
+  qset_order?: null | number;
   qset_quesno?: number;
-  ownership?: number | null;
-  qset_desc?: string | null;
-  qset_stat?: string | null;
-  qset_order?: number | null;
-  created_at?: string | null;
-  created_by?: string | null;
-  updated_at?: string | null;
-  updated_by?: string | null;
+  qset_stat?: null | string;
+  updated_at?: null | string;
+  updated_by?: null | string;
 }
 
 export const getAssessmentCriteria = async (): Promise<AssessmentCriteria[]> => {
@@ -396,7 +397,7 @@ export const reorderAssessmentCriteria = async (qset_id: number, newOrderInput: 
 
     // determine bounds
     const [maxRows] = await conn.query(`SELECT MAX(qset_order) as maxOrder FROM ${assessmentCriteriaTable}`);
-    const maxOrder = (Array.isArray(maxRows) && (maxRows as any[])[0] && (maxRows as any[])[0].maxOrder) ? Number((maxRows as any[])[0].maxOrder) : currentOrder;
+    const maxOrder = (Array.isArray(maxRows) && (maxRows as any[])[0]?.maxOrder) ? Number((maxRows as any[])[0].maxOrder) : currentOrder;
 
     let newOrder = Number(newOrderInput) || 0;
     if (newOrder < 1) newOrder = 1;
@@ -437,12 +438,12 @@ export const reorderAssessmentCriteria = async (qset_id: number, newOrderInput: 
 
 /* ========== CRITERIA OWNERSHIP ========== */
 export interface CriteriaOwnership {
+  created_at?: null | string; //datetime - yyyy-mm-dd hh:mm:ss
+  department_id?: null | number; // department ID
   id?: number;
-  ramco_id?: string | null; //member ID
-  department_id?: number | null; // department ID
-  status?: string | null;
-  created_at?: string | null; //datetime - yyyy-mm-dd hh:mm:ss
-  updated_at?: string | null; //datetime - yyyy-mm-dd hh:mm:ss
+  ramco_id?: null | string; //member ID
+  status?: null | string;
+  updated_at?: null | string; //datetime - yyyy-mm-dd hh:mm:ss
 }
 
 export const getAssessmentCriteriaOwnerships = async (): Promise<CriteriaOwnership[]> => {
@@ -493,20 +494,20 @@ export const deleteAssessmentCriteriaOwnership = async (id: number): Promise<voi
 
 /* ========== ASSESSMENTS (parent) ========== */
 export interface AssessmentRecord {
+  a_date?: null | string;
+  a_dt?: null | string;
+  a_loc?: null | string;
+  a_ncr?: null | number;
+  a_rate?: null | string;
+  a_remark?: null | string;
+  a_upload?: null | string;
+  a_upload2?: null | string;
+  a_upload3?: null | string;
+  a_upload4?: null | string;
   assess_id?: number;
-  asset_id?: number | null;
-  a_date?: string | null;
-  a_loc?: string | null;
-  loc_id?: number | null;
-  a_ncr?: number | null;
-  a_rate?: string | null;
-  a_upload?: string | null;
-  a_upload2?: string | null;
-  a_upload3?: string | null;
-  a_upload4?: string | null;
-  a_remark?: string | null;
-  a_dt?: string | null;
-  ownership?: number | null;
+  asset_id?: null | number;
+  loc_id?: null | number;
+  ownership?: null | number;
 }
 
 export const getAssessments = async (year?: number, asset_id?: number): Promise<AssessmentRecord[]> => {
@@ -582,8 +583,8 @@ export const deleteAssessment = async (id: number) => {
 // Update acceptance_status and acceptance_date for assessment
 export const updateAssessmentAcceptance = async (id: number, acceptance_status: number, acceptance_date: Date) => {
   const payload: any = {
-    acceptance_status,
     acceptance_date: formatToMySQLDatetime(acceptance_date),
+    acceptance_status,
     updated_at: formatToMySQLDatetime(new Date()),
   };
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
@@ -596,15 +597,15 @@ export const updateAssessmentAcceptance = async (id: number, acceptance_status: 
 /* ========== ASSESSMENT DETAILS (child) ========== */
 export interface AssessmentDetailRecord {
   adt_id?: number;
+  adt_item?: null | string;
+  adt_ncr?: null | number;
+  adt_rate?: null | string;
+  adt_rate2?: null | number;
+  adt_rem?: null | string;
   assess_id?: number;
-  vehicle_id?: number | null;
-  adt_item?: string | null;
-  adt_ncr?: number | null;
-  adt_rate?: string | null;
-  adt_rate2?: number | null;
-  adt_rem?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
+  created_at?: null | string;
+  updated_at?: null | string;
+  vehicle_id?: null | number;
 }
 
 export const getAssessmentDetails = async (assess_id: number): Promise<AssessmentDetailRecord[]> => {
@@ -678,7 +679,7 @@ export const updateAssessmentWithConn = async (conn: PoolConnection, id: number,
 
 export const replaceAssessmentDetails = async (
   assess_id: number,
-  details: Array<Partial<AssessmentDetailRecord>>
+  details: Partial<AssessmentDetailRecord>[]
 ): Promise<{ deleted: number; inserted: number }> => {
   if (!assess_id) throw new Error('assess_id is required');
 
@@ -736,7 +737,7 @@ export const replaceAssessmentDetails = async (
 export const replaceAssessmentDetailsWithConn = async (
   conn: PoolConnection,
   assess_id: number,
-  details: Array<Partial<AssessmentDetailRecord>>
+  details: Partial<AssessmentDetailRecord>[]
 ): Promise<{ deleted: number; inserted: number }> => {
   if (!assess_id) throw new Error('assess_id is required');
 
@@ -775,7 +776,7 @@ export const replaceAssessmentDetailsWithConn = async (
 };
 
 // Get assessment with details by asset_id and year
-export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year: number): Promise<Array<AssessmentRecord & { details: AssessmentDetailRecord[] }>> => {
+export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year: number): Promise<(AssessmentRecord & { details: AssessmentDetailRecord[] })[]> => {
   let query = `SELECT * FROM ${assessmentTable} WHERE asset_id = ?`;
   const params: any[] = [asset_id];
 
@@ -789,7 +790,7 @@ export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year:
   const assessments = assessmentRows as AssessmentRecord[];
 
   // Fetch details for each assessment
-  const result: Array<AssessmentRecord & { details: AssessmentDetailRecord[] }> = [];
+  const result: (AssessmentRecord & { details: AssessmentDetailRecord[] })[] = [];
   for (const assessment of assessments) {
     const details = await getAssessmentDetails(assessment.assess_id!);
     result.push({ ...assessment, details });
@@ -799,7 +800,7 @@ export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year:
 };
 
 // Get assessment with NCR details (adt_ncr = 1) by asset_id and year
-export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: number): Promise<Array<AssessmentRecord & { details: AssessmentDetailRecord[] }>> => {
+export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: number): Promise<(AssessmentRecord & { details: AssessmentDetailRecord[] })[]> => {
   let query = `SELECT * FROM ${assessmentTable} WHERE asset_id = ?`;
   const params: any[] = [asset_id];
 
@@ -813,7 +814,7 @@ export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: num
   const assessments = assessmentRows as AssessmentRecord[];
 
   // Fetch NCR details (adt_ncr = 1) for each assessment
-  const result: Array<AssessmentRecord & { details: AssessmentDetailRecord[] }> = [];
+  const result: (AssessmentRecord & { details: AssessmentDetailRecord[] })[] = [];
   for (const assessment of assessments) {
     const [detailRows] = await pool2.query(
       `SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? AND adt_ncr = 2 ORDER BY adt_id`,

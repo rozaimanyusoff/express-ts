@@ -1,14 +1,14 @@
-import * as userModel from '../p.user/userModel';
 import * as assetModel from '../p.asset/assetModel';
+import * as userModel from '../p.user/userModel';
 
-type WorkflowEmployee = {
+interface WorkflowEmployee {
+  email?: null | string;
+  full_name?: null | string;
   ramco_id: string;
-  full_name?: string | null;
-  email?: string | null;
-};
+}
 
 // Resolve the next PIC from workflows by module and level, with email via employee directory
-export async function getWorkflowPic(moduleName: string, levelName: string): Promise<WorkflowEmployee | null> {
+export async function getWorkflowPic(moduleName: string, levelName: string): Promise<null | WorkflowEmployee> {
   try {
     const workflowsRaw = await userModel.getWorkflows();
     const list: any[] = Array.isArray(workflowsRaw) ? workflowsRaw : (workflowsRaw ? [workflowsRaw] : []);
@@ -38,8 +38,8 @@ export async function getWorkflowPic(moduleName: string, levelName: string): Pro
     if (!ramco) return null;
 
     // Try to resolve email/name: workflow record may already include email/full_name
-    let email: string | null = null;
-    let full_name: string | null = null;
+    let email: null | string = null;
+    let full_name: null | string = null;
     try {
       const emp = await assetModel.getEmployeeByRamco(ramco);
       if (emp) {
@@ -59,9 +59,9 @@ export async function getWorkflowPic(moduleName: string, levelName: string): Pro
       if (full_name) full_name = String(full_name);
     }
 
-    return { ramco_id: ramco, full_name, email };
+    return { email, full_name, ramco_id: ramco };
   } catch (e) {
-    // eslint-disable-next-line no-console
+     
     console.warn('getWorkflowPic failed', e);
     return null;
   }

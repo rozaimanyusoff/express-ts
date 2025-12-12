@@ -1,15 +1,15 @@
 export default function vehicleMaintenanceAuthorizationEmail(data: any): string {
   const {
-    requestNo,
-    date,
-    greetingName = 'Tuan/Puan',
-    role = 'Authorization', // 'Recommendation' | 'Approval'
     applicant,
+    date,
     deptLocation,
-    vehicleInfo,
-    requestType,
+    footerName = 'ADMS (v4)',
+    greetingName = 'Tuan/Puan',
     portalUrl,
-    footerName = 'ADMS (v4)'
+    requestNo,
+    requestType,
+    role = 'Authorization', // 'Recommendation' | 'Approval'
+    vehicleInfo
   } = data || {};
 
   const roleWord = String(role || 'Authorization');

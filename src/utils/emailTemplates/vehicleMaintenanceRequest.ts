@@ -1,17 +1,17 @@
 export default function vehicleMaintenanceEmail(data: any): string {
   const {
-    requestNo,
-    date,
-    applicant,
-    deptLocation,
-    vehicleInfo,
-    requestType,
-    coordinatorRemarks,
-    workshopRecommendation,
-    recentRequests = [],
     annualSummary = [],
+    applicant,
+    coordinatorRemarks,
+    ctaHtml = '',
+    date,
+    deptLocation,
     footerName = 'ADMS3',
-    ctaHtml = ''
+    recentRequests = [],
+    requestNo,
+    requestType,
+    vehicleInfo,
+    workshopRecommendation
   } = data || {};
 
   // recentRequests removed from template per requirements
@@ -26,7 +26,7 @@ export default function vehicleMaintenanceEmail(data: any): string {
       <tr>
         <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06)">${s.year}</td>
         <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:center">${s.requests || 0}</td>
-        <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:right">RM ${Number(s.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:right">RM ${Number(s.amount || 0).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
       </tr>
     `).join('\n')}
   ` : '<tr><td colspan="3" style="padding:8px">No summary</td></tr>';

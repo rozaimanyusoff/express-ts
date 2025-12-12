@@ -4,17 +4,17 @@
 import { AssetTransferDetailItem } from '../../p.asset/assetController';
 
 interface EmailData {
-  request: any;
-  items: any[];
-  requestor: any;
-  supervisor: any;
+  actionBaseUrl?: string; // no longer used
   // Legacy email action links removed; keep optional for backward compatibility
   actionToken?: string; // no longer used
-  actionBaseUrl?: string; // no longer used
+  items: any[];
   portalUrl?: string; // Optional: frontend approval portal URL
+  request: any;
+  requestor: any;
+  supervisor: any;
 }
 
-export default function assetTransferSupervisorEmail({ request, items, requestor, supervisor, actionToken, actionBaseUrl, portalUrl }: EmailData) {
+export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToken, items, portalUrl, request, requestor, supervisor }: EmailData) {
   // Helpers
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
@@ -93,5 +93,5 @@ export default function assetTransferSupervisorEmail({ request, items, requestor
       <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
-  return { subject, html };
+  return { html, subject };
 }

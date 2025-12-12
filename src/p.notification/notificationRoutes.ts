@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import asyncHandler from '../utils/asyncHandler';
+
 import tokenValidator from '../middlewares/tokenValidator';
-import { getNotifications, markRead, markAllRead, getUnreadCount, sendTestNotification } from './notificationController';
+import asyncHandler from '../utils/asyncHandler';
+import { getNotifications, getUnreadCount, markAllRead, markRead, sendTestNotification } from './notificationController';
 
 const router = Router();
 

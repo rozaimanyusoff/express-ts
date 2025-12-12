@@ -1,5 +1,6 @@
-import { pool } from "../../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
+
+import { pool } from "../../utils/db";
 
 // --- DB & TABLE DECLARATIONS ---
 const dbName = 'web_stock';

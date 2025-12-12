@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import * as locationType from './webstockController';
+
 import asyncHandler from '../utils/asyncHandler';
+import * as locationType from './webstockController';
 
 const router = Router();
 

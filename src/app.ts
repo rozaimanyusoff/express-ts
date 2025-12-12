@@ -1,43 +1,44 @@
-import express, { Express, urlencoded, json } from 'express';
 import { toNodeHandler } from "better-auth/node";
-import { pgPool } from './utils/db';
-import authRoutes from './p.auth/adms/authRoutes';
-import navRoutes from './p.nav/navRoutes';
-import userRoutes from './p.user/userRoutes';
-import roleRoutes from './p.role/roleRoutes';
-import groupRoutes from './p.group/groupRoutes';
-import assetRoutes from './p.asset/assetRoutes';
-import stockRoutes from './p.stock/rt/stockRoutes';
-import nrwStockRoutes from './p.stock/nrw/nrwStockRoutes';
-import nrwEmployeeRoutes from './p.stock/nrw/nrwEmployeeRoutes';
-import telcoRoutes from './p.telco/telcoRoutes';
-import purchaseRoutes from './p.purchase/purchaseRoutes';
-import billingRoutes from './p.billing/billingRoutes';
-import jobbankRoutes from './p.jobbank/jobreposRoutes';
-import maintenanceRoutes from './p.maintenance/maintenanceRoutes';
-import trainingRoutes from './p.training/trainingRoutes';
-import importRoutes from './p.admin/importerRoutes';
-import webstockRoutes from './s.webstock/webstockRoutes';
-import summonRoutes from './p.compliance/complianceRoutes';
-import notificationRoutes from './p.notification/notificationRoutes';
-import projectRoutes from './p.project/projectRoutes';
-import siteRoutes from './p.site/siteRoutes';
-import aqsRoleRoutes from './aqs/a.role/roleRoutes';
+import express, { Express, json, urlencoded } from 'express';
+import fs from 'fs';
+import path from 'path';
+
+import aqsAuthRoutes from './aqs/a.auth/authRoutes';
+import districtRoutes from './aqs/a.district/districtRoutes';
 import aqsModuleRoutes from './aqs/a.module/moduleRoutes'
 import organizationRoutes from './aqs/a.organization/organizationRoutes';
-import districtRoutes from './aqs/a.district/districtRoutes';
-import errorHandler from './middlewares/errorHandler';
+import aqsRequestRoutes from './aqs/a.request/requestRoutes';
+import aqsRoleRoutes from './aqs/a.role/roleRoutes';
 import corsMiddleware from './middlewares/cors';
-import tokenValidator from './middlewares/tokenValidator';
+import errorHandler from './middlewares/errorHandler';
 import rateLimit from './middlewares/rateLimiter';
 import securityHeaders from './middlewares/securityHeaders';
-import logger from './utils/logger';
-import path from 'path';
-import fs from 'fs';
-import { getUploadBaseSync } from './utils/uploadUtil';
+import tokenValidator from './middlewares/tokenValidator';
+import importRoutes from './p.admin/importerRoutes';
+import assetRoutes from './p.asset/assetRoutes';
+import authRoutes from './p.auth/adms/authRoutes';
+import billingRoutes from './p.billing/billingRoutes';
+import summonRoutes from './p.compliance/complianceRoutes';
+import groupRoutes from './p.group/groupRoutes';
+import jobbankRoutes from './p.jobbank/jobreposRoutes';
+import maintenanceRoutes from './p.maintenance/maintenanceRoutes';
+import navRoutes from './p.nav/navRoutes';
+import notificationRoutes from './p.notification/notificationRoutes';
+import projectRoutes from './p.project/projectRoutes';
+import purchaseRoutes from './p.purchase/purchaseRoutes';
+import roleRoutes from './p.role/roleRoutes';
+import siteRoutes from './p.site/siteRoutes';
+import nrwEmployeeRoutes from './p.stock/nrw/nrwEmployeeRoutes';
+import nrwStockRoutes from './p.stock/nrw/nrwStockRoutes';
+import stockRoutes from './p.stock/rt/stockRoutes';
+import telcoRoutes from './p.telco/telcoRoutes';
+import trainingRoutes from './p.training/trainingRoutes';
+import userRoutes from './p.user/userRoutes';
+import webstockRoutes from './s.webstock/webstockRoutes';
+import { pgPool } from './utils/db';
 import { checkDatabaseHealth } from './utils/dbHealthCheck';
-import aqsAuthRoutes from './aqs/a.auth/authRoutes';
-import aqsRequestRoutes from './aqs/a.request/requestRoutes';
+import logger from './utils/logger';
+import { getUploadBaseSync } from './utils/uploadUtil';
 
 const app: Express = express();
 
@@ -67,7 +68,7 @@ app.use('/uploads', (req, res, next) => {
 (() => {
   const explicit = process.env.STATIC_UPLOAD_PATH;
   const sharePath = '/mnt/winshare';
-  let staticPath = explicit ? explicit : (fs.existsSync(sharePath) ? sharePath : getUploadBaseSync());
+  const staticPath = explicit ? explicit : (fs.existsSync(sharePath) ? sharePath : getUploadBaseSync());
   try {
     // Ensure directory exists for fallback/local scenario.
     fs.mkdirSync(staticPath, { recursive: true });
@@ -86,16 +87,16 @@ app.get('/api/health', async (req, res) => {
     const isHealthy = dbHealth.pool1.connected && dbHealth.pool2.connected;
     
     res.status(isHealthy ? 200 : 503).json({
+      database: dbHealth,
       status: isHealthy ? 'healthy' : 'unhealthy',
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: dbHealth
+      uptime: process.uptime()
     });
   } catch (error) {
     res.status(503).json({
-      status: 'error',
+      error: (error as Error).message,
       message: 'Health check failed',
-      error: (error as Error).message
+      status: 'error'
     });
   }
 });

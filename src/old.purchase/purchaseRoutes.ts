@@ -1,8 +1,9 @@
 // src/p.purchase/purchaseRoutes.ts
 import { Router } from 'express';
-import * as purchaseController from './purchaseController';
-import asyncHandler from '../utils/asyncHandler';
 import multer from 'multer';
+
+import asyncHandler from '../utils/asyncHandler';
+import * as purchaseController from './purchaseController';
 const upload = multer({ dest: 'uploads/' });
 
 

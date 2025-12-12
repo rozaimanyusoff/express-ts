@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import * as complianceController from './complianceController';
+
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
+import * as complianceController from './complianceController';
 
 const router = Router();
 

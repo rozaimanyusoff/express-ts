@@ -1,13 +1,14 @@
-import { Request, Response, NextFunction } from 'express';
-import * as stockModel from './stockModel';
+import { NextFunction, Request, Response } from 'express';
+
 import { generateStockAnalysis } from './generateStockAnalysis';
+import * as stockModel from './stockModel';
 
 export const createStockPurchase = async (req: Request, res: Response) => {
   const result = await stockModel.createStockPurchase(req.body);
   res.status(201).json({
-    status: 'success',
+    data: result,
     message: 'Stock purchase created successfully',
-    data: result
+    status: 'success'
   });
 };
 
@@ -40,17 +41,17 @@ export const getStockPurchases = async (req: Request, res: Response) => {
 
   const data = purchaseList.map((purchase: any) => ({
     ...purchase,
-    supplier: suppliers[purchase.supplier_id] || null,
-    items: itemsByPurchase[purchase.id] || []
+    items: itemsByPurchase[purchase.id] || [],
+    supplier: suppliers[purchase.supplier_id] || null
   }));
 
   // Remove supplier_id from each purchase object
   const formattedData = data.map(({ supplier_id, ...rest }) => rest);
 
   res.json({
-    status: 'success',
+    data: formattedData,
     message: 'Stock purchases retrieved successfully',
-    data: formattedData
+    status: 'success'
   });
 };
 
@@ -60,9 +61,9 @@ export const getStockPurchaseById = async (req: Request, res: Response) => {
   const row = await stockModel.getStockPurchaseById(id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   res.json({
-    status: 'success',
+    data: row,
     message: 'Stock purchase retrieved successfully',
-    data: row
+    status: 'success'
   });
 };
 
@@ -71,9 +72,9 @@ export const updateStockPurchase = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockPurchase(id, req.body);
   res.json({
-    status: 'success',
+    data: result,
     message: 'Stock purchase updated successfully',
-    data: result
+    status: 'success'
   });
 };
 
@@ -121,51 +122,51 @@ export const deleteStockPurchaseItem = async (req: Request, res: Response) => {
 // ---- SUPPLIERS ----
 export const createSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.createSupplier(req.body);
-  res.status(201).json({ status: 'success', message: 'Supplier created', data: result });
+  res.status(201).json({ data: result, message: 'Supplier created', status: 'success' });
 };
 export const getSuppliers = async (_req: Request, res: Response) => {
   const data = await stockModel.getSuppliers();
-  res.json({ status: 'success', message: 'Suppliers retrieved', data });
+  res.json({ data, message: 'Suppliers retrieved', status: 'success' });
 };
 export const getSupplierById = async (req: Request, res: Response) => {
   const data = await stockModel.getSupplierById(Number(req.params.id));
-  res.json({ status: 'success', message: 'Supplier retrieved', data });
+  res.json({ data, message: 'Supplier retrieved', status: 'success' });
 };
 export const updateSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.updateSupplier(Number(req.params.id), req.body);
-  res.json({ status: 'success', message: 'Supplier updated', data: result });
+  res.json({ data: result, message: 'Supplier updated', status: 'success' });
 };
 export const deleteSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.deleteSupplier(Number(req.params.id));
-  res.json({ status: 'success', message: 'Supplier deleted', data: result });
+  res.json({ data: result, message: 'Supplier deleted', status: 'success' });
 };
 
 // ---- TEAM ----
 export const createTeam = async (req: Request, res: Response) => {
   const result = await stockModel.createTeam(req.body);
-  res.status(201).json({ status: 'success', message: 'Team created', data: result });
+  res.status(201).json({ data: result, message: 'Team created', status: 'success' });
 };
 export const getTeams = async (_req: Request, res: Response) => {
   const data = await stockModel.getTeams();
-  res.json({ status: 'success', message: 'Teams retrieved', data });
+  res.json({ data, message: 'Teams retrieved', status: 'success' });
 };
 export const getTeamById = async (req: Request, res: Response) => {
   const data = await stockModel.getTeamById(Number(req.params.id));
-  res.json({ status: 'success', message: 'Team retrieved', data });
+  res.json({ data, message: 'Team retrieved', status: 'success' });
 };
 export const updateTeam = async (req: Request, res: Response) => {
   const result = await stockModel.updateTeam(Number(req.params.id), req.body);
-  res.json({ status: 'success', message: 'Team updated', data: result });
+  res.json({ data: result, message: 'Team updated', status: 'success' });
 };
 export const deleteTeam = async (req: Request, res: Response) => {
   const result = await stockModel.deleteTeam(Number(req.params.id));
-  res.json({ status: 'success', message: 'Team deleted', data: result });
+  res.json({ data: result, message: 'Team deleted', status: 'success' });
 };
 
 // ---- STOCK ITEMS ----
 export const createStockItem = async (req: Request, res: Response) => {
   const result = await stockModel.createStockItem(req.body);
-  res.status(201).json({ status: 'success', message: 'Stock item created', data: result });
+  res.status(201).json({ data: result, message: 'Stock item created', status: 'success' });
 };
 export const getStockItems = async (_req: Request, res: Response) => {
   const items = await stockModel.getStockItems();
@@ -181,19 +182,19 @@ export const getStockItems = async (_req: Request, res: Response) => {
   const data = Array.isArray(items)
     ? items.map((item: any) => ({
         ...item,
+        balance: cardMap[item.id]?.balance ?? null,
         total_in: cardMap[item.id]?.total_in ?? null,
         total_out: cardMap[item.id]?.total_out ?? null,
-        balance: cardMap[item.id]?.balance ?? null,
       }))
     : [];
 
-  res.json({ status: 'success', message: 'Stock items retrieved', data });
+  res.json({ data, message: 'Stock items retrieved', status: 'success' });
 };
 
 export const getStockItemById = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const item = await stockModel.getStockItemById(id);
-  if (!item) return res.status(404).json({ status: 'error', message: 'Stock item not found' });
+  if (!item) return res.status(404).json({ message: 'Stock item not found', status: 'error' });
 
   // Get stock card for this item
   const cards = await stockModel.getStockCardByItemId(id);
@@ -201,18 +202,18 @@ export const getStockItemById = async (req: Request, res: Response) => {
   const card = Array.isArray(cards) ? cards[0] : cards;
 
   // Type guard to check if card has total_in, total_out, and balance
-  function hasCardFields(obj: any): obj is { total_in: number; total_out: number; balance: number } {
+  function hasCardFields(obj: any): obj is { balance: number; total_in: number; total_out: number; } {
     return obj && typeof obj.total_in === 'number' && typeof obj.total_out === 'number' && typeof obj.balance === 'number';
   }
 
   const data = {
     ...item,
+    balance: hasCardFields(card) ? card.balance : null,
     total_in: hasCardFields(card) ? card.total_in : null,
     total_out: hasCardFields(card) ? card.total_out : null,
-    balance: hasCardFields(card) ? card.balance : null,
   };
 
-  res.json({ status: 'success', message: 'Stock item retrieved', data });
+  res.json({ data, message: 'Stock item retrieved', status: 'success' });
 };
 
 // ---- STOCK CARD ----
@@ -236,7 +237,7 @@ export const getStockCards = async (_req: Request, res: Response) => {
       }))
     : [];
 
-  res.json({ status: 'success', message: 'Stock cards retrieved', data });
+  res.json({ data, message: 'Stock cards retrieved', status: 'success' });
 };
 
 export const getStockCardByItemId = async (req: Request, res: Response) => {
@@ -259,26 +260,26 @@ export const getStockCardByItemId = async (req: Request, res: Response) => {
     item_name: hasItemCodeAndName(item) ? item.item_name : null,
   }));
 
-  res.json({ status: 'success', message: 'Stock card(s) retrieved', data });
+  res.json({ data, message: 'Stock card(s) retrieved', status: 'success' });
 };
 
 export const createStockCard = async (req: Request, res: Response) => {
   const result = await stockModel.createStockCard(req.body);
-  res.status(201).json({ status: 'success', message: 'Stock card created', data: result });
+  res.status(201).json({ data: result, message: 'Stock card created', status: 'success' });
 };
 
 export const updateStockCard = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockCard(id, req.body);
-  res.json({ status: 'success', message: 'Stock card updated', data: result });
+  res.json({ data: result, message: 'Stock card updated', status: 'success' });
 };
 
 export const deleteStockCard = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockCard(id);
-  res.json({ status: 'success', message: 'Stock card deleted', data: result });
+  res.json({ data: result, message: 'Stock card deleted', status: 'success' });
 };
 
 // ---- ADDITIONAL STOCK ITEM FUNCTIONS ----
@@ -286,33 +287,33 @@ export const updateStockItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockItem(id, req.body);
-  res.json({ status: 'success', message: 'Stock item updated', data: result });
+  res.json({ data: result, message: 'Stock item updated', status: 'success' });
 };
 
 export const deleteStockItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockItem(id);
-  res.json({ status: 'success', message: 'Stock item deleted', data: result });
+  res.json({ data: result, message: 'Stock item deleted', status: 'success' });
 };
 
-// ---- STOCK TRACKING ----
-function isRowDataPacketArray(arr: any): arr is Array<{ id: number }> {
-  return Array.isArray(arr) && arr.length > 0 && typeof arr[0].id !== 'undefined';
-}
 function isRowDataPacket(obj: any): obj is { id: number } {
   return obj && typeof obj.id !== 'undefined';
+}
+// ---- STOCK TRACKING ----
+function isRowDataPacketArray(arr: any): arr is { id: number }[] {
+  return Array.isArray(arr) && arr.length > 0 && typeof arr[0].id !== 'undefined';
 }
 function isSupplier(obj: any): obj is { id: number; name: string } {
   return obj && typeof obj.id !== 'undefined' && typeof obj.name === 'string';
 }
-function isUser(obj: any): obj is { id: number; fname?: string; username?: string } {
+function isUser(obj: any): obj is { fname?: string; id: number; username?: string } {
   return obj && typeof obj.id !== 'undefined' && (typeof obj.fname === 'string' || typeof obj.username === 'string');
 }
 
 export const createStockTracking = async (req: Request, res: Response) => {
   const result = await stockModel.createStockTracking(req.body);
-  res.status(201).json({ status: 'success', message: 'Stock tracking created', data: result });
+  res.status(201).json({ data: result, message: 'Stock tracking created', status: 'success' });
 };
 
 export const getStockTrackings = async (_req: Request, res: Response) => {
@@ -358,7 +359,7 @@ export const getStockTrackings = async (_req: Request, res: Response) => {
   const data = trackings.map((t: any) => {
     const item = t.item_id ? itemMap.get(t.item_id) : null;
     const purchase = t.purchase_id ? purchaseMap.get(t.purchase_id) : null;
-    const supplier = purchase && purchase.supplier_id ? supplierMap.get(purchase.supplier_id) : null;
+    const supplier = purchase?.supplier_id ? supplierMap.get(purchase.supplier_id) : null;
     // issue_to: try user first, then team
     let issueTo = null;
     if (t.issue_to) {
@@ -374,45 +375,45 @@ export const getStockTrackings = async (_req: Request, res: Response) => {
     const registeredBy = t.registered_by ? userMap.get(Number(t.registered_by)) : null;
     const updatedBy = t.updated_by ? userMap.get(Number(t.updated_by)) : null;
     return {
+      created_at: t.created_at,
       id: t.id,
-      items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
-      procurement: purchase
-        ? {
-            id: purchase.id,
-            po_no: purchase.po_no,
-            po_date: purchase.po_date,
-            supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null,
-            delivery_date: purchase.delivery_date || purchase.do_date || null
-          }
-        : null,
-      serial_no: t.serial_no,
-      store: t.store,
-      status: t.status,
       issuance: {
+        installed_location: t.installed_location || '',
         issue_date: t.issue_date,
         issue_no: t.issue_no,
         issue_to: issueTo
           ? isUser(issueTo)
             ? { id: issueTo.id, name: (issueTo.fname ? issueTo.fname : (issueTo.username ? issueTo.username : '')) }
             : { id: issueTo.id, name: issueTo.name }
-          : null,
-        installed_location: t.installed_location || ''
+          : null
       },
+      items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
+      procurement: purchase
+        ? {
+            delivery_date: purchase.delivery_date || purchase.do_date || null,
+            id: purchase.id,
+            po_date: purchase.po_date,
+            po_no: purchase.po_no,
+            supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null
+          }
+        : null,
       registered_by: registeredBy ? (registeredBy.fname || registeredBy.username) : '',
-      updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null,
-      created_at: t.created_at,
-      updated_at: t.updated_at
+      serial_no: t.serial_no,
+      status: t.status,
+      store: t.store,
+      updated_at: t.updated_at,
+      updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null
     };
   });
 
-  res.json({ status: 'success', message: 'Stock trackings retrieved', data });
+  res.json({ data, message: 'Stock trackings retrieved', status: 'success' });
 };
 
 export const getStockTrackingById = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const t = await stockModel.getStockTrackingById(id);
-  if (!t) return res.status(404).json({ status: 'error', message: 'Stock tracking not found' });
+  if (!t) return res.status(404).json({ message: 'Stock tracking not found', status: 'error' });
 
   // Fetch related entities for this record
   const [item, purchase, allUsers, allTeams] = await Promise.all([
@@ -426,7 +427,7 @@ export const getStockTrackingById = async (req: Request, res: Response) => {
   const teams = isRowDataPacketArray(allTeams) ? allTeams : [];
 
   let supplier = null;
-  if (purchase && purchase.supplier_id) {
+  if (purchase?.supplier_id) {
     const s = await stockModel.getSuppliersByIds([purchase.supplier_id]);
     supplier = isRowDataPacketArray(s) && s.length ? s[0] : null;
   }
@@ -448,37 +449,37 @@ export const getStockTrackingById = async (req: Request, res: Response) => {
   const updatedBy = t.updated_by ? userMap.get(Number(t.updated_by)) : null;
 
   const data = {
+    created_at: t.created_at,
     id: t.id,
-    items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
-    procurement: purchase
-      ? {
-          id: purchase.id,
-          po_no: purchase.po_no,
-          po_date: purchase.po_date,
-          supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null,
-          delivery_date: purchase.delivery_date || purchase.do_date || null
-        }
-      : null,
-    serial_no: t.serial_no,
-    store: t.store,
-    status: t.status,
     issuance: {
+      installed_location: t.installed_location || '',
       issue_date: t.issue_date,
       issue_no: t.issue_no,
       issue_to: issueTo
         ? isUser(issueTo)
           ? { id: issueTo.id, name: (issueTo.fname ? issueTo.fname : (issueTo.username ? issueTo.username : '')) }
           : { id: issueTo.id, name: issueTo.name }
-        : null,
-      installed_location: t.installed_location || ''
+        : null
     },
+    items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
+    procurement: purchase
+      ? {
+          delivery_date: purchase.delivery_date || purchase.do_date || null,
+          id: purchase.id,
+          po_date: purchase.po_date,
+          po_no: purchase.po_no,
+          supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null
+        }
+      : null,
     registered_by: registeredBy ? (registeredBy.fname || registeredBy.username) : '',
-    updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null,
-    created_at: t.created_at,
-    updated_at: t.updated_at
+    serial_no: t.serial_no,
+    status: t.status,
+    store: t.store,
+    updated_at: t.updated_at,
+    updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null
   };
 
-  res.json({ status: 'success', message: 'Stock tracking retrieved', data });
+  res.json({ data, message: 'Stock tracking retrieved', status: 'success' });
 };
 
 export const updateStockTracking = async (req: Request, res: Response) => {
@@ -487,7 +488,7 @@ export const updateStockTracking = async (req: Request, res: Response) => {
   await stockModel.updateStockTracking(id, req.body);
   // Return the updated record in nested format
   const t = await stockModel.getStockTrackingById(id);
-  if (!t) return res.status(404).json({ status: 'error', message: 'Stock tracking not found' });
+  if (!t) return res.status(404).json({ message: 'Stock tracking not found', status: 'error' });
 
   // Fetch related entities for this record
   const [item, purchase, allUsers, allTeams] = await Promise.all([
@@ -501,11 +502,11 @@ export const updateStockTracking = async (req: Request, res: Response) => {
   const teams = Array.isArray(allTeams) ? allTeams : [];
 
   let supplier = null;
-  if (purchase && purchase.supplier_id) {
+  if (purchase?.supplier_id) {
     const s = await stockModel.getSuppliersByIds([purchase.supplier_id]);
     supplier = Array.isArray(s) && s.length ? s[0] : null;
   }
-  const userMap = new Map(users.filter(u => u && u.id).map((u: any) => [u.id, u]));
+  const userMap = new Map(users.filter(u => u?.id).map((u: any) => [u.id, u]));
   const teamMap = new Map(teams.map((t: any) => [t.id, t]));
   // issue_to: try user first, then team
   let issueTo = null;
@@ -527,44 +528,44 @@ export const updateStockTracking = async (req: Request, res: Response) => {
   }
 
   const data = {
+    created_at: t.created_at,
     id: t.id,
-    items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
-    procurement: purchase
-      ? {
-          id: purchase.id,
-          po_no: purchase.po_no,
-          po_date: purchase.po_date,
-          supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null,
-          delivery_date: purchase.delivery_date || purchase.do_date || null
-        }
-      : null,
-    serial_no: t.serial_no,
-    store: t.store,
-    status: t.status,
     issuance: {
+      installed_location: t.installed_location || '',
       issue_date: t.issue_date,
       issue_no: t.issue_no,
       issue_to: issueTo
         ? isUser(issueTo)
           ? { id: issueTo.id, name: (issueTo.fname ? issueTo.fname : (issueTo.username ? issueTo.username : '')) }
           : { id: issueTo.id, name: issueTo.name }
-        : null,
-      installed_location: t.installed_location || ''
+        : null
     },
+    items: item ? { id: item.id, item_code: item.item_code, item_name: item.item_name } : null,
+    procurement: purchase
+      ? {
+          delivery_date: purchase.delivery_date || purchase.do_date || null,
+          id: purchase.id,
+          po_date: purchase.po_date,
+          po_no: purchase.po_no,
+          supplier: isSupplier(supplier) ? { id: supplier.id, name: supplier.name } : null
+        }
+      : null,
     registered_by: registeredBy ? (registeredBy.fname || registeredBy.username) : '',
-    updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null,
-    created_at: t.created_at,
-    updated_at: t.updated_at
+    serial_no: t.serial_no,
+    status: t.status,
+    store: t.store,
+    updated_at: t.updated_at,
+    updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null
   };
 
-  res.json({ status: 'success', message: 'Stock tracking updated', data });
+  res.json({ data, message: 'Stock tracking updated', status: 'success' });
 };
 
 export const deleteStockTracking = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   await stockModel.deleteStockTracking(id);
-  res.json({ status: 'success', message: 'Stock tracking deleted' });
+  res.json({ message: 'Stock tracking deleted', status: 'success' });
 };
 
 // ---- STOCK ANALYSIS ----
@@ -612,7 +613,7 @@ export const getStockAnalysis = async (_req: Request, res: Response) => {
   const analysisData = trackings.map((t: any) => {
     const item = t.item_id ? itemMap.get(t.item_id) : null;
     // issue_to: try user first, then team
-    let issueTo: { id: number; name: string } | undefined = undefined;
+    let issueTo: undefined | { id: number; name: string } = undefined;
     if (t.issue_to) {
       const asNum = Number(t.issue_to);
       if (!isNaN(asNum) && teamMap.has(asNum)) {
@@ -624,17 +625,17 @@ export const getStockAnalysis = async (_req: Request, res: Response) => {
       }
     }
     return {
-      items: item ? { item_code: item.item_code, item_name: item.item_name } : { item_code: '', item_name: '' },
-      status: t.status,
       issuance: {
         issue_to: issueTo
-      }
+      },
+      items: item ? { item_code: item.item_code, item_name: item.item_name } : { item_code: '', item_name: '' },
+      status: t.status
     };
   });
 
   // Generate analysis from minimal data
   const analysis = generateStockAnalysis(analysisData);
-  res.json({ status: 'success', message: 'Stock analysis generated', analysis });
+  res.json({ analysis, message: 'Stock analysis generated', status: 'success' });
 };
 
 // ---- STOCK REQUESTS ----
@@ -642,12 +643,12 @@ export const createStockRequest = async (req: Request, res: Response) => {
   try {
     const result = await stockModel.createStockRequest(req.body);
     res.status(201).json({
-      status: 'success',
+      data: result,
       message: 'Stock request created successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to create stock request', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to create stock request', status: 'error' });
   }
 };
 
@@ -659,7 +660,7 @@ export const getStockRequests = async (_req: Request, res: Response) => {
     let items: any[] = [];
     if (ids.length) {
       const allItems = await Promise.all(ids.map((id: number) => stockModel.getStockRequestById(id)));
-      items = allItems.map(r => r && r.items ? r.items : []).flat();
+      items = allItems.map(r => r?.items ? r.items : []).flat();
     }
     const itemsByRequest: Record<number, any[]> = {};
     for (const item of items) {
@@ -676,33 +677,33 @@ export const getStockRequests = async (_req: Request, res: Response) => {
     const teamMap = new Map(teams.map((t: any) => [t.id, t]));
     const data = requests.map((r: any) => {
       // Exclude department, team_name, pic
-      const { department, team_name, pic, ...rest } = r;
+      const { department, pic, team_name, ...rest } = r;
       return {
         ...rest,
+        items: itemsByRequest[r.id] || [],
         requested_by: r.requested_by && teamMap.has(r.requested_by)
           ? { id: r.requested_by, name: teamMap.get(r.requested_by).name }
-          : null,
-        items: itemsByRequest[r.id] || []
+          : null
       };
     });
     res.json({
-      status: 'success',
+      data,
       message: 'Stock requests retrieved successfully',
-      data
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to retrieve stock requests', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to retrieve stock requests', status: 'error' });
   }
 };
 
 export const getStockRequestById = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) {
-    return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+    return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   }
   const row = await stockModel.getStockRequestById(id);
   if (!row) {
-    return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+    return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
   }
   // Ensure items is always an array
   const data = {
@@ -710,39 +711,39 @@ export const getStockRequestById = async (req: Request, res: Response) => {
     items: Array.isArray(row.items) ? row.items : []
   };
   res.json({
-    status: 'success',
+    data,
     message: 'Stock request retrieved successfully',
-    data
+    status: 'success'
   });
 };
 
 export const updateStockRequest = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.updateStockRequest(id, req.body);
     res.json({
-      status: 'success',
+      data: result,
       message: 'Stock request updated successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to update stock request', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to update stock request', status: 'error' });
   }
 };
 
 export const deleteStockRequest = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.deleteStockRequest(id);
     res.json({
-      status: 'success',
+      data: result,
       message: 'Stock request deleted successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to delete stock request', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request', status: 'error' });
   }
 };
 
@@ -751,60 +752,60 @@ export const addStockRequestItem = async (req: Request, res: Response) => {
   try {
     const result = await stockModel.addStockRequestItem(stock_out_id, item);
     res.status(201).json({
-      status: 'success',
+      data: result,
       message: 'Stock request item added successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to add stock request item', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to add stock request item', status: 'error' });
   }
 };
 
 export const updateStockRequestItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.updateStockRequestItem(id, req.body);
     res.json({
-      status: 'success',
+      data: result,
       message: 'Stock request item updated successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to update stock request item', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to update stock request item', status: 'error' });
   }
 };
 
 export const deleteStockRequestItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  if (isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.deleteStockRequestItem(id);
     res.json({
-      status: 'success',
+      data: result,
       message: 'Stock request item deleted successfully',
-      data: result
+      status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message || 'Failed to delete stock request item', data: null });
+    res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request item', status: 'error' });
   }
 };
 
 export const getStockTransactionsByItemId = async (req: Request, res: Response) => {
   const itemId = Number(req.params.id);
-  if (isNaN(itemId)) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+  if (isNaN(itemId)) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
   const rows = await stockModel.getStockTransactionsByItemId(itemId);
   res.json({
-    status: 'success',
+    data: rows,
     message: 'Stock transactions retrieved successfully',
-    data: rows
+    status: 'success'
   });
 };
 
 // Get in-stock data for a given item_id
 export const getStockInStockByItemId = async (req: Request, res: Response) => {
   const itemId = Number(req.params.id);
-  if (isNaN(itemId)) return res.status(400).json({ status: 'error', message: 'Invalid item id' });
+  if (isNaN(itemId)) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
   // Get all stock tracking records for this item_id
   const rows = await stockModel.getStockTransactionsByItemId(itemId);
   // In-stock = status is 'in_stock' (or similar logic, adjust as needed)
@@ -814,14 +815,14 @@ export const getStockInStockByItemId = async (req: Request, res: Response) => {
     : [];
   // Return all in-stock records, including serial_no
   res.json({
-    status: 'success',
-    message: 'In-stock items retrieved successfully',
     data: inStockRows.map((row: any) => ({
       id: row.id,
       item_id: row.item_id,
       serial_no: row.serial_no,
       status: row.status,
       ...row
-    }))
+    })),
+    message: 'In-stock items retrieved successfully',
+    status: 'success'
   });
 };

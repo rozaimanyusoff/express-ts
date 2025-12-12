@@ -3,8 +3,8 @@
  * Centralizes Socket.IO event emissions for real-time badge updates
  */
 
-import { getSocketIOInstance } from './socketIoInstance';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
+import { getSocketIOInstance } from './socketIoInstance';
 
 /**
  * Emit event when a new maintenance request is created
@@ -13,7 +13,7 @@ import * as maintenanceModel from '../p.maintenance/maintenanceModel';
  * @param requestId - The newly created request ID
  * @param ramcoId - The requester's ID (optional)
  */
-export const notifyNewMtnRequest = async (requestId: number, ramcoId?: string | null): Promise<void> => {
+export const notifyNewMtnRequest = async (requestId: number, ramcoId?: null | string): Promise<void> => {
 	try {
 		const io = getSocketIOInstance();
 		if (!io) {
@@ -26,17 +26,17 @@ export const notifyNewMtnRequest = async (requestId: number, ramcoId?: string | 
 		
 		// Emit to all connected admin clients
 		io.emit('mtn:new-request', {
-			requestId,
+			message: 'New maintenance request submitted',
 			requester: ramcoId,
-			timestamp: new Date().toISOString(),
-			message: 'New maintenance request submitted'
+			requestId,
+			timestamp: new Date().toISOString()
 		});
 
 		// Emit updated badge count to all connected admins
 		io.emit('mtn:badge-count', {
 			count,
-			type: 'new-request',
-			timestamp: new Date().toISOString()
+			timestamp: new Date().toISOString(),
+			type: 'new-request'
 	});
 
 		console.log(`notifyNewMtnRequest: Emitted for request ${requestId}, current badge count: ${count}`);
@@ -54,7 +54,7 @@ export const notifyNewMtnRequest = async (requestId: number, ramcoId?: string | 
  * @param action - Type of action (verified|approved|rejected)
  * @param adminRamco - Admin's ID who made the change (optional)
  */
-export const notifyMtnRequestUpdate = async (requestId: number, action: 'verified' | 'approved' | 'rejected' | 'other', adminRamco?: string | null): Promise<void> => {
+export const notifyMtnRequestUpdate = async (requestId: number, action: 'approved' | 'other' | 'rejected' | 'verified', adminRamco?: null | string): Promise<void> => {
 	try {
 		const io = getSocketIOInstance();
 		if (!io) {
@@ -67,19 +67,19 @@ export const notifyMtnRequestUpdate = async (requestId: number, action: 'verifie
 
 		// Emit update event to all connected admin clients
 		io.emit('mtn:request-updated', {
-			requestId,
 			action,
-			updatedBy: adminRamco,
+			message: `Maintenance request ${action}`,
+			requestId,
 			timestamp: new Date().toISOString(),
-			message: `Maintenance request ${action}`
+			updatedBy: adminRamco
 		});
 
 		// Emit updated badge count
 		io.emit('mtn:badge-count', {
-			count,
-			type: 'request-updated',
 			action,
-			timestamp: new Date().toISOString()
+			count,
+			timestamp: new Date().toISOString(),
+			type: 'request-updated'
 		});
 
 		console.log(`notifyMtnRequestUpdate: Emitted for request ${requestId}, action: ${action}, current badge count: ${count}`);
@@ -105,8 +105,8 @@ export const broadcastBadgeCount = async (): Promise<void> => {
 
 		io.emit('mtn:badge-count', {
 			count,
-			type: 'broadcast',
-			timestamp: new Date().toISOString()
+			timestamp: new Date().toISOString(),
+			type: 'broadcast'
 		});
 
 		console.log(`broadcastBadgeCount: Emitted count ${count}`);
@@ -116,7 +116,7 @@ export const broadcastBadgeCount = async (): Promise<void> => {
 };
 
 export default {
-	notifyNewMtnRequest,
+	broadcastBadgeCount,
 	notifyMtnRequestUpdate,
-	broadcastBadgeCount
+	notifyNewMtnRequest
 };

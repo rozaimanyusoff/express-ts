@@ -1,11 +1,11 @@
 export interface Auth {
-    id: number;
-    uuid: string;
-    username: string;
-    passwordHash: string;
-    salt: string;
-    roleId: number;
-    isActive: boolean;
     createdAt: Date;
+    id: number;
+    isActive: boolean;
+    passwordHash: string;
+    roleId: number;
+    salt: string;
     updatedAt: Date;
+    username: string;
+    uuid: string;
 }

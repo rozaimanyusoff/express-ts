@@ -1,64 +1,65 @@
-import { Request, Response } from 'express';
-import * as userModel from './userModel';
-import dotenv from 'dotenv';
-import { sendMail } from '../utils/mailer';
 import crypto from 'crypto';
-import logger from '../utils/logger';
-import {pool} from '../utils/db';
-import * as roleModel from '../p.role/roleModel';
-import * as groupModel from '../p.group/groupModel';
-import * as pendingUserModel from '../p.user/pendingUserModel';
+import dotenv from 'dotenv';
+import { Request, Response } from 'express';
+import { promises as fsPromises } from 'fs';
+import path from 'path';
+
 import * as logModel from '../p.admin/logModel';
 import * as assetModel from '../p.asset/assetModel';
-import path from 'path';
-import { promises as fsPromises } from 'fs';
-import { buildStoragePath, toDbPath, sanitizeFilename } from '../utils/uploadUtil';
+import * as groupModel from '../p.group/groupModel';
+import * as roleModel from '../p.role/roleModel';
+import * as pendingUserModel from '../p.user/pendingUserModel';
+import {pool} from '../utils/db';
+import logger from '../utils/logger';
+import { sendMail } from '../utils/mailer';
+import { buildStoragePath, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
+import * as userModel from './userModel';
 
 dotenv.config({ path: '.env.local' });
 
 // ===== Interfaces =====
 
 interface AdminUser {
-  username: string;
-  password: string;
+  activated_at: Date;
+  created_at: Date;
   email: string;
   fname: string;
-  user_type: number;
-  last_nav: string;
-  status: number;
-  role: number;
   group: number;
-  created_at: Date;
-  activated_at: Date;
+  last_nav: string;
+  password: string;
+  role: number;
+  status: number;
+  user_type: number;
+  username: string;
 }
 
 interface AssignGroupsRequest extends Request {
   body: {
-    userId: number;
     groups: number[];
+    userId: number;
   };
 }
 
 interface Users {
-  id: number;
-  username: string;
-  email: string;
-  password: string;
-  created_at: Date;
-  activation_code: string | null;
-  fname: string;
-  contact: string;
-  user_type: number;
-  last_login: Date | null;
-  last_nav: string | null;
-  last_ip: string | null;
-  last_host: string | null;
-  last_os: string | null;
-  status: number;
-  role: number;
-  usergroups: string | null; // Updated field to store comma-separated group IDs
-  reset_token: string | null;
   activated_at: Date | null;
+  activation_code: null | string;
+  contact: string;
+  created_at: Date;
+  email: string;
+  fname: string;
+  id: number;
+  last_host: null | string;
+  last_ip: null | string;
+  last_login: Date | null;
+  last_nav: null | string;
+  last_os: null | string;
+  password: string;
+  reset_token: null | string;
+  role: number;
+  status: number;
+  user_type: number;
+  usergroups: null | string; // Updated field to store comma-separated group IDs
+  username: string;
 }
 
 // Get all users
@@ -126,12 +127,12 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
       return {
         ...user,
         role: roleObj,
-        usergroups: usergroupsArr,
-        time_spent
+        time_spent,
+        usergroups: usergroupsArr
       };
     });
 
-    return res.status(200).json({ status: 'success', message: 'User data retrieved successfully', data: formattedUsers });
+    return res.status(200).json({ data: formattedUsers, message: 'User data retrieved successfully', status: 'success' });
   } catch (error: any) {
     console.error('Error getting all users:', error);
     return res.status(500).json({ message: 'Error getting all users' });
@@ -142,7 +143,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
 export const getAllPendingUser = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const pendingUsers = await pendingUserModel.getAllPendingUsers();
-    return res.status(200).json({ status: 'success', message: 'Pending user data retrieved successfully', data: pendingUsers });
+    return res.status(200).json({ data: pendingUsers, message: 'Pending user data retrieved successfully', status: 'success' });
   } catch (error: any) {
     console.error('Error getting all pending users:', error);
     return res.status(500).json({ message: 'Error getting all pending users' });
@@ -152,7 +153,7 @@ export const getAllPendingUser = async (_req: Request, res: Response): Promise<R
 // Update user and assign groups
 export const updateUser1 = async (req: Request, res: Response): Promise<Response> => {
   const { id } = req.params;
-  const { user_type, role, usergroups, status, fname, email, last_nav } = req.body as any;
+  const { email, fname, last_nav, role, status, user_type, usergroups } = req.body;
 
   try {
     // Validate user ID
@@ -174,7 +175,7 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
       const safeName = sanitizeFilename(original);
       const ext = path.extname(safeName).toLowerCase();
       if (!allowed.includes(ext)) {
-        return res.status(400).json({ status: 'error', message: 'Unsupported avatar file type' });
+        return res.status(400).json({ message: 'Unsupported avatar file type', status: 'error' });
       }
       const filename = `${userId}-${safeName}`; // <id-filename>
       const destAbs = await buildStoragePath('profile/avatar', filename);
@@ -183,13 +184,13 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
       const storedRel = toDbPath('profile/avatar', filename); // e.g., uploads/profile/avatar/<id-filename>
 
       await userModel.updateUserAvatar(userId, storedRel, contact);
-      return res.status(200).json({ status: 'success', message: 'User avatar updated', data: { id: userId, avatar: storedRel } });
+      return res.status(200).json({ data: { avatar: storedRel, id: userId }, message: 'User avatar updated', status: 'success' });
     }
 
     // If only contact provided (no file), allow updating contact alone via the same endpoint
     if (contact !== undefined) {
       await userModel.updateUserAvatar(userId, undefined, contact);
-      return res.status(200).json({ status: 'success', message: 'User contact updated', data: { id: userId, contact } });
+      return res.status(200).json({ data: { contact, id: userId }, message: 'User contact updated', status: 'success' });
     }
 
     // Flexible partial update for basic fields when no avatar/contact change provided
@@ -209,10 +210,10 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
       await userModel.assignUserToGroups(userId, usergroups);
     }
 
-    return res.status(200).json({ status: 'success', message: 'User updated successfully' });
+    return res.status(200).json({ message: 'User updated successfully', status: 'success' });
   } catch (error: any) {
     console.error('Error updating user:', error);
-    return res.status(500).json({ message: 'Error updating user', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error updating user' });
   }
 };
 
@@ -221,73 +222,73 @@ export const assignUserToGroups1 = async (
   req: AssignGroupsRequest,
   res: Response
 ): Promise<Response> => {
-  const { userId, groups } = req.body;
+  const { groups, userId } = req.body;
 
   if (!userId || !Array.isArray(groups)) {
-    return res.status(400).json({ status: 'Error', message: 'Invalid input' });
+    return res.status(400).json({ message: 'Invalid input', status: 'Error' });
   }
 
   try {
     await userModel.assignUserToGroups(userId, groups);
     return res
       .status(200)
-      .json({ status: 'Success', message: 'User assigned to groups successfully' });
+      .json({ message: 'User assigned to groups successfully', status: 'Success' });
   } catch (error: any) {
     console.error('Error assigning user to groups:', error);
     return res
       .status(500)
-      .json({ status: 'Error', message: 'Error assigning user to groups', error: error.message });
+      .json({ error: error.message, message: 'Error assigning user to groups', status: 'Error' });
   }
 };
 
 // Change groups for multiple users
 export const changeUsersGroups = async (req: Request, res: Response): Promise<Response> => {
-  const { userIds, groupIds } = req.body;
+  const { groupIds, userIds } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0 || !Array.isArray(groupIds) || groupIds.length === 0) {
-    return res.status(400).json({ status: 'Error', message: 'userIds and groupIds must be non-empty arrays' });
+    return res.status(400).json({ message: 'userIds and groupIds must be non-empty arrays', status: 'Error' });
   }
   try {
     for (const userId of userIds) {
       await userModel.assignUserToGroups(userId, groupIds);
     }
-    return res.status(200).json({ status: 'Success', message: 'Groups updated for selected users' });
+    return res.status(200).json({ message: 'Groups updated for selected users', status: 'Success' });
   } catch (error: any) {
     console.error('Error changing users groups:', error);
-    return res.status(500).json({ status: 'Error', message: 'Error changing users groups', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error changing users groups', status: 'Error' });
   }
 };
 
 // Change role for multiple users
 export const changeUsersRole = async (req: Request, res: Response): Promise<Response> => {
-  const { userIds, roleId } = req.body;
+  const { roleId, userIds } = req.body;
   if (!Array.isArray(userIds) || userIds.length === 0 || typeof roleId !== 'number') {
-    return res.status(400).json({ status: 'Error', message: 'userIds must be a non-empty array and roleId must be a number' });
+    return res.status(400).json({ message: 'userIds must be a non-empty array and roleId must be a number', status: 'Error' });
   }
   try {
     for (const userId of userIds) {
       await userModel.updateUserRole(userId, roleId);
     }
-    return res.status(200).json({ status: 'Success', message: 'Role updated for selected users' });
+    return res.status(200).json({ message: 'Role updated for selected users', status: 'Success' });
   } catch (error: any) {
     console.error('Error changing users role:', error);
-    return res.status(500).json({ message: 'Error changing users role', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error changing users role' });
   }
 };
 
 // Suspend or activate multiple users
 export const suspendOrActivateUsers = async (req: Request, res: Response): Promise<Response> => {
-  const { user_ids, status } = req.body;
+  const { status, user_ids } = req.body;
   if (!Array.isArray(user_ids) || user_ids.length === 0 || typeof status !== 'number') {
-    return res.status(400).json({ status: 'Error', message: 'user_ids must be a non-empty array and status must be a number' });
+    return res.status(400).json({ message: 'user_ids must be a non-empty array and status must be a number', status: 'Error' });
   }
   try {
     for (const userId of user_ids) {
       await userModel.updateUser(userId, { status } as any);
     }
-    return res.status(200).json({ status: 'Success', message: 'Status updated for selected users' });
+    return res.status(200).json({ message: 'Status updated for selected users', status: 'Success' });
   } catch (error: any) {
     console.error('Error updating users status:', error);
-    return res.status(500).json({ status: 'Error', message: 'Error updating users status', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error updating users status', status: 'Error' });
   }
 };
 
@@ -296,10 +297,10 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
   const { emailOrUsername, password } = req.body;
 
   try {
-    const { success, user, message } = await userModel.verifyLoginCredentials(emailOrUsername, password);
+    const { message, success, user } = await userModel.verifyLoginCredentials(emailOrUsername, password);
 
     if (!success) {
-      return res.status(401).json({ success: false, message });
+      return res.status(401).json({ message, success: false });
     }
 
     return res.status(200).json({
@@ -311,7 +312,7 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
     });
   } catch (error: any) {
     console.error('Error logging in user:', error);
-    return res.status(500).json({ message: 'Error logging in user', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error logging in user' });
   }
 };
 
@@ -346,8 +347,8 @@ export const adminResetPasswords = async (req: Request, res: Response): Promise<
         const contact = user.contact;
         const name = user.fname || user.name || user.username || 'User';
         const payload = {
-          e: email.split('@')[0],
           c: contact ? contact.slice(-4) : '',
+          e: email.split('@')[0],
           x: Date.now() + (60 * 60 * 1000)
         };
         const tokenString = Buffer.from(JSON.stringify(payload)).toString('base64');
@@ -363,10 +364,10 @@ export const adminResetPasswords = async (req: Request, res: Response): Promise<
           <p>Thank you!</p>
         `;
         await sendMail(email, 'Reset Password', html);
-        results.push({ user_id: user.id, email, status: 'sent' });
+        results.push({ email, status: 'sent', user_id: user.id });
       } catch (err) {
         logger.error('Error sending reset email for user', user.id, err);
-        results.push({ user_id: user.id, email: user.email, status: 'error', error: (err instanceof Error ? err.message : JSON.stringify(err)) });
+        results.push({ email: user.email, error: (err instanceof Error ? err.message : JSON.stringify(err)), status: 'error', user_id: user.id });
       }
     }
     return res.status(200).json({ message: 'Reset password emails processed', results });
@@ -383,10 +384,10 @@ export const updateUserProfile = async (req: Request, res: Response): Promise<Re
     return res.status(401).json({ message: 'Unauthorized' });
   }
   // Accept all possible fields from frontend
-  const { name, email, phone, dob, location, job } = req.body;
+  const { dob, email, job, location, name, phone } = req.body;
   // If file is uploaded, use req.file.buffer
   let profileImage = undefined;
-  if ((req as any).file && (req as any).file.buffer) {
+  if ((req as any).file?.buffer) {
     profileImage = (req as any).file.buffer;
   }
   try {
@@ -403,10 +404,10 @@ export const updateUserProfile = async (req: Request, res: Response): Promise<Re
       }
     }
     // Update user_profile table for profile fields
-    await userModel.upsertUserProfile(userId, { dob, location, job, profileImage });
+    await userModel.upsertUserProfile(userId, { dob, job, location, profileImage });
     return res.status(200).json({ message: 'Profile updated successfully' });
   } catch (error: any) {
-    return res.status(500).json({ message: 'Error updating profile', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error updating profile' });
   }
 };
 
@@ -416,12 +417,12 @@ export const getTasks = async (req: Request, res: Response) => {
     // Format for frontend
     const now = new Date();
     const formatted = tasks.map((task: any) => ({
-        id: task.id,
-        title: task.title,
         completed: !!task.completed,
-        progress: Number(task.progress),
         done: `${task.progress}%`,
-        time: timeAgo(task.updated_at || task.created_at, now)
+        id: task.id,
+        progress: Number(task.progress),
+        time: timeAgo(task.updated_at || task.created_at, now),
+        title: task.title
     }));
     res.json({ status: 'Success', tasks: formatted });
 };
@@ -429,22 +430,22 @@ export const getTasks = async (req: Request, res: Response) => {
 // POST /api/users/tasks
 export const postTask = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
-    const { title, progress } = req.body;
-    if (!title) return res.status(400).json({ status: 'Error', message: 'Title required' });
+    const { progress, title } = req.body;
+    if (!title) return res.status(400).json({ message: 'Title required', status: 'Error' });
     await userModel.createUserTask(userId, title, progress || 0);
-    res.status(201).json({ status: 'Success', message: 'Task created' });
+    res.status(201).json({ message: 'Task created', status: 'Success' });
 };
 
 // PUT /api/users/tasks/:id
 export const putTask = async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const taskId = Number(req.params.id);
-    const { title, completed, progress } = req.body;
-    const result = await userModel.updateUserTask(userId, taskId, { title, completed, progress });
+    const { completed, progress, title } = req.body;
+    const result = await userModel.updateUserTask(userId, taskId, { completed, progress, title });
     if (result && (result as any).affectedRows > 0) {
-        res.json({ status: 'Success', message: 'Task updated' });
+        res.json({ message: 'Task updated', status: 'Success' });
     } else {
-        res.status(404).json({ status: 'Error', message: 'Task not found or not updated' });
+        res.status(404).json({ message: 'Task not found or not updated', status: 'Error' });
     }
 };
 
@@ -454,18 +455,18 @@ export const getUserAuthLogs = async (req: Request, res: Response): Promise<Resp
     // Robust admin check
     const isAdmin = req.user && typeof req.user === 'object' && 'role' in req.user && req.user.role === 1;
     if (!isAdmin) {
-        return res.status(403).json({ status: 'error', message: 'Forbidden: Admins only' });
+        return res.status(403).json({ message: 'Forbidden: Admins only', status: 'error' });
     }
     if (!userId) {
-        return res.status(400).json({ status: 'error', message: 'Missing or invalid userId' });
+        return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
     }
     try {
         const { getUserAuthLogs } = require('../models/logModel');
         const logs = await getUserAuthLogs(userId);
-        return res.status(200).json({ status: 'success', logs });
+        return res.status(200).json({ logs, status: 'success' });
     } catch (error) {
         logger.error('Error fetching user auth logs:', error);
-        return res.status(500).json({ status: 'error', message: 'Failed to fetch user logs' });
+        return res.status(500).json({ message: 'Failed to fetch user logs', status: 'error' });
     }
 };
 
@@ -485,10 +486,10 @@ export const getAllAuthLogs = async (req: Request, res: Response): Promise<Respo
                 user: user ? { id: user.id, name: user.username || user.email } : null
             };
         });
-        return res.status(200).json({ status: 'success', message: 'Logs data retrieved succesfully', logs: logsWithUser });
+        return res.status(200).json({ logs: logsWithUser, message: 'Logs data retrieved succesfully', status: 'success' });
     } catch (error) {
         logger.error('Error fetching all auth logs:', error);
-        return res.status(500).json({ status: 'error', message: 'Failed to fetch auth logs' });
+        return res.status(500).json({ message: 'Failed to fetch auth logs', status: 'error' });
     }
 }
 
@@ -496,14 +497,14 @@ export const getAllAuthLogs = async (req: Request, res: Response): Promise<Respo
 export const getAuthLogs = async (req: Request, res: Response) => {
   const userId = Number(req.params.userId);
   if (!userId) {
-    return res.status(400).json({ status: 'error', message: 'Missing or invalid userId' });
+    return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
   }
   try {
     const logs = await logModel.getUserAuthLogs(userId);
-    return res.status(200).json({ status: 'success', logs });
+    return res.status(200).json({ logs, status: 'success' });
   } catch (error) {
     logger.error('Error fetching user auth logs:', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch user logs' });
+    return res.status(500).json({ message: 'Failed to fetch user logs', status: 'error' });
   }
 };
 
@@ -522,16 +523,16 @@ function timeAgo(date: Date, now: Date) {
 export const getModules = async (req: Request, res: Response): Promise<Response> => {
   try {
     const modules = await userModel.getAllModules();
-    return res.status(200).json({ status: 'success', message: 'Modules retrieved', data: modules });
+    return res.status(200).json({ data: modules, message: 'Modules retrieved', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching modules', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch modules' });
+    return res.status(500).json({ message: 'Failed to fetch modules', status: 'error' });
   }
 };
 
 export const getModuleById = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     const moduleRow = await userModel.getModuleById(id);
     // Build members with permissions grouped per ramco_id
@@ -545,57 +546,57 @@ export const getModuleById = async (req: Request, res: Response): Promise<Respon
     for (const m of members) {
       const ram = String(m.ramco_id);
       const perm = permMap.get(Number(m.permission_id));
-      if (!grouped.has(ram)) grouped.set(ram, { ramco_id: ram, permissions: [] as any[] });
+      if (!grouped.has(ram)) grouped.set(ram, { permissions: [] as any[], ramco_id: ram });
       if (perm) grouped.get(ram).permissions.push(perm);
     }
 
     const result = [
       {
-        module: moduleRow ? moduleRow.name : null,
         members: Array.from(grouped.values()),
+        module: moduleRow ? moduleRow.name : null,
       }
     ];
-    return res.status(200).json({ status: 'success', message: 'Permissions data retrieved successfully', data: result });
+    return res.status(200).json({ data: result, message: 'Permissions data retrieved successfully', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching module', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch module' });
+    return res.status(500).json({ message: 'Failed to fetch module', status: 'error' });
   }
 };
 
 export const createModule = async (req: Request, res: Response): Promise<Response> => {
-  const { name, description } = req.body;
-  if (!name) return res.status(400).json({ status: 'error', message: 'Name required' });
+  const { description, name } = req.body;
+  if (!name) return res.status(400).json({ message: 'Name required', status: 'error' });
   try {
     const insertId = await userModel.createModule(name, description || null);
-    return res.status(201).json({ status: 'success', message: 'Module created', data: { id: insertId } });
+    return res.status(201).json({ data: { id: insertId }, message: 'Module created', status: 'success' });
   } catch (error: any) {
     logger.error('Error creating module', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to create module' });
+    return res.status(500).json({ message: 'Failed to create module', status: 'error' });
   }
 };
 
 export const updateModule = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  const { name, description } = req.body;
-  if (!id || !name) return res.status(400).json({ status: 'error', message: 'Invalid input' });
+  const { description, name } = req.body;
+  if (!id || !name) return res.status(400).json({ message: 'Invalid input', status: 'error' });
   try {
     await userModel.updateModule(id, name, description || null);
-    return res.status(200).json({ status: 'success', message: 'Module updated' });
+    return res.status(200).json({ message: 'Module updated', status: 'success' });
   } catch (error: any) {
     logger.error('Error updating module', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to update module' });
+    return res.status(500).json({ message: 'Failed to update module', status: 'error' });
   }
 };
 
 export const deleteModule = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     await userModel.deleteModule(id);
-    return res.status(200).json({ status: 'success', message: 'Module deleted' });
+    return res.status(200).json({ message: 'Module deleted', status: 'success' });
   } catch (error: any) {
     logger.error('Error deleting module', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to delete module' });
+    return res.status(500).json({ message: 'Failed to delete module', status: 'error' });
   }
 };
 
@@ -603,72 +604,72 @@ export const deleteModule = async (req: Request, res: Response): Promise<Respons
 export const getAllModuleMembers = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const rows = await userModel.getModuleMembers();
-    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+    return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching module members', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members' });
+    return res.status(500).json({ message: 'Failed to fetch module members', status: 'error' });
   }
 };
 
 export const getModuleMembersByModule = async (req: Request, res: Response): Promise<Response> => {
   const moduleId = Number(req.params.id);
-  if (!moduleId) return res.status(400).json({ status: 'error', message: 'Invalid module id' });
+  if (!moduleId) return res.status(400).json({ message: 'Invalid module id', status: 'error' });
   try {
     const rows = await userModel.getModuleMembersByModule(moduleId);
-    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+    return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching module members by module', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members by module' });
+    return res.status(500).json({ message: 'Failed to fetch module members by module', status: 'error' });
   }
 };
 
 export const getModuleMembersByRamco = async (req: Request, res: Response): Promise<Response> => {
   const ramco = String(req.params.ramco_id || req.query.ramco_id || '');
-  if (!ramco) return res.status(400).json({ status: 'error', message: 'Invalid ramco_id' });
+  if (!ramco) return res.status(400).json({ message: 'Invalid ramco_id', status: 'error' });
   try {
     const rows = await userModel.getModuleMembersByRamco(ramco);
-    return res.status(200).json({ status: 'success', message: 'Module members retrieved', data: rows });
+    return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching module members by ramco', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch module members by ramco' });
+    return res.status(500).json({ message: 'Failed to fetch module members by ramco', status: 'error' });
   }
 };
 
 export const postModuleMember = async (req: Request, res: Response): Promise<Response> => {
   const moduleId = Number(req.params.id || req.body.module_id);
-  const { ramco_id, permission_id } = req.body;
-  if (!moduleId || !ramco_id) return res.status(400).json({ status: 'error', message: 'module_id and ramco_id required' });
+  const { permission_id, ramco_id } = req.body;
+  if (!moduleId || !ramco_id) return res.status(400).json({ message: 'module_id and ramco_id required', status: 'error' });
   try {
     const insertId = await userModel.addModuleMember(ramco_id, moduleId, Number(permission_id || 0));
-    return res.status(201).json({ status: 'success', message: 'Module member added', data: { id: insertId } });
+    return res.status(201).json({ data: { id: insertId }, message: 'Module member added', status: 'success' });
   } catch (error: any) {
     logger.error('Error adding module member', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to add module member' });
+    return res.status(500).json({ message: 'Failed to add module member', status: 'error' });
   }
 };
 
 export const putModuleMember = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  const { ramco_id, module_id, permission_id } = req.body;
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  const { module_id, permission_id, ramco_id } = req.body;
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
-    await userModel.updateModuleMember(id, { ramco_id, module_id: module_id ? Number(module_id) : undefined, permission_id });
-    return res.status(200).json({ status: 'success', message: 'Module member updated' });
+    await userModel.updateModuleMember(id, { module_id: module_id ? Number(module_id) : undefined, permission_id, ramco_id });
+    return res.status(200).json({ message: 'Module member updated', status: 'success' });
   } catch (error: any) {
     logger.error('Error updating module member', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to update module member' });
+    return res.status(500).json({ message: 'Failed to update module member', status: 'error' });
   }
 };
 
 export const deleteModuleMemberHandler = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     await userModel.deleteModuleMember(id);
-    return res.status(200).json({ status: 'success', message: 'Module member deleted' });
+    return res.status(200).json({ message: 'Module member deleted', status: 'success' });
   } catch (error: any) {
     logger.error('Error deleting module member', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to delete module member' });
+    return res.status(500).json({ message: 'Failed to delete module member', status: 'error' });
   }
 };
 
@@ -676,60 +677,60 @@ export const deleteModuleMemberHandler = async (req: Request, res: Response): Pr
 export const getPermissionsHandler = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const rows = await userModel.getPermissions();
-    return res.status(200).json({ status: 'success', message: 'Permissions retrieved', data: rows });
+    return res.status(200).json({ data: rows, message: 'Permissions retrieved', status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching permissions', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch permissions' });
+    return res.status(500).json({ message: 'Failed to fetch permissions', status: 'error' });
   }
 };
 
 export const getPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     const p = await userModel.getPermissionById(id);
-    if (!p) return res.status(404).json({ status: 'error', message: 'Permission not found' });
-    return res.status(200).json({ status: 'success', data: p });
+    if (!p) return res.status(404).json({ message: 'Permission not found', status: 'error' });
+    return res.status(200).json({ data: p, status: 'success' });
   } catch (error: any) {
     logger.error('Error fetching permission', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to fetch permission' });
+    return res.status(500).json({ message: 'Failed to fetch permission', status: 'error' });
   }
 };
 
 export const postPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
-  const { code, name, description, category, is_active } = req.body;
-  if (!code || !name) return res.status(400).json({ status: 'error', message: 'code and name required' });
+  const { category, code, description, is_active, name } = req.body;
+  if (!code || !name) return res.status(400).json({ message: 'code and name required', status: 'error' });
   try {
-    const id = await userModel.createPermission({ code, name, description, category, is_active });
-    return res.status(201).json({ status: 'success', message: 'Permission created', data: { id } });
+    const id = await userModel.createPermission({ category, code, description, is_active, name });
+    return res.status(201).json({ data: { id }, message: 'Permission created', status: 'success' });
   } catch (error: any) {
     logger.error('Error creating permission', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to create permission' });
+    return res.status(500).json({ message: 'Failed to create permission', status: 'error' });
   }
 };
 
 export const putPermissionHandler = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
   const data = req.body;
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     await userModel.updatePermission(id, data);
-    return res.status(200).json({ status: 'success', message: 'Permission updated' });
+    return res.status(200).json({ message: 'Permission updated', status: 'success' });
   } catch (error: any) {
     logger.error('Error updating permission', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to update permission' });
+    return res.status(500).json({ message: 'Failed to update permission', status: 'error' });
   }
 };
 
 export const deletePermissionHandler = async (req: Request, res: Response): Promise<Response> => {
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+  if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
   try {
     await userModel.deletePermission(id);
-    return res.status(200).json({ status: 'success', message: 'Permission deleted' });
+    return res.status(200).json({ message: 'Permission deleted', status: 'success' });
   } catch (error: any) {
     logger.error('Error deleting permission', error);
-    return res.status(500).json({ status: 'error', message: 'Failed to delete permission' });
+    return res.status(500).json({ message: 'Failed to delete permission', status: 'error' });
   }
 };
 
@@ -746,29 +747,29 @@ export const getWorkflows = async (_req: Request, res: Response): Promise<Respon
 
     const enriched = (workflows || []).map((lvl: any) => {
       const emp = empMap.get(String(lvl.ramco_id)) || null;
-      const employee = emp ? { ramco_id: emp.ramco_id, full_name: emp.full_name || emp.fullname || emp.name || null } : null;
+      const employee = emp ? { full_name: emp.full_name || emp.fullname || emp.name || null, ramco_id: emp.ramco_id } : null;
       const copy = { ...lvl };
-      delete (copy as any).ramco_id;
-      (copy as any).employee = employee;
+      delete (copy).ramco_id;
+      (copy).employee = employee;
       return copy;
     });
 
-    return res.status(200).json({ status: 'success', message: 'Approval levels retrieved successfully', data: enriched });
+    return res.status(200).json({ data: enriched, message: 'Approval levels retrieved successfully', status: 'success' });
   } catch (error: any) {
     console.error('Error getting approval levels:', error);
-    return res.status(500).json({ message: 'Error getting approval levels', error: error.message });
+    return res.status(500).json({ error: error.message, message: 'Error getting approval levels' });
   }
 };
 
 export const getWorkflowById = async (req: Request, res: Response): Promise<Response> => {
   const workflowId = Number(req.params.id);
   if (!workflowId) {
-    return res.status(400).json({ status: 'error', message: 'Missing or invalid workflowId' });
+    return res.status(400).json({ message: 'Missing or invalid workflowId', status: 'error' });
   }
   try {
     const workflow = await userModel.getWorkflowById(workflowId);
     if (!workflow) {
-      return res.status(404).json({ status: 'error', message: 'Workflow not found' });
+      return res.status(404).json({ message: 'Workflow not found', status: 'error' });
     }
 
     // Enrich ramco_id -> employee
@@ -776,15 +777,15 @@ export const getWorkflowById = async (req: Request, res: Response): Promise<Resp
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
   const emp = empMap.get(String(workflow.ramco_id)) || null;
-    const employee = emp ? { ramco_id: emp.ramco_id, full_name: emp.full_name || emp.fullname || emp.name || null } : null;
+    const employee = emp ? { full_name: emp.full_name || emp.fullname || emp.name || null, ramco_id: emp.ramco_id } : null;
   const copy = { ...workflow };
-    delete (copy as any).ramco_id;
-    (copy as any).employee = employee;
+    delete (copy).ramco_id;
+    (copy).employee = employee;
 
-    return res.status(200).json({ status: 'success', data: copy });
+    return res.status(200).json({ data: copy, status: 'success' });
   } catch (error) {
     console.error('Error getting approval level by ID:', error);
-    return res.status(500).json({ status: 'error', message: 'Error getting approval level', error: (error as any).message });
+    return res.status(500).json({ error: (error as any).message, message: 'Error getting approval level', status: 'error' });
   }
 };
 
@@ -793,16 +794,16 @@ export const createWorkflow = async (req: Request, res: Response) => {
   try {
     const createdCount = await userModel.createWorkflow(data);
     return res.status(201).json({
-      status: 'success',
-      message: `Workflow created successfully (${createdCount} level${createdCount === 1 ? '' : 's'})`,
       data: {
         created_levels: createdCount,
         module_name: data?.module_name || null
-      }
+      },
+      message: `Workflow created successfully (${createdCount} level${createdCount === 1 ? '' : 's'})`,
+      status: 'success'
     });
   } catch (error) {
     console.error('Error creating workflow:', error);
-    return res.status(500).json({ status: 'error', message: 'Error creating workflow', error: (error as any).message });
+    return res.status(500).json({ error: (error as any).message, message: 'Error creating workflow', status: 'error' });
   }
 };
 
@@ -812,10 +813,10 @@ export const updateWorkflow = async (req: Request, res: Response) => {
 
   try {
     await userModel.updateWorkflow(workflowId, data);
-    return res.status(200).json({ status: 'success', message: 'Workflow updated successfully' });
+    return res.status(200).json({ message: 'Workflow updated successfully', status: 'success' });
   } catch (error) {
     console.error('Error updating workflow:', error);
-    return res.status(500).json({ status: 'error', message: 'Error updating workflow', error: (error as any).message });
+    return res.status(500).json({ error: (error as any).message, message: 'Error updating workflow', status: 'error' });
   }
 };
 
@@ -828,25 +829,25 @@ export const reorderWorkflows = async (req: Request, res: Response) => {
     // Support alias: 'order' for array of ids
     const incoming = Array.isArray(data.items) ? data.items : (Array.isArray(data.order) ? data.order : []);
     if (!Array.isArray(incoming) || incoming.length === 0) {
-      return res.status(400).json({ status: 'error', message: 'items/order must be a non-empty array' });
+      return res.status(400).json({ message: 'items/order must be a non-empty array', status: 'error' });
     }
-    const updated = await userModel.reorderWorkflows({ module_name: data.module_name, items: incoming });
-    return res.status(200).json({ status: 'success', message: `Reordered ${updated} workflow level(s)`, data: { updated } });
+    const updated = await userModel.reorderWorkflows({ items: incoming, module_name: data.module_name });
+    return res.status(200).json({ data: { updated }, message: `Reordered ${updated} workflow level(s)`, status: 'success' });
   } catch (error: any) {
-    return res.status(500).json({ status: 'error', message: 'Failed to reorder workflows', error: error?.message });
+    return res.status(500).json({ error: error?.message, message: 'Failed to reorder workflows', status: 'error' });
   }
 };
 
 export const deleteWorkflow = async (req: Request, res: Response) => {
   const workflowId = Number(req.params.id);
   if (!workflowId) {
-    return res.status(400).json({ status: 'error', message: 'Missing or invalid workflowId' });
+    return res.status(400).json({ message: 'Missing or invalid workflowId', status: 'error' });
   }
   try {
     await userModel.deleteWorkflow(workflowId);
-    return res.status(200).json({ status: 'success', message: 'Workflow deleted successfully' });
+    return res.status(200).json({ message: 'Workflow deleted successfully', status: 'success' });
   } catch (error) {
     console.error('Error deleting workflow:', error);
-    return res.status(500).json({ status: 'error', message: 'Error deleting workflow', error: (error as any).message });
+    return res.status(500).json({ error: (error as any).message, message: 'Error deleting workflow', status: 'error' });
   }
 };

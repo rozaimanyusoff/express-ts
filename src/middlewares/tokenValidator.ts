@@ -1,6 +1,7 @@
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { NextFunction, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+
 import * as userModel from '../p.user/userModel';
 
 dotenv.config();
@@ -9,7 +10,7 @@ const { JWT_SECRET, SINGLE_SESSION_ENFORCEMENT } = process.env;
 
 const tokenValidator = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.header('Authorization');
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = authHeader?.split(' ')[1];
 
   if (!token) {
     res.status(401).json({ message: 'Access denied. No token provided.' });

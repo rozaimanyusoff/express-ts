@@ -1,27 +1,27 @@
+import { NextFunction, Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
-import { logAuthActivity } from '../p.admin/logModel';
-import { Request, Response, NextFunction } from 'express';
 
-type BlockRecord = {
+import { logAuthActivity } from '../p.admin/logModel';
+
+interface BlockRecord {
     blockedUntil: number;
-    lastIdentity?: string | null;
     firstBlockedAt?: number;
     lastAttemptAt?: number;
-};
+    lastIdentity?: null | string;
+}
 
 const blockedMap = new Map<string, BlockRecord>();
 
 // Lightweight attempt tracker to expose remaining attempts in current window
 // We track FAILED login attempts per client key within a sliding window.
 // This powers the UI's "remaining attempts" without counting successful logins.
-type AttemptRecord = { windowStart: number; fails: number };
+interface AttemptRecord { fails: number; windowStart: number; }
 const attemptMap = new Map<string, AttemptRecord>();
 
-// Increment failed-attempt counter for current window (used by controllers on auth failure)
-export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
+export function getAttemptInfo(req: Request, routeIdOverride?: string): { current: number; limit: number; remaining: number; resetAt: number } {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -30,7 +30,30 @@ export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
     const now = Date.now();
     const rec = attemptMap.get(key);
     if (!rec) {
-        attemptMap.set(key, { windowStart: now, fails: 1 });
+        return { current: 0, limit: MAX_ATTEMPTS, remaining: MAX_ATTEMPTS, resetAt: now + WINDOW_MS };
+    }
+    // if window expired, effectively back to 0
+    const inWindow = now - rec.windowStart < WINDOW_MS;
+    const current = inWindow ? rec.fails : 0;
+    const remaining = Math.max(0, MAX_ATTEMPTS - current);
+    const resetAt = (inWindow ? rec.windowStart : now) + WINDOW_MS;
+    return { current, limit: MAX_ATTEMPTS, remaining, resetAt };
+}
+
+// Increment failed-attempt counter for current window (used by controllers on auth failure)
+export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
+    const key = `${ip}|${userAgent}|${routeId}`;
+    const now = Date.now();
+    const rec = attemptMap.get(key);
+    if (!rec) {
+        attemptMap.set(key, { fails: 1, windowStart: now });
         return;
     }
     if (now - rec.windowStart >= WINDOW_MS) {
@@ -46,35 +69,13 @@ export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
 export function resetAttempts(req: Request, routeIdOverride?: string) {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
     const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
     const key = `${ip}|${userAgent}|${routeId}`;
     attemptMap.delete(key);
-}
-
-export function getAttemptInfo(req: Request, routeIdOverride?: string): { current: number; remaining: number; limit: number; resetAt: number } {
-    const xfwd = req.headers['x-forwarded-for'];
-    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
-        .split(',')[0]
-        .trim();
-    const userAgent = String(req.headers['user-agent'] || '').trim();
-    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
-    const key = `${ip}|${userAgent}|${routeId}`;
-    const now = Date.now();
-    const rec = attemptMap.get(key);
-    if (!rec) {
-        return { current: 0, remaining: MAX_ATTEMPTS, limit: MAX_ATTEMPTS, resetAt: now + WINDOW_MS };
-    }
-    // if window expired, effectively back to 0
-    const inWindow = now - rec.windowStart < WINDOW_MS;
-    const current = inWindow ? rec.fails : 0;
-    const remaining = Math.max(0, MAX_ATTEMPTS - current);
-    const resetAt = (inWindow ? rec.windowStart : now) + WINDOW_MS;
-    return { current, remaining, limit: MAX_ATTEMPTS, resetAt };
 }
 
 // Read runtime configuration from env with safe defaults
@@ -94,43 +95,6 @@ const WINDOW_MS = WINDOW_MINUTES * 60 * 1000; // allow MAX_ATTEMPTS per WINDOW_M
 // and to block IP+userAgent for a certain period of time if the limit is exceeded
 // This middleware uses express-rate-limit and a custom in-memory store
 
-// Helper: build a stable client key (IP + user-agent)
-export function getClientKey(req: Request): string {
-    const xfwd = req.headers['x-forwarded-for'];
-    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '')
-        .split(',')[0]
-        .trim();
-    const userAgent = String(req.headers['user-agent'] || '').trim();
-    const routeId = `${req.baseUrl || ''}${req.path || ''}`;
-    return `${ip}|${userAgent}|${routeId}`;
-}
-
-// Best-effort identity extraction for observability on auth routes
-function extractIdentity(req: Request): string | null {
-    const b: any = (req as any).body || {};
-    const val = b.emailOrUsername ?? b.email ?? b.username ?? b.contact ?? null;
-    return val != null ? String(val) : null;
-}
-
-// Helper: get block info for current or specific routeId
-export function getClientBlockInfo(req: Request, routeIdOverride?: string): { blocked: boolean; remainingMs: number; blockedUntil: number | null } {
-    const xfwd = req.headers['x-forwarded-for'];
-    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket?.remoteAddress || (req as any).connection?.remoteAddress || '')
-        .split(',')[0]
-        .trim();
-    const userAgent = String(req.headers['user-agent'] || '').trim();
-    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
-    const key = `${ip}|${userAgent}|${routeId}`;
-    const now = Date.now();
-    const info = blockedMap.get(key);
-    if (info && info.blockedUntil > now) {
-        return { blocked: true, remainingMs: Math.max(0, info.blockedUntil - now), blockedUntil: info.blockedUntil };
-    }
-    return { blocked: false, remainingMs: 0, blockedUntil: null };
-}
-
 // Allow other modules to clear a client block (e.g., upon successful login)
 export function clearClientBlock(req: Request) {
     const key = getClientKey(req);
@@ -148,27 +112,64 @@ export function clearClientBlockByParams(ip: string, userAgent: string, routeId:
     return blockedMap.delete(key);
 }
 
-// Admin/utility: list active blocks (for observability)
-export function listActiveBlocks(): Array<{ key: string; ip: string; userAgent: string; route: string; blockedUntil: number; remainingMs: number; lastIdentity: string | null; firstBlockedAt: number | null; lastAttemptAt: number | null }>{
+// Helper: get block info for current or specific routeId
+export function getClientBlockInfo(req: Request, routeIdOverride?: string): { blocked: boolean; blockedUntil: null | number; remainingMs: number; } {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = routeIdOverride ?? `${req.baseUrl || ''}${req.path || ''}`;
+    const key = `${ip}|${userAgent}|${routeId}`;
     const now = Date.now();
-    const rows: Array<{ key: string; ip: string; userAgent: string; route: string; blockedUntil: number; remainingMs: number; lastIdentity: string | null; firstBlockedAt: number | null; lastAttemptAt: number | null }> = [];
+    const info = blockedMap.get(key);
+    if (info && info.blockedUntil > now) {
+        return { blocked: true, blockedUntil: info.blockedUntil, remainingMs: Math.max(0, info.blockedUntil - now) };
+    }
+    return { blocked: false, blockedUntil: null, remainingMs: 0 };
+}
+
+// Helper: build a stable client key (IP + user-agent)
+export function getClientKey(req: Request): string {
+    const xfwd = req.headers['x-forwarded-for'];
+    const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.connection.remoteAddress || '')
+        .split(',')[0]
+        .trim();
+    const userAgent = String(req.headers['user-agent'] || '').trim();
+    const routeId = `${req.baseUrl || ''}${req.path || ''}`;
+    return `${ip}|${userAgent}|${routeId}`;
+}
+
+// Admin/utility: list active blocks (for observability)
+export function listActiveBlocks(): { blockedUntil: number; firstBlockedAt: null | number; ip: string; key: string; lastAttemptAt: null | number; lastIdentity: null | string; remainingMs: number; route: string; userAgent: string; }[]{
+    const now = Date.now();
+    const rows: { blockedUntil: number; firstBlockedAt: null | number; ip: string; key: string; lastAttemptAt: null | number; lastIdentity: null | string; remainingMs: number; route: string; userAgent: string; }[] = [];
     for (const [key, info] of blockedMap.entries()) {
-        if (!info?.blockedUntil) continue;
+        if (!info.blockedUntil) continue;
         if (info.blockedUntil <= now) continue;
         const [ip = '', userAgent = '', route = ''] = key.split('|');
         rows.push({
-            key,
-            ip,
-            userAgent,
-            route,
             blockedUntil: info.blockedUntil,
-            remainingMs: Math.max(0, info.blockedUntil - now),
-            lastIdentity: info.lastIdentity ?? null,
             firstBlockedAt: info.firstBlockedAt ?? null,
-            lastAttemptAt: info.lastAttemptAt ?? null
+            ip,
+            key,
+            lastAttemptAt: info.lastAttemptAt ?? null,
+            lastIdentity: info.lastIdentity ?? null,
+            remainingMs: Math.max(0, info.blockedUntil - now),
+            route,
+            userAgent
         });
     }
     return rows;
+}
+
+// Best-effort identity extraction for observability on auth routes
+function extractIdentity(req: Request): null | string {
+    const b: any = (req as any).body || {};
+    const val = b.emailOrUsername ?? b.email ?? b.username ?? b.contact ?? null;
+    return val != null ? String(val) : null;
 }
 
 // Periodic cleanup of expired blocks to avoid memory leaks
@@ -178,12 +179,9 @@ setInterval(() => {
     for (const [key, info] of blockedMap.entries()) {
         if (info.blockedUntil <= now) blockedMap.delete(key);
     }
-}, CLEANUP_INTERVAL).unref?.();
+}, CLEANUP_INTERVAL).unref();
 
 const rateLimiter = rateLimit({
-    windowMs: WINDOW_MS,
-    max: MAX_ATTEMPTS,
-    keyGenerator: (req: Request) => getClientKey(req),
     handler: async (req: Request, res: Response, next: NextFunction) => {
         const key = getClientKey(req);
         const now = Date.now();
@@ -191,24 +189,27 @@ const rateLimiter = rateLimit({
         const identity = extractIdentity(req);
         blockedMap.set(key, {
             blockedUntil: now + BLOCK_DURATION,
-            lastIdentity: identity ?? prev?.lastIdentity ?? null,
             firstBlockedAt: prev?.firstBlockedAt ?? now,
-            lastAttemptAt: now
+            lastAttemptAt: now,
+            lastIdentity: identity ?? prev?.lastIdentity ?? null
         });
         const [ip, userAgent] = key.split('|');
-        await logAuthActivity(0, 'other', 'fail', { reason: 'rate_limit_block', ip, userAgent }, req).catch(() => {});
+        await logAuthActivity(0, 'other', 'fail', { ip, reason: 'rate_limit_block', userAgent }, req).catch(() => {});
         // Communicate retry information for frontend UX (countdown)
         const retryAfterSec = Math.ceil(BLOCK_DURATION / 1000);
         res.setHeader('Retry-After', String(retryAfterSec));
         res.status(429).json({
-            status: 'error',
             code: 429,
             message: 'Too many requests. This IP and device are temporarily blocked.',
-            retryAfter: retryAfterSec
+            retryAfter: retryAfterSec,
+            status: 'error'
         });
     },
+    keyGenerator: (req: Request) => getClientKey(req),
+    legacyHeaders: false,
+    max: MAX_ATTEMPTS,
     standardHeaders: 'draft-8',
-    legacyHeaders: false
+    windowMs: WINDOW_MS
 });
 
 // Middleware to check if IP+userAgent is blocked
@@ -217,7 +218,7 @@ function ipBlocker(req: Request, res: Response, next: NextFunction) {
     const block = blockedMap.get(key);
     if (block && block.blockedUntil > Date.now()) {
         const [ip, userAgent] = key.split('|');
-        logAuthActivity(0, 'other', 'fail', { reason: 'ip_blocked', ip, userAgent }, req).catch(() => {});
+        logAuthActivity(0, 'other', 'fail', { ip, reason: 'ip_blocked', userAgent }, req).catch(() => {});
         // Update metadata for observability
         try {
             const identity = extractIdentity(req);
@@ -229,11 +230,11 @@ function ipBlocker(req: Request, res: Response, next: NextFunction) {
         const retryAfterSec = Math.ceil(remainingMs / 1000);
         res.setHeader('Retry-After', String(retryAfterSec));
         res.status(429).json({
-            status: 'error',
+            blockedUntil: block.blockedUntil,
             code: 429,
             message: 'This IP and device are temporarily blocked due to too many requests.',
             retryAfter: retryAfterSec,
-            blockedUntil: block.blockedUntil
+            status: 'error'
         });
         return;
     }

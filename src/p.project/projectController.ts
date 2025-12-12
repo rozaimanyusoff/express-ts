@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import * as projectModel from './projectModel';
-import { buildStoragePath, safeMove, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
-import * as assetModel from '../p.asset/assetModel';
 import path from 'path';
+
+import * as assetModel from '../p.asset/assetModel';
+import { buildStoragePath, safeMove, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
+import * as projectModel from './projectModel';
 
 
 /* ======= PROJECTS ======= */
@@ -21,7 +22,7 @@ export const getProjects = async (req: Request, res: Response) => {
         const scopes = await projectModel.getScopeByProjectId(project.id);
 
         // Calculate assignments summary grouped by assignee
-        const assignmentsMap = new Map<string, { assignee: { ramco_id: string; full_name: string | null }; planned_mandays: number; actual_mandays: number; scope_count: number }>();
+        const assignmentsMap = new Map<string, { actual_mandays: number; assignee: { full_name: null | string; ramco_id: string; }; planned_mandays: number; scope_count: number }>();
 
         for (const scope of scopes) {
           const assigneeId = scope.assignee || 'unassigned';
@@ -31,12 +32,12 @@ export const getProjects = async (req: Request, res: Response) => {
           if (!assignmentsMap.has(assigneeId)) {
             const emp = empMap.get(assigneeId);
             assignmentsMap.set(assigneeId, {
+              actual_mandays: 0,
               assignee: {
-                ramco_id: assigneeId,
-                full_name: emp ? (emp.full_name || emp.name || null) : null
+                full_name: emp ? (emp.full_name || emp.name || null) : null,
+                ramco_id: assigneeId
               },
               planned_mandays: 0,
-              actual_mandays: 0,
               scope_count: 0
             });
           }
@@ -58,9 +59,9 @@ export const getProjects = async (req: Request, res: Response) => {
       })
     );
 
-    return res.status(200).json({ status: 'success', message: `${enrichedProjects.length} Projects retrieved`, data: enrichedProjects });
+    return res.status(200).json({ data: enrichedProjects, message: `${enrichedProjects.length} Projects retrieved`, status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch projects', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch projects', status: 'error' });
   }
 };
 
@@ -68,11 +69,11 @@ export const getProjectById = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     const project = await projectModel.getProjectById(projectId);
     if (!project) {
-      return res.status(404).json({ status: 'error', message: 'Project not found', data: null });
+      return res.status(404).json({ data: null, message: 'Project not found', status: 'error' });
     }
     const scopes = await projectModel.getScopeByProjectId(projectId);
 
@@ -82,7 +83,7 @@ export const getProjectById = async (req: Request, res: Response) => {
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 
     // Calculate assignments summary grouped by assignee
-    const assignmentsMap = new Map<string, { assignee: { ramco_id: string; full_name: string | null }; planned_mandays: number; actual_mandays: number; scope_count: number }>();
+    const assignmentsMap = new Map<string, { actual_mandays: number; assignee: { full_name: null | string; ramco_id: string; }; planned_mandays: number; scope_count: number }>();
 
     for (const scope of scopes) {
       const assigneeId = scope.assignee || 'unassigned';
@@ -92,12 +93,12 @@ export const getProjectById = async (req: Request, res: Response) => {
       if (!assignmentsMap.has(assigneeId)) {
         const emp = empMap.get(assigneeId);
         assignmentsMap.set(assigneeId, {
+          actual_mandays: 0,
           assignee: {
-            ramco_id: assigneeId,
-            full_name: emp ? (emp.full_name || emp.name || null) : null
+            full_name: emp ? (emp.full_name || emp.name || null) : null,
+            ramco_id: assigneeId
           },
           planned_mandays: 0,
-          actual_mandays: 0,
           scope_count: 0
         });
       }
@@ -112,20 +113,20 @@ export const getProjectById = async (req: Request, res: Response) => {
       .filter(a => a.assignee.ramco_id !== 'unassigned') // Optionally exclude unassigned
       .sort((a, b) => b.actual_mandays - a.actual_mandays); // Sort by actual mandays desc
 
-    const { percent_complete, overall_progress, ...rest } = project as any;
+    const { overall_progress, percent_complete, ...rest } = project;
     const progress = (overall_progress !== undefined && overall_progress !== null) ? overall_progress : percent_complete;
     return res.status(200).json({
-      status: 'success',
-      message: 'Project retrieved',
       data: {
         ...rest,
-        overall_progress: progress,
         assignments,
+        overall_progress: progress,
         scopes
-      }
+      },
+      message: 'Project retrieved',
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch project', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch project', status: 'error' });
   }
 };
 
@@ -145,13 +146,13 @@ export const createProject = async (req: Request, res: Response) => {
     const scopes = Array.isArray(body.scopes) ? body.scopes : [];
 
     if (!code || !name) {
-      return res.status(400).json({ status: 'error', message: 'code and name are required', data: null });
+      return res.status(400).json({ data: null, message: 'code and name are required', status: 'error' });
     }
 
     // Compute derived project fields from scopes if not provided
     const parseDate = (s: any) => (typeof s === 'string' && s.trim() !== '') ? s.trim().slice(0, 10) : null;
-    const minDate = (dates: (string | null)[]) => dates.filter(Boolean).sort()[0] || null;
-    const maxDate = (dates: (string | null)[]) => dates.filter(Boolean).sort().slice(-1)[0] || null;
+    const minDate = (dates: (null | string)[]) => dates.filter(Boolean).sort()[0] || null;
+    const maxDate = (dates: (null | string)[]) => dates.filter(Boolean).sort().slice(-1)[0] || null;
     const plannedStarts = scopes.map((s: any) => parseDate(s.plannedStartDate ?? s.planned_start_date));
     const plannedEnds = scopes.map((s: any) => parseDate(s.plannedEndDate ?? s.planned_end_date));
     const start_date = parseDate(body.startDate ?? body.start_date) || minDate(plannedStarts);
@@ -167,12 +168,12 @@ export const createProject = async (req: Request, res: Response) => {
     const percent_complete = Number.isFinite(Number(overallFromPayload)) ? Number(overallFromPayload) : (overallFromScopes ?? 0);
 
     // Allow assignmentType: 'task' | 'support' | 'project'
-    const assignment_type = ['task', 'support', 'project'].includes(String(assignmentType)) ? String(assignmentType) as projectModel.AssignmentType : 'project';
+    const assignment_type = ['project', 'support', 'task'].includes(String(assignmentType)) ? String(assignmentType) as projectModel.AssignmentType : 'project';
 
-    const projId = await projectModel.createProject({ code, name, description, assignment_type, status: 'in_progress', start_date, due_date, percent_complete, priority });
+    const projId = await projectModel.createProject({ assignment_type, code, description, due_date, name, percent_complete, priority, start_date, status: 'in_progress' });
 
     // Helper: count business days (Mon-Fri) inclusive
-    function businessDaysInclusive(startStr: string | null, endStr: string | null): number | null {
+    function businessDaysInclusive(startStr: null | string, endStr: null | string): null | number {
       if (!startStr || !endStr) return null;
       const start = new Date(startStr);
       const end = new Date(endStr);
@@ -197,7 +198,7 @@ export const createProject = async (req: Request, res: Response) => {
     // Try to assign by fieldname patterns
     for (const f of allFiles || []) {
       const field = String(f.fieldname || '');
-      const m = field.match(/scopes\[(\d+)\][.\[]attachments\]?/i) || field.match(/^attachments_(\d+)$/i) || field.match(/^attachment_(\d+)$/i);
+      const m = (/scopes\[(\d+)\][.\[]attachments\]?/i.exec(field)) || (/^attachments_(\d+)$/i.exec(field)) || (/^attachment_(\d+)$/i.exec(field));
       if (m) {
         const idx = Number(m[1]);
         if (!assignedFiles.has(idx)) assignedFiles.set(idx, []);
@@ -252,20 +253,20 @@ export const createProject = async (req: Request, res: Response) => {
       const attachment = dbPaths.length ? dbPaths.join(',') : null;
 
       const scopePayload: projectModel.NewScope = {
-        project_id: projId,
-        title: s.title,
-        task_groups: (s.taskGroups ?? s.task_groups) ?? null,
-        description: s.description ?? null,
+        actual_end_date,
+        actual_mandays: actual_mandays as any,
+        actual_start_date,
         assignee: s.assignee ?? null,
-        planned_start_date,
+        attachment,
+        description: s.description ?? null,
         planned_end_date,
         planned_mandays: planned_mandays as any,
-        attachment,
+        planned_start_date,
         progress: Number.isFinite(Number(s.progress)) ? Number(s.progress) : null,
+        project_id: projId,
         status: s.status ?? null,
-        actual_start_date,
-        actual_end_date,
-        actual_mandays: actual_mandays as any
+        task_groups: (s.taskGroups ?? s.task_groups) ?? null,
+        title: s.title
       };
       const scopeId = await projectModel.createScope(scopePayload);
       createdScopes.push({ id: scopeId, ...scopePayload });
@@ -276,16 +277,16 @@ export const createProject = async (req: Request, res: Response) => {
       await projectModel.setProjectTags(projId, projectTags);
     }
 
-    return res.status(201).json({ status: 'success', message: 'Project created', data: { id: projId, start_date, due_date, overall_progress: percent_complete, priority: priority ?? null, tags: projectTags, scopes: createdScopes } });
+    return res.status(201).json({ data: { due_date, id: projId, overall_progress: percent_complete, priority: priority ?? null, scopes: createdScopes, start_date, tags: projectTags }, message: 'Project created', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create project', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create project', status: 'error' });
   }
 };
 
 export const updateProject = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
-    if (!projectId) return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+    if (!projectId) return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     const body = req.body || {};
     // At this point, scopes are ignored for this endpoint by design
 
@@ -306,7 +307,7 @@ export const updateProject = async (req: Request, res: Response) => {
     // ensure project exists
     const existing = await projectModel.getProjectById(projectId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Project not found', data: null });
+      return res.status(404).json({ data: null, message: 'Project not found', status: 'error' });
     }
 
     await projectModel.updateProject(projectId, updateData);
@@ -322,27 +323,27 @@ export const updateProject = async (req: Request, res: Response) => {
       }
     }
 
-    return res.status(200).json({ status: 'success', message: 'Project updated', data: null });
+    return res.status(200).json({ data: null, message: 'Project updated', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update project', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update project', status: 'error' });
   }
 };
 
 export const deleteProject = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
-    if (!projectId) return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+    if (!projectId) return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
 
     // ensure project exists because deleteProject returns void
     const existing = await projectModel.getProjectById(projectId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Project not found', data: null });
+      return res.status(404).json({ data: null, message: 'Project not found', status: 'error' });
     }
 
     await projectModel.deleteProject(projectId);
-    return res.status(200).json({ status: 'success', message: 'Project deleted', data: null });
+    return res.status(200).json({ data: null, message: 'Project deleted', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete project', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete project', status: 'error' });
   }
 };
 
@@ -351,10 +352,10 @@ export const addScope = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     const project = await projectModel.getProjectById(projectId);
-    if (!project) return res.status(404).json({ status: 'error', message: 'Project not found', data: null });
+    if (!project) return res.status(404).json({ data: null, message: 'Project not found', status: 'error' });
 
     const body = req.body || {};
     const parseDate = (s: any) => (typeof s === 'string' && s.trim() !== '') ? s.trim().slice(0, 10) : null;
@@ -363,7 +364,7 @@ export const addScope = async (req: Request, res: Response) => {
     const actual_start_date = parseDate(body.actual_start_date ?? body.actualStartDate);
     const actual_end_date = parseDate(body.actual_end_date ?? body.actualEndDate);
 
-    function businessDaysInclusive(startStr: string | null, endStr: string | null): number | null {
+    function businessDaysInclusive(startStr: null | string, endStr: null | string): null | number {
       if (!startStr || !endStr) return null;
       const start = new Date(startStr);
       const end = new Date(endStr);
@@ -400,8 +401,8 @@ export const addScope = async (req: Request, res: Response) => {
     const dbPaths: string[] = [];
     for (const file of allFiles || []) {
       try {
-        const originalAbs = (file as any).path;
-        const baseName = sanitizeFilename((file as any).originalname || 'file');
+        const originalAbs = (file).path;
+        const baseName = sanitizeFilename((file).originalname || 'file');
         const finalName = `${projectId}-${baseName}`;
         const destAbs = await buildStoragePath(`project/${tagFolder}`, finalName);
         await safeMove(originalAbs, destAbs);
@@ -412,36 +413,36 @@ export const addScope = async (req: Request, res: Response) => {
     const attachment = dbPaths.length ? dbPaths.join(',') : null;
 
     const scopePayload: projectModel.NewScope = {
-      project_id: projectId,
-      title: body.title,
-      task_groups: (body.task_groups ?? body.taskGroups) ?? null,
-      description: body.description ?? null,
-      assignee: body.assignee ?? null,
-      planned_start_date,
-      planned_end_date,
-      planned_mandays: planned_mandays as any,
-      attachment,
-      progress: Number.isFinite(Number(body.progress)) ? Number(body.progress) : null,
-      status: body.status ?? null,
-      actual_start_date,
       actual_end_date,
       actual_mandays: actual_mandays as any,
-      order_index: Number.isFinite(Number(body.order_index)) ? Number(body.order_index) : undefined
+      actual_start_date,
+      assignee: body.assignee ?? null,
+      attachment,
+      description: body.description ?? null,
+      order_index: Number.isFinite(Number(body.order_index)) ? Number(body.order_index) : undefined,
+      planned_end_date,
+      planned_mandays: planned_mandays as any,
+      planned_start_date,
+      progress: Number.isFinite(Number(body.progress)) ? Number(body.progress) : null,
+      project_id: projectId,
+      status: body.status ?? null,
+      task_groups: (body.task_groups ?? body.taskGroups) ?? null,
+      title: body.title
     };
 
     const id = await projectModel.createScope(scopePayload);
     // Maintain assignment row for assignee/actual_mandays
     if (scopePayload.assignee !== null || scopePayload.actual_mandays !== null) {
       await projectModel.upsertAssignment({
-        project_id: projectId,
-        scope_id: id,
+        actual_mandays: scopePayload.actual_mandays ?? null,
         assignee: scopePayload.assignee ?? null,
-        actual_mandays: scopePayload.actual_mandays ?? null
+        project_id: projectId,
+        scope_id: id
       });
     }
-    return res.status(201).json({ status: 'success', message: 'Scope created', data: { id, ...scopePayload } });
+    return res.status(201).json({ data: { id, ...scopePayload }, message: 'Scope created', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create scope', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create scope', status: 'error' });
   }
 };
 
@@ -451,21 +452,21 @@ export const removeScope = async (req: Request, res: Response) => {
     const projectId = Number(req.params.id);
     const scopeId = Number(req.params.scopeId);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     if (!Number.isFinite(scopeId) || scopeId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid scope id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid scope id', status: 'error' });
     }
     const scope = await projectModel.getScopeById(scopeId);
     if (!scope || Number(scope.project_id) !== projectId) {
-      return res.status(404).json({ status: 'error', message: 'Scope not found for this project', data: null });
+      return res.status(404).json({ data: null, message: 'Scope not found for this project', status: 'error' });
     }
     await projectModel.deleteScope(scopeId);
     // Also remove assignment data for this project/scope
     await projectModel.deleteAssignmentByProjectScope(projectId, scopeId);
-    return res.status(200).json({ status: 'success', message: 'Scope deleted', data: { id: scopeId } });
+    return res.status(200).json({ data: { id: scopeId }, message: 'Scope deleted', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete scope', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete scope', status: 'error' });
   }
 };
 
@@ -475,21 +476,21 @@ export const updateScope = async (req: Request, res: Response) => {
     const projectId = Number(req.params.id);
     const scopeId = Number(req.params.scopeId);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     if (!Number.isFinite(scopeId) || scopeId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid scope id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid scope id', status: 'error' });
     }
     const scope = await projectModel.getScopeById(scopeId);
     if (!scope || Number(scope.project_id) !== projectId) {
-      return res.status(404).json({ status: 'error', message: 'Scope not found for this project', data: null });
+      return res.status(404).json({ data: null, message: 'Scope not found for this project', status: 'error' });
     }
 
     const body = req.body || {};
     const parseDate = (s: any) => (typeof s === 'string' && s.trim() !== '') ? s.trim().slice(0, 10) : null;
 
     // Compute mandays if not explicitly provided
-    function businessDaysInclusive(startStr: string | null, endStr: string | null): number | null {
+    function businessDaysInclusive(startStr: null | string, endStr: null | string): null | number {
       if (!startStr || !endStr) return null;
       const start = new Date(startStr);
       const end = new Date(endStr);
@@ -565,8 +566,8 @@ export const updateScope = async (req: Request, res: Response) => {
     const movedPaths: string[] = [];
     for (const file of allFiles || []) {
       try {
-        const originalAbs = (file as any).path;
-        const baseName = sanitizeFilename((file as any).originalname || 'file');
+        const originalAbs = (file).path;
+        const baseName = sanitizeFilename((file).originalname || 'file');
         const finalName = `${projectId}-${baseName}`;
         const destAbs = await buildStoragePath(`project/${tagFolder}`, finalName);
         await safeMove(originalAbs, destAbs);
@@ -592,10 +593,10 @@ export const updateScope = async (req: Request, res: Response) => {
     // Maintain assignment row when assignee or actual_mandays potentially changed
     if (updates.assignee !== undefined || updates.actual_mandays !== undefined) {
       await projectModel.upsertAssignment({
-        project_id: projectId,
-        scope_id: scopeId,
+        actual_mandays: (updates.actual_mandays !== undefined ? updates.actual_mandays : scope.actual_mandays) ?? null,
         assignee: (updates.assignee !== undefined ? updates.assignee : scope.assignee) ?? null,
-        actual_mandays: (updates.actual_mandays !== undefined ? updates.actual_mandays : scope.actual_mandays) ?? null
+        project_id: projectId,
+        scope_id: scopeId
       });
     }
 
@@ -604,9 +605,9 @@ export const updateScope = async (req: Request, res: Response) => {
       await projectModel.updateProject(projectId, { overall_progress: Number(overallProgress) });
     }
 
-    return res.status(200).json({ status: 'success', message: 'Scope updated', data: { id: scopeId } });
+    return res.status(200).json({ data: { id: scopeId }, message: 'Scope updated', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update scope', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update scope', status: 'error' });
   }
 };
 
@@ -615,18 +616,18 @@ export const reorderScopes = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     // Accept two payload shapes:
     // 1) { order: [scopeId1, scopeId2, ...] }
     // 2) { scopes: [{ id, order_index }, ...] }
     let order: number[] = [];
-    if (Array.isArray((req.body as any)?.order)) {
-      order = (req.body as any).order
+    if (Array.isArray((req.body)?.order)) {
+      order = (req.body).order
         .map((x: any) => Number(x))
         .filter((n: any) => Number.isFinite(n));
-    } else if (Array.isArray((req.body as any)?.scopes)) {
-      const arr = (req.body as any).scopes
+    } else if (Array.isArray((req.body)?.scopes)) {
+      const arr = (req.body).scopes
         .map((s: any) => ({
           id: Number(s.id ?? s.scope_id ?? s.scopeId),
           idx: Number(s.order_index ?? s.orderIndex ?? s.index)
@@ -636,18 +637,18 @@ export const reorderScopes = async (req: Request, res: Response) => {
       order = arr.map((x: any) => x.id);
     }
     if (!order.length) {
-      return res.status(400).json({ status: 'error', message: 'Provide order as array of scope ids or scopes[{id, order_index}]', data: null });
+      return res.status(400).json({ data: null, message: 'Provide order as array of scope ids or scopes[{id, order_index}]', status: 'error' });
     }
     // Validate scopes belong to project
     const existingIds = await projectModel.getScopeIdsByProject(projectId);
     const invalid = order.filter((id: number) => !existingIds.includes(id));
     if (invalid.length) {
-      return res.status(400).json({ status: 'error', message: 'order contains scope ids not in this project', data: { invalid } });
+      return res.status(400).json({ data: { invalid }, message: 'order contains scope ids not in this project', status: 'error' });
     }
     await projectModel.setScopesOrder(projectId, order);
-    return res.status(200).json({ status: 'success', message: 'Scopes reordered', data: { order } });
+    return res.status(200).json({ data: { order }, message: 'Scopes reordered', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to reorder scopes', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to reorder scopes', status: 'error' });
   }
 };
 
@@ -659,38 +660,38 @@ export const getProjectAssignments = async (req: Request, res: Response) => {
   try {
     const projectId = Number(req.params.id);
     if (!Number.isFinite(projectId) || projectId <= 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid project id', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
     }
     const assignments = await projectModel.getAssignmentsByProjectId(projectId);
 
     // Restructure to nest assignee details
     const enriched = assignments.map((a: any) => ({
-      id: a.id,
-      project_id: a.project_id,
-      scope_id: a.scope_id,
-      assignee: {
-        ramco_id: a.assignee,
-        full_name: null // Will be enriched from employee table if needed
-      },
-      actual_mandays: a.actual_mandays,
-      scope_title: a.scope_title,
-      scope_status: a.scope_status,
-      scope_progress: a.scope_progress,
-      planned_start_date: a.planned_start_date,
-      planned_end_date: a.planned_end_date,
-      actual_start_date: a.actual_start_date,
       actual_end_date: a.actual_end_date,
+      actual_mandays: a.actual_mandays,
+      actual_start_date: a.actual_start_date,
+      assignee: {
+        full_name: null, // Will be enriched from employee table if needed
+        ramco_id: a.assignee
+      },
+      id: a.id,
+      planned_end_date: a.planned_end_date,
+      planned_start_date: a.planned_start_date,
       project_code: a.project_code,
-      project_name: a.project_name
+      project_id: a.project_id,
+      project_name: a.project_name,
+      scope_id: a.scope_id,
+      scope_progress: a.scope_progress,
+      scope_status: a.scope_status,
+      scope_title: a.scope_title
     }));
 
     return res.status(200).json({
-      status: 'success',
+      data: enriched,
       message: `${enriched.length} assignments retrieved`,
-      data: enriched
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -708,35 +709,35 @@ export const getAllAssignments = async (req: Request, res: Response) => {
     const enriched = assignments.map((a: any) => {
       const emp = empMap.get(String(a.assignee));
       return {
-        id: a.id,
-        project_id: a.project_id,
-        scope_id: a.scope_id,
-        assignee: {
-          ramco_id: a.assignee,
-          full_name: emp ? (emp.full_name || emp.name || null) : null
-        },
-        actual_mandays: a.actual_mandays,
-        scope_title: a.scope_title,
-        scope_status: a.scope_status,
-        scope_progress: a.scope_progress,
-        planned_start_date: a.planned_start_date,
-        planned_end_date: a.planned_end_date,
-        actual_start_date: a.actual_start_date,
         actual_end_date: a.actual_end_date,
+        actual_mandays: a.actual_mandays,
+        actual_start_date: a.actual_start_date,
+        assignee: {
+          full_name: emp ? (emp.full_name || emp.name || null) : null,
+          ramco_id: a.assignee
+        },
+        id: a.id,
+        planned_end_date: a.planned_end_date,
+        planned_start_date: a.planned_start_date,
         project_code: a.project_code,
+        project_due_date: a.project_due_date,
+        project_id: a.project_id,
         project_name: a.project_name,
         project_start_date: a.project_start_date,
-        project_due_date: a.project_due_date
+        scope_id: a.scope_id,
+        scope_progress: a.scope_progress,
+        scope_status: a.scope_status,
+        scope_title: a.scope_title
       };
     });
 
     return res.status(200).json({
-      status: 'success',
+      data: enriched,
       message: `${enriched.length} assignments retrieved`,
-      data: enriched
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -745,7 +746,7 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
   try {
     const assignee = req.params.assignee;
     if (!assignee) {
-      return res.status(400).json({ status: 'error', message: 'Assignee is required', data: null });
+      return res.status(400).json({ data: null, message: 'Assignee is required', status: 'error' });
     }
     const assignments = await projectModel.getAssignmentsByAssignee(assignee);
 
@@ -757,34 +758,34 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
 
     // Restructure to nest assignee details
     const enriched = assignments.map((a: any) => ({
-      id: a.id,
-      project_id: a.project_id,
-      scope_id: a.scope_id,
-      assignee: {
-        ramco_id: a.assignee,
-        full_name: emp ? (emp.full_name || emp.name || null) : null
-      },
-      actual_mandays: a.actual_mandays,
-      scope_title: a.scope_title,
-      scope_status: a.scope_status,
-      scope_progress: a.scope_progress,
-      planned_start_date: a.planned_start_date,
-      planned_end_date: a.planned_end_date,
-      actual_start_date: a.actual_start_date,
       actual_end_date: a.actual_end_date,
+      actual_mandays: a.actual_mandays,
+      actual_start_date: a.actual_start_date,
+      assignee: {
+        full_name: emp ? (emp.full_name || emp.name || null) : null,
+        ramco_id: a.assignee
+      },
+      id: a.id,
+      planned_end_date: a.planned_end_date,
+      planned_start_date: a.planned_start_date,
       project_code: a.project_code,
+      project_due_date: a.project_due_date,
+      project_id: a.project_id,
       project_name: a.project_name,
       project_start_date: a.project_start_date,
-      project_due_date: a.project_due_date
+      scope_id: a.scope_id,
+      scope_progress: a.scope_progress,
+      scope_status: a.scope_status,
+      scope_title: a.scope_title
     }));
 
     return res.status(200).json({
-      status: 'success',
+      data: enriched,
       message: `${enriched.length} assignments retrieved for ${assignee}`,
-      data: enriched
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch assignments', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -799,7 +800,7 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 
     // Helper function to calculate business days between two dates
-    const calculateBusinessDays = (startDate: string | null, endDate: string | null): number | null => {
+    const calculateBusinessDays = (startDate: null | string, endDate: null | string): null | number => {
       if (!startDate || !endDate) return null;
 
       const start = new Date(startDate);
@@ -828,28 +829,28 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
       const actualDuration = calculateBusinessDays(w.earliest_start_date, w.latest_due_date);
 
       return {
-        assignee: {
-          ramco_id: w.assignee,
-          full_name: emp ? (emp.full_name || emp.name || null) : null
-        },
-        total_projects: w.total_projects,
-        total_scopes: w.total_scopes,
-        total_scope_mandays: w.total_scope_mandays,
         actual_duration_days: actualDuration, // Business days from earliest project start to latest project end
+        assignee: {
+          full_name: emp ? (emp.full_name || emp.name || null) : null,
+          ramco_id: w.assignee
+        },
+        avg_progress: w.avg_progress ? Math.round(Number(w.avg_progress)) : null,
         completed_scopes: w.completed_scopes,
         in_progress_scopes: w.in_progress_scopes,
         not_started_scopes: w.not_started_scopes,
-        avg_progress: w.avg_progress ? Math.round(Number(w.avg_progress)) : null
+        total_projects: w.total_projects,
+        total_scope_mandays: w.total_scope_mandays,
+        total_scopes: w.total_scopes
       };
     });
 
     return res.status(200).json({
-      status: 'success',
+      data: enriched,
       message: `Workload summary for ${enriched.length} developers`,
-      data: enriched
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch workload summary', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch workload summary', status: 'error' });
   }
 };
 
@@ -864,13 +865,13 @@ export const createDevCoreTask = async (req: Request, res: Response) => {
     const example = body.example ?? null;
 
     if (!title) {
-      return res.status(400).json({ status: 'error', message: 'title is required', data: null });
+      return res.status(400).json({ data: null, message: 'title is required', status: 'error' });
     }
 
-    const id = await projectModel.createDevCoreTask({ title, description, example });
-    return res.status(201).json({ status: 'success', message: 'Dev core task created', data: { id } });
+    const id = await projectModel.createDevCoreTask({ description, example, title });
+    return res.status(201).json({ data: { id }, message: 'Dev core task created', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create dev core task', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create dev core task', status: 'error' });
   }
 };
 
@@ -879,12 +880,12 @@ export const getDevCoreTasks = async (req: Request, res: Response) => {
   try {
     const tasks = await projectModel.getDevCoreTasks();
     return res.status(200).json({
-      status: 'success',
+      data: tasks,
       message: `Retrieved ${tasks.length} dev core tasks`,
-      data: tasks
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch dev core tasks', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch dev core tasks', status: 'error' });
   }
 };
 
@@ -892,20 +893,20 @@ export const getDevCoreTasks = async (req: Request, res: Response) => {
 export const getDevCoreTaskById = async (req: Request, res: Response) => {
   try {
     const taskId = Number(req.params.id);
-    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+    if (!taskId) return res.status(400).json({ data: null, message: 'Invalid task id', status: 'error' });
 
     const task = await projectModel.getDevCoreTaskById(taskId);
     if (!task) {
-      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+      return res.status(404).json({ data: null, message: 'Dev core task not found', status: 'error' });
     }
 
     return res.status(200).json({
-      status: 'success',
+      data: task,
       message: 'Dev core task retrieved',
-      data: task
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch dev core task', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch dev core task', status: 'error' });
   }
 };
 
@@ -913,7 +914,7 @@ export const getDevCoreTaskById = async (req: Request, res: Response) => {
 export const updateDevCoreTask = async (req: Request, res: Response) => {
   try {
     const taskId = Number(req.params.id);
-    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+    if (!taskId) return res.status(400).json({ data: null, message: 'Invalid task id', status: 'error' });
 
     const body = req.body || {};
     const updateData: Partial<projectModel.DevCoreTask> = {};
@@ -924,13 +925,13 @@ export const updateDevCoreTask = async (req: Request, res: Response) => {
     // ensure task exists
     const existing = await projectModel.getDevCoreTaskById(taskId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+      return res.status(404).json({ data: null, message: 'Dev core task not found', status: 'error' });
     }
 
     await projectModel.updateDevCoreTask(taskId, updateData);
-    return res.status(200).json({ status: 'success', message: 'Dev core task updated', data: null });
+    return res.status(200).json({ data: null, message: 'Dev core task updated', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update dev core task', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update dev core task', status: 'error' });
   }
 };
 
@@ -938,18 +939,18 @@ export const updateDevCoreTask = async (req: Request, res: Response) => {
 export const deleteDevCoreTask = async (req: Request, res: Response) => {
   try {
     const taskId = Number(req.params.id);
-    if (!taskId) return res.status(400).json({ status: 'error', message: 'Invalid task id', data: null });
+    if (!taskId) return res.status(400).json({ data: null, message: 'Invalid task id', status: 'error' });
 
     // ensure task exists
     const existing = await projectModel.getDevCoreTaskById(taskId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Dev core task not found', data: null });
+      return res.status(404).json({ data: null, message: 'Dev core task not found', status: 'error' });
     }
 
     await projectModel.deleteDevCoreTask(taskId);
-    return res.status(200).json({ status: 'success', message: 'Dev core task deleted', data: null });
+    return res.status(200).json({ data: null, message: 'Dev core task deleted', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete dev core task', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete dev core task', status: 'error' });
   }
 };
 
@@ -965,13 +966,13 @@ export const createCoreFeature = async (req: Request, res: Response) => {
     const example_module = body.example_module ?? null;
 
     if (!category || !feature_key || !feature_name) {
-      return res.status(400).json({ status: 'error', message: 'category, feature_key, and feature_name are required', data: null });
+      return res.status(400).json({ data: null, message: 'category, feature_key, and feature_name are required', status: 'error' });
     }
 
-    const id = await projectModel.createCoreFeature({ category, feature_key, feature_name, description, example_module });
-    return res.status(201).json({ status: 'success', message: 'Core feature created', data: { id } });
+    const id = await projectModel.createCoreFeature({ category, description, example_module, feature_key, feature_name });
+    return res.status(201).json({ data: { id }, message: 'Core feature created', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to create core feature', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create core feature', status: 'error' });
   }
 };
 
@@ -980,12 +981,12 @@ export const getCoreFeatures = async (req: Request, res: Response) => {
   try {
     const features = await projectModel.getCoreFeatures();
     return res.status(200).json({
-      status: 'success',
+      data: features,
       message: `Retrieved ${features.length} core features`,
-      data: features
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch core features', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch core features', status: 'error' });
   }
 };
 
@@ -993,20 +994,20 @@ export const getCoreFeatures = async (req: Request, res: Response) => {
 export const getCoreFeatureById = async (req: Request, res: Response) => {
   try {
     const featureId = Number(req.params.id);
-    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+    if (!featureId) return res.status(400).json({ data: null, message: 'Invalid feature id', status: 'error' });
 
     const feature = await projectModel.getCoreFeatureById(featureId);
     if (!feature) {
-      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+      return res.status(404).json({ data: null, message: 'Core feature not found', status: 'error' });
     }
 
     return res.status(200).json({
-      status: 'success',
+      data: feature,
       message: 'Core feature retrieved',
-      data: feature
+      status: 'success'
     });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to fetch core feature', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch core feature', status: 'error' });
   }
 };
 
@@ -1014,7 +1015,7 @@ export const getCoreFeatureById = async (req: Request, res: Response) => {
 export const updateCoreFeature = async (req: Request, res: Response) => {
   try {
     const featureId = Number(req.params.id);
-    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+    if (!featureId) return res.status(400).json({ data: null, message: 'Invalid feature id', status: 'error' });
 
     const body = req.body || {};
     const updateData: Partial<projectModel.CoreFeature> = {};
@@ -1027,13 +1028,13 @@ export const updateCoreFeature = async (req: Request, res: Response) => {
     // ensure feature exists
     const existing = await projectModel.getCoreFeatureById(featureId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+      return res.status(404).json({ data: null, message: 'Core feature not found', status: 'error' });
     }
 
     await projectModel.updateCoreFeature(featureId, updateData);
-    return res.status(200).json({ status: 'success', message: 'Core feature updated', data: null });
+    return res.status(200).json({ data: null, message: 'Core feature updated', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to update core feature', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update core feature', status: 'error' });
   }
 };
 
@@ -1041,17 +1042,17 @@ export const updateCoreFeature = async (req: Request, res: Response) => {
 export const deleteCoreFeature = async (req: Request, res: Response) => {
   try {
     const featureId = Number(req.params.id);
-    if (!featureId) return res.status(400).json({ status: 'error', message: 'Invalid feature id', data: null });
+    if (!featureId) return res.status(400).json({ data: null, message: 'Invalid feature id', status: 'error' });
 
     // ensure feature exists
     const existing = await projectModel.getCoreFeatureById(featureId);
     if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Core feature not found', data: null });
+      return res.status(404).json({ data: null, message: 'Core feature not found', status: 'error' });
     }
 
     await projectModel.deleteCoreFeature(featureId);
-    return res.status(200).json({ status: 'success', message: 'Core feature deleted', data: null });
+    return res.status(200).json({ data: null, message: 'Core feature deleted', status: 'success' });
   } catch (e: any) {
-    return res.status(500).json({ status: 'error', message: e?.message || 'Failed to delete core feature', data: null });
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete core feature', status: 'error' });
   }
 };

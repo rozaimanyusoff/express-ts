@@ -1,13 +1,14 @@
+import dayjs from 'dayjs';
 import { Request, Response } from 'express';
-import path from 'path';
 import { promises as fsPromises } from 'fs';
+import path from 'path';
+
 import * as assetModel from '../p.asset/assetModel';
 import * as userModel from '../p.user/userModel';
-import * as purchaseModel from './purchaseModel';
-import { sendMail } from '../utils/mailer';
 import { renderPurchaseNotification } from '../utils/emailTemplates/purchaseNotification';
 import { renderPurchaseRegistryCompleted } from '../utils/emailTemplates/purchaseRegistryCompleted';
-import dayjs from 'dayjs';
+import { sendMail } from '../utils/mailer';
+import * as purchaseModel from './purchaseModel';
 
 // Define procurement admins here (comma-separated RAMCO IDs)
 const PROCUREMENT_ADMINS = 'mraco_id,ramco_id';
@@ -21,7 +22,7 @@ import { buildStoragePath, safeMove, toDbPath, toPublicUrl } from '../utils/uplo
 /* ======= PURCHASE REQUEST ITEMS ======= */
 export const getPurchaseRequestItems = async (req: Request, res: Response) => {
   try {
-    const { status, costcenter, supplier, startDate, endDate, dateField } = req.query;
+    const { costcenter, dateField, endDate, startDate, status, supplier } = req.query;
     let purchases: any[] = [];
 
     // Filter by status if provided
@@ -72,7 +73,7 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
       } else {
         // Fallback: filter by the logged-in user's username (ramco)
         const userId = (req as any).user?.id ? Number((req as any).user.id) : null;
-        let loginUsername: string | null = (req as any).user?.username || null;
+        let loginUsername: null | string = (req as any).user?.username || null;
         if (!loginUsername && userId) {
           const user = await userModel.getUserById(userId);
           loginUsername = user?.username || null;
@@ -111,7 +112,7 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
     const typeMap = new Map(types.map((t: any) => [t.id, t]));
     const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
     const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-    const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
     const deptMap = new Map(departments.map((d: any) => [d.id, d]));
     const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
     const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
@@ -130,38 +131,38 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
 
     const enrichedPurchases = purchases.map((purchase: any) => {
       const reqRec = purchase.request_id && requestMap.has(Number(purchase.request_id)) ? requestMap.get(Number(purchase.request_id)) : null;
-      const requestedBy = reqRec && reqRec.ramco_id ? (employeeMap.get(reqRec.ramco_id) ? { ramco_id: reqRec.ramco_id, full_name: (employeeMap.get(reqRec.ramco_id) as any)?.full_name || null } : { ramco_id: reqRec.ramco_id, full_name: null }) : null;
-      const reqCostcenter = reqRec && reqRec.costcenter_id ? (ccMap.has(reqRec.costcenter_id) ? { id: reqRec.costcenter_id, name: ccMap.get(reqRec.costcenter_id)?.name || null } : { id: reqRec.costcenter_id, name: null }) : null;
-      const reqDept = reqRec && reqRec.department_id ? (deptMap.has(reqRec.department_id) ? { id: reqRec.department_id, name: deptMap.get(reqRec.department_id)?.name || null } : { id: reqRec.department_id, name: null }) : null;
+      const requestedBy = reqRec?.ramco_id ? (employeeMap.get(reqRec.ramco_id) ? { full_name: (employeeMap.get(reqRec.ramco_id))?.full_name || null, ramco_id: reqRec.ramco_id } : { full_name: null, ramco_id: reqRec.ramco_id }) : null;
+      const reqCostcenter = reqRec?.costcenter_id ? (ccMap.has(reqRec.costcenter_id) ? { id: reqRec.costcenter_id, name: ccMap.get(reqRec.costcenter_id)?.name || null } : { id: reqRec.costcenter_id, name: null }) : null;
+      const reqDept = reqRec?.department_id ? (deptMap.has(reqRec.department_id) ? { id: reqRec.department_id, name: deptMap.get(reqRec.department_id)?.name || null } : { id: reqRec.department_id, name: null }) : null;
 
       const enrichedPurchase: any = {
+        brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
+        category: purchase.category_id && categoryMap.has(purchase.category_id) ? { id: purchase.category_id, name: categoryMap.get(purchase.category_id)?.name || null } : null,
+        created_at: purchase.created_at ?? null,
+        description: purchase.description || purchase.items || null,
+        handover_at: purchase.handover_at ?? null,
+        handover_to: purchase.handover_to ?? null,
         id: purchase.id,
-        request_id: purchase.request_id ?? null,
+        po_date: purchase.po_date ?? null,
+        po_no: purchase.po_no ?? null,
+        purpose: purchase.purpose ?? null,
+        qty: purchase.qty,
         request: reqRec ? {
+          costcenter: reqCostcenter,
+          created_at: reqRec.created_at ?? null,
+          department: reqDept,
           id: reqRec.id,
-          pr_no: reqRec.pr_no ?? null,
           pr_date: reqRec.pr_date ?? null,
+          pr_no: reqRec.pr_no ?? null,
           request_type: reqRec.request_type ?? null,
           requested_by: requestedBy,
-          costcenter: reqCostcenter,
-          department: reqDept,
-          created_at: reqRec.created_at ?? null,
           updated_at: reqRec.updated_at ?? null,
         } : null,
-        type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
-        category: purchase.category_id && categoryMap.has(purchase.category_id) ? { id: purchase.category_id, name: categoryMap.get(purchase.category_id)?.name || null } : null,
-        brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
-        qty: purchase.qty,
-        description: purchase.description || purchase.items || null,
-        purpose: purchase.purpose ?? null,
+        request_id: purchase.request_id ?? null,
         supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
-        unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
         total_price: purchase.total_price !== undefined && purchase.total_price !== null ? Number(purchase.total_price).toFixed(2) : null,
-        po_no: purchase.po_no ?? null,
-        po_date: purchase.po_date ?? null,
-        handover_to: purchase.handover_to ?? null,
-        handover_at: purchase.handover_at ?? null,
-        created_at: purchase.created_at ?? null,
+        type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
+        unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
         updated_at: purchase.updated_at ?? null,
       };
 
@@ -173,15 +174,15 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
     });
 
     res.json({
-      status: 'success',
+      data: enrichedPurchases,
       message: 'Purchases retrieved successfully',
-      data: enrichedPurchases
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchases',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -193,9 +194,9 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
 
     if (!purchase) {
       return res.status(404).json({
-        status: 'error',
+        data: null,
         message: 'Purchase not found',
-        data: null
+        status: 'error'
       });
     }
 
@@ -217,7 +218,7 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
     const typeMap = new Map(types.map((t: any) => [t.id, t]));
     const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
     const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-    const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
     const deptMap = new Map(departments.map((d: any) => [d.id, d]));
     const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
     const employeesArr = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -235,23 +236,23 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
 
     // Add derived status, upload_url, and resolved costcenter/type
     const enrichedPurchase = {
-      id: purchase.id,
-      request_id: purchase.request_id ?? null,
-      request: null,
-      type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
-      category: purchase.category_id && categoryMap.has(purchase.category_id) ? { id: purchase.category_id, name: categoryMap.get(purchase.category_id)?.name || null } : null,
       brand: purchase.brand_id && brandMap.has(purchase.brand_id) ? { id: purchase.brand_id, name: brandMap.get(purchase.brand_id)?.name || null } : null,
-      qty: purchase.qty,
-      description: purchase.description || purchase.items || null,
-      purpose: purchase.purpose ?? null,
-      supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
-      unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
-      total_price: purchase.total_price !== undefined && purchase.total_price !== null ? Number(purchase.total_price).toFixed(2) : null,
-      po_no: purchase.po_no ?? null,
-      po_date: purchase.po_date ?? null,
-      handover_to: purchase.handover_to ?? null,
-      handover_at: purchase.handover_at ?? null,
+      category: purchase.category_id && categoryMap.has(purchase.category_id) ? { id: purchase.category_id, name: categoryMap.get(purchase.category_id)?.name || null } : null,
       created_at: purchase.created_at ?? null,
+      description: purchase.description || purchase.items || null,
+      handover_at: purchase.handover_at ?? null,
+      handover_to: purchase.handover_to ?? null,
+      id: purchase.id,
+      po_date: purchase.po_date ?? null,
+      po_no: purchase.po_no ?? null,
+      purpose: purchase.purpose ?? null,
+      qty: purchase.qty,
+      request: null,
+      request_id: purchase.request_id ?? null,
+      supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
+      total_price: purchase.total_price !== undefined && purchase.total_price !== null ? Number(purchase.total_price).toFixed(2) : null,
+      type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
+      unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
       updated_at: purchase.updated_at ?? null,
     };
 
@@ -259,18 +260,18 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
     if (purchase.request_id) {
       const reqRecSingle = await purchaseModel.getPurchaseRequestById(Number(purchase.request_id));
       if (reqRecSingle) {
-        const requestedBySingle = reqRecSingle.ramco_id ? (employeeMap.get(reqRecSingle.ramco_id) ? { ramco_id: reqRecSingle.ramco_id, full_name: (employeeMap.get(reqRecSingle.ramco_id) as any)?.full_name || null } : { ramco_id: reqRecSingle.ramco_id, full_name: null }) : null;
+        const requestedBySingle = reqRecSingle.ramco_id ? (employeeMap.get(reqRecSingle.ramco_id) ? { full_name: (employeeMap.get(reqRecSingle.ramco_id))?.full_name || null, ramco_id: reqRecSingle.ramco_id } : { full_name: null, ramco_id: reqRecSingle.ramco_id }) : null;
         const reqCostcenterSingle = reqRecSingle.costcenter_id ? (ccMap.has(reqRecSingle.costcenter_id) ? { id: reqRecSingle.costcenter_id, name: ccMap.get(reqRecSingle.costcenter_id)?.name || null } : { id: reqRecSingle.costcenter_id, name: null }) : null;
         const reqDeptSingle = reqRecSingle.department_id ? (deptMap.has(reqRecSingle.department_id) ? { id: reqRecSingle.department_id, name: deptMap.get(reqRecSingle.department_id)?.name || null } : { id: reqRecSingle.department_id, name: null }) : null;
         (enrichedPurchase as any).request = {
+          costcenter: reqCostcenterSingle,
+          created_at: reqRecSingle.created_at ?? null,
+          department: reqDeptSingle,
           id: reqRecSingle.id,
-          pr_no: reqRecSingle.pr_no ?? null,
           pr_date: reqRecSingle.pr_date ?? null,
+          pr_no: reqRecSingle.pr_no ?? null,
           request_type: reqRecSingle.request_type ?? null,
           requested_by: requestedBySingle,
-          costcenter: reqCostcenterSingle,
-          department: reqDeptSingle,
-          created_at: reqRecSingle.created_at ?? null,
           updated_at: reqRecSingle.updated_at ?? null,
         };
       }
@@ -280,19 +281,19 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
     try {
       const deliveries = await purchaseModel.getDeliveriesByPurchaseId(purchase.id);
       (enrichedPurchase as any).deliveries = (Array.isArray(deliveries) ? deliveries : []).map((d: any) => ({
+        created_at: d.created_at ?? null,
+        do_date: d.do_date ?? null,
+        do_no: d.do_no ?? null,
+        grn_date: d.grn_date ?? null,
+        grn_no: d.grn_no ?? null,
         id: d.id,
+        inv_date: d.inv_date ?? null,
+        inv_no: d.inv_no ?? null,
         purchase_id: d.purchase_id,
         request_id: d.request_id,
-        do_no: d.do_no ?? null,
-        do_date: d.do_date ?? null,
-        inv_no: d.inv_no ?? null,
-        inv_date: d.inv_date ?? null,
-        grn_no: d.grn_no ?? null,
-        grn_date: d.grn_date ?? null,
+        updated_at: d.updated_at ?? null,
         upload_path: d.upload_path ?? null,
         upload_url: publicUrl(d.upload_path),
-        created_at: d.created_at ?? null,
-        updated_at: d.updated_at ?? null,
       }));
     } catch (e) {
       // non-blocking: if deliveries fail, continue without them
@@ -300,15 +301,15 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
     }
 
     res.json({
-      status: 'success',
+      data: enrichedPurchase,
       message: 'Purchase retrieved successfully',
-      data: enrichedPurchase
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchase',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -326,51 +327,51 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
 
       if (!request_type || !pr_date || !ramco_id || !costcenter_id) {
         return res.status(400).json({
-          status: 'error',
-          message: 'Missing required request fields: request_type, pr_date, ramco_id, costcenter_id',
           data: null,
+          message: 'Missing required request fields: request_type, pr_date, ramco_id, costcenter_id',
+          status: 'error',
         });
       }
       try {
         requestId = await purchaseModel.createPurchaseRequest({
-          request_type,
-          pr_no,
-          pr_date,
-          ramco_id,
           costcenter_id,
           // department_id is not present in payload; leave default/null at DB level if column exists
           // Type definition requires department_id, but model createPurchaseRequest signature does too.
           // To avoid breaking, attempt to infer department_id = 0 if not applicable.
           department_id: (undefined as unknown as number),
+          pr_date,
+          pr_no,
+          ramco_id,
+          request_type,
         } as any);
       } catch (e) {
-        return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create purchase request', data: null });
+        return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create purchase request', status: 'error' });
       }
     }
 
     const purchaseData: any = {
-      request_id: requestId,
-      request_type: req.body.request_type ?? null,
-      pr_no: req.body.pr_no ?? null,
-      pr_date: req.body.pr_date ?? null,
-      ramco_id: req.body.ramco_id ?? null,
-      type_id: req.body.type_id ? Number(req.body.type_id) : undefined,
-      item_type: req.body.item_type ?? undefined,
-      category_id: req.body.category_id ? Number(req.body.category_id) : undefined,
       brand_id: req.body.brand_id !== undefined ? Number(req.body.brand_id) : undefined,
-      qty: req.body.qty !== undefined ? Number(req.body.qty) : 0,
-      description: req.body.description || null,
-      purpose: req.body.purpose || null,
-      supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
-      unit_price: req.body.unit_price !== undefined ? Number(req.body.unit_price) : 0,
-      total_price: req.body.total_price !== undefined ? Number(req.body.total_price) : undefined,
-      po_no: req.body.po_no ?? null,
-      po_date: req.body.po_date ?? null,
-      upload_path: req.body.upload_path ?? null,
-      handover_to: req.body.handover_to ?? null,
-      handover_at: req.body.handover_at ?? null,
+      category_id: req.body.category_id ? Number(req.body.category_id) : undefined,
       costcenter: req.body.costcenter ?? null,
       costcenter_id: req.body.costcenter_id ? Number(req.body.costcenter_id) : undefined,
+      description: req.body.description || null,
+      handover_at: req.body.handover_at ?? null,
+      handover_to: req.body.handover_to ?? null,
+      item_type: req.body.item_type ?? undefined,
+      po_date: req.body.po_date ?? null,
+      po_no: req.body.po_no ?? null,
+      pr_date: req.body.pr_date ?? null,
+      pr_no: req.body.pr_no ?? null,
+      purpose: req.body.purpose || null,
+      qty: req.body.qty !== undefined ? Number(req.body.qty) : 0,
+      ramco_id: req.body.ramco_id ?? null,
+      request_id: requestId,
+      request_type: req.body.request_type ?? null,
+      supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : undefined,
+      total_price: req.body.total_price !== undefined ? Number(req.body.total_price) : undefined,
+      type_id: req.body.type_id ? Number(req.body.type_id) : undefined,
+      unit_price: req.body.unit_price !== undefined ? Number(req.body.unit_price) : 0,
+      upload_path: req.body.upload_path ?? null,
     };
 
     // If a file was uploaded by multer, we'll rename it after insert to include the module id
@@ -391,20 +392,20 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
         for (let i = 0; i < deliveries.length; i++) {
           const d = deliveries[i];
           const payload = {
+            do_date: d.do_date ?? null,
+            do_no: d.do_no ?? null,
+            grn_date: d.grn_date ?? null,
+            grn_no: d.grn_no ?? null,
+            inv_date: d.inv_date ?? null,
+            inv_no: d.inv_no ?? null,
             purchase_id: insertId,
             request_id: requestId,
-            do_no: d.do_no ?? null,
-            do_date: d.do_date ?? null,
-            inv_no: d.inv_no ?? null,
-            inv_date: d.inv_date ?? null,
-            grn_no: d.grn_no ?? null,
-            grn_date: d.grn_date ?? null,
             upload_path: d.upload_path ?? null,
           } as any;
           const deliveryId = await purchaseModel.createDelivery(payload);
           // If a file uploaded for this delivery index, rename and update
           const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
-          if (fileForThis && fileForThis.path) {
+          if (fileForThis?.path) {
             try {
               const tempPath = fileForThis.path as string;
               const originalName: string = fileForThis.originalname || path.basename(tempPath);
@@ -427,9 +428,9 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
     // If a file was uploaded, rename and update stored path to include module id
     {
       const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
-      const singleFile = (req as any).file && (req as any).file.path ? (req as any).file : undefined;
+      const singleFile = (req as any).file?.path ? (req as any).file : undefined;
       const itemUpload = singleFile || filesArr.find((f: any) => f && f.fieldname === 'upload_path');
-      if (itemUpload && itemUpload.path) {
+      if (itemUpload?.path) {
         const tempPath = itemUpload.path as string;
         const originalName: string = itemUpload.originalname || path.basename(tempPath);
         const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
@@ -488,14 +489,14 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
 
           for (const r of recipients) {
             const html = renderPurchaseNotification({
-              recipientName: r.name,
-              prNo: purchaseData.pr_no || String(insertId),
-              prDate: purchaseData.pr_date || null,
-              requestType: purchaseData.request_type || null,
-              itemType: purchaseData.item_type ? String(purchaseData.item_type) : (purchaseData.type_id ? String(purchaseData.type_id) : null),
-              items: purchaseData.items || null,
               brand: brandName,
               costcenterName: costcenterName,
+              items: purchaseData.items || null,
+              itemType: purchaseData.item_type ? String(purchaseData.item_type) : (purchaseData.type_id ? String(purchaseData.type_id) : null),
+              prDate: purchaseData.pr_date || null,
+              prNo: purchaseData.pr_no || String(insertId),
+              recipientName: r.name,
+              requestType: purchaseData.request_type || null,
             });
             try {
               await sendMail(r.email, subject, html);
@@ -512,22 +513,22 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
     }
 
     res.status(201).json({
-      status: 'success',
+      data: { id: insertId, request_id: requestId },
       message: 'Purchase created successfully',
-      data: { id: insertId, request_id: requestId }
+      status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('already exists')) {
       res.status(409).json({
-        status: 'error',
+        data: null,
         message: error.message,
-        data: null
+        status: 'error'
       });
     } else {
       res.status(500).json({
-        status: 'error',
+        data: null,
         message: error instanceof Error ? error.message : 'Failed to create purchase',
-        data: null
+        status: 'error'
       });
     }
   }
@@ -552,9 +553,9 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
     // If a file was uploaded, perform move/rename into canonical storage and update DB
     {
       const filesArr: any[] = Array.isArray((req as any).files) ? (req as any).files : [];
-      const singleFile = (req as any).file && (req as any).file.path ? (req as any).file : undefined;
+      const singleFile = (req as any).file?.path ? (req as any).file : undefined;
       const itemUpload = singleFile || filesArr.find((f: any) => f && f.fieldname === 'upload_path');
-      if (itemUpload && itemUpload.path) {
+      if (itemUpload?.path) {
         const tempPath = itemUpload.path as string;
         const originalName: string = itemUpload.originalname || path.basename(tempPath);
         const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
@@ -562,7 +563,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
         // Attempt to remove previous file if existed
         try {
           const existing = await purchaseModel.getPurchaseRequestItemById(id);
-          if (existing && existing.upload_path) {
+          if (existing?.upload_path) {
             const prevFilename = path.basename(existing.upload_path);
             const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
             const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
@@ -609,10 +610,10 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
         if (req.body[key] !== undefined) {
           // Coerce numeric fields
           if ([
-            'costcenter_id',
-            'type_id',
             'category_id',
-            'qty'
+            'costcenter_id',
+            'qty',
+            'type_id'
           ].includes(key)) {
             prUpdate[key] = req.body[key] !== null && req.body[key] !== '' ? Number(req.body[key]) : undefined;
           } else {
@@ -647,14 +648,14 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
           // For qty = 1, only allow ONE delivery record - update existing or create single new one
           const d = deliveries[0]; // Only process first delivery for qty=1
           const payload = {
+            do_date: d.do_date ?? null,
+            do_no: d.do_no ?? null,
+            grn_date: d.grn_date ?? null,
+            grn_no: d.grn_no ?? null,
+            inv_date: d.inv_date ?? null,
+            inv_no: d.inv_no ?? null,
             purchase_id: id,
             request_id: reqId,
-            do_no: d.do_no ?? null,
-            do_date: d.do_date ?? null,
-            inv_no: d.inv_no ?? null,
-            inv_date: d.inv_date ?? null,
-            grn_no: d.grn_no ?? null,
-            grn_date: d.grn_date ?? null,
             upload_path: d.upload_path ?? null,
           } as any;
           
@@ -665,7 +666,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
             const existingDelivery = existingDeliveries[0];
             await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
             
-            if (fileForThis && fileForThis.path) {
+            if (fileForThis?.path) {
               try {
                 const tempPath = fileForThis.path as string;
                 const originalName: string = fileForThis.originalname || path.basename(tempPath);
@@ -690,7 +691,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
           } else if (reqId) {
             // Create single new delivery for qty=1
             const newId = await purchaseModel.createDelivery(payload);
-            if (fileForThis && fileForThis.path) {
+            if (fileForThis?.path) {
               try {
                 const tempPath = fileForThis.path as string;
                 const originalName: string = fileForThis.originalname || path.basename(tempPath);
@@ -720,14 +721,14 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
           for (let i = 0; i < Math.min(deliveries.length, purchaseQty); i++) {
             const d = deliveries[i];
             const payload = {
+              do_date: d.do_date ?? null,
+              do_no: d.do_no ?? null,
+              grn_date: d.grn_date ?? null,
+              grn_no: d.grn_no ?? null,
+              inv_date: d.inv_date ?? null,
+              inv_no: d.inv_no ?? null,
               purchase_id: id,
               request_id: reqId,
-              do_no: d.do_no ?? null,
-              do_date: d.do_date ?? null,
-              inv_no: d.inv_no ?? null,
-              inv_date: d.inv_date ?? null,
-              grn_no: d.grn_no ?? null,
-              grn_date: d.grn_date ?? null,
               upload_path: d.upload_path ?? null,
             } as any;
             
@@ -749,7 +750,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
             if (existingDelivery) {
               // Update existing delivery
               await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
-              if (fileForThis && fileForThis.path) {
+              if (fileForThis?.path) {
                 try {
                   const tempPath = fileForThis.path as string;
                   const originalName: string = fileForThis.originalname || path.basename(tempPath);
@@ -765,7 +766,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
             } else if (reqId && existingDeliveries.length < purchaseQty) {
               // Create new delivery only if we haven't reached the qty limit
               const newId = await purchaseModel.createDelivery(payload);
-              if (fileForThis && fileForThis.path) {
+              if (fileForThis?.path) {
                 try {
                   const tempPath = fileForThis.path as string;
                   const originalName: string = fileForThis.originalname || path.basename(tempPath);
@@ -788,22 +789,22 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
     }
 
     res.json({
-      status: 'success',
+      data: null,
       message: 'Purchase updated successfully',
-      data: null
+      status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('already exists')) {
       res.status(409).json({
-        status: 'error',
+        data: null,
         message: error.message,
-        data: null
+        status: 'error'
       });
     } else {
       res.status(500).json({
-        status: 'error',
+        data: null,
         message: error instanceof Error ? error.message : 'Failed to update purchase',
-        data: null
+        status: 'error'
       });
     }
   }
@@ -815,22 +816,22 @@ export const deletePurchaseRequestItem = async (req: Request, res: Response) => 
     await purchaseModel.deletePurchaseRequestItem(id);
 
     res.json({
-      status: 'success',
+      data: null,
       message: 'Purchase deleted successfully',
-      data: null
+      status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Purchase record not found') {
       res.status(404).json({
-        status: 'error',
+        data: null,
         message: error.message,
-        data: null
+        status: 'error'
       });
     } else {
       res.status(500).json({
-        status: 'error',
+        data: null,
         message: error instanceof Error ? error.message : 'Failed to delete purchase',
-        data: null
+        status: 'error'
       });
     }
   }
@@ -838,7 +839,7 @@ export const deletePurchaseRequestItem = async (req: Request, res: Response) => 
 
 export const getPurchaseRequestItemSummary = async (req: Request, res: Response) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { endDate, startDate } = req.query;
 
     const summary = await purchaseModel.getPurchaseRequestItemSummary(
       startDate as string,
@@ -846,15 +847,15 @@ export const getPurchaseRequestItemSummary = async (req: Request, res: Response)
     );
 
     res.json({
-      status: 'success',
+      data: summary,
       message: 'Purchase summary retrieved successfully',
-      data: summary
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchase summary',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -863,8 +864,8 @@ export const getPurchaseRequestItemSummary = async (req: Request, res: Response)
 // HELPER FUNCTION: Calculate purchase status based on process completion
 const calculatePurchaseRequestItemStatus = (purchase: any): string => {
   // Completed only when a handover has been made (non-empty handover_to and valid handover_at)
-  const handoverTo = (purchase as any).handover_to;
-  const handoverAt = (purchase as any).handover_at;
+  const handoverTo = (purchase).handover_to;
+  const handoverAt = (purchase).handover_at;
   const hasHandoverTo = handoverTo !== undefined && handoverTo !== null && String(handoverTo).trim() !== '';
   const handoverAtInvalid = !handoverAt || String(handoverAt) === '0000-00-00' || String(handoverAt) === '0000-00-00 00:00:00';
   if (hasHandoverTo && !handoverAtInvalid) return 'completed';
@@ -884,7 +885,7 @@ const calculatePurchaseRequestItemStatus = (purchase: any): string => {
 };
 
 // Helpers: publicUrl and normalizeStoredPath (same behavior as billingController helpers)
-function publicUrl(rawPath?: string | null): string | null {
+function publicUrl(rawPath?: null | string): null | string {
   return toPublicUrl(rawPath || null);
 }
 
@@ -897,10 +898,10 @@ function publicUrl(rawPath?: string | null): string | null {
 /* ======= PURCHASE ASSET REGISTRY -- Asset Manager Scopes ======= */
 export const createPurchaseAssetsRegistry = async (req: Request, res: Response) => {
   try {
-    const { purchase_id, request_id, assets, created_by, updated_by } = req.body || {}; //
+    const { assets, created_by, purchase_id, request_id, updated_by } = req.body || {}; //
     const purchaseId = Number(purchase_id);
     if (!purchaseId || !Array.isArray(assets) || assets.length === 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid payload: purchase_id and non-empty assets[] are required', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid payload: purchase_id and non-empty assets[] are required', status: 'error' });
     }
     const ids = await purchaseModel.createPurchaseAssetRegistryBatch(purchaseId, request_id, assets, created_by || null);
 
@@ -909,7 +910,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     if (!Array.isArray(ids) || ids.length !== assets.length) {
       const msg = `Failed to register all assets: expected=${assets.length} registered=${Array.isArray(ids) ? ids.length : 0}`;
       console.error('createPurchaseAssetsRegistry:', msg);
-      return res.status(500).json({ status: 'error', message: msg, data: { expected: assets.length, registered: Array.isArray(ids) ? ids.length : 0 } });
+      return res.status(500).json({ data: { expected: assets.length, registered: Array.isArray(ids) ? ids.length : 0 }, message: msg, status: 'error' });
     }
 
     // Also create master asset records in assets.assetdata
@@ -918,7 +919,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     } catch (e) {
       console.error('registerPurchaseAssetsBatch: create master assets failed', e);
       // If creating master assets failed, we should not proceed to mark handover or send notifications.
-      return res.status(500).json({ status: 'error', message: 'Failed to create master asset records', data: null });
+      return res.status(500).json({ data: null, message: 'Failed to create master asset records', status: 'error' });
     }
 
     // Update purchase handover fields
@@ -928,7 +929,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     } catch (e) {
       console.error('registerPurchaseAssetsBatch: handover update failed', e);
       // If handover update failed, do not continue to notifications because state may be inconsistent.
-      return res.status(500).json({ status: 'error', message: 'Failed to update handover state', data: null });
+      return res.status(500).json({ data: null, message: 'Failed to update handover state', status: 'error' });
     }
 
     // Notify procurement admins and asset managers
@@ -959,7 +960,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
           ? Number(purchase.type_id)
           : (itemTypeStr && !isNaN(Number(itemTypeStr)) ? Number(itemTypeStr) : undefined);
         const itemTypeName = (itemTypeId !== undefined && typeMap.has(itemTypeId))
-          ? (typeMap.get(itemTypeId) as any)?.name || String(itemTypeId)
+          ? (typeMap.get(itemTypeId))?.name || String(itemTypeId)
           : (isNaN(Number(itemTypeStr || '')) ? (itemTypeStr || null) : (itemTypeStr ? String(itemTypeStr) : null));
         const prDateFormatted = purchase.pr_date ? dayjs(purchase.pr_date).format('D/M/YYYY') : null;
 
@@ -976,15 +977,15 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
         const subjectAdmin = `Assets Registered — PR ${purchase.pr_no || purchaseId}`;
         for (const r of procurementRecipients) {
           const html = renderPurchaseRegistryCompleted({
-            recipientName: r.name,
-            prNo: purchase.pr_no || String(purchaseId),
-            prDate: prDateFormatted,
-            itemType: itemTypeName,
-            items: purchase.items || null,
+            audience: 'procurement',
             brand: brandName,
             costcenterName,
             itemCount: Array.isArray(assets) ? assets.length : null,
-            audience: 'procurement',
+            items: purchase.items || null,
+            itemType: itemTypeName,
+            prDate: prDateFormatted,
+            prNo: purchase.pr_no || String(purchaseId),
+            recipientName: r.name,
           });
           try { await sendMail(r.email, subjectAdmin, html); } catch { }
         }
@@ -1003,15 +1004,15 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
           const subjectMgr = `Registration Successful — PR ${purchase.pr_no || purchaseId}`;
           for (const r of managerRecipients) {
             const html = renderPurchaseRegistryCompleted({
-              recipientName: r.name,
-              prNo: purchase.pr_no || String(purchaseId),
-              prDate: prDateFormatted,
-              itemType: itemTypeName,
-              items: purchase.items || null,
+              audience: 'manager',
               brand: brandName,
               costcenterName,
               itemCount: Array.isArray(assets) ? assets.length : null,
-              audience: 'manager',
+              items: purchase.items || null,
+              itemType: itemTypeName,
+              prDate: prDateFormatted,
+              prNo: purchase.pr_no || String(purchaseId),
+              recipientName: r.name,
             });
             try { await sendMail(r.email, subjectMgr, html); } catch { }
           }
@@ -1021,9 +1022,9 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       console.error('registerPurchaseAssetsBatch: notification error', notifyErr);
     }
 
-    return res.status(201).json({ status: 'success', message: `Registered ${ids.length} assets for PR ${purchaseId}`, data: { pr_id: purchaseId, insertIds: ids } });
+    return res.status(201).json({ data: { insertIds: ids, pr_id: purchaseId }, message: `Registered ${ids.length} assets for PR ${purchaseId}`, status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to register assets', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to register assets', status: 'error' });
   }
 };
 
@@ -1043,9 +1044,9 @@ export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ status: 'success', message: 'Purchase asset registry retrieved', data });
+    return res.json({ data, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve registry', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve registry', status: 'error' });
   }
 }
 
@@ -1054,12 +1055,12 @@ export const getPurchaseAssetRegistryByPrId = async (req: Request, res: Response
   try {
     const purchaseId = Number((req.query.pr as string) || (req.params as any).pr);
     if (!purchaseId) {
-      return res.status(400).json({ status: 'error', message: 'pr_id is required', data: null });
+      return res.status(400).json({ data: null, message: 'pr_id is required', status: 'error' });
     }
     const rows = await purchaseModel.getPurchaseAssetRegistryByPrId(purchaseId);
-    return res.json({ status: 'success', message: 'Purchase asset registry retrieved', data: rows });
+    return res.json({ data: rows, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve registry', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve registry', status: 'error' });
   }
 };
 
@@ -1067,9 +1068,9 @@ export const getPurchaseAssetRegistryByPrId = async (req: Request, res: Response
 export const getDeliveries = async (req: Request, res: Response) => {
   try {
     const rows = await purchaseModel.getDeliveries();
-    res.json({ status: 'success', message: 'Deliveries retrieved', data: rows });
+    res.json({ data: rows, message: 'Deliveries retrieved', status: 'success' });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve deliveries', data: null });
+    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve deliveries', status: 'error' });
   }
 };
 
@@ -1077,31 +1078,31 @@ export const getDeliveryById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const rec = await purchaseModel.getDeliveryById(id);
-    if (!rec) return res.status(404).json({ status: 'error', message: 'Delivery not found', data: null });
-    res.json({ status: 'success', message: 'Delivery retrieved', data: rec });
+    if (!rec) return res.status(404).json({ data: null, message: 'Delivery not found', status: 'error' });
+    res.json({ data: rec, message: 'Delivery retrieved', status: 'success' });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve delivery', data: null });
+    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve delivery', status: 'error' });
   }
 };
 
 export const createDelivery = async (req: Request, res: Response) => {
   try {
     const payload: any = {
+      do_date: req.body.do_date ?? null,
+      do_no: req.body.do_no ?? null,
+      grn_date: req.body.grn_date ?? null,
+      grn_no: req.body.grn_no ?? null,
+      inv_date: req.body.inv_date ?? null,
+      inv_no: req.body.inv_no ?? null,
       purchase_id: req.body.purchase_id ? Number(req.body.purchase_id) : undefined,
       request_id: req.body.request_id ? Number(req.body.request_id) : undefined,
-      do_no: req.body.do_no ?? null,
-      do_date: req.body.do_date ?? null,
-      inv_no: req.body.inv_no ?? null,
-      inv_date: req.body.inv_date ?? null,
-      grn_no: req.body.grn_no ?? null,
-      grn_date: req.body.grn_date ?? null,
       upload_path: req.body.upload_path ?? null,
     };
 
     const insertId = await purchaseModel.createDelivery(payload);
 
     // handle uploaded file if present
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath = (req as any).file.path as string;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
@@ -1113,9 +1114,9 @@ export const createDelivery = async (req: Request, res: Response) => {
       await purchaseModel.updateDelivery(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
     }
 
-    res.status(201).json({ status: 'success', message: 'Delivery created', data: { id: insertId } });
+    res.status(201).json({ data: { id: insertId }, message: 'Delivery created', status: 'success' });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to create delivery', data: null });
+    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create delivery', status: 'error' });
   }
 };
 
@@ -1132,7 +1133,7 @@ export const updateDelivery = async (req: Request, res: Response) => {
     if (req.body.grn_no !== undefined) payload.grn_no = req.body.grn_no;
     if (req.body.grn_date !== undefined) payload.grn_date = req.body.grn_date;
 
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath = (req as any).file.path as string;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
@@ -1143,9 +1144,9 @@ export const updateDelivery = async (req: Request, res: Response) => {
     }
 
     await purchaseModel.updateDelivery(id, payload);
-    res.json({ status: 'success', message: 'Delivery updated', data: null });
+    res.json({ data: null, message: 'Delivery updated', status: 'success' });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to update delivery', data: null });
+    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update delivery', status: 'error' });
   }
 };
 
@@ -1153,9 +1154,9 @@ export const deleteDelivery = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     await purchaseModel.deleteDelivery(id);
-    res.json({ status: 'success', message: 'Delivery deleted', data: null });
+    res.json({ data: null, message: 'Delivery deleted', status: 'success' });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to delete delivery', data: null });
+    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to delete delivery', status: 'error' });
   }
 };
 
@@ -1188,7 +1189,7 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
     ]);
     const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
     const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
-    const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
     const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
     const categories = Array.isArray(categoriesRaw) ? categoriesRaw as any[] : [];
     const suppliers = Array.isArray(suppliersRaw) ? suppliersRaw as any[] : [];
@@ -1211,44 +1212,44 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
     }
 
     const enriched = (rows || []).map((r: any) => {
-      const requestedBy = r.ramco_id ? (empMap.get(r.ramco_id) ? { ramco_id: r.ramco_id, full_name: (empMap.get(r.ramco_id) as any)?.full_name || null } : { ramco_id: r.ramco_id, full_name: null }) : null;
+      const requestedBy = r.ramco_id ? (empMap.get(r.ramco_id) ? { full_name: (empMap.get(r.ramco_id))?.full_name || null, ramco_id: r.ramco_id } : { full_name: null, ramco_id: r.ramco_id }) : null;
       const costcenter = r.costcenter_id ? (ccMap.has(r.costcenter_id) ? { id: r.costcenter_id, name: ccMap.get(r.costcenter_id)?.name || null } : { id: r.costcenter_id, name: null }) : null;
       const department = r.department_id ? (deptMap.has(r.department_id) ? { id: r.department_id, name: deptMap.get(r.department_id)?.name || null } : { id: r.department_id, name: null }) : null;
       // Enrich items for this request
       const itemsRaw = itemsByRequestId.get(r.id) || [];
       const items = itemsRaw.map((it: any) => ({
-        id: it.id,
-        type: it.type_id && typeMap.has(it.type_id) ? { id: it.type_id, name: typeMap.get(it.type_id)?.name || null } : null,
-        category: it.category_id && categoryMap.has(it.category_id) ? { id: it.category_id, name: categoryMap.get(it.category_id)?.name || null } : null,
         brand: it.brand_id && brandMap.has(it.brand_id) ? { id: it.brand_id, name: brandMap.get(it.brand_id)?.name || null } : null,
-        qty: it.qty,
+        category: it.category_id && categoryMap.has(it.category_id) ? { id: it.category_id, name: categoryMap.get(it.category_id)?.name || null } : null,
         description: it.items || it.description || null,
-        purpose: it.purpose ?? null,
-        supplier: it.supplier_id && supplierMap.has(it.supplier_id) ? { id: it.supplier_id, name: supplierMap.get(it.supplier_id)?.name || null } : null,
-        unit_price: it.unit_price !== undefined && it.unit_price !== null ? Number(it.unit_price).toFixed(2) : null,
-        total_price: it.total_price !== undefined && it.total_price !== null ? Number(it.total_price).toFixed(2) : null,
-        po_no: it.po_no ?? null,
-        po_date: it.po_date ?? null,
-        handover_to: it.handover_to ?? null,
         handover_at: it.handover_at ?? null,
+        handover_to: it.handover_to ?? null,
+        id: it.id,
+        po_date: it.po_date ?? null,
+        po_no: it.po_no ?? null,
+        purpose: it.purpose ?? null,
+        qty: it.qty,
+        supplier: it.supplier_id && supplierMap.has(it.supplier_id) ? { id: it.supplier_id, name: supplierMap.get(it.supplier_id)?.name || null } : null,
+        total_price: it.total_price !== undefined && it.total_price !== null ? Number(it.total_price).toFixed(2) : null,
+        type: it.type_id && typeMap.has(it.type_id) ? { id: it.type_id, name: typeMap.get(it.type_id)?.name || null } : null,
+        unit_price: it.unit_price !== undefined && it.unit_price !== null ? Number(it.unit_price).toFixed(2) : null,
       }));
       return {
-        id: r.id,
-        request_type: r.request_type ?? null,
-        pr_no: r.pr_no ?? null,
-        pr_date: r.pr_date ?? null,
-        requested_by: requestedBy,
         costcenter: costcenter,
-        department: department,
         created_at: r.created_at ?? null,
-        updated_at: r.updated_at ?? null,
+        department: department,
+        id: r.id,
         items,
+        pr_date: r.pr_date ?? null,
+        pr_no: r.pr_no ?? null,
+        request_type: r.request_type ?? null,
+        requested_by: requestedBy,
+        updated_at: r.updated_at ?? null,
       };
     });
 
-    return res.json({ status: 'success', message: 'Purchase requests retrieved', data: enriched });
+    return res.json({ data: enriched, message: 'Purchase requests retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve purchase requests', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve purchase requests', status: 'error' });
   }
 };
 
@@ -1256,7 +1257,7 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const rec = await purchaseModel.getPurchaseRequestById(id);
-    if (!rec) return res.status(404).json({ status: 'error', message: 'Purchase request not found', data: null });
+    if (!rec) return res.status(404).json({ data: null, message: 'Purchase request not found', status: 'error' });
 
     // Fetch child purchase_data items linked by request_id
     const items = await purchaseModel.getPurchaseRequestItemByRequestId(id);
@@ -1278,7 +1279,7 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
     const typeMap = new Map(types.map((t: any) => [t.id, t]));
     const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
     const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
-    const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+    const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
     const deptMap = new Map(departments.map((d: any) => [d.id, d]));
     const supplierMap = new Map((Array.isArray(suppliersRaw) ? suppliersRaw : []).map((s: any) => [s.id, s]));
     const employeesArr = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -1298,63 +1299,63 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
     const itemsNormalized = (items || []).map((it: any) => {
       const itemDeliveries = deliveriesMap.has(Number(it.id)) ? deliveriesMap.get(Number(it.id))! : [];
       return {
-        id: it.id,
-        type: it.type_id && typeMap.has(it.type_id) ? { id: it.type_id, name: typeMap.get(it.type_id)?.name || null } : null,
-        category: it.category_id && categoryMap.has(it.category_id) ? { id: it.category_id, name: categoryMap.get(it.category_id)?.name || null } : null,
         brand: it.brand_id && brandMap.has(it.brand_id) ? { id: it.brand_id, name: brandMap.get(it.brand_id)?.name || null } : null,
-        qty: it.qty,
-        description: it.items || it.description || null,
-        purpose: it.purpose ?? null,
-        supplier: it.supplier_id && supplierMap.has(it.supplier_id) ? { id: it.supplier_id, name: supplierMap.get(it.supplier_id)?.name || null } : null,
-        unit_price: it.unit_price !== undefined && it.unit_price !== null ? Number(it.unit_price).toFixed(2) : null,
-        total_price: it.total_price !== undefined && it.total_price !== null ? Number(it.total_price).toFixed(2) : null,
-        pr_no: it.pr_no || null,
-        pr_date: it.pr_date || null,
-        po_no: it.po_no ?? null,
-        po_date: it.po_date ?? null,
-        handover_to: it.handover_to ?? null,
-        handover_at: it.handover_at ?? null,
+        category: it.category_id && categoryMap.has(it.category_id) ? { id: it.category_id, name: categoryMap.get(it.category_id)?.name || null } : null,
         created_at: it.created_at ?? null,
-        updated_at: it.updated_at ?? null,
         deliveries: itemDeliveries.map((d: any) => ({
+          created_at: d.created_at ?? null,
+          do_date: d.do_date ?? null,
+          do_no: d.do_no ?? null,
+          grn_date: d.grn_date ?? null,
+          grn_no: d.grn_no ?? null,
           id: d.id,
+          inv_date: d.inv_date ?? null,
+          inv_no: d.inv_no ?? null,
           purchase_id: d.purchase_id,
           request_id: d.request_id,
-          do_no: d.do_no ?? null,
-          do_date: d.do_date ?? null,
-          inv_no: d.inv_no ?? null,
-          inv_date: d.inv_date ?? null,
-          grn_no: d.grn_no ?? null,
-          grn_date: d.grn_date ?? null,
+          updated_at: d.updated_at ?? null,
           upload_path: d.upload_path ?? null,
           upload_url: publicUrl(d.upload_path),
-          created_at: d.created_at ?? null,
-          updated_at: d.updated_at ?? null,
         })),
+        description: it.items || it.description || null,
+        handover_at: it.handover_at ?? null,
+        handover_to: it.handover_to ?? null,
+        id: it.id,
+        po_date: it.po_date ?? null,
+        po_no: it.po_no ?? null,
+        pr_date: it.pr_date || null,
+        pr_no: it.pr_no || null,
+        purpose: it.purpose ?? null,
+        qty: it.qty,
+        supplier: it.supplier_id && supplierMap.has(it.supplier_id) ? { id: it.supplier_id, name: supplierMap.get(it.supplier_id)?.name || null } : null,
+        total_price: it.total_price !== undefined && it.total_price !== null ? Number(it.total_price).toFixed(2) : null,
+        type: it.type_id && typeMap.has(it.type_id) ? { id: it.type_id, name: typeMap.get(it.type_id)?.name || null } : null,
+        unit_price: it.unit_price !== undefined && it.unit_price !== null ? Number(it.unit_price).toFixed(2) : null,
+        updated_at: it.updated_at ?? null,
       };
     });
 
     // Reuse previously loaded lookup maps (employeeMap, ccMap, deptMap) to enrich the request
-    const requestedBy = rec.ramco_id ? (employeeMap.get(rec.ramco_id) ? { ramco_id: rec.ramco_id, full_name: (employeeMap.get(rec.ramco_id) as any)?.full_name || null } : { ramco_id: rec.ramco_id, full_name: null }) : null;
+    const requestedBy = rec.ramco_id ? (employeeMap.get(rec.ramco_id) ? { full_name: (employeeMap.get(rec.ramco_id))?.full_name || null, ramco_id: rec.ramco_id } : { full_name: null, ramco_id: rec.ramco_id }) : null;
     const reqCostcenter = rec.costcenter_id ? (ccMap.has(rec.costcenter_id) ? { id: rec.costcenter_id, name: ccMap.get(rec.costcenter_id)?.name || null } : { id: rec.costcenter_id, name: null }) : null;
     const reqDept = rec.department_id ? (deptMap.has(rec.department_id) ? { id: rec.department_id, name: deptMap.get(rec.department_id)?.name || null } : { id: rec.department_id, name: null }) : null;
 
     const enrichedRec = {
+      costcenter: reqCostcenter,
+      created_at: rec.created_at ?? null,
+      department: reqDept,
       id: rec.id,
-      pr_no: rec.pr_no ?? null,
+      items: itemsNormalized,
       pr_date: rec.pr_date ?? null,
+      pr_no: rec.pr_no ?? null,
       request_type: rec.request_type ?? null,
       requested_by: requestedBy,
-      costcenter: reqCostcenter,
-      department: reqDept,
-      created_at: rec.created_at ?? null,
       updated_at: rec.updated_at ?? null,
-      items: itemsNormalized,
     };
 
-    return res.json({ status: 'success', message: 'Purchase request retrieved', data: enrichedRec });
+    return res.json({ data: enrichedRec, message: 'Purchase request retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to retrieve purchase request', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve purchase request', status: 'error' });
   }
 };
 
@@ -1362,19 +1363,19 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const payload: any = {
-      pr_no: body.pr_no ?? null,
-      pr_date: String(body.pr_date || '').trim(),
-      request_type: String(body.request_type || '').trim(),
-      ramco_id: String(body.ramco_id || '').trim(),
       costcenter_id: Number(body.costcenter_id),
+      pr_date: String(body.pr_date || '').trim(),
+      pr_no: body.pr_no ?? null,
+      ramco_id: String(body.ramco_id || '').trim(),
+      request_type: String(body.request_type || '').trim(),
     };
     if (!payload.pr_date || !payload.request_type || !payload.ramco_id || !payload.costcenter_id) {
-      return res.status(400).json({ status: 'error', message: 'Missing required fields', data: null });
+      return res.status(400).json({ data: null, message: 'Missing required fields', status: 'error' });
     }
     const id = await purchaseModel.createPurchaseRequest(payload);
-    return res.status(201).json({ status: 'success', message: 'Purchase request created', data: { id } });
+    return res.status(201).json({ data: { id }, message: 'Purchase request created', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to create purchase request', data: null });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create purchase request', status: 'error' });
   }
 };
 
@@ -1389,9 +1390,9 @@ export const updatePurchaseRequest = async (req: Request, res: Response) => {
     if (body.ramco_id !== undefined) data.ramco_id = body.ramco_id;
     if (body.costcenter_id !== undefined) data.costcenter_id = Number(body.costcenter_id);
     await purchaseModel.updatePurchaseRequest(id, data);
-    return res.json({ status: 'success', message: 'Purchase request updated' });
+    return res.json({ message: 'Purchase request updated', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to update purchase request' });
+    return res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to update purchase request', status: 'error' });
   }
 };
 
@@ -1399,9 +1400,9 @@ export const deletePurchaseRequest = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     await purchaseModel.deletePurchaseRequest(id);
-    return res.json({ status: 'success', message: 'Purchase request deleted' });
+    return res.json({ message: 'Purchase request deleted', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to delete purchase request' });
+    return res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to delete purchase request', status: 'error' });
   }
 };
 
@@ -1410,15 +1411,15 @@ export const getSuppliers = async (req: Request, res: Response) => {
   try {
     const suppliers = await purchaseModel.getSuppliers();
     res.json({
-      status: 'success',
+      data: suppliers,
       message: 'Suppliers retrieved successfully',
-      data: suppliers
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve suppliers',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -1429,21 +1430,21 @@ export const getSupplierById = async (req: Request, res: Response) => {
     const supplier = await purchaseModel.getSupplierById(Number(id));
     if (!supplier) {
       return res.status(404).json({
-        status: 'error',
+        data: null,
         message: 'Supplier not found',
-        data: null
+        status: 'error'
       });
     }
     res.json({
-      status: 'success',
+      data: supplier,
       message: 'Supplier retrieved successfully',
-      data: supplier
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve supplier',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -1453,15 +1454,15 @@ export const createSupplier = async (req: Request, res: Response) => {
     const supplierData = req.body;
     const newSupplierId = await purchaseModel.createSupplier(supplierData);
     res.status(201).json({
-      status: 'success',
+      data: { id: newSupplierId },
       message: 'Supplier created successfully',
-      data: { id: newSupplierId }
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to create supplier',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -1472,15 +1473,15 @@ export const updateSupplier = async (req: Request, res: Response) => {
     const supplierData = req.body;
     await purchaseModel.updateSupplier(Number(id), supplierData);
     res.json({
-      status: 'success',
+      data: null,
       message: 'Supplier updated successfully',
-      data: null
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to update supplier',
-      data: null
+      status: 'error'
     });
   }
 };
@@ -1491,21 +1492,21 @@ export const deleteSupplier = async (req: Request, res: Response) => {
     const deleted = await purchaseModel.deleteSupplier(Number(id));
     if (!deleted) {
       return res.status(404).json({
-        status: 'error',
+        data: null,
         message: 'Supplier not found',
-        data: null
+        status: 'error'
       });
     }
     res.json({
-      status: 'success',
+      data: null,
       message: 'Supplier deleted successfully',
-      data: null
+      status: 'success'
     });
   } catch (error) {
     res.status(500).json({
-      status: 'error',
+      data: null,
       message: error instanceof Error ? error.message : 'Failed to delete supplier',
-      data: null
+      status: 'error'
     });
   }
 };

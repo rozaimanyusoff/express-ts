@@ -1,13 +1,13 @@
 export const renderSummonNotification = (opts: {
-  driverName?: string | null;
-  smn_id?: number | null;
-  summon_no?: string | null;
-  summon_dt?: string | null;
-  summon_loc?: string | null;
-  summon_amt?: number | string | null;
-  summon_agency?: string | null;
+  driverName?: null | string;
+  smn_id?: null | number;
+  summon_agency?: null | string;
+  summon_amt?: null | number | string;
+  summon_dt?: null | string;
+  summon_loc?: null | string;
+  summon_no?: null | string;
 }) => {
-  const { driverName, smn_id, summon_no, summon_dt, summon_loc, summon_amt, summon_agency } = opts;
+  const { driverName, smn_id, summon_agency, summon_amt, summon_dt, summon_loc, summon_no } = opts;
   const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
   const portalLink = smn_id ? `${base}/compliance/summon/portal/${smn_id}` : null;
 

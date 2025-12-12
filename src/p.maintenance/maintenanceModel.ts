@@ -1,5 +1,6 @@
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
+
 import { pool, pool2 } from '../utils/db';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
 // Database and table declarations
 const dbMaintenance = 'applications';
@@ -56,21 +57,21 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string, yea
                 // Approved: verification_stat=1, recommendation_stat=1, approval_stat=1
                 conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=1)`);
                 break;
-            case 'recommended':
-                // Recommended: verification_stat=1, recommendation_stat=1, approval_stat=0
-                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
-                break;
-            case 'verified':
-                // Verified: verification_stat=1, recommendation_stat=0, approval_stat=0
-                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
-                break;
             case 'cancelled':
                 // cancelled by driver
                 conditions.push(`IFNULL(drv_stat,0) = 2`);
                 break;
+            case 'recommended':
+                // Recommended: verification_stat=1, recommendation_stat=1, approval_stat=0
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
+                break;
             case 'rejected':
                 // any rejection
                 conditions.push(`(IFNULL(verification_stat,0)=2 OR IFNULL(recommendation_stat,0)=2 OR IFNULL(approval_stat,0)=2)`);
+                break;
+            case 'verified':
+                // Verified: verification_stat=1, recommendation_stat=0, approval_stat=0
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
                 break;
         }
     }
@@ -80,9 +81,9 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string, yea
         const p = pendingStatus.toLowerCase();
         const is = (val: string) => p === val;
         const synonyms = {
-            verified: ['verified', 'verification'],
+            approved: ['approved', 'approval'],
             recommended: ['recommended', 'recommendation'],
-            approved: ['approved', 'approval']
+            verified: ['verified', 'verification']
         } as const;
         if (synonyms.verified.includes(p as any)) {
             // Pending verification: all 0
@@ -121,8 +122,8 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string, yea
     // Add computed status field to each record
     return records.map(record => ({
         ...record,
-        status: getRequestStatus(record),
-        application_status: getApplicationStatus(record)
+        application_status: getApplicationStatus(record),
+        status: getRequestStatus(record)
     }));
 };
 
@@ -139,20 +140,20 @@ export const countVehicleMtnRequests = async (status?: string) => {
             case 'approved':
                 conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=1)`);
                 break;
-            case 'recommended':
-                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
-                break;
-            case 'verified':
-                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
-                break;
             case 'cancelled':
                 conditions.push(`IFNULL(drv_stat,0) = 2`);
+                break;
+            case 'pending':
+                conditions.push(`(IFNULL(verification_stat,0)=0 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0 AND IFNULL(drv_stat,0)!=2)`);
+                break;
+            case 'recommended':
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=1 AND IFNULL(approval_stat,0)=0)`);
                 break;
             case 'rejected':
                 conditions.push(`(IFNULL(verification_stat,0)=2 OR IFNULL(recommendation_stat,0)=2 OR IFNULL(approval_stat,0)=2)`);
                 break;
-            case 'pending':
-                conditions.push(`(IFNULL(verification_stat,0)=0 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0 AND IFNULL(drv_stat,0)!=2)`);
+            case 'verified':
+                conditions.push(`(IFNULL(verification_stat,0)=1 AND IFNULL(recommendation_stat,0)=0 AND IFNULL(approval_stat,0)=0)`);
                 break;
         }
     }
@@ -179,7 +180,7 @@ const getRequestStatus = (record: any): string => {
     if (v === 2 || r === 2 || a === 2) return 'rejected';
     // If maintenance form has been uploaded, show as 'Form Uploaded'
     try {
-        const fu = (record && record.form_upload !== undefined && record.form_upload !== null) ? String(record.form_upload).trim() : '';
+        const fu = (record?.form_upload !== undefined && record.form_upload !== null) ? String(record.form_upload).trim() : '';
         if (fu) return 'Form Uploaded';
     } catch { /* ignore */ }
     // Approved when all stages are positively confirmed and not cancelled
@@ -233,9 +234,9 @@ export const getVehicleMtnRequestById = async (id: number) => {
 
         return {
             ...record,
-            svc_type,
+            application_status: getApplicationStatus(record),
             status: getRequestStatus(record),
-            application_status: getApplicationStatus(record)
+            svc_type
         };
     }
 
@@ -280,22 +281,22 @@ export const updateVehicleMtnRequest = async (id: number, data: any) => {
 
     const map: Record<string, string> = {
         coordinator_comment: 'verification_comment',
-        service_confirmation: 'verification_stat',
-        verification_date: 'verification_date',
-        rejection_comment: 'rejection_comment',
-        workshop_id: 'ws_id',
-        major_service_options: 'major_opt',
-        major_service_comment: 'major_svc_comment',
+        drv_cancel_comment: 'drv_cancel_comment',
+        drv_date: 'drv_date',
         // cancellation fields
         drv_stat: 'drv_stat',
-        drv_cancel_comment: 'drv_cancel_comment',
-        drv_date: 'drv_date'
+        major_service_comment: 'major_svc_comment',
+        major_service_options: 'major_opt',
+        rejection_comment: 'rejection_comment',
+        service_confirmation: 'verification_stat',
+        verification_date: 'verification_date',
+        workshop_id: 'ws_id'
     };
 
     for (const [key, column] of Object.entries(map)) {
         if (Object.prototype.hasOwnProperty.call(data, key)) {
             sets.push(`${column} = ?`);
-            params.push((data as any)[key]);
+            params.push((data)[key]);
         }
     }
 
@@ -314,20 +315,20 @@ export const updateVehicleMtnRequest = async (id: number, data: any) => {
     for (const col of directKeys) {
         if (Object.prototype.hasOwnProperty.call(data, col) && !sets.find(s => s.startsWith(`${col} =`))) {
             sets.push(`${col} = ?`);
-            params.push((data as any)[col]);
+            params.push((data)[col]);
         }
     }
 
         if (sets.length === 0) {
             // Nothing to update; return a ResultSetHeader-shaped object
             const noop: ResultSetHeader = {
-                fieldCount: 0,
                 affectedRows: 0,
-                insertId: 0,
+                changedRows: 0,
+                fieldCount: 0,
                 info: 'No fields to update',
+                insertId: 0,
                 serverStatus: 0,
-                warningStatus: 0,
-                changedRows: 0
+                warningStatus: 0
             } as ResultSetHeader;
             return noop;
         }
@@ -345,7 +346,7 @@ export const deleteVehicleMtnRequest = async (id: number) => {
 };
 
 //Recommended
-export const recommendVehicleMtnRequest = async (id: number, ramco_id: string | number, stat: number) => {
+export const recommendVehicleMtnRequest = async (id: number, ramco_id: number | string, stat: number) => {
 	// Placeholder - implement when database structure is provided
 	const [result] = await pool2.query(`
 		UPDATE ${vehicleMaintenanceTable} SET recommendation = ?, recommendation_stat = ?, recommendation_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
@@ -353,7 +354,7 @@ export const recommendVehicleMtnRequest = async (id: number, ramco_id: string | 
 };
 
 //Approve
-export const approveVehicleMtnRequest = async (id: number, ramco_id: string | number, stat: number) => {
+export const approveVehicleMtnRequest = async (id: number, ramco_id: number | string, stat: number) => {
 	// Placeholder - implement when database structure is provided
 	const [result] = await pool2.query(`
 		UPDATE ${vehicleMaintenanceTable} SET approval = ?, approval_stat = ?, approval_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
@@ -394,10 +395,10 @@ export const pushVehicleMtnToBilling = async (reqId: number) => {
 		}
 
 		return {
-			success: true,
-			insertId: result.insertId,
 			affectedRows: result.affectedRows,
-			reqId
+			insertId: result.insertId,
+			reqId,
+			success: true
 		};
 	} catch (error) {
 		throw error;
@@ -443,17 +444,17 @@ export const getVehicleMtnRequestByAssetId = async (vehicleId: number, status?: 
 		// Add status filtering if provided
 		if (status) {
 			switch (status.toLowerCase()) {
+				case 'approved':
+					query += ` AND verification_stat = 1 AND recommendation_stat = 1 AND approval_stat = 1`;
+					break;
 				case 'pending':
 					query += ` AND (verification_stat IS NULL OR verification_stat = 0)`;
-					break;
-				case 'verified':
-					query += ` AND verification_stat = 1 AND (recommendation_stat IS NULL OR recommendation_stat = 0)`;
 					break;
 				case 'recommended':
 					query += ` AND verification_stat = 1 AND recommendation_stat = 1 AND (approval_stat IS NULL OR approval_stat = 0)`;
 					break;
-				case 'approved':
-					query += ` AND verification_stat = 1 AND recommendation_stat = 1 AND approval_stat = 1`;
+				case 'verified':
+					query += ` AND verification_stat = 1 AND (recommendation_stat IS NULL OR recommendation_stat = 0)`;
 					break;
 				default:
 					// No additional filtering for invalid status
@@ -585,9 +586,9 @@ export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: numbe
 
     return {
         affectedRows: updatedCount + insertedCount,
-        updatedCount,
-        insertedCount,
         changedRows: updatedCount,
+        insertedCount,
+        updatedCount,
         warningStatus: 0
     };
 };
@@ -634,7 +635,7 @@ export const getPoolCarById = async (id: number) => {
     const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
     const rec = (rows as RowDataPacket[])[0];
     if (!rec) return rec;
-    return { ...(rec as any), status: getPoolCarStatus(rec as any) } as any;
+    return { ...(rec as any), status: getPoolCarStatus(rec as any) };
 };
 export const createPoolCar = async (data: any) => {
     const [result] = await pool2.query(`INSERT INTO ${poolCarTable} SET ?`, [data]);
@@ -720,13 +721,13 @@ export const getAvailablePoolCars = async () => {
 export const getPoolCarStatus = (input: any, pcar_cancelParam?: any): string => {
     // Support calling with a record or raw values
     const approval_stat = (typeof input === 'object' && input !== null && 'approval_stat' in input)
-        ? (input as any).approval_stat
+        ? (input).approval_stat
         : input;
     const pcar_cancel = (typeof input === 'object' && input !== null && 'pcar_cancel' in input)
-        ? (input as any).pcar_cancel
+        ? (input).pcar_cancel
         : pcar_cancelParam;
     const pcar_retdate = (typeof input === 'object' && input !== null && 'pcar_retdate' in input)
-        ? (input as any).pcar_retdate
+        ? (input).pcar_retdate
         : undefined;
 
     const a = Number(approval_stat ?? 0);
@@ -734,7 +735,7 @@ export const getPoolCarStatus = (input: any, pcar_cancelParam?: any): string => 
         const v = pcar_cancel;
         if (v === null || v === undefined) return false;
         if (typeof v === 'number') return v === 1;
-        if (typeof v === 'boolean') return v === true;
+        if (typeof v === 'boolean') return v;
         const s = String(v).toLowerCase();
         return s === '1' || s === 'true' || s === 'yes' || s === 'cancelled';
     })();

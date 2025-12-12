@@ -1,8 +1,9 @@
+import { NextFunction, Request, Response } from 'express';
+import fs from 'fs';
 // src/utils/fileUploader.ts
 import multer, { FileFilterCallback } from 'multer';
 import path from 'path';
-import fs from 'fs';
-import { Request, Response, NextFunction } from 'express';
+
 import logger from './logger';
 import { getUploadBaseSync } from './uploadUtil';
 
@@ -44,9 +45,9 @@ export const createUploader = (subfolder: string, allowedMimeTypes?: string[]) =
 			fs.mkdir(destinationPath, { recursive: true }, (err) => {
 				if (err) {
 					logger.error(`Failed to ensure upload directory: ${destinationPath} - ${err.message}`);
-					return cb(err, destinationPath);
+					cb(err, destinationPath); return;
 				}
-				return cb(null, destinationPath);
+				cb(null, destinationPath);
 			});
 		},
 		filename: (req: Request, file: Express.Multer.File, cb) => {
@@ -72,11 +73,11 @@ export const createUploader = (subfolder: string, allowedMimeTypes?: string[]) =
     // Allow overriding max upload file size via environment variable (bytes). Default 10MB.
     const maxFileSize = Number(process.env.UPLOAD_MAX_FILE_SIZE || String(1024 * 1024 * 10));
     return multer({
-		storage: storage,
 		fileFilter: fileFilter,
 		limits: {
 			fileSize: maxFileSize,
 		},
+		storage: storage,
 	});
 };
 
@@ -87,8 +88,8 @@ export const createUploader = (subfolder: string, allowedMimeTypes?: string[]) =
 export const validateUploadedFile = (req: Request, res: Response, next: NextFunction) => {
 	if (!req.file) {
 		return res.status(400).json({
-			status: 'error',
 			message: 'File upload is required.',
+			status: 'error',
 		});
 	}
 	next();

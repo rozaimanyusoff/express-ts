@@ -1,8 +1,9 @@
 import { Router } from "express";
-import * as userController from "./userController";
-import asyncHandler from "../utils/asyncHandler";
-import tokenValidator from '../middlewares/tokenValidator';
 import multer from 'multer';
+
+import tokenValidator from '../middlewares/tokenValidator';
+import asyncHandler from "../utils/asyncHandler";
+import * as userController from "./userController";
 
 const upload = multer();
 const router = Router();

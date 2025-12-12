@@ -4,11 +4,11 @@ import PDFDocument from 'pdfkit';
 interface AssessmentPdfOptions {
   assessment: any;
   asset: any;
-  driver: any;
   details?: any[];
+  driver: any;
 }
 
-export async function generateAssessmentPdf({ assessment, asset, driver, details }: AssessmentPdfOptions): Promise<Buffer> {
+export async function generateAssessmentPdf({ assessment, asset, details, driver }: AssessmentPdfOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40 });
     const buffers: Buffer[] = [];
@@ -28,7 +28,7 @@ export async function generateAssessmentPdf({ assessment, asset, driver, details
     doc.text(`Rate: ${assessment.a_rate || '-'}`);
     doc.text(`NCR: ${assessment.a_ncr || '-'}`);
     doc.moveDown();
-    if (details && details.length) {
+    if (details?.length) {
       doc.fontSize(14).text('Assessment Details');
       doc.moveDown(0.5);
       details.forEach((d: any, idx: number) => {

@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import * as roleModel from './roleModel';
-import * as roleModulePermissionModel from '../a.permission/permissionModel';
+
 import * as moduleModel from '../a.module/moduleModel';
 import { Permission } from '../a.permission/interface';
+import * as roleModulePermissionModel from '../a.permission/permissionModel';
+import * as roleModel from './roleModel';
 
 export const getAllRoles = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -20,18 +21,18 @@ export const getAllRoles = async (req: Request, res: Response): Promise<Response
         });
 
         return res.status(200).json({
-            success: true,
+            data: rolesWithPermissions,
             message: 'Roles fetched successfully',
-            data: rolesWithPermissions
+            success: true
         }); 
 
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to fetch roles', error: (error as Error).message });
+        return res.status(500).json({ error: (error as Error).message, message: 'Failed to fetch roles' });
     }
 }
 
 export const addRole = async (req: Request, res: Response): Promise<Response> => {
-    const { roleName, description, permissions } = req.body;
+    const { description, permissions, roleName } = req.body;
 
     try {
         const [ newRole, modules ] = await Promise.all([
@@ -48,10 +49,10 @@ export const addRole = async (req: Request, res: Response): Promise<Response> =>
                 : (typeof permsForModule === 'string' ? permsForModule.split(',').map((s: string) => s.trim()) : []);
 
             const modulePerm = {
+                isDelete: permList.includes('delete'),
                 isRead: permList.includes('read'),
-                isWrite: permList.includes('write'),
                 isUpdate: permList.includes('update'),
-                isDelete: permList.includes('delete')
+                isWrite: permList.includes('write')
             };
 
             await roleModulePermissionModel.createPermission(
@@ -65,18 +66,18 @@ export const addRole = async (req: Request, res: Response): Promise<Response> =>
         }
         
         return res.status(201).json({
-            success: true,
-            message: 'Role created successfully',
             data: newRole,
+            message: 'Role created successfully',
+            success: true,
         });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to create role', error: (error as Error).message });
+        return res.status(500).json({ error: (error as Error).message, message: 'Failed to create role' });
     }
 }
 
 export const updateRole = async (req: Request, res: Response): Promise<Response> => {
     const roleId = parseInt(req.params.id, 10);
-    const { roleName, description, permissions } = req.body;
+    const { description, permissions, roleName } = req.body;
 
     try {
         // const updatedRole = await roleModel.updateRole(roleId, roleName, description, permissions);
@@ -96,10 +97,10 @@ export const updateRole = async (req: Request, res: Response): Promise<Response>
                 : (typeof permsForModule === 'string' ? permsForModule.split(',').map((s: string) => s.trim()) : []);
 
             const modulePerm = {
+                isDelete: permList.includes('delete'),
                 isRead: permList.includes('read'),
-                isWrite: permList.includes('write'),
                 isUpdate: permList.includes('update'),
-                isDelete: permList.includes('delete')
+                isWrite: permList.includes('write')
             };
 
             await roleModulePermissionModel.createPermission(
@@ -113,12 +114,12 @@ export const updateRole = async (req: Request, res: Response): Promise<Response>
         }
         
         return res.status(200).json({
-            success: true,
+            data: updatedRole,
             message: 'Role updated successfully',
-            data: updatedRole
+            success: true
         });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to update role', error: (error as Error).message });
+        return res.status(500).json({ error: (error as Error).message, message: 'Failed to update role' });
     }
 }
 
@@ -129,11 +130,11 @@ export const toggleRole = async (req: Request, res: Response): Promise<Response>
         const toggledRole = await roleModel.toggleRole(roleId);
         
         return res.status(200).json({
-            success: true,
+            data: toggledRole,
             message: 'Role toggled successfully',
-            data: toggledRole
+            success: true
         });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to toggle role', error: (error as Error).message });
+        return res.status(500).json({ error: (error as Error).message, message: 'Failed to toggle role' });
     }
 }

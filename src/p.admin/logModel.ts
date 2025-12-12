@@ -1,12 +1,12 @@
 import {pool} from '../utils/db';
 import logger from '../utils/logger';
 
-export type AuthAction = 'login' | 'logout' | 'register' | 'activate' | 'reset_password' | 'request_reset' | 'other';
+export type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
 
 export const logAuthActivity = async (
   userId: number,
   action: AuthAction,
-  status: 'success' | 'fail',
+  status: 'fail' | 'success',
   reason: any = {},
   req?: any
 ): Promise<void> => {
@@ -15,7 +15,7 @@ export const logAuthActivity = async (
     let userAgent = null;
     if (req) {
       ip = req.headers && (req.headers['x-forwarded-for'] as string) || req.connection?.remoteAddress || req.socket?.remoteAddress || null;
-      userAgent = req.headers && req.headers['user-agent'] || null;
+      userAgent = req.headers?.['user-agent'] || null;
     }
     // Ensure details is always a non-empty string (use null if empty object)
     let details = null;
@@ -63,7 +63,7 @@ export const getUserAuthLogs = async (userId: number): Promise<any[]> => {
 // Semantics match the controller's original getUserTimeSpent logic:
 // - Consecutive logins: ignore subsequent logins until a logout occurs
 // - If still logged in (no following logout), count up to NOW()
-export const getTimeSpentByUsers = async (userIds: number[]): Promise<Array<{ user_id: number; time_spent: number }>> => {
+export const getTimeSpentByUsers = async (userIds: number[]): Promise<{ time_spent: number; user_id: number; }[]> => {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
   try {
     const [rows]: any[] = await pool.query(
@@ -75,7 +75,7 @@ export const getTimeSpentByUsers = async (userIds: number[]): Promise<Array<{ us
     );
 
     const resultMap = new Map<number, number>();
-    let currentUser: number | null = null;
+    let currentUser: null | number = null;
     let lastLogin: Date | null = null;
 
     const flushUser = (userId: number) => {
@@ -88,7 +88,7 @@ export const getTimeSpentByUsers = async (userIds: number[]): Promise<Array<{ us
       lastLogin = null;
     };
 
-    for (const row of rows as Array<{ user_id: number; action: string; created_at: Date | string }>) {
+    for (const row of rows as { action: string; created_at: Date | string; user_id: number; }[]) {
       const uid = Number(row.user_id);
       if (currentUser === null) currentUser = uid;
       if (uid !== currentUser) {
@@ -118,7 +118,7 @@ export const getTimeSpentByUsers = async (userIds: number[]): Promise<Array<{ us
       flushUser(currentUser);
     }
 
-    return Array.from(resultMap.entries()).map(([user_id, time_spent]) => ({ user_id, time_spent }));
+    return Array.from(resultMap.entries()).map(([user_id, time_spent]) => ({ time_spent, user_id }));
   } catch (error) {
     logger.error('Database error in getTimeSpentByUsers:', error);
     throw error;

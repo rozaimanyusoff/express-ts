@@ -1,7 +1,7 @@
 export interface Organization {
-    id: string
-    name: string,
     code: string,
     description: string,
+    id: string
     isActive: boolean
+    name: string,
 }

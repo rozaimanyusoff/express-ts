@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import * as assetController from './assetController';
+
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
+import * as assetController from './assetController';
 
 const router = Router();
 

@@ -11,6 +11,9 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allow custom headers
+  credentials: true, // Allow cookies/credentials
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -18,9 +21,6 @@ const corsOptions = {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true, // Allow cookies/credentials
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allow custom headers
 };
 
 export default cors(corsOptions);

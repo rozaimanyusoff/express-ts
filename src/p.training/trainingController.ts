@@ -1,15 +1,17 @@
+import dayjs from 'dayjs';
 // src/p.training/trainingController.ts
 import { Request, Response } from 'express';
-import * as trainingModel from './trainingModel';
-import dayjs from 'dayjs';
-import { toPublicUrl, toDbPath, sanitizeFilename } from '../utils/uploadUtil';
-import type { TrainingEvent } from './trainingModel';
-import * as assetModel from '../p.asset/assetModel';
 import { promises as fsPromises } from 'fs';
+
+import type { TrainingEvent } from './trainingModel';
+
+import * as assetModel from '../p.asset/assetModel';
+import { sanitizeFilename, toDbPath, toPublicUrl } from '../utils/uploadUtil';
+import * as trainingModel from './trainingModel';
 
 // Note: HTML entity decoding for courses is handled in trainingModel
 
-const formatDMY12h = (value: any): string | null => {
+const formatDMY12h = (value: any): null | string => {
    if (!value) return null;
    const d = dayjs(value);
    if (!d.isValid()) return null;
@@ -23,40 +25,40 @@ const mapRowToTrainingEvent = (row: any): TrainingEvent => {
    const attachmentUrl = filename ? toPublicUrl(`trainings/${filename}`) : null;
 
    return {
-      training_id: Number(row?.training_id ?? 0),
-      course_title: String(row?.course_title ?? ''),
-      course_id: Number(row?.course_id ?? 0),
-      series: row?.series ?? null,
-      sdate: formatDMY12h(row?.sdate),
-      edate: formatDMY12h(row?.edate),
-      hrs: row?.hrs ?? null,
-      days: row?.days ?? null,
-      venue: row?.venue ?? null,
-      training_count: Number(row?.training_count ?? 0),
       attendance: row?.attendance != null ? Number(row.attendance) : null,
-      session: row?.session ?? null,
-      seat: row?.seat != null ? Number(row.seat) : null,
+      attendance_upload: attachmentUrl,
       contents: row?.contents ?? null,
-      event_cost: row?.event_cost ?? null,
-      cost_trainer: row?.cost_trainer ?? null,
-      cost_venue: row?.cost_venue ?? null,
       cost_lodging: row?.cost_lodging ?? null,
       cost_other: row?.cost_other ?? null,
       cost_total: row?.cost_total ?? null,
-      attendance_upload: attachmentUrl,
+      cost_trainer: row?.cost_trainer ?? null,
+      cost_venue: row?.cost_venue ?? null,
+      course_id: Number(row?.course_id ?? 0),
+      course_title: String(row?.course_title ?? ''),
+      days: row?.days ?? null,
+      edate: formatDMY12h(row?.edate),
+      event_cost: row?.event_cost ?? null,
+      hrs: row?.hrs ?? null,
+      sdate: formatDMY12h(row?.sdate),
+      seat: row?.seat != null ? Number(row.seat) : null,
+      series: row?.series ?? null,
+      session: row?.session ?? null,
+      training_count: Number(row?.training_count ?? 0),
+      training_id: Number(row?.training_id ?? 0),
+      venue: row?.venue ?? null,
    };
 };
 
 // List trainings
 export const getTrainings = async (req: Request, res: Response) => {
    try {
-      const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query?.year) ? Number(req.query.year[0]) : undefined);
-      const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
+      const yearParam = typeof req.query.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query.year) ? Number(req.query.year[0]) : undefined);
+      const year = Number.isFinite(yearParam!) ? Math.floor(yearParam!) : undefined;
       const rows = await trainingModel.getTrainings(year);
-      const data = (rows as any[]).map(mapRowToTrainingEvent);
-      return res.json({ status: 'success', message: `${data.length} training events fetched successfully`, data });
+      const data = (rows).map(mapRowToTrainingEvent);
+      return res.json({ data, message: `${data.length} training events fetched successfully`, status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -65,10 +67,10 @@ export const getTrainingById = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
-         return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+         return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       }
       const row = await trainingModel.getTrainingById(id);
-      if (!row) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+      if (!row) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
       const item = mapRowToTrainingEvent(row);
 
       // Fetch and enrich participants for this training event
@@ -94,7 +96,7 @@ export const getTrainingById = async (req: Request, res: Response) => {
 
             // Fetch positions
             try {
-               const positions = await assetModel.getPositions?.();
+               const positions = await assetModel.getPositions();
                if (Array.isArray(positions)) {
                   positionMap = new Map((positions as any[]).map((pos: any) => [Number(pos.id), pos]));
                }
@@ -102,7 +104,7 @@ export const getTrainingById = async (req: Request, res: Response) => {
 
             // Fetch departments
             try {
-               const departments = await assetModel.getDepartments?.();
+               const departments = await assetModel.getDepartments();
                if (Array.isArray(departments)) {
                   departmentMap = new Map((departments as any[]).map((d: any) => [Number(d.id), d]));
                }
@@ -110,7 +112,7 @@ export const getTrainingById = async (req: Request, res: Response) => {
 
             // Fetch locations
             try {
-               const locations = await assetModel.getLocations?.();
+               const locations = await assetModel.getLocations();
                if (Array.isArray(locations)) {
                   locationMap = new Map((locations as any[]).map((l: any) => [Number(l.id), l]));
                }
@@ -121,7 +123,7 @@ export const getTrainingById = async (req: Request, res: Response) => {
                const ramco = p?.participant ? String(p.participant) : '';
                const emp = employeeMap.get(ramco);
 
-               let participantObj: any = { ramco_id: ramco, full_name: emp?.full_name ?? null };
+               const participantObj: any = { full_name: emp?.full_name ?? null, ramco_id: ramco };
                if (emp?.position_id) {
                   const pos = positionMap.get(Number(emp.position_id));
                   if (pos) participantObj.position = { id: pos.id, name: pos.name || pos.position_name };
@@ -136,17 +138,17 @@ export const getTrainingById = async (req: Request, res: Response) => {
                }
 
                return {
-                  participant_id: Number(p.participant_id ?? 0),
-                  participant: participantObj
+                  participant: participantObj,
+                  participant_id: Number(p.participant_id ?? 0)
                };
             });
          }
       } catch (_) { /* ignore */ }
 
       const attendanceCount = Array.isArray(participants) ? participants.length : 0;
-      return res.json({ status: 'success', message: 'Training fetched', data: { ...item, attendance: attendanceCount, participants } });
+      return res.json({ data: { ...item, attendance: attendanceCount, participants }, message: 'Training fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -160,18 +162,18 @@ export const createTraining = async (req: Request, res: Response) => {
       const missingFields = requiredFields.filter(f => !payload[f]);
       if (missingFields.length > 0) {
          return res.status(400).json({
-            status: 'error',
+            data: null,
             message: `Missing required fields: ${missingFields.join(', ')}`,
-            data: null
+            status: 'error'
          });
       }
 
       // Validate session if provided
-      if (payload.session && !['morning', 'afternoon', 'fullday'].includes(payload.session)) {
+      if (payload.session && !['afternoon', 'fullday', 'morning'].includes(payload.session)) {
          return res.status(400).json({
-            status: 'error',
+            data: null,
             message: 'Invalid session. Must be one of: morning, afternoon, fullday',
-            data: null
+            status: 'error'
          });
       }
 
@@ -179,26 +181,26 @@ export const createTraining = async (req: Request, res: Response) => {
       const participants = Array.isArray(payload.participants) ? payload.participants : [];
       if (payload.training_count && participants.length !== Number(payload.training_count)) {
          return res.status(400).json({
-            status: 'error',
+            data: null,
             message: `training_count (${payload.training_count}) does not match participants array length (${participants.length})`,
-            data: null
+            status: 'error'
          });
       }
 
       // Extract fields for training_events table (exclude nested arrays and validation-only fields)
       const trainingData = {
-         course_title: payload.course_title,
          course_id: payload.course_id,
+         course_title: payload.course_title,
+         days: payload.days ?? null,
+         edate: payload.edate,
+         event_cost: payload.event_cost ?? null,
+         hrs: payload.hrs ?? null,
+         sdate: payload.sdate,
+         seat: payload.seat ?? null,
          series: payload.series ?? null,
          session: payload.session ?? null,
-         sdate: payload.sdate,
-         edate: payload.edate,
-         hrs: payload.hrs ?? null,
-         days: payload.days ?? null,
-         venue: payload.venue,
          training_count: payload.training_count ?? 0,
-         seat: payload.seat ?? null,
-         event_cost: payload.event_cost ?? null
+         venue: payload.venue
       };
 
       // Create training event
@@ -207,24 +209,24 @@ export const createTraining = async (req: Request, res: Response) => {
 
       if (!trainingId) {
          return res.status(500).json({
-            status: 'error',
+            data: null,
             message: 'Failed to create training event',
-            data: null
+            status: 'error'
          });
       }
 
       // Prepare costings with training_id foreign key
       const costingDetails = Array.isArray(payload.costing_details) ? payload.costing_details : [];
       const costingsToInsert = costingDetails.map((costing: any) => ({
-         training_id: trainingId,
+         ec_amount: costing.ec_amount || costing.amount,  // Support both field names
          ec_desc: costing.ec_desc,
-         ec_amount: costing.ec_amount || costing.amount  // Support both field names
+         training_id: trainingId
       }));
 
       // Prepare participants with training_id foreign key
       const participantsToInsert = participants.map((p: any) => ({
-         training_id: trainingId,
-         participant: p.participant
+         participant: p.participant,
+         training_id: trainingId
       }));
 
       // Insert costings and participants (allow partial success)
@@ -232,16 +234,16 @@ export const createTraining = async (req: Request, res: Response) => {
       const participantResult = await trainingModel.createMultipleParticipants(participantsToInsert);
 
       return res.json({
-         status: 'success',
-         message: 'Training created successfully',
          data: {
-            training_id: trainingId,
             costing_count: costingResult.insertedCount,
-            participant_count: participantResult.insertedCount
-         }
+            participant_count: participantResult.insertedCount,
+            training_id: trainingId
+         },
+         message: 'Training created successfully',
+         status: 'success'
       });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -250,18 +252,18 @@ export const updateTraining = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
-         return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+         return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       }
 
       const payload = req.body ?? {};
       const file = (req as any).file as Express.Multer.File | undefined;
 
       // Validation
-      if (payload.session && !['morning', 'afternoon', 'fullday'].includes(payload.session)) {
+      if (payload.session && !['afternoon', 'fullday', 'morning'].includes(payload.session)) {
          return res.status(400).json({
-            status: 'error',
+            data: null,
             message: 'Invalid session. Must be one of: morning, afternoon, fullday',
-            data: null
+            status: 'error'
          });
       }
 
@@ -269,9 +271,9 @@ export const updateTraining = async (req: Request, res: Response) => {
       const participants = Array.isArray(payload.participants) ? payload.participants : [];
       if (payload.training_count && participants.length > 0 && participants.length !== Number(payload.training_count)) {
          return res.status(400).json({
-            status: 'error',
+            data: null,
             message: `training_count (${payload.training_count}) does not match participants array length (${participants.length})`,
-            data: null
+            status: 'error'
          });
       }
 
@@ -293,9 +295,9 @@ export const updateTraining = async (req: Request, res: Response) => {
             trainingData.attendance_upload = dbPath;
          } catch (fileError) {
             return res.status(400).json({
-               status: 'error',
+               data: null,
                message: `File processing failed: ${(fileError as Error).message}`,
-               data: null
+               status: 'error'
             });
          }
       }
@@ -304,7 +306,7 @@ export const updateTraining = async (req: Request, res: Response) => {
       const result: any = await trainingModel.updateTraining(id, trainingData);
 
       // Handle costings array if provided
-      let costingResult = { deletedCount: 0, insertedCount: 0 };
+      const costingResult = { deletedCount: 0, insertedCount: 0 };
       const costingDetails = Array.isArray(payload.costing_details) ? payload.costing_details : [];
       if (costingDetails.length > 0) {
          try {
@@ -314,9 +316,9 @@ export const updateTraining = async (req: Request, res: Response) => {
 
             // Prepare and insert new costings
             const costingsToInsert = costingDetails.map((costing: any) => ({
-               training_id: id,
+               ec_amount: costing.ec_amount || costing.amount,
                ec_desc: costing.ec_desc,
-               ec_amount: costing.ec_amount || costing.amount
+               training_id: id
             }));
 
             const insertResult = await trainingModel.createMultipleCostings(costingsToInsert);
@@ -328,7 +330,7 @@ export const updateTraining = async (req: Request, res: Response) => {
       }
 
       // Handle participants array if provided
-      let participantResult = { deletedCount: 0, insertedCount: 0 };
+      const participantResult = { deletedCount: 0, insertedCount: 0 };
       if (participants.length > 0) {
          try {
             // Delete existing participants for this training
@@ -337,8 +339,8 @@ export const updateTraining = async (req: Request, res: Response) => {
 
             // Prepare and insert new participants
             const participantsToInsert = participants.map((p: any) => ({
-               training_id: id,
-               participant: p.participant
+               participant: p.participant,
+               training_id: id
             }));
 
             const insertResult = await trainingModel.createMultipleParticipants(participantsToInsert);
@@ -350,20 +352,20 @@ export const updateTraining = async (req: Request, res: Response) => {
       }
 
       return res.json({
-         status: 'success',
-         message: 'Training updated successfully',
          data: {
-            training_id: id,
-            event_updated: result?.affectedRows > 0,
             costing_deleted: costingResult.deletedCount,
             costing_inserted: costingResult.insertedCount,
+            event_updated: result?.affectedRows > 0,
+            file_uploaded: !!file,
             participant_deleted: participantResult.deletedCount,
             participant_inserted: participantResult.insertedCount,
-            file_uploaded: !!file
-         }
+            training_id: id
+         },
+         message: 'Training updated successfully',
+         status: 'success'
       });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -372,12 +374,12 @@ export const deleteTraining = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
-         return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+         return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       }
       const result: any = await trainingModel.deleteTraining(id);
-      return res.json({ status: 'success', message: 'Training deleted', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Training deleted', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -385,21 +387,21 @@ export const deleteTraining = async (req: Request, res: Response) => {
 export const getTrainers = async (_req: Request, res: Response) => {
    try {
       const data = await trainingModel.getTrainers();
-      return res.json({ status: 'success', message: 'Trainers fetched', data });
+      return res.json({ data, message: 'Trainers fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const getTrainerById = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const item = await trainingModel.getTrainerById(id);
-      if (!item) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
-      return res.json({ status: 'success', message: 'Trainer fetched', data: item });
+      if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
+      return res.json({ data: item, message: 'Trainer fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -407,32 +409,32 @@ export const createTrainer = async (req: Request, res: Response) => {
    try {
       const payload = req.body ?? {};
       const result: any = await trainingModel.createTrainer(payload);
-      return res.json({ status: 'success', message: 'Trainer created', data: { insertId: result?.insertId } });
+      return res.json({ data: { insertId: result?.insertId }, message: 'Trainer created', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const updateTrainer = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const payload = req.body ?? {};
       const result: any = await trainingModel.updateTrainer(id, payload);
-      return res.json({ status: 'success', message: 'Trainer updated', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Trainer updated', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const deleteTrainer = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const result: any = await trainingModel.deleteTrainer(id);
-      return res.json({ status: 'success', message: 'Trainer deleted', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Trainer deleted', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -440,25 +442,25 @@ export const deleteTrainer = async (req: Request, res: Response) => {
 export const getCourses = async (req: Request, res: Response) => {
    try {
       // Support ?q= or ?search= for autocomplete/search functionality
-      const searchTerm = typeof req.query?.q === 'string' ? req.query.q :
-         (typeof req.query?.search === 'string' ? req.query.search : undefined);
+      const searchTerm = typeof req.query.q === 'string' ? req.query.q :
+         (typeof req.query.search === 'string' ? req.query.search : undefined);
 
       const data = await trainingModel.getCourses(searchTerm);
-      return res.json({ status: 'success', message: 'Courses fetched', data });
+      return res.json({ data, message: 'Courses fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const getCourseById = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const item = await trainingModel.getCourseById(id);
-      if (!item) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
-      return res.json({ status: 'success', message: 'Course fetched', data: item });
+      if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
+      return res.json({ data: item, message: 'Course fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -471,7 +473,7 @@ export const createCourse = async (req: Request, res: Response) => {
       
       // Validate required fields
       if (!courseData.course_title) {
-         return res.status(400).json({ status: 'error', message: 'course_title is required', data: null });
+         return res.status(400).json({ data: null, message: 'course_title is required', status: 'error' });
       }
       
       // Create course
@@ -479,38 +481,38 @@ export const createCourse = async (req: Request, res: Response) => {
       const course_id = result?.insertId;
       
       if (!course_id) {
-         return res.status(500).json({ status: 'error', message: 'Failed to create course', data: null });
+         return res.status(500).json({ data: null, message: 'Failed to create course', status: 'error' });
       }
       
       // Insert costings if provided
       let costingInsertCount = 0;
       if (Array.isArray(costings) && costings.length > 0) {
          const costingsWithCourseId = costings.map(c => ({
-            course_id,
+            cost: c.cost || null,
             cost_desc: c.cost_desc || null,
-            cost: c.cost || null
+            course_id
          }));
          const costingResult = await trainingModel.createMultipleCourseCostings(costingsWithCourseId);
          costingInsertCount = costingResult?.affectedRows || 0;
       }
       
       return res.json({ 
-         status: 'success', 
-         message: 'Course created', 
          data: { 
-            course_id,
-            costing_inserted: costingInsertCount
-         } 
+            costing_inserted: costingInsertCount,
+            course_id
+         }, 
+         message: 'Course created', 
+         status: 'success' 
       });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const updateCourse = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       
       const payload = req.body ?? {};
       
@@ -532,9 +534,9 @@ export const updateCourse = async (req: Request, res: Response) => {
          // Insert new costings
          if (costings.length > 0) {
             const costingsWithCourseId = costings.map(c => ({
-               course_id: id,
+               cost: c.cost || null,
                cost_desc: c.cost_desc || null,
-               cost: c.cost || null
+               course_id: id
             }));
             const costingResult = await trainingModel.createMultipleCourseCostings(costingsWithCourseId);
             costingInserted = costingResult?.affectedRows || 0;
@@ -542,28 +544,28 @@ export const updateCourse = async (req: Request, res: Response) => {
       }
       
       return res.json({ 
-         status: 'success', 
-         message: 'Course updated', 
          data: { 
-            course_id: id,
-            course_updated: result?.affectedRows > 0,
             costing_deleted: costingDeleted,
-            costing_inserted: costingInserted
-         } 
+            costing_inserted: costingInserted,
+            course_id: id,
+            course_updated: result?.affectedRows > 0
+         }, 
+         message: 'Course updated', 
+         status: 'success' 
       });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const deleteCourse = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const result: any = await trainingModel.deleteCourse(id);
-      return res.json({ status: 'success', message: 'Course deleted', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Course deleted', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -571,8 +573,8 @@ export const deleteCourse = async (req: Request, res: Response) => {
 const decodeHtmlEntities = (str: string): string => {
    if (!str || typeof str !== 'string') return str as any;
    const namedMap: Record<string, string> = {
-      '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#34;': '"',
-      '&#39;': "'", '&apos;': "'", '&nbsp;': ' '
+      '&#34;': '"', '&#39;': "'", '&amp;': '&', '&apos;': "'", '&gt;': '>',
+      '&lt;': '<', '&nbsp;': ' ', '&quot;': '"'
    };
    let out = str.replace(/&(amp|lt|gt|quot|apos|nbsp);|&#(?:34|39);/g, (m) => namedMap[m] ?? m);
    out = out.replace(/&#(\d+);/g, (_, dec) => {
@@ -589,16 +591,16 @@ const decodeHtmlEntities = (str: string): string => {
 /* ======== Participants ======== */
 export const getParticipants = async (req: Request, res: Response) => {
    try {
-      const trainingIdQ = req.query?.training_id;
-      const ramcoQ = typeof req.query?.ramco === 'string' ? String(req.query.ramco).trim() : undefined;
-      const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query?.year) ? Number(req.query.year[0]) : undefined);
-      const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
-      const showAllParam = req.query?.show_all === 'true' || req.query?.show_all === '1';
-      const statusFilter = typeof req.query?.status === 'string' ? String(req.query.status).toLowerCase() : undefined;
+      const trainingIdQ = req.query.training_id;
+      const ramcoQ = typeof req.query.ramco === 'string' ? String(req.query.ramco).trim() : undefined;
+      const yearParam = typeof req.query.year === 'string' ? Number(req.query.year) : (Array.isArray(req.query.year) ? Number(req.query.year[0]) : undefined);
+      const year = Number.isFinite(yearParam!) ? Math.floor(yearParam!) : undefined;
+      const showAllParam = req.query.show_all === 'true' || req.query.show_all === '1';
+      const statusFilter = typeof req.query.status === 'string' ? String(req.query.status).toLowerCase() : undefined;
 
       // Fetch all participants
       const rows = trainingIdQ ? await trainingModel.getParticipantsByTrainingId(Number(trainingIdQ)) : await trainingModel.getParticipants();
-      let filteredRows = ramcoQ ? (rows as any[]).filter(r => String(r.participant || '').trim() === ramcoQ) : (rows as any[]);
+      let filteredRows = ramcoQ ? (rows).filter(r => String(r.participant || '').trim() === ramcoQ) : (rows);
 
       // Batch fetch: collect all unique training IDs
       const trainingIds = Array.from(new Set(
@@ -606,8 +608,8 @@ export const getParticipants = async (req: Request, res: Response) => {
       ));
 
       // Fetch all trainings at once
-      let trainingMap = new Map<number, TrainingEvent>();
-      let trainingRawDateMap = new Map<number, any>(); // Store raw dates for year filtering
+      const trainingMap = new Map<number, TrainingEvent>();
+      const trainingRawDateMap = new Map<number, any>(); // Store raw dates for year filtering
       if (trainingIds.length > 0) {
          try {
             const trainings = await Promise.all(trainingIds.map(id => trainingModel.getTrainingById(id)));
@@ -636,9 +638,9 @@ export const getParticipants = async (req: Request, res: Response) => {
       // Fetch all employees, departments, positions, and locations
       const [employeesRaw, departments, positions, locations] = await Promise.all([
          assetModel.getEmployees(),
-         assetModel.getDepartments?.().catch(() => []),
-         assetModel.getPositions?.().catch(() => []),
-         assetModel.getLocations?.().catch(() => [])
+         assetModel.getDepartments().catch(() => []),
+         assetModel.getPositions().catch(() => []),
+         assetModel.getLocations().catch(() => [])
       ]);
 
       // Filter employees by employment_status if status=active is provided
@@ -677,7 +679,7 @@ export const getParticipants = async (req: Request, res: Response) => {
          const emp = employeeMap.get(ramco);
          
          // Build participant object with position, department, and location
-         let participantObj: any = { ramco_id: ramco, full_name: emp?.full_name ?? null };
+         const participantObj: any = { full_name: emp?.full_name ?? null, ramco_id: ramco };
          if (emp?.position_id) {
             const pos = positionMap.get(Number(emp.position_id));
             if (pos) participantObj.position = { id: pos.id, name: pos.name || pos.position_name };
@@ -704,23 +706,23 @@ export const getParticipants = async (req: Request, res: Response) => {
             const trainId = Number(p.training_id ?? 0);
             const ev = trainingMap.get(trainId);
             return {
-               training_id: trainId,
+               attendance_upload: ev?.attendance_upload ?? null,
+               course_title: ev?.course_title ?? null,
+               days: ev?.days ?? null,
+               end_date: ev?.edate,
+               hrs: ev?.hrs ?? null,
                participant_id: Number(p.participant_id ?? 0),
                start_date: ev?.sdate,
-               end_date: ev?.edate,
-               course_title: ev?.course_title ?? null,
-               hrs: ev?.hrs ?? null,
-               days: ev?.days ?? null,
-               venue: ev?.venue ? decodeHtmlEntities(ev.venue) : null,
-               attendance_upload: ev?.attendance_upload ?? null
+               training_id: trainId,
+               venue: ev?.venue ? decodeHtmlEntities(ev.venue) : null
             };
          });
 
          return {
             participant: participantObj,
             total_training_hours: totalHours.toFixed(2),
-            trainings_count: participations.length,
-            training_details: trainingDetails
+            training_details: trainingDetails,
+            trainings_count: participations.length
          };
       });
 
@@ -733,9 +735,9 @@ export const getParticipants = async (req: Request, res: Response) => {
                return ramco.length > 0 && !participatedRamcoIds.has(ramco);
             })
             .map((emp: any) => {
-               let participantObj: any = {
-                  ramco_id: emp.ramco_id,
-                  full_name: emp.full_name ?? null
+               const participantObj: any = {
+                  full_name: emp.full_name ?? null,
+                  ramco_id: emp.ramco_id
                };
 
                if (emp.position_id) {
@@ -754,8 +756,8 @@ export const getParticipants = async (req: Request, res: Response) => {
                return {
                   participant: participantObj,
                   total_training_hours: "0.00",
-                  trainings_count: 0,
-                  training_details: []
+                  training_details: [],
+                  trainings_count: 0
                };
             });
 
@@ -766,26 +768,26 @@ export const getParticipants = async (req: Request, res: Response) => {
          ? `${participantsWithTraining.length} participated, ${data.length - participantsWithTraining.length} not participated`
          : `${data.length} entries fetched`;
 
-      return res.json({ status: 'success', message, data });
+      return res.json({ data, message, status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 // GET /api/training/participants/no-training?year=2025
 export const getEmployeesWithNoTraining = async (req: Request, res: Response) => {
    try {
-      const yearParam = typeof req.query?.year === 'string' ? Number(req.query.year) : undefined;
-      const year = Number.isFinite(yearParam as number) ? Math.floor(yearParam as number) : undefined;
+      const yearParam = typeof req.query.year === 'string' ? Number(req.query.year) : undefined;
+      const year = Number.isFinite(yearParam!) ? Math.floor(yearParam!) : undefined;
 
       if (!year) {
-         return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+         return res.status(400).json({ data: null, message: 'year parameter is required', status: 'error' });
       }
 
       // Fetch all active employees
       const employees = await assetModel.getEmployees();
       if (!Array.isArray(employees)) {
-         return res.status(500).json({ status: 'error', message: 'Failed to fetch employees', data: null });
+         return res.status(500).json({ data: null, message: 'Failed to fetch employees', status: 'error' });
       }
 
       // Fetch all participants
@@ -796,7 +798,7 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
       const trainingIds = allTrainings.map(t => Number(t.training_id)).filter(id => id > 0);
 
       // Get participants who attended trainings in the specified year
-      const participantsInYear = (allParticipants as any[]).filter(p => 
+      const participantsInYear = (allParticipants).filter(p => 
          trainingIds.includes(Number(p.training_id))
       );
 
@@ -807,9 +809,9 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
 
       // Fetch enrichment data
       const [departments, positions, locations] = await Promise.all([
-         assetModel.getDepartments?.().catch(() => []),
-         assetModel.getPositions?.().catch(() => []),
-         assetModel.getLocations?.().catch(() => [])
+         assetModel.getDepartments().catch(() => []),
+         assetModel.getPositions().catch(() => []),
+         assetModel.getLocations().catch(() => [])
       ]);
 
       const depts = Array.isArray(departments) ? departments : [];
@@ -827,9 +829,9 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
             return ramco.length > 0 && !attendedRamcoIds.has(ramco);
          })
          .map((emp: any) => {
-            let participantObj: any = {
-               ramco_id: emp.ramco_id,
-               full_name: emp.full_name ?? null
+            const participantObj: any = {
+               full_name: emp.full_name ?? null,
+               ramco_id: emp.ramco_id
             };
 
             if (emp.position_id) {
@@ -853,22 +855,22 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
          });
 
       return res.json({ 
-         status: 'success', 
+         data: employeesWithNoTraining, 
          message: `${employeesWithNoTraining.length} employee(s) with no training in ${year}`, 
-         data: employeesWithNoTraining 
+         status: 'success' 
       });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const getParticipantById = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
 
       const item = await trainingModel.getParticipantById(id);
-      if (!item) return res.status(404).json({ status: 'error', message: 'Not found', data: null });
+      if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
 
       // Enrich with employee, training, position, department, location data
       const ramco = item?.participant ? String(item.participant) : '';
@@ -889,7 +891,7 @@ export const getParticipantById = async (req: Request, res: Response) => {
 
       if (emp?.position_id) {
          try {
-            const positions = await assetModel.getPositions?.();
+            const positions = await assetModel.getPositions();
             if (Array.isArray(positions)) {
                const pos = (positions as any[]).find((p: any) => Number(p.id) === Number(emp.position_id));
                if (pos) positionObj = { id: pos.id, name: pos.name || pos.position_name };
@@ -899,20 +901,20 @@ export const getParticipantById = async (req: Request, res: Response) => {
 
       if (emp?.department_id) {
          try {
-            const departments = await assetModel.getDepartments?.();
+            const departments = await assetModel.getDepartments();
             if (Array.isArray(departments)) {
                const dept = (departments as any[]).find((d: any) => Number(d.id) === Number(emp.department_id));
-               if (dept) departmentObj = { id: dept.id, code: dept.code, name: dept.name };
+               if (dept) departmentObj = { code: dept.code, id: dept.id, name: dept.name };
             }
          } catch { /* ignore */ }
       }
 
       if (emp?.location_id) {
          try {
-            const locations = await assetModel.getLocations?.();
+            const locations = await assetModel.getLocations();
             if (Array.isArray(locations)) {
                const loc = (locations as any[]).find((l: any) => Number(l.id) === Number(emp.location_id));
-               if (loc) locationObj = { id: loc.id, name: loc.name, code: loc.code };
+               if (loc) locationObj = { code: loc.code, id: loc.id, name: loc.name };
             }
          } catch { /* ignore */ }
       }
@@ -926,31 +928,31 @@ export const getParticipantById = async (req: Request, res: Response) => {
       }
 
       const enriched = {
-         participant_id: Number(item.participant_id ?? 0),
-         training_id: trainId,
+         attendance: item.attendance ?? null,
          participant: {
-            ramco_id: ramco,
-            full_name: emp?.full_name ?? null,
-            position: positionObj,
             department: departmentObj,
-            location: locationObj
+            full_name: emp?.full_name ?? null,
+            location: locationObj,
+            position: positionObj,
+            ramco_id: ramco
          },
+         participant_id: Number(item.participant_id ?? 0),
          training_details: training ? {
-            training_id: trainId,
-            start_date: training.sdate,
-            end_date: training.edate,
+            attendance_upload: training.attendance_upload ?? null,
             course_title: training.course_title ?? null,
-            hrs: training.hrs ?? null,
             days: training.days ?? null,
-            venue: training.venue ? decodeHtmlEntities(training.venue) : null,
-            attendance_upload: training.attendance_upload ?? null
+            end_date: training.edate,
+            hrs: training.hrs ?? null,
+            start_date: training.sdate,
+            training_id: trainId,
+            venue: training.venue ? decodeHtmlEntities(training.venue) : null
          } : null,
-         attendance: item.attendance ?? null
+         training_id: trainId
       };
 
-      return res.json({ status: 'success', message: 'Participant fetched', data: enriched });
+      return res.json({ data: enriched, message: 'Participant fetched', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
@@ -958,31 +960,31 @@ export const createParticipant = async (req: Request, res: Response) => {
    try {
       const payload = req.body ?? {};
       const result: any = await trainingModel.createParticipant(payload);
-      return res.json({ status: 'success', message: 'Participant created', data: { insertId: result?.insertId } });
+      return res.json({ data: { insertId: result?.insertId }, message: 'Participant created', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const updateParticipant = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const payload = req.body ?? {};
       const result: any = await trainingModel.updateParticipant(id, payload);
-      return res.json({ status: 'success', message: 'Participant updated', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Participant updated', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };
 
 export const deleteParticipant = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
       const result: any = await trainingModel.deleteParticipant(id);
-      return res.json({ status: 'success', message: 'Participant deleted', data: { affectedRows: result?.affectedRows } });
+      return res.json({ data: { affectedRows: result?.affectedRows }, message: 'Participant deleted', status: 'success' });
    } catch (error) {
-      return res.status(500).json({ status: 'error', message: (error as Error).message ?? 'Unknown error', data: null });
+      return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
    }
 };

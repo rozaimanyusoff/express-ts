@@ -1,25 +1,26 @@
+import * as crypto from 'crypto';
+import dayjs from 'dayjs';
 // src/p.maintenance/maintenanceController.ts
 import { Request, Response } from 'express';
-import * as maintenanceModel from './maintenanceModel';
-import * as assetModel from '../p.asset/assetModel';
-import { toDbPath, buildStoragePath, safeMove, sanitizeFilename, toPublicUrl } from '../utils/uploadUtil';
-import dayjs from 'dayjs';
-import * as path from 'path';
-import * as userModel from '../p.user/userModel';
-import * as billingModel from '../p.billing/billingModel';
-import * as crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import * as mailer from '../utils/mailer';
-import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceRequest';
-import vehicleMaintenanceAuthorizationEmail from '../utils/emailTemplates/vehicleMaintenanceAuthorization';
-import { buildSectionsForRecord, getAdminCcList } from '../utils/maintenanceEmailHelper';
+import * as path from 'path';
+
+import * as assetModel from '../p.asset/assetModel';
+import * as billingModel from '../p.billing/billingModel';
+import * as userModel from '../p.user/userModel';
 import poolCarApplicantEmail from '../utils/emailTemplates/poolCarApplicant';
 import poolCarSupervisorEmail from '../utils/emailTemplates/poolCarSupervisor';
+import vehicleMaintenanceAuthorizationEmail from '../utils/emailTemplates/vehicleMaintenanceAuthorization';
+import vehicleMaintenanceEmail from '../utils/emailTemplates/vehicleMaintenanceRequest';
 import { getSupervisorBySubordinate } from '../utils/employeeHelper';
-import { getWorkflowPic } from '../utils/workflowHelper';
-import { sendRecommendationEmail, sendApprovalEmail, sendRequesterApprovalEmail } from '../utils/workflowService';
-import { getSocketIOInstance } from '../utils/socketIoInstance';
+import * as mailer from '../utils/mailer';
+import { buildSectionsForRecord, getAdminCcList } from '../utils/maintenanceEmailHelper';
 import * as notificationService from '../utils/notificationService';
+import { getSocketIOInstance } from '../utils/socketIoInstance';
+import { buildStoragePath, safeMove, sanitizeFilename, toDbPath, toPublicUrl } from '../utils/uploadUtil';
+import { getWorkflowPic } from '../utils/workflowHelper';
+import { sendApprovalEmail, sendRecommendationEmail, sendRequesterApprovalEmail } from '../utils/workflowService';
+import * as maintenanceModel from './maintenanceModel';
 
 // Admin CC list for pool car submission notifications (comma-separated in env or define directly)
 const POOLCAR_ADMIN_CC: string[] = (process.env.POOLCAR_ADMIN_CC || '')
@@ -50,16 +51,16 @@ export const getUnseenBillsCount = async (req: Request, res: Response) => {
 		const count = await maintenanceModel.getUnseenBillsCount(userId || undefined);
 
 		return res.json({
-			status: 'success',
+			data: { count },
 			message: 'Unseen bills count retrieved successfully',
-			data: { count }
+			status: 'success'
 		});
 	} catch (error) {
 		console.error('Error getting unseen bills count:', error);
 		return res.status(500).json({
-			status: 'error',
+			data: { count: 0 },
 			message: error instanceof Error ? error.message : 'Failed to get unseen bills count',
-			data: { count: 0 }
+			status: 'error'
 		});
 	}
 };
@@ -70,7 +71,7 @@ export const getInsurances = async (req: Request, res: Response) => {
 		const insurances = await maintenanceModel.getInsurances();
 		const insArray = Array.isArray(insurances) ? insurances : (insurances ? [insurances] : []);
 
-		res.json({ status: 'success', message: `Insurances fetched successfully with ${insArray.length} entries`, data: insurances });
+		res.json({ data: insurances, message: `Insurances fetched successfully with ${insArray.length} entries`, status: 'success' });
 	} catch (error) {
 		// include error from backend
 		console.error('Error fetching insurances:', error);
@@ -106,7 +107,7 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 					.map((aid) => {
 						const a = assetMap.get(aid);
 						if (!a) return null;
-						return { asset_id: aid, register_number: (a as any).register_number || null };
+						return { asset_id: aid, register_number: (a).register_number || null };
 					})
 					.filter(Boolean) as any[];
 			} catch (e) {
@@ -116,7 +117,7 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 		}
 
 		const data = { ...(insurance as any), assets: assetsArr };
-		res.json({ status: 'success', message: 'Insurance fetched successfully', data });
+		res.json({ data, message: 'Insurance fetched successfully', status: 'success' });
 	} catch (error) {
 		console.error('Error fetching insurance by ID:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -134,7 +135,7 @@ export const createInsurance = async (req: Request, res: Response) => {
 	const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
 
 		// Create insurance
-		const insertId = await maintenanceModel.createInsurance({ insurer, policy, expiry });
+		const insertId = await maintenanceModel.createInsurance({ expiry, insurer, policy });
 
 		// Link assets in roadtax table by setting insurance_id for provided assets
 		let updateResult: any = null;
@@ -143,16 +144,16 @@ export const createInsurance = async (req: Request, res: Response) => {
 		}
 
 		res.status(201).json({
-			status: 'success',
-			message: 'Insurance created and roadtax updated successfully',
 			data: {
+				assets: assetIds,
+				expiry,
 				id: Number(insertId),
 				insurer,
 				policy,
-				expiry,
-				assets: assetIds,
 				roadtax_updates: updateResult
-			}
+			},
+			message: 'Insurance created and roadtax updated successfully',
+			status: 'success'
 		});
 	} catch (error) {
 		console.error('Error creating insurance:', error);
@@ -188,15 +189,15 @@ export const updateInsurance = async (req: Request, res: Response) => {
 		}
 
 		res.json({
-			status: 'success',
-			message: 'Insurance updated successfully',
 			data: {
 				id: Number(id),
 				...payload,
 				assets: assetIds,
-				roadtax_updates: updateResult,
-				insurance_update: updatedInsurance
-			}
+				insurance_update: updatedInsurance,
+				roadtax_updates: updateResult
+			},
+			message: 'Insurance updated successfully',
+			status: 'success'
 		});
 	} catch (error) {
 		console.error('Error updating insurance:', error);
@@ -250,30 +251,30 @@ export const getRoadTaxes = async (req: Request, res: Response) => {
 			const ins = insMap.get(Number(r.insurance_id));
 			const asset = assetMap.get(Number(r.asset_id));
 			const insurance = ins ? {
+				expiry: (ins.expiry) ?? null,
 				id: Number(ins.id),
 				insurer: ins.insurer ?? ins.company ?? ins.name ?? null,
 				policy: (ins.policy) ?? null,
-				expiry: (ins.expiry) ?? null,
 				upload: r.ins_upload || null
 			} : null;
 			const assetObj = asset ? {
+				brand: asset.brand_id ? { id: Number(asset.brand_id), name: (brandMap.get(Number(asset.brand_id)))?.name || null } : null,
+				category: asset.category_id ? { id: Number(asset.category_id), name: (catMap.get(Number(asset.category_id)))?.name || null } : null,
+				costcenter: asset.costcenter_id ? { id: Number(asset.costcenter_id), name: (ccMap.get(Number(asset.costcenter_id)))?.name || null } : null,
+				department: asset.department_id ? { id: Number(asset.department_id), name: (deptMap.get(Number(asset.department_id)))?.code || null } : null,
 				id: Number(r.asset_id),
-				register_number: asset.register_number || null,
-				costcenter: asset.costcenter_id ? { id: Number(asset.costcenter_id), name: (ccMap.get(Number(asset.costcenter_id)) as any)?.name || null } : null,
-				department: asset.department_id ? { id: Number(asset.department_id), name: (deptMap.get(Number(asset.department_id)) as any)?.code || null } : null,
-				location: asset.location_id ? { id: Number(asset.location_id), name: (locMap.get(Number(asset.location_id)) as any)?.name || null } : null,
-				category: asset.category_id ? { id: Number(asset.category_id), name: (catMap.get(Number(asset.category_id)) as any)?.name || null } : null,
-				brand: asset.brand_id ? { id: Number(asset.brand_id), name: (brandMap.get(Number(asset.brand_id)) as any)?.name || null } : null
+				location: asset.location_id ? { id: Number(asset.location_id), name: (locMap.get(Number(asset.location_id)))?.name || null } : null,
+				register_number: asset.register_number || null
 			} : null;
 			return {
-				rt_id: Number(r.rt_id ?? r.id ?? r.rtId ?? 0) || r.rt_id,
-				insurance,
 				asset: assetObj,
-				roadtax_expiry: r.rt_exp ?? r.roadtax_expiry ?? r.expiry_date ?? null
+				insurance,
+				roadtax_expiry: r.rt_exp ?? r.roadtax_expiry ?? r.expiry_date ?? null,
+				rt_id: Number(r.rt_id ?? r.id ?? r.rtId ?? 0) || r.rt_id
 			};
 		});
 
-		res.json({ status: 'success', message: `Road taxes fetched successfully with ${data.length} entries`, data });
+		res.json({ data, message: `Road taxes fetched successfully with ${data.length} entries`, status: 'success' });
 	} catch (error) {
 		// include error from backend
 		console.error('Error fetching road taxes:', error);
@@ -307,30 +308,30 @@ export const getRoadTaxById = async (req: Request, res: Response) => {
 		const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
 
 		const insurance = ins ? {
+			expiry: (((ins as any).expiry ?? (ins as any).expiry_date) ?? (ins as any).exp_date) ?? null,
 			id: Number((ins as any).id),
 			insurer: (ins as any).insurer ?? (ins as any).company ?? (ins as any).name ?? null,
 			policy: (((ins as any).ins_policy ?? (ins as any).policy_no) ?? (ins as any).policy) ?? null,
-			expiry: (((ins as any).expiry ?? (ins as any).expiry_date) ?? (ins as any).exp_date) ?? null,
 			upload: (r as any).ins_upload || null
 		} : null;
 		const assetObj = asset ? {
+			brand: (asset as any).brand_id ? { id: Number((asset as any).brand_id), name: (brandMap.get(Number((asset as any).brand_id)))?.name || null } : null,
+			category: (asset as any).category_id ? { id: Number((asset as any).category_id), name: (catMap.get(Number((asset as any).category_id)))?.name || null } : null,
+			costcenter: (asset as any).costcenter_id ? { id: Number((asset as any).costcenter_id), name: (ccMap.get(Number((asset as any).costcenter_id)))?.name || null } : null,
+			department: (asset as any).department_id ? { id: Number((asset as any).department_id), name: (deptMap.get(Number((asset as any).department_id)))?.code || null } : null,
 			id: Number((r as any).asset_id),
-			register_number: (asset as any).register_number || null,
-			costcenter: (asset as any).costcenter_id ? { id: Number((asset as any).costcenter_id), name: (ccMap.get(Number((asset as any).costcenter_id)) as any)?.name || null } : null,
-			department: (asset as any).department_id ? { id: Number((asset as any).department_id), name: (deptMap.get(Number((asset as any).department_id)) as any)?.code || null } : null,
-			location: (asset as any).location_id ? { id: Number((asset as any).location_id), name: (locMap.get(Number((asset as any).location_id)) as any)?.name || null } : null,
-			category: (asset as any).category_id ? { id: Number((asset as any).category_id), name: (catMap.get(Number((asset as any).category_id)) as any)?.name || null } : null,
-			brand: (asset as any).brand_id ? { id: Number((asset as any).brand_id), name: (brandMap.get(Number((asset as any).brand_id)) as any)?.name || null } : null
+			location: (asset as any).location_id ? { id: Number((asset as any).location_id), name: (locMap.get(Number((asset as any).location_id)))?.name || null } : null,
+			register_number: (asset as any).register_number || null
 		} : null;
 
 		const data = {
-			rt_id: Number((r as any).rt_id ?? (r as any).id ?? 0) || (r as any).rt_id,
-			insurance,
 			asset: assetObj,
-			roadtax_expiry: (r as any).rt_exp ?? (r as any).roadtax_expiry ?? (r as any).expiry_date ?? null
+			insurance,
+			roadtax_expiry: (r as any).rt_exp ?? (r as any).roadtax_expiry ?? (r as any).expiry_date ?? null,
+			rt_id: Number((r as any).rt_id ?? (r as any).id ?? 0) || (r as any).rt_id
 		};
 
-		res.json({ status: 'success', message: 'Road tax fetched successfully', data });
+		res.json({ data, message: 'Road tax fetched successfully', status: 'success' });
 	} catch (error) {
 		console.error('Error fetching road tax by ID:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -341,22 +342,22 @@ export const createRoadTax = async (req: Request, res: Response) => {
 	const body = req.body || {};
 	try {
 		// Support bulk update: { rt_exp, assets: [] }
-		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as string | null;
+		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as null | string;
 		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
 		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
 
 		if (rtExp && assetIds.length > 0) {
 			const result = await maintenanceModel.updateRoadTaxExpiryByAssets(rtExp, assetIds);
 			return res.status(201).json({
-				status: 'success',
+				data: { assets: assetIds, result, rt_exp: rtExp },
 				message: 'Road tax expiry updated successfully for provided assets',
-				data: { rt_exp: rtExp, assets: assetIds, result }
+				status: 'success'
 			});
 		}
 
 		// Fallback: create a single roadtax row if full data provided
 		const newRoadTax = await maintenanceModel.createRoadTax(body);
-		res.status(201).json({ status: 'success', message: 'Road tax created successfully', data: newRoadTax });
+		res.status(201).json({ data: newRoadTax, message: 'Road tax created successfully', status: 'success' });
 	} catch (error) {
 		console.error('Error creating road tax:', error);
 		res.status(500).json({ error: 'Internal server error' });
@@ -368,22 +369,22 @@ export const updateRoadTax = async (req: Request, res: Response) => {
 	const body = req.body || {};
 	try {
 		// If assets array provided, perform bulk rt_exp update; else update by rt_id
-		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as string | null;
+		const rtExp = (body.rt_exp ?? body.roadtax_expiry ?? body.expiry_date ?? null) as null | string;
 		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
 		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
 
 		if (rtExp && assetIds.length > 0) {
 			const result = await maintenanceModel.updateRoadTaxExpiryByAssets(rtExp, assetIds);
 			return res.json({
-				status: 'success',
+				data: { assets: assetIds, result, rt_exp: rtExp },
 				message: 'Road tax expiry updated successfully for provided assets',
-				data: { rt_exp: rtExp, assets: assetIds, result }
+				status: 'success'
 			});
 		}
 
 		const updatedRoadTax = await maintenanceModel.updateRoadTax(Number(id), body);
 		if (updatedRoadTax) {
-			res.json({ status: 'success', message: 'Road tax updated successfully', data: updatedRoadTax });
+			res.json({ data: updatedRoadTax, message: 'Road tax updated successfully', status: 'success' });
 		} else {
 			res.status(404).json({ error: 'Road tax not found' });
 		}
@@ -452,8 +453,8 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		const billingByReqId = new Map<string, any>();
 		for (const inv of allBillings) {
 			const invAny: any = inv as any;
-			const so = invAny && invAny.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
-			const rid = invAny && invAny.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
+			const so = invAny?.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
+			const rid = invAny?.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
 			if (so && !billingBySvcOrder.has(so)) billingBySvcOrder.set(so, inv);
 			if (rid && !billingByReqId.has(rid)) billingByReqId.set(rid, inv);
 		}
@@ -481,47 +482,47 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 				});
 
 			const base = {
-				req_id: record.req_id,
-				req_date: record.req_date,
-				svc_type: svcTypeArray,
-				req_comment: record.req_comment,
-				upload_date: record.upload_date,
-				verification_date: record.verification_date,
-				recommendation_date: record.recommendation_date,
+				approval_by: employeeMap.has(record.approval) ? {
+					email: (employeeMap.get(record.approval))?.email,
+					name: (employeeMap.get(record.approval))?.full_name,
+					ramco_id: record.approval
+				} : null,
 				approval_date: record.approval_date,
-				form_upload_date: record.form_upload_date,
-				drv_date: record.drv_date,
-				emailStat: record.emailStat,
-				inv_status: record.inv_status,
-				status: record.status,
 				// Use asset_id (vehicle_id is deprecated)
 				asset: assetMap.has(record.asset_id) ? {
 					id: record.asset_id,
-					register_number: (assetMap.get(record.asset_id) as any)?.register_number
-				} : null,
-				requester: employeeMap.has(record.ramco_id) ? {
-					ramco_id: record.ramco_id,
-					name: (employeeMap.get(record.ramco_id) as any)?.full_name,
-					email: (employeeMap.get(record.ramco_id) as any)?.email
-				} : null,
-				recommendation_by: employeeMap.has(record.recommendation) ? {
-					ramco_id: record.recommendation,
-					name: (employeeMap.get(record.recommendation) as any)?.full_name,
-					email: (employeeMap.get(record.recommendation) as any)?.email
-				} : null,
-				approval_by: employeeMap.has(record.approval) ? {
-					ramco_id: record.approval,
-					name: (employeeMap.get(record.approval) as any)?.full_name,
-					email: (employeeMap.get(record.approval) as any)?.email
+					register_number: (assetMap.get(record.asset_id))?.register_number
 				} : null,
 				// Use costcenter_id (cc_id is deprecated)
 				costcenter: ccMap.has(record.costcenter_id) ? {
 					id: record.costcenter_id,
-					name: (ccMap.get(record.costcenter_id) as any)?.name
+					name: (ccMap.get(record.costcenter_id))?.name
 				} : null,
+				drv_date: record.drv_date,
+				emailStat: record.emailStat,
+				form_upload_date: record.form_upload_date,
+				inv_status: record.inv_status,
+				recommendation_by: employeeMap.has(record.recommendation) ? {
+					email: (employeeMap.get(record.recommendation))?.email,
+					name: (employeeMap.get(record.recommendation))?.full_name,
+					ramco_id: record.recommendation
+				} : null,
+				recommendation_date: record.recommendation_date,
+				req_comment: record.req_comment,
+				req_date: record.req_date,
+				req_id: record.req_id,
+				requester: employeeMap.has(record.ramco_id) ? {
+					email: (employeeMap.get(record.ramco_id))?.email,
+					name: (employeeMap.get(record.ramco_id))?.full_name,
+					ramco_id: record.ramco_id
+				} : null,
+				status: record.status,
+				svc_type: svcTypeArray,
+				upload_date: record.upload_date,
+				verification_date: record.verification_date,
 				workshop: wsMap.has(record.ws_id) ? {
 					id: record.ws_id,
-					name: (wsMap.get(record.ws_id) as any)?.ws_name
+					name: (wsMap.get(record.ws_id))?.ws_name
 				} : null
 			};
 			const key = String(record.req_id);
@@ -531,15 +532,15 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 
 		const total = resolvedRecords.length;
 		res.json({
-			status: 'success',
+			data: resolvedRecords,
 			message: `Maintenance records data retrieved successfully (total: ${total})`,
-			data: resolvedRecords
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -551,9 +552,9 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 
 		if (!record) {
 			return res.status(404).json({
-				status: 'error',
+				data: null,
 				message: 'Maintenance record not found',
-				data: null
+				status: 'error'
 			});
 		}
 
@@ -578,7 +579,7 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 		const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
 		const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 		const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
 		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -588,8 +589,8 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const billingByReqId = new Map<string, any>();
 		for (const inv of allBillings) {
 			const invAny: any = inv as any;
-			const so = invAny && invAny.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
-			const rid = invAny && invAny.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
+			const so = invAny?.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
+			const rid = invAny?.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
 			if (so && !billingBySvcOrder.has(so)) billingBySvcOrder.set(so, inv);
 			if (rid && !billingByReqId.has(rid)) billingByReqId.set(rid, inv);
 		}
@@ -620,37 +621,15 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 
 		// Build resolved record with nested structure
 		const resolvedRecord = {
-			req_id: (record as any).req_id,
-			req_date: (record as any).req_date,
-			svc_type: svcTypeArray,
-			odo_start: (record as any).odo_start,
-			odo_end: (record as any).odo_end,
-			extra_mileage: (record as any).extra_mileage,
-			late_notice: (record as any).late_notice,
-			// Use asset_id (vehicle_id is deprecated)
-			req_comment: (record as any).req_comment,
-			req_upload: toPublicUrl((record as any).req_upload),
-			upload_date: (record as any).upload_date,
-			verification_comment: (record as any).verification_comment,
-			verification_date: (record as any).verification_date,
-			verification_stat: (record as any).verification_stat,
-			recommendation_date: (record as any).recommendation_date,
-			approval_date: (record as any).approval_date,
-			status: (record as any).status,
-			emailStat: (record as any).emailStat,
-			inv_status: (record as any).inv_status,
 			acceptance_status: (record as any).drv_stat,
-			cancellation_comment: (record as any).drv_cancel_comment,
-			form_upload: toPublicUrl((record as any).form_upload),
-			form_upload_date: (record as any).form_upload_date,
+			approval_by: employeeMap.has((record as any).approval) ? {
+				name: (employeeMap.get((record as any).approval))?.full_name,
+				ramco_id: (record as any).approval
+			} : null,
+			approval_date: (record as any).approval_date,
 			asset: assetMap.has((record as any).asset_id) ? (() => {
-				const a = assetMap.get((record as any).asset_id) as any;
+				const a = assetMap.get((record as any).asset_id);
 				return {
-					id: (record as any).asset_id,
-					register_number: a?.register_number,
-					classification: a?.classification,
-					record_status: a?.record_status,
-					purchase_date: a?.purchase_date,
 					// asset age in full years calculated from purchase_date
 					age_years: (() => {
 						if (!a?.purchase_date) return null;
@@ -660,30 +639,52 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 						const years = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
 						return years;
 					})(),
-					category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id) as any)?.name } : null,
-					brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
-					model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
-					costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
-					department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)) as any)?.name } : null,
-					location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
+					brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id))?.name } : null,
+					category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id))?.name } : null,
+					classification: a?.classification,
+					costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id))?.name } : null,
+					department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)))?.name } : null,
+					id: (record as any).asset_id,
+					location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id))?.name } : null,
+					model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id))?.name } : null,
+					purchase_date: a?.purchase_date,
+					record_status: a?.record_status,
+					register_number: a?.register_number
 				};
 			})() : null,
-			requester: employeeMap.has((record as any).ramco_id) ? {
-				ramco_id: (record as any).ramco_id,
-				name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
-				contact: (employeeMap.get((record as any).ramco_id) as any)?.contact
-			} : null,
+			cancellation_comment: (record as any).drv_cancel_comment,
+			emailStat: (record as any).emailStat,
+			extra_mileage: (record as any).extra_mileage,
+			form_upload: toPublicUrl((record as any).form_upload),
+			form_upload_date: (record as any).form_upload_date,
+			inv_status: (record as any).inv_status,
+			late_notice: (record as any).late_notice,
+			odo_end: (record as any).odo_end,
+			odo_start: (record as any).odo_start,
 			recommendation_by: employeeMap.has((record as any).recommendation) ? {
-				ramco_id: (record as any).recommendation,
-				name: (employeeMap.get((record as any).recommendation) as any)?.full_name
+				name: (employeeMap.get((record as any).recommendation))?.full_name,
+				ramco_id: (record as any).recommendation
 			} : null,
-			approval_by: employeeMap.has((record as any).approval) ? {
-				ramco_id: (record as any).approval,
-				name: (employeeMap.get((record as any).approval) as any)?.full_name
+			recommendation_date: (record as any).recommendation_date,
+			// Use asset_id (vehicle_id is deprecated)
+			req_comment: (record as any).req_comment,
+			req_date: (record as any).req_date,
+			req_id: (record as any).req_id,
+			req_upload: toPublicUrl((record as any).req_upload),
+			requester: employeeMap.has((record as any).ramco_id) ? {
+				contact: (employeeMap.get((record as any).ramco_id))?.contact,
+				name: (employeeMap.get((record as any).ramco_id))?.full_name,
+				ramco_id: (record as any).ramco_id
 			} : null,
+			status: (record as any).status,
+			svc_type: svcTypeArray,
+			upload_date: (record as any).upload_date,
+			verification_comment: (record as any).verification_comment,
+			verification_date: (record as any).verification_date,
+			verification_stat: (record as any).verification_stat,
 			workshop: wsMap.has((record as any).ws_id) ? {
 				id: (record as any).ws_id,
-				name: (wsMap.get((record as any).ws_id) as any)?.ws_name
+				name: (wsMap.get((record as any).ws_id))?.ws_name
 			} : null
 		};
 
@@ -693,15 +694,15 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const resolvedWithInvoice = { ...resolvedRecord, invoice };
 
 		res.json({
-			status: 'success',
+			data: resolvedWithInvoice,
 			message: 'Maintenance record data retrieved successfully',
-			data: resolvedWithInvoice
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -728,25 +729,25 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 
 		// Uploaded file
 		// Defer req_upload_path until we know req_id; set null for initial insert
-		let req_upload_path: string | null = null;
+		const req_upload_path: null | string = null;
 
 		const recordData = {
-			req_date,
-			ramco_id,
-			costcenter_id,
-			location_id,
-			ctc_m,
 			asset_id,
-			register_number,
+			costcenter_id,
+			ctc_m,
 			entry_code,
-			odo_start,
-			odo_end,
-			req_comment,
-			svc_opt,
 			extra_mileage,
 			late_notice,
 			late_notice_date,
-			req_upload_path
+			location_id,
+			odo_end,
+			odo_start,
+			ramco_id,
+			register_number,
+			req_comment,
+			req_date,
+			req_upload_path,
+			svc_opt
 		};
 
 		const result = await maintenanceModel.createVehicleMtnRequest(recordData);
@@ -798,7 +799,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 		// Build and send notification email to requester if we have the resolved record
 		try {
 			if (fullRecord) {
-				const rec = fullRecord as any;
+				const rec = fullRecord;
 				// debug: log resolved record and chosen recipient
 				//console.log('createVehicleMtnRequest: resolved record for email:', JSON.stringify(rec && typeof rec === 'object' ? (rec) : 'null'));
 				const emailSubject = `Vehicle Maintenance Request Submitted - Service Order: ${rec.req_id}`;
@@ -817,10 +818,10 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 				const applicant = applicantName + (applicantDetails.length ? ` (${applicantDetails.join(' • ')})` : '');
 
 				// compute annual summary for all years from billings and request counts for the asset
-				let annualSummary: Array<{ year: number; amount: number; requests: number }> = [];
-				let recentRequests: Array<any> = [];
+				let annualSummary: { amount: number; requests: number; year: number; }[] = [];
+				let recentRequests: any[] = [];
 				try {
-					if (rec.asset && rec.asset.id) {
+					if (rec.asset?.id) {
 						// get all billings and all requests for this asset
 						const [allBillingsRaw, allRequestsRaw] = await Promise.all([
 							billingModel.getVehicleMtnBillings(),
@@ -856,7 +857,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 						// filter out unreasonable years and limit to last 5 years
 						const currentYear = new Date().getFullYear();
 						const validYears = yearList.filter(y => Number.isFinite(y) && y >= 2000 && y <= currentYear).slice(0, 5);
-						annualSummary = validYears.map(y => ({ year: y, amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0 }));
+						annualSummary = validYears.map(y => ({ amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0, year: y }));
 					}
 				} catch (e) {
 					console.warn('Failed to compute annualSummary', e);
@@ -864,7 +865,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 
 				// compute recent requests for this asset (exclude current request)
 				try {
-					if (rec.asset && rec.asset.id) {
+					if (rec.asset?.id) {
 						// fetch svc types for mapping ids -> names
 						const svcTypesRaw = await maintenanceModel.getServiceTypes();
 						const svcTypeMap = new Map((Array.isArray(svcTypesRaw) ? svcTypesRaw : []).map((s: any) => [s.svcTypeId || s.id || s.id, s]));
@@ -875,7 +876,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 
 						const rrRaw = await maintenanceModel.getVehicleMtnRequestByAssetId(rec.asset.id);
 						const rr = Array.isArray(rrRaw) ? rrRaw : (rrRaw ? [rrRaw] : []);
-						const currentReqId = Number((rec && rec.req_id) ? rec.req_id : 0);
+						const currentReqId = Number((rec?.req_id) ? rec.req_id : 0);
 						const others = (rr as any[]).filter((r: any) => Number(r.req_id) !== currentReqId);
 						// map to display-friendly rows and sort by original date desc
 						recentRequests = others
@@ -894,14 +895,14 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 								let workshopName = '';
 								if (r.ws_name) workshopName = r.ws_name;
 								else if (r.workshop) workshopName = r.workshop;
-								else if (r.ws_id && wsMapLocal && wsMapLocal.has(r.ws_id)) workshopName = (wsMapLocal.get(r.ws_id) as any)?.ws_name || '';
+								else if (r.ws_id && wsMapLocal && wsMapLocal.has(r.ws_id)) workshopName = (wsMapLocal.get(r.ws_id))?.ws_name || '';
 								return {
-									req_id: r.req_id,
+									comment: r.req_comment || '',
 									date: dateFormatted,
 									dateRaw: rd && !Number.isNaN(rd.getTime()) ? rd.getTime() : 0,
+									req_id: r.req_id,
 									requestType: svcNames || (r.svc_opt || ''),
 									status: statusVal,
-									comment: r.req_comment || '',
 									workshop: workshopName
 								};
 							})
@@ -914,20 +915,20 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 				}
 
 				const emailBody = vehicleMaintenanceEmail({
-					requestNo: rec.req_id,
-					date: formattedDate || rec.req_date,
-					applicant,
-					deptLocation: rec.asset && rec.asset.costcenter ? `${rec.asset.costcenter.name}${rec.asset.location ? ' / ' + rec.asset.location.name : ''}` : '',
-					vehicleInfo: rec.asset ? (`${rec.asset.register_number || ''} ${(rec.asset.brand && rec.asset.brand.name) || ''} ${(rec.asset.model && rec.asset.model.name) || ''}`.trim() + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : '')) : '',
-					requestType: Array.isArray(rec.svc_type) ? rec.svc_type.map((s: any) => s.name).join(', ') : '',
-					recentRequests,
 					annualSummary,
-					footerName: 'ADMS (v4)'
+					applicant,
+					date: formattedDate || rec.req_date,
+					deptLocation: rec.asset?.costcenter ? `${rec.asset.costcenter.name}${rec.asset.location ? ' / ' + rec.asset.location.name : ''}` : '',
+					footerName: 'ADMS (v4)',
+					recentRequests,
+					requestNo: rec.req_id,
+					requestType: Array.isArray(rec.svc_type) ? rec.svc_type.map((s: any) => s.name).join(', ') : '',
+					vehicleInfo: rec.asset ? (`${rec.asset.register_number || ''} ${(rec.asset.brand?.name) || ''} ${(rec.asset.model?.name) || ''}`.trim() + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : '')) : ''
 				});
 
 				// Resolve recipient email strictly by email fields, not contact numbers
 				const isValidEmail = (v: any) => typeof v === 'string' && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(v);
-				let recipientEmail: string | null = null;
+				let recipientEmail: null | string = null;
 				// Prefer resolving by ramco_id from directory
 				if (rec?.requester?.ramco_id) {
 					try {
@@ -936,8 +937,8 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 					} catch { }
 				}
 				// Fallback to body.email if provided and valid
-				if (!recipientEmail && isValidEmail((body as any)?.email)) {
-					recipientEmail = String((body as any).email);
+				if (!recipientEmail && isValidEmail((body)?.email)) {
+					recipientEmail = String((body).email);
 				}
 				console.log('createVehicleMtnRequest: sending email to:', recipientEmail);
 
@@ -966,15 +967,15 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 		}
 
 		res.status(201).json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance record created successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1001,7 +1002,7 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
 		// Build update payload from body and optionally handle 'form_upload' file
-		const data = { ...(req.body || {}) } as any;
+		const data = { ...(req.body || {}) };
 
 		// If a maintenance form is uploaded, move/rename to the same directory and store full URL
 		if (req.file) {
@@ -1039,15 +1040,15 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 		}
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance record updated successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1070,11 +1071,11 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 		// Call updateVehicleMtnRequest to handle file upload
 		// We'll handle the response and add Socket.IO emissions
 		let updateResult: any = null;
-		let assetId: number | null = null;
+		let assetId: null | number = null;
 
 		try {
 			const { id } = req.params;
-			const data = { ...(req.body || {}) } as any;
+			const data = { ...(req.body || {}) };
 
 			// If a maintenance form is uploaded
 			if (req.file) {
@@ -1114,9 +1115,9 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 		} catch (updateErr) {
 			console.error('uploadVehicleMtnForm: update failed', updateErr);
 			return res.status(500).json({
-				status: 'error',
+				data: null,
 				message: updateErr instanceof Error ? updateErr.message : 'Unknown error occurred',
-				data: null
+				status: 'error'
 			});
 		}
 
@@ -1127,10 +1128,10 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 				if (io) {
 					// Emit form-uploaded event for real-time UI update
 					io.emit('mtn:form-uploaded', {
-						requestId: reqId,
 						assetId,
-						uploadedBy,
-						uploadedAt: dayjs().toISOString()
+						requestId: reqId,
+						uploadedAt: dayjs().toISOString(),
+						uploadedBy
 					});
 
 					// Get updated counts and emit mtn:counts
@@ -1157,16 +1158,16 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 		emitSocketEvents().catch(console.warn);
 
 		return res.json({
-			status: 'success',
+			data: updateResult,
 			message: 'Maintenance form uploaded successfully',
-			data: updateResult
+			status: 'success'
 		});
 	} catch (error) {
 		console.error('uploadVehicleMtnForm error:', error);
 		return res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1177,15 +1178,15 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.deleteVehicleMtnRequest(Number(id));
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance record deleted successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1196,32 +1197,32 @@ export const recommendVehicleMtnRequestSingle = async (req: Request, res: Respon
 		const { id } = req.params;
 		const reqId = Number(id);
 		if (!Number.isFinite(reqId) || reqId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid request id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid request id', status: 'error' });
 		}
 
 		const body = req.body || {};
 		if (body.req_id && Number(body.req_id) !== reqId) {
-			return res.status(400).json({ status: 'error', message: 'Payload req_id does not match URL id', data: null });
+			return res.status(400).json({ data: null, message: 'Payload req_id does not match URL id', status: 'error' });
 		}
 
 		// Resolve actor from query.authorize or body.recommendation
 		const actor = typeof req.query.authorize === 'string' && req.query.authorize.trim() !== ''
 			? String(req.query.authorize)
 			: (body.recommendation ?? body.recommender ?? null);
-		if (!actor) return res.status(400).json({ status: 'error', message: 'Missing recommender (authorize or recommendation)', data: null });
+		if (!actor) return res.status(400).json({ data: null, message: 'Missing recommender (authorize or recommendation)', status: 'error' });
 
 		// Normalize fields
 		const recommendation_stat = Number(body.recommendation_stat ?? body.recommend_stat);
 		if (![1, 2].includes(recommendation_stat)) {
-			return res.status(400).json({ status: 'error', message: 'recommendation_stat must be 1 or 2', data: null });
+			return res.status(400).json({ data: null, message: 'recommendation_stat must be 1 or 2', status: 'error' });
 		}
 		const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
 		const recommendation_date = body.recommendation_date || body.recomendation_date || now;
 
 		const payload: any = {
 			recommendation: String(actor),
-			recommendation_stat,
-			recommendation_date
+			recommendation_date,
+			recommendation_stat
 		};
 
 		const result = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
@@ -1231,9 +1232,9 @@ export const recommendVehicleMtnRequestSingle = async (req: Request, res: Respon
 			try { await sendApprovalEmail(reqId); } catch { /* ignore */ }
 		}
 
-		return res.json({ status: 'success', message: 'Recommendation updated', data: { requestId: reqId, result } });
+		return res.json({ data: { requestId: reqId, result }, message: 'Recommendation updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1242,30 +1243,30 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 		const { id } = req.params;
 		const reqId = Number(id);
 		if (!Number.isFinite(reqId) || reqId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid request id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid request id', status: 'error' });
 		}
 
 		const body = req.body || {};
 		if (body.req_id && Number(body.req_id) !== reqId) {
-			return res.status(400).json({ status: 'error', message: 'Payload req_id does not match URL id', data: null });
+			return res.status(400).json({ data: null, message: 'Payload req_id does not match URL id', status: 'error' });
 		}
 
 		const actor = typeof req.query.authorize === 'string' && req.query.authorize.trim() !== ''
 			? String(req.query.authorize)
 			: (body.approval ?? body.approver ?? null);
-		if (!actor) return res.status(400).json({ status: 'error', message: 'Missing approver (authorize or approval)', data: null });
+		if (!actor) return res.status(400).json({ data: null, message: 'Missing approver (authorize or approval)', status: 'error' });
 
 		const approval_stat = Number(body.approval_stat ?? body.approve_stat);
 		if (![1, 2].includes(approval_stat)) {
-			return res.status(400).json({ status: 'error', message: 'approval_stat must be 1 or 2', data: null });
+			return res.status(400).json({ data: null, message: 'approval_stat must be 1 or 2', status: 'error' });
 		}
 		const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
 		const approval_date = body.approval_date || now;
 
 		const payload: any = {
 			approval: String(actor),
-			approval_stat,
-			approval_date
+			approval_date,
+			approval_stat
 		};
 		const result = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
 
@@ -1283,9 +1284,9 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 
 		// Best-effort notify requester of approval outcome
 		try { await sendRequesterApprovalEmail(reqId, approval_stat); } catch { /* ignore */ }
-		return res.json({ status: 'success', message: 'Approval updated', data: { requestId: reqId, result, billing } });
+		return res.json({ data: { billing, requestId: reqId, result }, message: 'Approval updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1293,49 +1294,49 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 export const recommendVehicleMtnRequestBulk = async (req: Request, res: Response) => {
 	try {
 		const items = Array.isArray(req.body?.items) ? req.body.items as any[] : [];
-		if (!items.length) return res.status(400).json({ status: 'error', message: 'Body.items must be a non-empty array', data: null });
+		if (!items.length) return res.status(400).json({ data: null, message: 'Body.items must be a non-empty array', status: 'error' });
 
 		const results: any[] = [];
 		for (const it of items) {
 			const reqId = Number(it.req_id);
-			if (!Number.isFinite(reqId) || reqId <= 0) { results.push({ req_id: it.req_id, error: 'invalid req_id' }); continue; }
+			if (!Number.isFinite(reqId) || reqId <= 0) { results.push({ error: 'invalid req_id', req_id: it.req_id }); continue; }
 
 			const actor = it.recommendation ?? it.recommender;
 			const stat = Number(it.recommendation_stat ?? it.recommend_stat);
 			const when = it.recommendation_date || it.recomendation_date || dayjs().format('YYYY-MM-DD HH:mm:ss');
-			if (!actor || ![1, 2].includes(stat)) { results.push({ req_id: reqId, error: 'invalid payload' }); continue; }
+			if (!actor || ![1, 2].includes(stat)) { results.push({ error: 'invalid payload', req_id: reqId }); continue; }
 
-			const payload = { recommendation: String(actor), recommendation_stat: stat, recommendation_date: when } as any;
+			const payload = { recommendation: String(actor), recommendation_date: when, recommendation_stat: stat } as any;
 			try {
 				const r = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
-				results.push({ req_id: reqId, ok: true, result: r });
+				results.push({ ok: true, req_id: reqId, result: r });
 				if (stat === 1) { try { await sendApprovalEmail(reqId); } catch { /* ignore */ } }
 			} catch (e) {
-				results.push({ req_id: reqId, error: e instanceof Error ? e.message : 'update failed' });
+				results.push({ error: e instanceof Error ? e.message : 'update failed', req_id: reqId });
 			}
 		}
-		return res.json({ status: 'success', message: 'Bulk recommendation processed', data: results });
+		return res.json({ data: results, message: 'Bulk recommendation processed', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
 export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) => {
 	try {
 		const items = Array.isArray(req.body?.items) ? req.body.items as any[] : [];
-		if (!items.length) return res.status(400).json({ status: 'error', message: 'Body.items must be a non-empty array', data: null });
+		if (!items.length) return res.status(400).json({ data: null, message: 'Body.items must be a non-empty array', status: 'error' });
 
 		const results: any[] = [];
 		for (const it of items) {
 			const reqId = Number(it.req_id);
-			if (!Number.isFinite(reqId) || reqId <= 0) { results.push({ req_id: it.req_id, error: 'invalid req_id' }); continue; }
+			if (!Number.isFinite(reqId) || reqId <= 0) { results.push({ error: 'invalid req_id', req_id: it.req_id }); continue; }
 
 			const actor = it.approval ?? it.approver;
 			const stat = Number(it.approval_stat ?? it.approve_stat);
 			const when = it.approval_date || dayjs().format('YYYY-MM-DD HH:mm:ss');
-			if (!actor || ![1, 2].includes(stat)) { results.push({ req_id: reqId, error: 'invalid payload' }); continue; }
+			if (!actor || ![1, 2].includes(stat)) { results.push({ error: 'invalid payload', req_id: reqId }); continue; }
 
-			const payload = { approval: String(actor), approval_stat: stat, approval_date: when } as any;
+			const payload = { approval: String(actor), approval_date: when, approval_stat: stat } as any;
 			try {
 				const r = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
 				let billing: any = null;
@@ -1348,15 +1349,15 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 						}
 					}
 				}
-				results.push({ req_id: reqId, ok: true, result: r, billing });
+				results.push({ billing, ok: true, req_id: reqId, result: r });
 				try { await sendRequesterApprovalEmail(reqId, stat); } catch { /* ignore */ }
 			} catch (e) {
-				results.push({ req_id: reqId, error: e instanceof Error ? e.message : 'update failed' });
+				results.push({ error: e instanceof Error ? e.message : 'update failed', req_id: reqId });
 			}
 		}
-		return res.json({ status: 'success', message: 'Bulk approval processed', data: results });
+		return res.json({ data: results, message: 'Bulk approval processed', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1366,12 +1367,12 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const reqId = Number(id);
 		if (!Number.isFinite(reqId) || reqId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid request id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid request id', status: 'error' });
 		}
 
-		const { req_id, drv_stat, drv_cancel_comment, drv_date } = req.body || {};
+		const { drv_cancel_comment, drv_date, drv_stat, req_id } = req.body || {};
 		if (req_id && Number(req_id) !== reqId) {
-			return res.status(400).json({ status: 'error', message: 'Payload req_id does not match URL id', data: null });
+			return res.status(400).json({ data: null, message: 'Payload req_id does not match URL id', status: 'error' });
 		}
 
 		// Validate drv_stat if provided; 2 means cancelled by driver
@@ -1381,7 +1382,7 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 		if (drv_date !== undefined) payload.drv_date = drv_date; // assume ISO string or valid datetime format for DB
 
 		if (Object.keys(payload).length === 0) {
-			return res.status(400).json({ status: 'error', message: 'No cancellation fields provided', data: null });
+			return res.status(400).json({ data: null, message: 'No cancellation fields provided', status: 'error' });
 		}
 
 		const result = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
@@ -1391,8 +1392,8 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 			const rec = await resolveVehicleMtnRecord(reqId);
 			if (rec) {
 				const isValidEmail = (v: any) => typeof v === 'string' && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(v);
-				let toEmail: string | null = null;
-				if (rec?.requester?.ramco_id) {
+				let toEmail: null | string = null;
+				if (rec.requester?.ramco_id) {
 					try {
 						const emp = await assetModel.getEmployeeByRamco(String(rec.requester.ramco_id));
 						if (emp && isValidEmail((emp as any).email)) toEmail = (emp as any).email;
@@ -1438,9 +1439,9 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 			console.error('Failed to send cancellation email', mailErr);
 		}
 
-		return res.json({ status: 'success', message: 'Maintenance request cancelled successfully', data: result });
+		return res.json({ data: result, message: 'Maintenance request cancelled successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
+		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1450,16 +1451,16 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		const { id } = req.params;
 		const reqId = Number(id);
 		if (!Number.isFinite(reqId) || reqId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid request id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid request id', status: 'error' });
 		}
 
 		const body = req.body || {};
 
 		// Normalize fields from various possible client keys
-		const verification_comment = (body.verification_comment ?? body.adminRemarks ?? null) as string | null;
+		const verification_comment = (body.verification_comment ?? body.adminRemarks ?? null) as null | string;
 
 		// ws_id can come as ws_id | workshop_id | workshopId
-		let ws_id: number | null = null;
+		let ws_id: null | number = null;
 		const wsCandidate = body.ws_id ?? body.workshop_id ?? body.workshopId;
 		if (wsCandidate !== undefined && wsCandidate !== null) {
 			const n = Number(wsCandidate);
@@ -1467,7 +1468,7 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		}
 
 		// verification_stat can be provided directly or via decision/action strings
-		let verification_stat: number | null = null;
+		let verification_stat: null | number = null;
 		if (body.verification_stat !== undefined && body.verification_stat !== null) {
 			const n = Number(body.verification_stat);
 			if (n === 1 || n === 2) verification_stat = n;
@@ -1482,7 +1483,7 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		}
 
 		// major_opt can be provided as string or array; normalize to comma-joined or null
-		let major_opt: string | null = null;
+		let major_opt: null | string = null;
 		const majorRaw = body.major_opt ?? body.majorOpt ?? body.majorOptions;
 		if (Array.isArray(majorRaw)) {
 			const nums = majorRaw
@@ -1497,25 +1498,25 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 			major_opt = tokens.length ? tokens.join(',') : null;
 		}
 
-		const major_svc_comment = (body.major_svc_comment ?? body.majorServiceRemarks ?? null) as string | null;
+		const major_svc_comment = (body.major_svc_comment ?? body.majorServiceRemarks ?? null) as null | string;
 
 		// verification_date is current timestamp
 		const verification_date = dayjs().format('YYYY-MM-DD HH:mm:ss');
 
 		// rejection_comment only meaningful when rejecting
-		let rejection_comment: string | null = null;
+		let rejection_comment: null | string = null;
 		if (verification_stat === 2) {
-			rejection_comment = (body.rejection_comment ?? body.rejectionRemarks ?? null) as string | null;
+			rejection_comment = (body.rejection_comment ?? body.rejectionRemarks ?? null) as null | string;
 		}
 
 		const payload: any = {
-			verification_comment,
-			ws_id,
-			verification_stat,
 			major_opt,
 			major_svc_comment,
+			rejection_comment,
+			verification_comment,
 			verification_date,
-			rejection_comment
+			verification_stat,
+			ws_id
 		};
 
 		// Remove undefined keys (leave nulls to explicitly clear)
@@ -1547,9 +1548,9 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 			console.error('Failed to emit notification for maintenance request update', notifErr);
 		}
 
-		return res.json({ status: 'success', message: 'Maintenance record updated successfully', data: result });
+		return res.json({ data: result, message: 'Maintenance record updated successfully', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1560,23 +1561,23 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.pushVehicleMtnToBilling(Number(requestId));
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Invoice created successfully for maintenance record',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		if (error instanceof Error && error.message.includes('duplicate')) {
 			return res.status(409).json({
-				status: 'error',
+				data: null,
 				message: 'Invoice already exists for this maintenance record',
-				data: null
+				status: 'error'
 			});
 		}
 
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1590,17 +1591,17 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 export const authorizeVehicleMtnRequest = async (req: Request, res: Response) => {
 	try {
 		const requestId = Number(req.params.id || req.params.reqId);
-		if (!Number.isFinite(requestId) || requestId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid request id' });
+		if (!Number.isFinite(requestId) || requestId <= 0) return res.status(400).json({ message: 'Invalid request id', status: 'error' });
 
-		const action = (req.query.action as string) || (req.body && req.body.action) || '';
-		if (!action || !['recommend', 'approve'].includes(action)) {
-			return res.status(400).json({ status: 'error', message: 'Invalid action. Use ?action=recommend or ?action=approve' });
+		const action = (req.query.action as string) || (req.body?.action) || '';
+		if (!action || !['approve', 'recommend'].includes(action)) {
+			return res.status(400).json({ message: 'Invalid action. Use ?action=recommend or ?action=approve', status: 'error' });
 		}
 
 		// get approval_status from body
 		const { approval_status } = req.body || {};
 		if (approval_status === undefined || approval_status === null) {
-			return res.status(400).json({ status: 'error', message: 'Missing approval_status in request body' });
+			return res.status(400).json({ message: 'Missing approval_status in request body', status: 'error' });
 		}
 
 		// resolve workflow by action
@@ -1615,9 +1616,9 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 			authLevel = maintenanceWorkflows.reduce((a: any, b: any) => (Number(a.level_order) >= Number(b.level_order) ? a : b));
 		}
 
-		const ramcoResolved = authLevel?.ramco_id || (authLevel?.employee && authLevel.employee.ramco_id) || null;
+		const ramcoResolved = authLevel?.ramco_id || (authLevel?.employee?.ramco_id) || null;
 		if (!ramcoResolved) {
-			return res.status(404).json({ status: 'error', message: `No workflow found for action ${action}` });
+			return res.status(404).json({ message: `No workflow found for action ${action}`, status: 'error' });
 		}
 
 		// perform DB update via model
@@ -1634,7 +1635,7 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 
 		// fetch fresh record to notify
 		const record = await maintenanceModel.getVehicleMtnRequestById(requestId);
-		if (!record) return res.status(404).json({ status: 'error', message: 'Maintenance record not found' });
+		if (!record) return res.status(404).json({ message: 'Maintenance record not found', status: 'error' });
 
 		const employeesRaw = await assetModel.getEmployees();
 		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
@@ -1648,14 +1649,14 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 			} catch (e) {
 				console.warn('authorizeVehicleMtnRequest (recommend): sendApprovalEmail failed', e);
 			}
-			return res.json({ status: 'success', message: 'Recommendation processed and approver notified', data: { requestId } });
+			return res.json({ data: { requestId }, message: 'Recommendation processed and approver notified', status: 'success' });
 		}
 
 		// action === 'approve'
 		// notify requester about approval outcome
 		const requester = employees.find((e: any) => String(e.ramco_id) === String((record as any).ramco_id));
-		const targetUser = requester || { ramco_id: (record as any).ramco_id, full_name: null, email: null };
-		const credData = { ramco_id: targetUser.ramco_id, contact: targetUser.email || targetUser.phone || targetUser.contact || '', req_id: requestId } as any;
+		const targetUser = requester || { email: null, full_name: null, ramco_id: (record as any).ramco_id };
+		const credData = { contact: targetUser.email || targetUser.phone || targetUser.contact || '', ramco_id: targetUser.ramco_id, req_id: requestId } as any;
 		const token = jwt.sign(credData, jwtSecret2, { expiresIn: '7d' });
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 		const portalUrl = `${frontendUrl}/mtn/vehicle/portal/${requestId}?action=approve&authorize=${encodeURIComponent(String(targetUser.ramco_id || ''))}&_cred=${encodeURIComponent(token)}`;
@@ -1674,8 +1675,8 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 			<p>Best regards,<br/>Maintenance Team</p>
 		`;
 
-		const recipientEmail = targetUser.email || (requester && requester.email) || null;
-		console.log('authorizeVehicleMtnRequest (approve): sending mail to requester', { to: recipientEmail, subject: emailSubject, portalUrl });
+		const recipientEmail = targetUser.email || (requester?.email) || null;
+		console.log('authorizeVehicleMtnRequest (approve): sending mail to requester', { portalUrl, subject: emailSubject, to: recipientEmail });
 		try {
 			if (recipientEmail && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(recipientEmail)) await mailer.sendMail(recipientEmail, emailSubject, emailBody);
 			console.log('authorizeVehicleMtnRequest (approve): mail sent to', recipientEmail);
@@ -1683,10 +1684,10 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 			console.error('authorizeVehicleMtnRequest (approve): mailer error sending to', recipientEmail, mailErr);
 		}
 
-		return res.json({ status: 'success', message: 'Approval processed and requester notified', data: { requestId, sentTo: recipientEmail } });
+		return res.json({ data: { requestId, sentTo: recipientEmail }, message: 'Approval processed and requester notified', status: 'success' });
 	} catch (error) {
 		console.error('authorizeVehicleMtnRequest error', error);
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error' });
+		return res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1699,9 +1700,9 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 
 		if (!record) {
 			return res.status(404).json({
-				status: 'error',
+				data: null,
 				message: 'Maintenance record not found',
-				data: null
+				status: 'error'
 			});
 		}
 
@@ -1712,16 +1713,16 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 
 		if (!requester) {
 			return res.status(404).json({
-				status: 'error',
+				data: null,
 				message: 'Requester not found',
-				data: null
+				status: 'error'
 			});
 		}
 
 		// Create JWT credential
 		const credData = {
-			ramco_id: (requester as any).ramco_id,
 			contact: (requester as any).email || '',
+			ramco_id: (requester as any).ramco_id,
 			req_id: Number(requestId)
 		};
 		const jwtSecret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || 'default_secret_key';
@@ -1749,7 +1750,7 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 		// Use actual requester email
 		const recipientEmail = (requester as any).email;
 
-		console.log('resendMaintenancePortalLink: sending mail', { to: recipientEmail, subject: emailSubject, portalUrl });
+		console.log('resendMaintenancePortalLink: sending mail', { portalUrl, subject: emailSubject, to: recipientEmail });
 		try {
 			if (recipientEmail && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(recipientEmail)) {
 				await mailer.sendMail(recipientEmail, emailSubject, emailBody);
@@ -1760,15 +1761,15 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 		}
 
 		res.json({
-			status: 'success',
+			data: { portalUrl, requestId: Number(requestId), sentTo: recipientEmail },
 			message: 'Portal link sent successfully',
-			data: { requestId: Number(requestId), sentTo: recipientEmail, portalUrl }
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -1779,10 +1780,10 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 		const { requestId } = req.params;
 		const { level } = req.query; // 'recommend' | 'approval'
 		const id = Number(requestId);
-		if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid requestId', data: null });
+		if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid requestId', status: 'error' });
 
 		const rec = await resolveVehicleMtnRecord(id);
-		if (!rec) return res.status(404).json({ status: 'error', message: 'Maintenance record not found', data: null });
+		if (!rec) return res.status(404).json({ data: null, message: 'Maintenance record not found', status: 'error' });
 
 		const desired = String(level || '').toLowerCase();
 		const lvlName = desired === 'approval' ? 'Approval' : 'Recommend';
@@ -1795,16 +1796,16 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 				if (emp && isValidEmail((emp as any).email)) to = String((emp as any).email);
 				if (!to) {
 					const all = await assetModel.getEmployees();
-					const found = (Array.isArray(all) ? all as any[] : []).find(e => String(e.ramco_id) === String(nextPic!.ramco_id));
+					const found = (Array.isArray(all) ? all as any[] : []).find(e => String(e.ramco_id) === String(nextPic.ramco_id));
 					if (found && isValidEmail(found.email)) to = String(found.email);
 				}
 			} catch { /* ignore */ }
 		}
 		const { ccString } = getAdminCcList();
-		if (!to && !ccString) return res.status(400).json({ status: 'error', message: 'No recipient found for workflow level', data: null });
+		if (!to && !ccString) return res.status(400).json({ data: null, message: 'No recipient found for workflow level', status: 'error' });
 
 		// Build JWT portal URL and CTA buttons
-		const credData = { ramco_id: nextPic?.ramco_id || '', contact: to || '', req_id: id } as any;
+		const credData = { contact: to || '', ramco_id: nextPic?.ramco_id || '', req_id: id } as any;
 		const jwtSecret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || 'default_secret_key';
 		const token = jwt.sign(credData, jwtSecret, { expiresIn: '3d' });
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -1812,27 +1813,27 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 		const portalUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${id}?action=${encodeURIComponent(desired === 'approval' ? 'approve' : 'recommend')}&authorize=${encodeURIComponent(authRamco)}&_cred=${encodeURIComponent(token)}`;
 
 		// Compose email body using authorization template (no raw link)
-		const { applicant, deptLocation, vehicleInfo, requestType, formattedDate } = await buildSectionsForRecord(rec);
+		const { applicant, deptLocation, formattedDate, requestType, vehicleInfo } = await buildSectionsForRecord(rec);
 		const subject = desired === 'approval'
 			? `Vehicle Maintenance Request Pending Approval - Service Order: ${id}`
 			: `Vehicle Maintenance Request Pending Recommendation - Service Order: ${id}`;
 		const emailBody = vehicleMaintenanceAuthorizationEmail({
-			requestNo: id,
-			date: formattedDate,
-			greetingName: (nextPic && (nextPic as any).full_name) || applicant,
-			role: desired === 'approval' ? 'Approval' : 'Recommendation',
 			applicant,
+			date: formattedDate,
 			deptLocation,
-			vehicleInfo,
-			requestType,
+			footerName: 'ADMS (v4)',
+			greetingName: (nextPic && (nextPic as any).full_name) || applicant,
 			portalUrl,
-			footerName: 'ADMS (v4)'
+			requestNo: id,
+			requestType,
+			role: desired === 'approval' ? 'Approval' : 'Recommendation',
+			vehicleInfo
 		});
 
 		await mailer.sendMail(to!, subject, emailBody);
-		return res.json({ status: 'success', message: `Workflow mail resent to ${desired || 'recommend'}`, data: { requestId: id, sentTo: to } });
+		return res.json({ data: { requestId: id, sentTo: to }, message: `Workflow mail resent to ${desired || 'recommend'}`, status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred', data: null });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1843,10 +1844,10 @@ export const authorizeViaEmailLink = async (req: Request, res: Response) => {
 		const action = String(req.query.action || '').toLowerCase();
 		const statusRaw = req.query.status;
 		const enc = String(req.query._cred || '');
-		if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid request id' });
-		if (!['recommend', 'approve'].includes(action)) return res.status(400).json({ status: 'error', message: 'Invalid action' });
+		if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'Invalid request id', status: 'error' });
+		if (!['approve', 'recommend'].includes(action)) return res.status(400).json({ message: 'Invalid action', status: 'error' });
 		const status = Number(statusRaw);
-		if (![0, 1, 2].includes(status)) return res.status(400).json({ status: 'error', message: 'Invalid status' });
+		if (![0, 1, 2].includes(status)) return res.status(400).json({ message: 'Invalid status', status: 'error' });
 
 		// Response negotiation: default to redirect to frontend portal
 		const wantsJson = String((req.query as any).format || '').toLowerCase() === 'json'
@@ -1877,9 +1878,9 @@ export const authorizeViaEmailLink = async (req: Request, res: Response) => {
 			} catch { /* ignore */ }
 		}
 		if (!parsed) {
-			if (wantsJson) return res.status(400).json({ status: 'error', message: 'Invalid token' });
+			if (wantsJson) return res.status(400).json({ message: 'Invalid token', status: 'error' });
 			const redirectUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${id}`;
-			return res.redirect(302, redirectUrl);
+			res.redirect(302, redirectUrl); return;
 		}
 
 		const actorRamco = payload?.ramco_id ? String(payload.ramco_id) : undefined;
@@ -1889,8 +1890,8 @@ export const authorizeViaEmailLink = async (req: Request, res: Response) => {
 		if (action === 'recommend') {
 			const body = {
 				recommendation: actorRamco,
-				recommendation_stat: status,
 				recommendation_date: now,
+				recommendation_stat: status,
 			} as any;
 			await maintenanceModel.updateVehicleMtnRequest(id, body);
 			// Notify approver next if recommended (status=1)
@@ -1910,35 +1911,35 @@ export const authorizeViaEmailLink = async (req: Request, res: Response) => {
 				} catch { /* ignore */ }
 			}
 			if (wantsJson) {
-				return res.json({ status: 'success', message: 'Recommendation recorded', data: { id, status } });
+				return res.json({ data: { id, status }, message: 'Recommendation recorded', status: 'success' });
 			}
 			const redirectUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${id}`;
-			return res.redirect(302, redirectUrl);
+			res.redirect(302, redirectUrl); return;
 		}
 
 		// Approve path
 		if (action === 'approve') {
 			const body = {
 				approval: actorRamco,
-				approval_status: status,
 				approval_date: now,
+				approval_status: status,
 			} as any;
 			await maintenanceModel.updateVehicleMtnRequest(id, body);
 			if (wantsJson) {
-				return res.json({ status: 'success', message: 'Approval recorded', data: { id, status } });
+				return res.json({ data: { id, status }, message: 'Approval recorded', status: 'success' });
 			}
 			const redirectUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${id}`;
-			return res.redirect(302, redirectUrl);
+			res.redirect(302, redirectUrl); return;
 		}
 
-		return res.status(400).json({ status: 'error', message: 'Unsupported action' });
+		return res.status(400).json({ message: 'Unsupported action', status: 'error' });
 	} catch (error) {
 		const wantsJson = String((req.query as any).format || '').toLowerCase() === 'json'
 			|| (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'));
-		if (wantsJson) return res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		if (wantsJson) return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 		const redirectUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${Number(req.params.id || 0)}`;
-		return res.redirect(302, redirectUrl);
+		res.redirect(302, redirectUrl); return;
 	}
 };
 
@@ -1950,7 +1951,7 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 		// Normalize and validate asset id to avoid passing NaN into SQL queries
 		const assetId = Number(asset_id);
 		if (!Number.isFinite(assetId) || assetId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid asset_id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid asset_id', status: 'error' });
 		}
 
 		const records = await maintenanceModel.getVehicleMtnRequestByAssetId(assetId, status);
@@ -2004,63 +2005,63 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 				});
 
 			return {
-				req_id: record.req_id,
-				req_date: record.req_date,
-				svc_type: svcTypeArray,
-				odo_start: record.odo_start,
-				odo_end: record.odo_end,
-				//mileage will be odo_end - odo_start
-				mileage: (record.odo_end !== null && record.odo_start !== null) ? (record.odo_end - record.odo_start) : null,
-				req_comment: record.req_comment,
-				upload_date: record.upload_date,
-				verification_date: record.verification_date,
-				recommendation_date: record.recommendation_date,
-				approval_date: record.approval_date,
-				form_upload_date: record.form_upload_date,
-				emailStat: record.emailStat,
-				inv_status: record.inv_status,
-				status: record.status,
-				vehicle: assetMap.has(record.vehicle_id) ? {
-					id: record.vehicle_id,
-					register_number: (assetMap.get(record.vehicle_id) as any)?.register_number
-				} : null,
-				requester: employeeMap.has(record.ramco_id) ? {
-					ramco_id: record.ramco_id,
-					name: (employeeMap.get(record.ramco_id) as any)?.full_name,
-					email: (employeeMap.get(record.ramco_id) as any)?.email
-				} : null,
-				recommendation_by: employeeMap.has(record.recommendation) ? {
-					ramco_id: record.recommendation,
-					name: (employeeMap.get(record.recommendation) as any)?.full_name,
-					email: (employeeMap.get(record.recommendation) as any)?.email
-				} : null,
 				approval_by: employeeMap.has(record.approval) ? {
-					ramco_id: record.approval,
-					name: (employeeMap.get(record.approval) as any)?.full_name,
-					email: (employeeMap.get(record.approval) as any)?.email
+					email: (employeeMap.get(record.approval))?.email,
+					name: (employeeMap.get(record.approval))?.full_name,
+					ramco_id: record.approval
 				} : null,
+				approval_date: record.approval_date,
 				costcenter: ccMap.has(record.costcenter_id) ? {
 					id: record.costcenter_id,
-					name: (ccMap.get(record.costcenter_id) as any)?.name
+					name: (ccMap.get(record.costcenter_id))?.name
 				} : null,
+				emailStat: record.emailStat,
+				form_upload_date: record.form_upload_date,
+				inv_status: record.inv_status,
+				//mileage will be odo_end - odo_start
+				mileage: (record.odo_end !== null && record.odo_start !== null) ? (record.odo_end - record.odo_start) : null,
+				odo_end: record.odo_end,
+				odo_start: record.odo_start,
+				recommendation_by: employeeMap.has(record.recommendation) ? {
+					email: (employeeMap.get(record.recommendation))?.email,
+					name: (employeeMap.get(record.recommendation))?.full_name,
+					ramco_id: record.recommendation
+				} : null,
+				recommendation_date: record.recommendation_date,
+				req_comment: record.req_comment,
+				req_date: record.req_date,
+				req_id: record.req_id,
+				requester: employeeMap.has(record.ramco_id) ? {
+					email: (employeeMap.get(record.ramco_id))?.email,
+					name: (employeeMap.get(record.ramco_id))?.full_name,
+					ramco_id: record.ramco_id
+				} : null,
+				status: record.status,
+				svc_type: svcTypeArray,
+				upload_date: record.upload_date,
+				vehicle: assetMap.has(record.vehicle_id) ? {
+					id: record.vehicle_id,
+					register_number: (assetMap.get(record.vehicle_id))?.register_number
+				} : null,
+				verification_date: record.verification_date,
 				workshop: wsMap.has(record.ws_id) ? {
 					id: record.ws_id,
-					name: (wsMap.get(record.ws_id) as any)?.ws_name
+					name: (wsMap.get(record.ws_id))?.ws_name
 				} : null
 			};
 		});
 
 		// Normalize billing entries for consistent shape
 		const normalizedBilling = (billingData || []).map((inv: any) => ({
-			inv_id: inv.inv_id,
-			req_id: inv.req_id,
-			svc_order: inv.svc_order,
-			inv_no: inv.inv_no,
 			inv_date: inv.inv_date,
-			odometer: inv.odometer || inv.svc_odo || null,
-			inv_total: inv.inv_total,
+			inv_id: inv.inv_id,
+			inv_no: inv.inv_no,
+			inv_remarks: inv.inv_remarks || null,
 			inv_stat: inv.inv_stat,
-			inv_remarks: inv.inv_remarks || null
+			inv_total: inv.inv_total,
+			odometer: inv.odometer || inv.svc_odo || null,
+			req_id: inv.req_id,
+			svc_order: inv.svc_order
 		}));
 
 		// Attach matching invoices to each record (match by svc_order or req_id)
@@ -2078,21 +2079,21 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 		});
 
 		// Resolve register_number for message and include in response
-		const register_number = assetMap.has(assetId) ? (assetMap.get(assetId) as any)?.register_number : null;
+		const register_number = assetMap.has(assetId) ? (assetMap.get(assetId))?.register_number : null;
 
 		res.json({
-			status: 'success',
-			message: `Maintenance records for vehicle ${assetId}${register_number ? ' (' + register_number + ')' : ''} retrieved successfully`,
 			assetId,
-			register_number,
+			count: finalRecords.length,
 			data: finalRecords,
-			count: finalRecords.length
+			message: `Maintenance records for vehicle ${assetId}${register_number ? ' (' + register_number + ')' : ''} retrieved successfully`,
+			register_number,
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2121,7 +2122,7 @@ async function resolveVehicleMtnRecord(id: number) {
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
-	const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+	const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
 	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -2150,26 +2151,14 @@ async function resolveVehicleMtnRecord(id: number) {
 		});
 
 	const resolvedRecord = {
-		req_id: (record as any).req_id,
-		req_date: (record as any).req_date,
-		svc_type: svcTypeArray,
-		req_comment: (record as any).req_comment,
-		upload_date: (record as any).upload_date,
-		verification_date: (record as any).verification_date,
-		recommendation_date: (record as any).recommendation_date,
+		approval_by: employeeMap.has((record as any).approval) ? {
+			name: (employeeMap.get((record as any).approval))?.full_name,
+			ramco_id: (record as any).approval
+		} : null,
 		approval_date: (record as any).approval_date,
-		form_upload_date: (record as any).form_upload_date,
-		emailStat: (record as any).emailStat,
-		inv_status: (record as any).inv_status,
-		status: (record as any).status,
 		asset: assetMap.has((record as any).asset_id) ? (() => {
-			const a = assetMap.get((record as any).asset_id) as any;
+			const a = assetMap.get((record as any).asset_id);
 			return {
-				id: (record as any).asset_id,
-				register_number: a?.register_number,
-				classification: a?.classification,
-				record_status: a?.record_status,
-				purchase_date: a?.purchase_date,
 				age_years: (() => {
 					if (!a?.purchase_date) return null;
 					const pd = new Date(a.purchase_date);
@@ -2178,30 +2167,42 @@ async function resolveVehicleMtnRecord(id: number) {
 					const years = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
 					return years;
 				})(),
-				category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id) as any)?.name } : null,
-				brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id) as any)?.name } : null,
-				model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id) as any)?.name } : null,
-				costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id) as any)?.name } : null,
-				department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)) as any)?.name } : null,
-				location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id) as any)?.name } : null
+				brand: a?.brand_id ? { id: a.brand_id, name: (brandMap.get(a.brand_id))?.name } : null,
+				category: a?.category_id ? { id: a.category_id, name: (categoryMap.get(a.category_id))?.name } : null,
+				classification: a?.classification,
+				costcenter: a?.costcenter_id ? { id: a.costcenter_id, name: (ccMap.get(a.costcenter_id))?.name } : null,
+				department: a?.department_id ? { id: a.department_id, name: (deptMap.get(Number(a.department_id)))?.name } : null,
+				id: (record as any).asset_id,
+				location: a?.location_id ? { id: a.location_id, name: (locationMap.get(a.location_id))?.name } : null,
+				model: a?.model_id ? { id: a.model_id, name: (modelMap.get(a.model_id))?.name } : null,
+				purchase_date: a?.purchase_date,
+				record_status: a?.record_status,
+				register_number: a?.register_number
 			};
 		})() : null,
-		requester: employeeMap.has((record as any).ramco_id) ? {
-			ramco_id: (record as any).ramco_id,
-			name: (employeeMap.get((record as any).ramco_id) as any)?.full_name,
-			contact: (employeeMap.get((record as any).ramco_id) as any)?.contact
-		} : null,
+		emailStat: (record as any).emailStat,
+		form_upload_date: (record as any).form_upload_date,
+		inv_status: (record as any).inv_status,
 		recommendation_by: employeeMap.has((record as any).recommendation) ? {
-			ramco_id: (record as any).recommendation,
-			name: (employeeMap.get((record as any).recommendation) as any)?.full_name
+			name: (employeeMap.get((record as any).recommendation))?.full_name,
+			ramco_id: (record as any).recommendation
 		} : null,
-		approval_by: employeeMap.has((record as any).approval) ? {
-			ramco_id: (record as any).approval,
-			name: (employeeMap.get((record as any).approval) as any)?.full_name
+		recommendation_date: (record as any).recommendation_date,
+		req_comment: (record as any).req_comment,
+		req_date: (record as any).req_date,
+		req_id: (record as any).req_id,
+		requester: employeeMap.has((record as any).ramco_id) ? {
+			contact: (employeeMap.get((record as any).ramco_id))?.contact,
+			name: (employeeMap.get((record as any).ramco_id))?.full_name,
+			ramco_id: (record as any).ramco_id
 		} : null,
+		status: (record as any).status,
+		svc_type: svcTypeArray,
+		upload_date: (record as any).upload_date,
+		verification_date: (record as any).verification_date,
 		workshop: wsMap.has((record as any).ws_id) ? {
 			id: (record as any).ws_id,
-			name: (wsMap.get((record as any).ws_id) as any)?.ws_name
+			name: (wsMap.get((record as any).ws_id))?.ws_name
 		} : null
 	};
 
@@ -2216,15 +2217,15 @@ export const getServiceTypes = async (req: Request, res: Response) => {
 		const types = await maintenanceModel.getServiceTypes();
 
 		res.json({
-			status: 'success',
+			data: types,
 			message: 'Maintenance types data retrieved successfully',
-			data: types
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2236,22 +2237,22 @@ export const getServiceTypeById = async (req: Request, res: Response) => {
 
 		if (!type) {
 			return res.status(404).json({
-				status: 'error',
+				data: null,
 				message: 'Maintenance type not found',
-				data: null
+				status: 'error'
 			});
 		}
 
 		res.json({
-			status: 'success',
+			data: type,
 			message: 'Maintenance type data retrieved successfully',
-			data: type
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2262,15 +2263,15 @@ export const createServiceType = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.createServiceType(typeData);
 
 		res.status(201).json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance type created successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2282,15 +2283,15 @@ export const updateServiceType = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.updateServiceType(Number(id), typeData);
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance type updated successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2301,15 +2302,15 @@ export const deleteServiceType = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.deleteServiceType(Number(id));
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Maintenance type deleted successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2370,10 +2371,10 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			assetModel.getAssets(),
 		]);
 		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
-		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
 		const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
 		const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
-		const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 		const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 		const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
 		const locMap = new Map(locations.map((l: any) => [Number(l.id), l]));
@@ -2381,7 +2382,7 @@ export const getPoolCars = async (req: Request, res: Response) => {
 		const assetMap = new Map(assets.map((a: any) => [Number(a.id), a]));
 
 		// Filter by ?ramco on pcar_empid if provided (post-query filter)
-		const filtered = (Array.isArray(cars) ? cars as any[] : []).filter((c: any) => {
+		const filtered = (Array.isArray(cars) ? cars : []).filter((c: any) => {
 			if (!ramco) return true;
 			return String(c.pcar_empid) === ramco || String(c.pcar_driver) === ramco || String(c.pass) === ramco;
 		});
@@ -2391,12 +2392,12 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			// Employee resolver
 			const emp = (rid: any) => {
 				const e = rid ? empMap.get(String(rid)) : null;
-				return e ? { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null } : null;
+				return e ? { full_name: e.full_name || e.name || null, ramco_id: e.ramco_id } : null;
 			};
 			// Department and Location resolver
 			const dept = (id: any) => {
 				const d = (id != null) ? deptMap.get(Number(id)) : null;
-				return d ? { id: Number(d.id), code: d.code || null } : null;
+				return d ? { code: d.code || null, id: Number(d.id) } : null;
 			};
 			const loc = (id: any) => {
 				const l = (id != null) ? locMap.get(Number(id)) : null;
@@ -2404,33 +2405,33 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			};
 
 			const out: any = {
-				pcar_id: c.pcar_id,
-				pcar_datereq: c.pcar_datereq ?? c.pcar_datererq ?? null,
-				pcar_empid: emp(c.pcar_empid),
-				ctc_m: c.ctc_m ?? null,
-				dept_id: c.dept_id ?? null,
-				loc_id: c.loc_id ?? null,
-				pcar_booktype: c.pcar_booktype ?? null,
-				pcar_type: (c.pcar_type !== undefined ? Number(c.pcar_type) : null),
-				pcar_datefr: c.pcar_datefr ?? c.pcard_datefr ?? null,
-				pcar_dateto: c.pcar_dateto ?? c.pcard_dateto ?? null,
-				pcar_retdate: c.pcar_retdate ?? null,
-				pcar_day: c.pcar_day ?? null,
-				pcar_hour: c.pcar_hour ?? null,
-				pcar_dest: c.pcar_dest ?? null,
-				pcar_purp: c.pcar_purp ?? null,
-				pcar_driver: emp(c.pcar_driver),
-				cancel_date: c.cancel_date ?? null,
 				approval_stat: (c.approval_stat !== undefined && c.approval_stat !== null) ? Number(c.approval_stat) : 0,
-				pcar_cancel: (c.pcar_cancel === null || c.pcar_cancel === undefined) ? null : String(c.pcar_cancel),
-				pcar_canrem: c.pcar_canrem ?? null,
 				assigned_poolcar: assetMap.has(Number(c.asset_id)) ? {
 					id: Number(c.asset_id),
-					register_number: (assetMap.get(Number(c.asset_id)) as any)?.register_number || null
+					register_number: (assetMap.get(Number(c.asset_id)))?.register_number || null
 				} : null,
-				status: c.status ?? null,
+				cancel_date: c.cancel_date ?? null,
+				ctc_m: c.ctc_m ?? null,
 				department: dept(c.dept_id),
-				location: loc(c.loc_id)
+				dept_id: c.dept_id ?? null,
+				loc_id: c.loc_id ?? null,
+				location: loc(c.loc_id),
+				pcar_booktype: c.pcar_booktype ?? null,
+				pcar_cancel: (c.pcar_cancel === null || c.pcar_cancel === undefined) ? null : String(c.pcar_cancel),
+				pcar_canrem: c.pcar_canrem ?? null,
+				pcar_datefr: c.pcar_datefr ?? c.pcard_datefr ?? null,
+				pcar_datereq: c.pcar_datereq ?? c.pcar_datererq ?? null,
+				pcar_dateto: c.pcar_dateto ?? c.pcard_dateto ?? null,
+				pcar_day: c.pcar_day ?? null,
+				pcar_dest: c.pcar_dest ?? null,
+				pcar_driver: emp(c.pcar_driver),
+				pcar_empid: emp(c.pcar_empid),
+				pcar_hour: c.pcar_hour ?? null,
+				pcar_id: c.pcar_id,
+				pcar_purp: c.pcar_purp ?? null,
+				pcar_retdate: c.pcar_retdate ?? null,
+				pcar_type: (c.pcar_type !== undefined ? Number(c.pcar_type) : null),
+				status: c.status ?? null
 			};
 
 			// Remove nulls
@@ -2439,15 +2440,15 @@ export const getPoolCars = async (req: Request, res: Response) => {
 		});
 
 		res.json({
-			status: 'success',
+			data,
 			message: 'Pool car data retrieved successfully',
-			data
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2459,9 +2460,9 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 
 		if (!car) {
 			return res.status(404).json({
-				status: 'error',
+				data: null,
 				message: 'Pool car not found',
-				data: null
+				status: 'error'
 			});
 		}
 		// Lookups for enrichment
@@ -2473,10 +2474,10 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 			assetModel.getAssets(),
 		]);
 		const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
-		const departments = Array.isArray(departmentsRaw) ? departmentsRaw as any[] : [];
+		const departments = Array.isArray(departmentsRaw) ? departmentsRaw : [];
 		const locations = Array.isArray(locationsRaw) ? locationsRaw as any[] : [];
 		const types = Array.isArray(typesRaw) ? typesRaw as any[] : [];
-		const assets = Array.isArray(assetsRaw) ? assetsRaw as any[] : [];
+		const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 		const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 		const deptMap = new Map(departments.map((d: any) => [Number(d.id), d]));
 		const locMap = new Map(locations.map((l: any) => [Number(l.id), l]));
@@ -2486,15 +2487,15 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 		const obj: any = { ...car };
 		if (car.pcar_empid && empMap.has(String(car.pcar_empid))) {
 			const e = empMap.get(String(car.pcar_empid));
-			obj.pcar_empid = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			obj.pcar_empid = { full_name: e.full_name || e.name || null, ramco_id: e.ramco_id };
 		}
 		if (car.pcar_driver && empMap.has(String(car.pcar_driver))) {
 			const e = empMap.get(String(car.pcar_driver));
-			obj.pcar_driver = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			obj.pcar_driver = { full_name: e.full_name || e.name || null, ramco_id: e.ramco_id };
 		}
 		if (car.dept_id != null && deptMap.has(Number(car.dept_id))) {
 			const d = deptMap.get(Number(car.dept_id));
-			obj.department = { id: Number(d.id), code: d.code || null };
+			obj.department = { code: d.code || null, id: Number(d.id) };
 		}
 		if (car.loc_id != null && locMap.has(Number(car.loc_id))) {
 			const l = locMap.get(Number(car.loc_id));
@@ -2510,11 +2511,11 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 		}
 		if (car.recommendation && empMap.has(String(car.recommendation))) {
 			const e = empMap.get(String(car.recommendation));
-			obj.recommendation = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			obj.recommendation = { full_name: e.full_name || e.name || null, ramco_id: e.ramco_id };
 		}
 		if (car.approval && empMap.has(String(car.approval))) {
 			const e = empMap.get(String(car.approval));
-			obj.approval = { ramco_id: e.ramco_id, full_name: e.full_name || e.name || null };
+			obj.approval = { full_name: e.full_name || e.name || null, ramco_id: e.ramco_id };
 		}
 		// Build passenger array from concatenated RAMCO IDs in 'pass' (e.g., "012345, 23456")
 		const passStr = typeof car.pass === 'string' ? car.pass : (car.pass != null ? String(car.pass) : '');
@@ -2523,17 +2524,17 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 				.split(/[,;\s]+/)
 				.map((s: string) => s.trim())
 				.filter((s: string) => s.length > 0);
-			const unique = Array.from(new Set(ids)) as string[];
+			const unique = Array.from(new Set(ids));
 			const passenger = unique.map((rid: string) => {
 				const emp = empMap.get(rid);
-				return { ramco_id: rid, full_name: emp ? (emp.full_name || emp.name || null) : null };
+				return { full_name: emp ? (emp.full_name || emp.name || null) : null, ramco_id: rid };
 			});
 			if (passenger.length > 0) obj.passenger = passenger;
 		}
 		// Enrich TNG and Fleetcard objects if IDs exist
 		try {
-			if ((car as any).tng_id) {
-				const tid = Number((car as any).tng_id);
+			if ((car).tng_id) {
+				const tid = Number((car).tng_id);
 				if (Number.isFinite(tid) && tid > 0) {
 					const tng = await maintenanceModel.getTngRecordById(tid);
 					if (tng) {
@@ -2546,14 +2547,14 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 			}
 		} catch { }
 		try {
-			if ((car as any).fleetcard_id) {
-				const fid = Number((car as any).fleetcard_id);
+			if ((car).fleetcard_id) {
+				const fid = Number((car).fleetcard_id);
 				if (Number.isFinite(fid) && fid > 0) {
 					const fc = await billingModel.getFleetCardById(fid);
 					if (fc) {
 						obj.fleetcard = {
-							id: (fc as any).id ?? fid,
-							card_no: (fc as any).card_no ?? null
+							card_no: (fc).card_no ?? null,
+							id: (fc).id ?? fid
 						};
 					}
 				}
@@ -2561,21 +2562,21 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 		} catch { }
 
 		// Include return info explicitly if present
-		if ((car as any).pcar_retdate !== undefined) obj.pcar_retdate = (car as any).pcar_retdate;
-		if ((car as any).pcar_odo_end !== undefined) obj.pcar_odo_end = (car as any).pcar_odo_end;
+		if ((car).pcar_retdate !== undefined) obj.pcar_retdate = (car).pcar_retdate;
+		if ((car).pcar_odo_end !== undefined) obj.pcar_odo_end = (car).pcar_odo_end;
 
 		Object.keys(obj).forEach((k) => { if (obj[k] === null) delete obj[k]; });
 
 		res.json({
-			status: 'success',
+			data: obj,
 			message: 'Pool car data retrieved successfully',
-			data: obj
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2603,17 +2604,17 @@ export const createPoolCar = async (req: Request, res: Response) => {
 			// Applicant email (CC driver if different)
 			if (applicantEmail) {
 				const html = poolCarApplicantEmail({
-					id,
-					subject,
-					pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
-					pcar_empid: applicantRamco,
 					applicant_name: applicant?.full_name || applicant?.name || null,
-					pcar_dest: carData.pcar_dest || null,
-					pcar_purp: carData.pcar_purp || null,
 					date_from: carData.pcard_datefr || carData.pcar_datefr || null,
 					date_to: carData.pcard_dateto || carData.pcar_dateto || null,
+					id,
+					pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
 					pcar_day: carData.pcar_day ?? null,
+					pcar_dest: carData.pcar_dest || null,
+					pcar_empid: applicantRamco,
 					pcar_hour: carData.pcar_hour ?? null,
+					pcar_purp: carData.pcar_purp || null,
+					subject,
 				});
 				const ccList: string[] = [];
 				if (!isSameApplicantDriver && driverEmail) ccList.push(driverEmail);
@@ -2627,17 +2628,17 @@ export const createPoolCar = async (req: Request, res: Response) => {
 				const supervisor = await getSupervisorBySubordinate(applicantRamco);
 				if (supervisor && supervisor.email) {
 					const html = poolCarSupervisorEmail({
-						id,
-						subject,
-						pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
-						pcar_empid: applicantRamco,
 						applicant_name: applicant?.full_name || applicant?.name || null,
-						pcar_dest: carData.pcar_dest || null,
-						pcar_purp: carData.pcar_purp || null,
 						date_from: carData.pcard_datefr || carData.pcar_datefr || null,
 						date_to: carData.pcard_dateto || carData.pcar_dateto || null,
+						id,
+						pcar_datererq: carData.pcar_datererq || carData.pcar_datereq || null,
 						pcar_day: carData.pcar_day ?? null,
-						pcar_hour: carData.pcar_hour ?? null
+						pcar_dest: carData.pcar_dest || null,
+						pcar_empid: applicantRamco,
+						pcar_hour: carData.pcar_hour ?? null,
+						pcar_purp: carData.pcar_purp || null,
+						subject
 					});
 					const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
 					await mailer.sendMail(supervisor.email, subject, html, cc ? { cc } : undefined);
@@ -2648,15 +2649,15 @@ export const createPoolCar = async (req: Request, res: Response) => {
 		}
 
 		res.status(201).json({
-			status: 'success',
+			data: result,
 			message: 'Pool car created successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2668,15 +2669,15 @@ export const updatePoolCar = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.updatePoolCar(Number(id), carData);
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Pool car updated successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2690,7 +2691,7 @@ export const returnPoolCar = async (req: Request, res: Response) => {
 		const body = req.body || {};
 		const pcarId = Number(id || body.pcar_id);
 		if (!Number.isFinite(pcarId) || pcarId <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid pcar_id', status: 'error' });
 		}
 
 		const pcar_retdate = body.pcar_retdate || body.return_date || null;
@@ -2699,10 +2700,10 @@ export const returnPoolCar = async (req: Request, res: Response) => {
 			: (body.odo_end !== undefined ? Number(body.odo_end) : null);
 
 		if (!pcar_retdate) {
-			return res.status(400).json({ status: 'error', message: 'pcar_retdate is required', data: null });
+			return res.status(400).json({ data: null, message: 'pcar_retdate is required', status: 'error' });
 		}
 		if (pcar_odo_end !== null && !Number.isFinite(pcar_odo_end)) {
-			return res.status(400).json({ status: 'error', message: 'pcar_odo_end must be a number if provided', data: null });
+			return res.status(400).json({ data: null, message: 'pcar_odo_end must be a number if provided', status: 'error' });
 		}
 
 		const payload: any = { pcar_retdate };
@@ -2710,9 +2711,9 @@ export const returnPoolCar = async (req: Request, res: Response) => {
 
 		await maintenanceModel.updatePoolCar(pcarId, payload);
 
-		return res.json({ status: 'success', message: 'Pool car marked as returned', data: { id: pcarId, pcar_retdate, pcar_odo_end } });
+		return res.json({ data: { id: pcarId, pcar_odo_end, pcar_retdate }, message: 'Pool car marked as returned', status: 'success' });
 	} catch (error: any) {
-		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to update return info', data: null });
+		return res.status(500).json({ data: null, message: error?.message || 'Failed to update return info', status: 'error' });
 	}
 };
 
@@ -2725,7 +2726,7 @@ export const cancelPoolCar = async (req: Request, res: Response) => {
 		const body = req.body || {};
 		const pcarId = Number(id || body.pcar_id);
 		if (!Number.isFinite(pcarId)) {
-			return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid pcar_id', status: 'error' });
 		}
 
 		// Interpret the cancellation flag (expects literal 'cancelled' per payload spec)
@@ -2750,9 +2751,9 @@ export const cancelPoolCar = async (req: Request, res: Response) => {
 		}
 
 		await maintenanceModel.updatePoolCar(pcarId, update);
-		return res.json({ status: 'success', message: isCancelled ? 'Pool car cancelled' : 'Pool car cancellation cleared', data: { id: pcarId } });
+		return res.json({ data: { id: pcarId }, message: isCancelled ? 'Pool car cancelled' : 'Pool car cancellation cleared', status: 'success' });
 	} catch (err: any) {
-		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to update pool car cancellation', data: null });
+		return res.status(500).json({ data: null, message: err?.message || 'Failed to update pool car cancellation', status: 'error' });
 	}
 };
 
@@ -2766,28 +2767,28 @@ export const verifyPoolCar = async (req: Request, res: Response) => {
 		const payload = req.body || {};
 
 		if (!ramco) {
-			return res.status(400).json({ status: 'error', message: 'Missing supervisor ramco in query ?ramco=' });
+			return res.status(400).json({ message: 'Missing supervisor ramco in query ?ramco=', status: 'error' });
 		}
 		if (!decision) {
-			return res.status(400).json({ status: 'error', message: 'Missing decision (approved|rejected)' });
+			return res.status(400).json({ message: 'Missing decision (approved|rejected)', status: 'error' });
 		}
 		const now = new Date();
 		const recommendation_stat = decision === 'approved' ? 1 : decision === 'rejected' ? 2 : 0;
 		if (!recommendation_stat) {
-			return res.status(400).json({ status: 'error', message: 'Invalid decision value' });
+			return res.status(400).json({ message: 'Invalid decision value', status: 'error' });
 		}
 
 		const update: any = {
 			recommendation: ramco,
-			recommendation_stat,
-			recommendation_date: payload.recommendation_date || now.toISOString().slice(0, 19).replace('T', ' ')
+			recommendation_date: payload.recommendation_date || now.toISOString().slice(0, 19).replace('T', ' '),
+			recommendation_stat
 		};
 
 		await maintenanceModel.updatePoolCar(Number(id), update);
 
-		res.json({ status: 'success', message: 'Verification updated', data: { id: Number(id), ...update } });
+		res.json({ data: { id: Number(id), ...update }, message: 'Verification updated', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -2807,7 +2808,7 @@ export const verifyPoolCarGet = async (req: Request, res: Response) => {
 			return;
 		}
 		const recommendation_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
-		await maintenanceModel.updatePoolCar(Number(id), { recommendation: ramco, recommendation_stat, recommendation_date });
+		await maintenanceModel.updatePoolCar(Number(id), { recommendation: ramco, recommendation_date, recommendation_stat });
 		const title = decision === 'approved' ? 'Approved' : 'Rejected';
 		res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Pool Car ${title}</title>
 				<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#f9fafb;color:#111827;padding:24px} .card{max-width:680px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.06)} .bar{height:6px;background:linear-gradient(90deg,#22c55e,#16a34a,#065f46);border-top-left-radius:8px;border-top-right-radius:8px} .content{padding:20px 24px} .muted{color:#6b7280} .ok{color:#065f46;font-weight:600}</style></head>
@@ -2827,15 +2828,15 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.deletePoolCar(Number(id));
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Pool car deleted successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -2847,7 +2848,7 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 		const body = req.body || {};
 		const pcarId = Number(id || body.pcar_id);
 		if (!Number.isFinite(pcarId)) {
-			return res.status(400).json({ status: 'error', message: 'Invalid pcar_id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid pcar_id', status: 'error' });
 		}
 
 		// Normalize booleans/values
@@ -2898,7 +2899,7 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 		// Fetch latest state for email context
 		const car = await maintenanceModel.getPoolCarById(pcarId);
 		if (!car) {
-			return res.json({ status: 'success', message: 'Updated, but record fetch failed for notification', data: { id: pcarId } });
+			return res.json({ data: { id: pcarId }, message: 'Updated, but record fetch failed for notification', status: 'success' });
 		}
 
 		// Build and send notification to applicant
@@ -2908,10 +2909,10 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 			const toEmail = applicant?.email || null;
 			const ccList: string[] = [];
 			// Optionally CC driver
-			const driverRamco = String((car as any).pcar_driver || '');
+			const driverRamco = String((car).pcar_driver || '');
 			if (driverRamco && driverRamco !== applicantRamco) {
 				const driver = await assetModel.getEmployeeByRamco(driverRamco);
-				if (driver?.email) ccList.push(driver.email);
+				if (driver.email) ccList.push(driver.email);
 			}
 			if (POOLCAR_ADMIN_CC.length) ccList.push(...POOLCAR_ADMIN_CC);
 
@@ -2925,18 +2926,18 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 
 				// Optional asset register number
 				let assetInfo = '';
-				const assetId = Number((car as any).asset_id || 0);
+				const assetId = Number((car).asset_id || 0);
 				if (!isNaN(assetId) && assetId > 0) {
 					try {
 						const asset = await assetModel.getAssetById(assetId);
-						const reg = asset?.register_number || asset?.vehicle_regno || '';
+						const reg = asset.register_number || asset.vehicle_regno || '';
 						if (reg) assetInfo = `<tr><td style="color:#6b7280;">Assigned Vehicle</td><td><strong>${reg}</strong></td></tr>`;
 					} catch { }
 				}
 
-				const appDate = (car as any).pcar_datererq || (car as any).pcar_datereq || null;
-				const dateFrom = (car as any).pcard_datefr || (car as any).pcar_datefr || null;
-				const dateTo = (car as any).pcard_dateto || (car as any).pcar_dateto || null;
+				const appDate = (car).pcar_datererq || (car).pcar_datereq || null;
+				const dateFrom = (car).pcard_datefr || (car).pcar_datefr || null;
+				const dateTo = (car).pcard_dateto || (car).pcar_dateto || null;
 				const name = applicant?.full_name || (applicant as any)?.name || '';
 
 				const html = `
@@ -2950,7 +2951,7 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 									<tbody>
 										<tr><td style="color:#6b7280; width:260px;">Applicant</td><td>${name} <span style="color:#6b7280;">(${applicantRamco})</span></td></tr>
 										<tr><td style="color:#6b7280;">Application Date</td><td>${appDate || '-'}</td></tr>
-										<tr><td style="color:#6b7280;">Destination & Purpose</td><td>${(car as any).pcar_dest || '-'} — ${(car as any).pcar_purp || '-'}</td></tr>
+										<tr><td style="color:#6b7280;">Destination & Purpose</td><td>${(car).pcar_dest || '-'} — ${(car).pcar_purp || '-'}</td></tr>
 										<tr><td style="color:#6b7280;">Trip From / To</td><td>${dateFrom || '-'} → ${dateTo || '-'}</td></tr>
 										${assetInfo}
 									</tbody>
@@ -2967,9 +2968,9 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 			console.error('updateAdminPoolCar: email error', mailErr);
 		}
 
-		res.json({ status: 'success', message: 'Pool car updated', data: { id: pcarId } });
+		res.json({ data: { id: pcarId }, message: 'Pool car updated', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -2979,13 +2980,13 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const car = await maintenanceModel.getPoolCarById(Number(id));
 		if (!car) {
-			return res.status(404).json({ status: 'error', message: 'Pool car not found', data: null });
+			return res.status(404).json({ data: null, message: 'Pool car not found', status: 'error' });
 		}
 
 		const idNum = Number(id);
 		const subject = `Pool Car Request #${idNum}`;
 		const applicantRamco = String(car.pcar_empid || '');
-		const driverRamco = String((car as any).pcar_driver || '');
+		const driverRamco = String((car).pcar_driver || '');
 		const isSameApplicantDriver = applicantRamco && driverRamco && applicantRamco === driverRamco;
 		const applicant = applicantRamco ? await assetModel.getEmployeeByRamco(applicantRamco) : null;
 		const applicantEmail = applicant?.email || null;
@@ -2993,9 +2994,9 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 		const driverEmail = driver?.email || null;
 		const backendUrl = process.env.BACKEND_URL || process.env.API_BASE_URL || '';
 
-		const appDate = (car as any).pcar_datererq || (car as any).pcar_datereq || null;
-		const dateFrom = (car as any).pcard_datefr || (car as any).pcar_datefr || null;
-		const dateTo = (car as any).pcard_dateto || (car as any).pcar_dateto || null;
+		const appDate = (car).pcar_datererq || (car).pcar_datereq || null;
+		const dateFrom = (car).pcard_datefr || (car).pcar_datefr || null;
+		const dateTo = (car).pcard_dateto || (car).pcar_dateto || null;
 
 		let sentApplicant = false;
 		let sentSupervisor = false;
@@ -3003,17 +3004,17 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 		try {
 			if (applicantEmail) {
 				const htmlApplicant = poolCarApplicantEmail({
-					id: idNum,
-					subject,
-					pcar_datererq: appDate,
-					pcar_empid: applicantRamco,
 					applicant_name: applicant?.full_name || applicant?.name || null,
-					pcar_dest: (car as any).pcar_dest || null,
-					pcar_purp: (car as any).pcar_purp || null,
 					date_from: dateFrom,
 					date_to: dateTo,
-					pcar_day: (car as any).pcar_day ?? null,
-					pcar_hour: (car as any).pcar_hour ?? null,
+					id: idNum,
+					pcar_datererq: appDate,
+					pcar_day: (car).pcar_day ?? null,
+					pcar_dest: (car).pcar_dest || null,
+					pcar_empid: applicantRamco,
+					pcar_hour: (car).pcar_hour ?? null,
+					pcar_purp: (car).pcar_purp || null,
+					subject,
 				});
 				const ccList: string[] = [];
 				if (!isSameApplicantDriver && driverEmail) ccList.push(driverEmail);
@@ -3028,17 +3029,17 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 				const supervisorId = (applicant as any)?.supervisor_id || '';
 				if (supervisor && supervisor.email) {
 					const htmlSupervisor = poolCarSupervisorEmail({
-						id: idNum,
-						subject,
-						pcar_datererq: appDate,
-						pcar_empid: applicantRamco,
 						applicant_name: applicant?.full_name || applicant?.name || null,
-						pcar_dest: (car as any).pcar_dest || null,
-						pcar_purp: (car as any).pcar_purp || null,
 						date_from: dateFrom,
 						date_to: dateTo,
-						pcar_day: (car as any).pcar_day ?? null,
-						pcar_hour: (car as any).pcar_hour ?? null
+						id: idNum,
+						pcar_datererq: appDate,
+						pcar_day: (car).pcar_day ?? null,
+						pcar_dest: (car).pcar_dest || null,
+						pcar_empid: applicantRamco,
+						pcar_hour: (car).pcar_hour ?? null,
+						pcar_purp: (car).pcar_purp || null,
+						subject
 					});
 					const cc = POOLCAR_ADMIN_CC.length ? POOLCAR_ADMIN_CC.join(',') : undefined;
 					await mailer.sendMail(supervisor.email, subject, htmlSupervisor, cc ? { cc } : undefined);
@@ -3050,12 +3051,12 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 		}
 
 		return res.json({
-			status: 'success',
+			data: { id: idNum, sentApplicant, sentSupervisor },
 			message: 'Resend email process completed',
-			data: { id: idNum, sentApplicant, sentSupervisor }
+			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3063,9 +3064,9 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 export const getAvailablePoolCars = async (req: Request, res: Response) => {
 	try {
 		const cars = await maintenanceModel.getAvailablePoolCars();
-		res.json({ status: 'success', message: 'Available pool cars retrieved', data: cars });
+		res.json({ data: cars, message: 'Available pool cars retrieved', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Unknown error', data: null });
+		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3076,15 +3077,15 @@ export const getTouchNGoCards = async (req: Request, res: Response) => {
 	try {
 		const cards = await maintenanceModel.getTngRecords();
 		res.json({
-			status: 'success',
+			data: cards,
 			message: 'Touch N Go cards retrieved successfully',
-			data: cards
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 }
@@ -3094,11 +3095,11 @@ export const getTouchNGoCardById = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const cardId = Number(id);
 		if (Number.isNaN(cardId)) {
-			return res.status(400).json({ status: 'error', message: 'Invalid card id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid card id', status: 'error' });
 		}
 		const card = await maintenanceModel.getTngRecordById(cardId);
 		if (!card) {
-			return res.status(404).json({ status: 'error', message: 'Touch N Go card not found', data: null });
+			return res.status(404).json({ data: null, message: 'Touch N Go card not found', status: 'error' });
 		}
 		// fetch usage / details
 		let usage = [] as any[];
@@ -3119,15 +3120,15 @@ export const getTouchNGoCardById = async (req: Request, res: Response) => {
 		}
 		const enriched = {
 			...card,
-			usage_count: usage.length,
-			usage
+			usage,
+			usage_count: usage.length
 		};
-		res.json({ status: 'success', message: 'Touch N Go card retrieved successfully', data: enriched });
+		res.json({ data: enriched, message: 'Touch N Go card retrieved successfully', status: 'success' });
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -3138,15 +3139,15 @@ export const createTouchNGoCard = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.createTngRecord(cardData);
 
 		res.status(201).json({
-			status: 'success',
+			data: result,
 			message: 'Touch N Go card created successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -3158,15 +3159,15 @@ export const updateTouchNGoCard = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.updateTngRecord(Number(id), cardData);
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Touch N Go card updated successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };
@@ -3177,15 +3178,15 @@ export const deleteTouchNGoCard = async (req: Request, res: Response) => {
 		const result = await maintenanceModel.deleteTngRecord(Number(id));
 
 		res.json({
-			status: 'success',
+			data: result,
 			message: 'Touch N Go card deleted successfully',
-			data: result
+			status: 'success'
 		});
 	} catch (error) {
 		res.status(500).json({
-			status: 'error',
+			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
-			data: null
+			status: 'error'
 		});
 	}
 };

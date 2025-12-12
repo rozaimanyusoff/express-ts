@@ -1,12 +1,13 @@
-import path from 'path';
 import { promises as fsPromises } from 'fs';
 import fs from 'fs';
+import path from 'path';
+
 import logger from './logger';
 
 // Return the base directory where uploads are stored on disk.
 // Prefers UPLOAD_BASE_PATH; falls back to <project>/uploads.
 export const getUploadBaseSync = (): string => {
-  let requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+  const requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
   // If someone sets UPLOAD_BASE_PATH="/uploads" (container style) but we're on local dev without permission, fallback.
   try {
     fs.mkdirSync(requested, { recursive: true });
@@ -28,7 +29,7 @@ export const getUploadBaseSync = (): string => {
 };
 
 export const getUploadBase = async (): Promise<string> => {
-  let requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+  const requested = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
   try {
     await fsPromises.mkdir(requested, { recursive: true });
     return requested;
@@ -64,7 +65,7 @@ export const toDbPath = (moduleDir: string, filename: string): string => {
 
 // Build a public URL from a DB-stored path.
 // Ensures prefix 'uploads/' and prepends BACKEND_URL.
-export const toPublicUrl = (stored: string | null | undefined): string | null => {
+export const toPublicUrl = (stored: null | string | undefined): null | string => {
   if (!stored) return null;
   const baseUrl = (process.env.BACKEND_URL || '').replace(/\/$/, '');
   let p = String(stored).replace(/\\/g, '/').replace(/^\/+/, '');

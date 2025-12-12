@@ -1,19 +1,20 @@
-import {pool} from '../utils/db';
-import logger from '../utils/logger';
 import { ResultSetHeader } from 'mysql2';
 
+import {pool} from '../utils/db';
+import logger from '../utils/logger';
+
 export interface PendingUser {
-  id?: number;
-  fname: string;
-  username?: string | null;
-  email: string;
+  activation_code?: null | string;
   contact: string;
-  user_type: number;
-  status: number;
-  activation_code?: string | null;
   created_at?: Date;
-  ip?: string | null;
-  user_agent?: string | null;
+  email: string;
+  fname: string;
+  id?: number;
+  ip?: null | string;
+  status: number;
+  user_agent?: null | string;
+  user_type: number;
+  username?: null | string;
 }
 
 // DB and table variables for easier maintenance
@@ -68,7 +69,7 @@ export const findPendingUserByEmailOrContact = async (email: string, contact: st
   }
 };
 
-export const findPendingUserByActivation = async (email: string, contact: string, activationCode: string): Promise<PendingUser | null> => {
+export const findPendingUserByActivation = async (email: string, contact: string, activationCode: string): Promise<null | PendingUser> => {
   try {
     const [rows]: any[] = await pool.query(
       `SELECT * FROM ${PENDING_USERS_TABLE} WHERE email = ? AND contact = ? AND activation_code = ?`,

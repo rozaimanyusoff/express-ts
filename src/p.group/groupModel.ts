@@ -1,19 +1,20 @@
-import {pool} from "../utils/db";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
+
+import {pool} from "../utils/db";
 import logger from '../utils/logger';
 
 export interface Group {
+    created_at: string;
+    desc: string;
     id: number;
     name: string;
-    desc: string;
     status: number;
-    created_at: string;
 }
 
 export interface UserGroup {
+    group_id: number;
     id: number;
     user_id: number;
-    group_id: number;
 }
 
 // Get all groups
@@ -39,7 +40,7 @@ export const getGroupById = async (id: number): Promise<Group> => {
 }
 
 // Create new group
-export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+export const createGroup = async (group: Omit<Group, 'created_at' | 'id'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
         'INSERT INTO auth.groups (name, description, status) VALUES (?, ?, ?)',
         [group.name, group.desc, group.status]
@@ -48,7 +49,7 @@ export const createGroup = async (group: Omit<Group, 'id' | 'created_at'>): Prom
 };
 
 // Update group
-export const updateGroup = async (id: number, group: Omit<Group, 'id' | 'created_at'>): Promise<ResultSetHeader> => {
+export const updateGroup = async (id: number, group: Omit<Group, 'created_at' | 'id'>): Promise<ResultSetHeader> => {
     const [result] = await pool.query<ResultSetHeader>(
         'UPDATE auth.groups SET name = ?, description = ?, status = ? WHERE id = ?',
         [group.name, group.desc, group.status, id]
@@ -71,7 +72,7 @@ export const getGroupsByUserId = async (userId: number): Promise<number[]> => {
 }
 
 // Assign default group to user by user ID
-export const assignGroupByUserId = async (userId: number, groupId: number = 5): Promise<void> => {
+export const assignGroupByUserId = async (userId: number, groupId = 5): Promise<void> => {
     try {
         await pool.query(
             'INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)',

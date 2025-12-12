@@ -1,9 +1,10 @@
 
 // src/p.billing/billingRoutes.ts
 import { Router } from 'express';
-import * as billingController from './billingController';
+
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
+import * as billingController from './billingController';
 
 const router = Router();
 
@@ -52,8 +53,8 @@ router.get('/mtn/check-invno', asyncHandler(billingController.checkVehicleMtnInv
 router.put(
 	'/mtn/:id',
 	mtnUploader.fields([
-		{ name: 'attachment', maxCount: 1 },
-		{ name: 'upload', maxCount: 1 }
+		{ maxCount: 1, name: 'attachment' },
+		{ maxCount: 1, name: 'upload' }
 	]),
 	asyncHandler(billingController.updateVehicleMtnBilling)
 );
@@ -136,7 +137,7 @@ router.get('/util', asyncHandler(billingController.getUtilityBills));
 // Check utility bill number existence
 router.get('/util/check-ubillno', asyncHandler(billingController.checkUtilityUbillNo));
 // Accept file under either 'ubill_ref' (preferred) or 'ubill_file' (legacy)
-router.post('/util', utilUploader.fields([{ name: 'ubill_ref', maxCount: 1 }, { name: 'ubill_file', maxCount: 1 }]), asyncHandler(billingController.createUtilityBill));
+router.post('/util', utilUploader.fields([{ maxCount: 1, name: 'ubill_ref' }, { maxCount: 1, name: 'ubill_file' }]), asyncHandler(billingController.createUtilityBill));
 router.put('/util/:id', asyncHandler(billingController.updateUtilityBill));
 router.delete('/util/:id', asyncHandler(billingController.deleteUtilityBill));
 

@@ -1,17 +1,18 @@
+import dayjs from 'dayjs';
 // src/p.billing/billingController.ts
 import { Request, Response } from 'express';
-import * as billingModel from './billingModel';
+import { stat } from 'fs';
+import fs from 'fs';
+import { register } from 'module';
+import path from 'path';
+
 import * as assetsModel from '../p.asset/assetModel';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
-import dayjs from 'dayjs';
-import { stat } from 'fs';
-import { register } from 'module';
 import logger from '../utils/logger';
-import path from 'path';
-import fs from 'fs';
-import { setUtilityBillRef } from './billingModel';
-import { toPublicUrl } from '../utils/uploadUtil';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
+import { toPublicUrl } from '../utils/uploadUtil';
+import * as billingModel from './billingModel';
+import { setUtilityBillRef } from './billingModel';
 
 /* ============== HELPER FUNCTIONS =============== */
 
@@ -57,12 +58,12 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const vehicleMtn = Array.isArray(list) ? (list as any[]) : [];
 
 		// Fetch lookup lists
-		const workshops = await billingModel.getWorkshops() as any[];
-		const assets = await assetsModel.getAssets() as any[];
+		const workshops = await billingModel.getWorkshops();
+		const assets = await assetsModel.getAssets();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
 		// Fetch maintenance requests to get form_upload_date
-		const mtnRequests = await maintenanceModel.getVehicleMtnRequests() as any[];
+		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
 		// Build lookup maps for fast access (support id and asset_id)
 		const assetMap = new Map();
@@ -75,20 +76,14 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 		// Map nested structure
 		const data = vehicleMtn.map(b => {
-			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
-			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
-			const loc_id = (b as any).location_id ?? (b as any).loc_id;
-			const svc_order = (b as any).svc_order;
+			const asset_id = (b).asset_id ?? (b).vehicle_id;
+			const cc_id = (b).cc_id ?? (b).costcenter_id;
+			const loc_id = (b).location_id ?? (b).loc_id;
+			const svc_order = (b).svc_order;
 			const mtnReq = mtnReqMap.get(Number(svc_order));
 			const form_upload_date = mtnReq?.form_upload_date ?? null;
-			const inv_stat = calculateInvStat((b as any).inv_no, (b as any).inv_date, form_upload_date, (b as any).inv_total);
+			const inv_stat = calculateInvStat((b).inv_no, (b).inv_date, form_upload_date, (b).inv_total);
 			return {
-				inv_id: (b as any).inv_id,
-				entry_date: (b as any).entry_date,
-				inv_no: (b as any).inv_no,
-				inv_date: (b as any).inv_date,
-				svc_order: svc_order,
-				form_upload_date: form_upload_date,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
 					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
@@ -96,19 +91,25 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
 					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
-				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
+				entry_date: (b as any).entry_date,
+				form_upload_date: form_upload_date,
+				inv_date: (b as any).inv_date,
+				inv_id: (b as any).inv_id,
+				inv_no: (b as any).inv_no,
+				inv_remarks: (b as any).inv_remarks,
+				inv_stat: inv_stat,
+				inv_total: (b as any).inv_total,
+				running_no: (b as any).running_no,
 				svc_date: (b as any).svc_date,
 				svc_odo: (b as any).svc_odo,
-				inv_total: (b as any).inv_total,
-				inv_stat: inv_stat,
-				inv_remarks: (b as any).inv_remarks,
-				running_no: (b as any).running_no
+				svc_order: svc_order,
+				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null
 			};
 		});
-		return res.json({ status: 'success', message: `Vehicle maintenance billings retrieved successfully total entries: ${data.length}`, data });
+		return res.json({ data, message: `Vehicle maintenance billings retrieved successfully total entries: ${data.length}`, status: 'success' });
 	} catch (err: any) {
 		logger.error(err);
-		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings', data: null });
+		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
 	}
 };
 
@@ -124,8 +125,8 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		const vehicleMtn = Array.isArray(list) ? (list as any[]) : [];
 
 		// Fetch lookup lists
-		const workshops = await billingModel.getWorkshops() as any[];
-		const assets = await assetsModel.getAssets() as any[];
+		const workshops = await billingModel.getWorkshops();
+		const assets = await assetsModel.getAssets();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
 		// Build lookup maps for fast access (support id and asset_id)
@@ -139,15 +140,10 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 		// Map nested structure (same shape as default list endpoint)
 		const data = vehicleMtn.map(b => {
-			const asset_id = (b as any).asset_id ?? (b as any).vehicle_id;
-			const cc_id = (b as any).cc_id ?? (b as any).costcenter_id;
-			const loc_id = (b as any).location_id ?? (b as any).loc_id;
+			const asset_id = (b).asset_id ?? (b).vehicle_id;
+			const cc_id = (b).cc_id ?? (b).costcenter_id;
+			const loc_id = (b).location_id ?? (b).loc_id;
 			return {
-				inv_id: (b as any).inv_id,
-				entry_date: (b as any).entry_date,
-				inv_no: (b as any).inv_no,
-				inv_date: (b as any).inv_date,
-				svc_order: (b as any).svc_order,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
 					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
@@ -155,33 +151,38 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
 					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
 				} : null,
-				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null,
+				entry_date: (b as any).entry_date,
+				inv_date: (b as any).inv_date,
+				inv_id: (b as any).inv_id,
+				inv_no: (b as any).inv_no,
+				inv_remarks: (b as any).inv_remarks,
+				inv_stat: (b as any).inv_stat,
+				inv_total: (b as any).inv_total,
+				running_no: (b as any).running_no,
 				svc_date: (b as any).svc_date,
 				svc_odo: (b as any).svc_odo,
-				inv_total: (b as any).inv_total,
-				inv_stat: (b as any).inv_stat,
-				inv_remarks: (b as any).inv_remarks,
-				running_no: (b as any).running_no
+				svc_order: (b as any).svc_order,
+				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null
 			};
 		});
-		return res.json({ status: 'success', message: `Vehicle maintenance billings (inv_date) retrieved successfully`, data });
+		return res.json({ data, message: `Vehicle maintenance billings (inv_date) retrieved successfully`, status: 'success' });
 	} catch (err: any) {
 		logger.error(err);
-		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings (inv_date)', data: null });
+		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings (inv_date)', status: 'error' });
 	}
 };
 
 export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	const billing = await billingModel.getVehicleMtnBillingById(Number(req.params.id));
 	if (!billing) {
-		return res.status(404).json({ status: 'error', message: 'Billing not found' });
+		return res.status(404).json({ message: 'Billing not found', status: 'error' });
 	}
 
 	// Fetch lookup data
-	const assets = await assetsModel.getAssets() as any[];
+	const assets = await assetsModel.getAssets();
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const locations = await assetsModel.getLocations() as any[];
-	const workshops = await billingModel.getWorkshops() as any[];
+	const workshops = await billingModel.getWorkshops();
 
 	// Build lookup maps for fast access
 	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
@@ -208,7 +209,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				
 				// Build full URL for form_upload if it exists with proper URL encoding
 				const formUpload = (req as any).form_upload;
-				let formUploadUrl: string | null = null;
+				let formUploadUrl: null | string = null;
 				if (formUpload) {
 					let finalPath = formUpload;
 					
@@ -226,11 +227,11 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				}
 				
 				svcOrderDetails = {
-					req_id: (req as any).req_id,
-					req_date: (req as any).req_date,
+					approval_date: (req as any).approval_date ?? null,
 					form_upload: formUploadUrl,
 					form_upload_date: (req as any).form_upload_date ?? null,
-					approval_date: (req as any).approval_date ?? null,
+					req_date: (req as any).req_date,
+					req_id: (req as any).req_id,
 					status: (req as any).req_stat ?? (req as any).status ?? null
 				};
 			}
@@ -261,11 +262,6 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	const inv_stat = calculateInvStat(billing.inv_no, billing.inv_date, form_upload_date, billing.inv_total);
 
 	const structuredBilling = {
-		inv_id: billing.inv_id,
-		inv_no: billing.inv_no,
-		inv_date: billing.inv_date,
-		svc_order: billing.svc_order,
-		svc_order_details: svcOrderDetails,
 		asset: assetMap.has(asset_id) ? {
 			id: asset_id,
 			register_number: (assetMap.get(asset_id) as any)?.register_number,
@@ -278,23 +274,28 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				code: (locationMap.get(loc_id) as any)?.code
 			} : null
 		} : null,
+		inv_date: billing.inv_date,
+		inv_id: billing.inv_id,
+		inv_no: billing.inv_no,
+		inv_remarks: billing.inv_remarks,
+		inv_stat: inv_stat,
+		inv_total: billing.inv_total,
+		parts: enrichedParts,
+		running_no: billing.running_no,
+		svc_date: billing.svc_date,
+		svc_odo: billing.svc_odo,
+		svc_order: billing.svc_order,
+		svc_order_details: svcOrderDetails,
+		// Provide full public URL for the uploaded attachment if present
+		//upload: (billing as any).upload ?? (billing as any).attachment ?? null,
+		upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null),
 		workshop: wsMap.has(billing.ws_id) ? {
 			id: billing.ws_id,
 			name: (wsMap.get(billing.ws_id) as any)?.ws_name
-		} : null,
-		svc_date: billing.svc_date,
-		svc_odo: billing.svc_odo,
-		inv_total: billing.inv_total,
-		inv_stat: inv_stat,
-		inv_remarks: billing.inv_remarks,
-		running_no: billing.running_no,
-		parts: enrichedParts,
-		// Provide full public URL for the uploaded attachment if present
-		//upload: (billing as any).upload ?? (billing as any).attachment ?? null,
-		upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null)
+		} : null
 	};
 
-	res.json({ status: 'success', message: 'Vehicle maintenance billing retrieved successfully', data: structuredBilling });
+	res.json({ data: structuredBilling, message: 'Vehicle maintenance billing retrieved successfully', status: 'success' });
 };
 
 // POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts
@@ -312,7 +313,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 		}
 
 		if (ids.length === 0) {
-			return res.status(400).json({ status: 'error', message: 'ids array is required in request body', data: null });
+			return res.status(400).json({ data: null, message: 'ids array is required in request body', status: 'error' });
 		}
 
 		// Fetch billings for all provided IDs
@@ -324,10 +325,10 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 		const validBillings = billings.filter(b => b !== null);
 
 		// Fetch lookup data
-		const assets = await assetsModel.getAssets() as any[];
+		const assets = await assetsModel.getAssets();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
-		const workshops = await billingModel.getWorkshops() as any[];
+		const workshops = await billingModel.getWorkshops();
 
 		// Build lookup maps for fast access
 		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
@@ -351,11 +352,6 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 			}
 
 			return {
-				inv_id: billing.inv_id,
-				inv_no: billing.inv_no,
-				inv_date: billing.inv_date,
-				svc_order: billing.svc_order,
-				service_details: serviceDetails,
 				asset: assetMap.has(asset_id) ? {
 					id: asset_id,
 					register_number: (assetMap.get(asset_id) as any)?.register_number,
@@ -368,28 +364,33 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 						code: (locationMap.get(loc_id) as any)?.code
 					} : null
 				} : null,
+				inv_date: billing.inv_date,
+				inv_id: billing.inv_id,
+				inv_no: billing.inv_no,
+				inv_remarks: billing.inv_remarks,
+				inv_stat: billing.inv_stat,
+				inv_total: billing.inv_total,
+				running_no: billing.running_no,
+				service_details: serviceDetails,
+				svc_date: billing.svc_date,
+				svc_odo: billing.svc_odo,
+				svc_order: billing.svc_order,
+				upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null),
 				workshop: wsMap.has(billing.ws_id) ? {
 					id: billing.ws_id,
 					name: (wsMap.get(billing.ws_id) as any)?.ws_name
-				} : null,
-				svc_date: billing.svc_date,
-				svc_odo: billing.svc_odo,
-				inv_total: billing.inv_total,
-				inv_stat: billing.inv_stat,
-				inv_remarks: billing.inv_remarks,
-				running_no: billing.running_no,
-				upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null)
+				} : null
 			};
 		});
 
 		res.json({ 
-			status: 'success', 
+			data: structuredBillings, 
 			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`, 
-			data: structuredBillings 
+			status: 'success' 
 		});
 	} catch (err: any) {
 		logger.error(err);
-		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to retrieve vehicle maintenance billings', data: null });
+		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
 	}
 };
 
@@ -397,7 +398,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 // Get maintenance billings by request id (svc_order)
 export const getVehicleMtnBillingByRequestId = async (req: Request, res: Response) => {
 	const svc_order = String(req.params.svc_order || '').trim();
-	if (!svc_order) return res.status(400).json({ status: 'error', message: 'svc_order is required' });
+	if (!svc_order) return res.status(400).json({ message: 'svc_order is required', status: 'error' });
 
 	const billings = await billingModel.getVehicleMtnBillingByRequestId(svc_order);
 
@@ -409,8 +410,8 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 				assetsModel.getLocations()
 			]);
 
-			const workshops = Array.isArray(workshopsRaw) ? (workshopsRaw as any[]) : [];
-			const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+			const workshops = Array.isArray(workshopsRaw) ? (workshopsRaw) : [];
+			const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
 			const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
 			const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
 
@@ -444,10 +445,6 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			return { ...p, part_name };
 		});
 		return {
-			inv_id: b.inv_id,
-			inv_no: b.inv_no,
-			inv_date: b.inv_date,
-			svc_order: b.svc_order,
 			asset: assetMap.has(asset_id) ? {
 				id: asset_id,
 				register_number: (assetMap.get(asset_id) as any)?.register_number,
@@ -455,19 +452,23 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
 				location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
 			} : null,
-			workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id) as any)?.ws_name } : null,
+			inv_date: b.inv_date,
+			inv_id: b.inv_id,
+			inv_no: b.inv_no,
+			inv_remarks: b.inv_remarks,
+			inv_stat: b.inv_stat,
+			inv_total: b.inv_total,
+			parts: enrichedParts,
+			running_no: b.running_no,
 			svc_date: b.svc_date,
 			svc_odo: b.svc_odo,
-			inv_total: b.inv_total,
-			inv_stat: b.inv_stat,
-			inv_remarks: b.inv_remarks,
-			running_no: b.running_no,
+			svc_order: b.svc_order,
 					upload_url: toPublicUrl((b as any).upload ?? (b as any).attachment ?? null),
-					parts: enrichedParts
+					workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id) as any)?.ws_name } : null
 		};
 	});
 
-	return res.json({ status: 'success', message: `Vehicle maintenance billings for request ${svc_order} retrieved successfully`, data });
+	return res.json({ data, message: `Vehicle maintenance billings for request ${svc_order} retrieved successfully`, status: 'success' });
 };
 
 // This function might be unused due to no manual entry for vehicle maintenance invoicing process except updating
@@ -476,29 +477,29 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 	const body = req.body || {};
 	// Map frontend fields to backend fields
 	const updateData: any = {
-		inv_no: body.inv_no,
 		inv_date: body.inv_date,
-		svc_order: body.svc_order,
+		inv_no: body.inv_no,
+		inv_remarks: body.inv_remarks,
+		inv_stat: body.inv_stat,
+		inv_total: body.inv_total,
 		svc_date: body.svc_date,
 		svc_odo: body.svc_odo,
-		inv_remarks: body.inv_remarks,
-		inv_total: body.inv_total,
-		inv_stat: body.inv_stat,
+		svc_order: body.svc_order,
 		ws_id: body.ws_id
 	};
 
 	// Handle file upload from either 'attachment' or 'upload' field names.
 	// With multer.single, files land on req.file; with multer.fields, files land on req.files as arrays.
-	let uploadedPath: string | null = null;
+	let uploadedPath: null | string = null;
 	const anyReq: any = req as any;
-	if (anyReq.file && anyReq.file.path) {
+	if (anyReq.file?.path) {
 		uploadedPath = anyReq.file.path;
 	} else if (anyReq.files) {
 		// Prefer 'attachment', then 'upload'
 		const f1 = Array.isArray(anyReq.files.attachment) && anyReq.files.attachment.length > 0 ? anyReq.files.attachment[0] : null;
 		const f2 = Array.isArray(anyReq.files.upload) && anyReq.files.upload.length > 0 ? anyReq.files.upload[0] : null;
 		const f = f1 || f2;
-		if (f && f.path) uploadedPath = f.path;
+		if (f?.path) uploadedPath = f.path;
 	}
 	if (uploadedPath) {
 		const normalized = normalizeStoredPath(uploadedPath);
@@ -521,8 +522,8 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 			// Insert custom part into service parts table
 			const newAutopartId = await billingModel.createServicePart({
 				part_name: part.part_name,
-				part_uprice: part.part_uprice,
 				part_stat: 1,
+				part_uprice: part.part_uprice,
 			});
 			parts[i] = { ...part, autopart_id: newAutopartId };
 		}
@@ -546,7 +547,7 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 
 	// Emit Socket.IO events if status changed to processed/invoiced
 	try {
-		const statusChanged = updateData.inv_stat && ['processed', 'invoiced', 'paid'].includes(String(updateData.inv_stat).toLowerCase());
+		const statusChanged = updateData.inv_stat && ['invoiced', 'paid', 'processed'].includes(String(updateData.inv_stat).toLowerCase());
 		if (statusChanged) {
 			const io = getSocketIOInstance();
 			if (io) {
@@ -569,26 +570,26 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 		console.warn('Failed to emit Socket.IO event on billing update:', socketErr);
 	}
 
-	res.json({ status: 'success', message: 'Vehicle maintenance billing updated successfully' });
+	res.json({ message: 'Vehicle maintenance billing updated successfully', status: 'success' });
 };
 
 export const deleteVehicleMtnBilling = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteVehicleMtnBilling(id);
-	res.json({ status: 'success', message: 'Billing deleted successfully' });
+	res.json({ message: 'Billing deleted successfully', status: 'success' });
 };
 
 export const getVehicleMtnBillingByDate = async (req: Request, res: Response) => {
 	const { from, to } = req.query;
 	if (!from || !to) {
-		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+		return res.status(400).json({ message: 'Both from and to dates are required', status: 'error' });
 	}
 	const vehicleMtn = await billingModel.getVehicleMtnBillingByDate(from as string, to as string);
 	// Use assetModel.getAssets() instead of billingModel.getTempVehicleRecords() (DB schema changed)
-	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const locations = await assetsModel.getLocations() as any[];
-	const workshops = await billingModel.getWorkshops() as any[];
+	const workshops = await billingModel.getWorkshops();
 	// Build lookup maps for fast access
 	// Build asset map keyed by id and by asset_id if present to keep compatibility
 	const assetMap = new Map();
@@ -603,10 +604,6 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	const filtered = vehicleMtn.map(b => {
 		const asset_id = (b as any).asset_id ?? b.vehicle_id;
 		return {
-			inv_id: b.inv_id,
-			inv_no: b.inv_no,
-			inv_date: b.inv_date,
-			svc_order: b.svc_order,
 			asset: assetMap.has(asset_id) ? {
 				asset_id: asset_id,
 				register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
@@ -618,53 +615,57 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 				id: b.costcenter_id,
 				name: (ccMap.get(b.costcenter_id) as any)?.name
 			} : null,
+			inv_date: b.inv_date,
+			inv_id: b.inv_id,
+			inv_no: b.inv_no,
+			inv_remarks: b.inv_remarks,
+			inv_stat: b.inv_stat,
+			inv_total: b.inv_total,
 			location: locationMap.has(b.location_id) ? {
 				id: b.location_id,
 				name: (locationMap.get(b.location_id) as any)?.code
 			} : null,
+			running_no: b.running_no,
+			svc_date: b.svc_date,
+			svc_odo: b.svc_odo,
+			svc_order: b.svc_order,
 			workshop: wsMap.has(b.ws_id) ? {
 				id: b.ws_id,
 				name: (wsMap.get(b.ws_id) as any)?.ws_name
-			} : null,
-			svc_date: b.svc_date,
-			svc_odo: b.svc_odo,
-			inv_total: b.inv_total,
-			inv_stat: b.inv_stat,
-			inv_remarks: b.inv_remarks,
-			running_no: b.running_no
+			} : null
 		};
 	});
-	res.json({ status: 'success', message: 'Vehicle maintenance by date range retrieved successfully', data: filtered });
+	res.json({ data: filtered, message: 'Vehicle maintenance by date range retrieved successfully', status: 'success' });
 };
 
 // Check if an invoice number already exists for maintenance billings.
 // Query params: inv_no (required), exclude_id (optional, numeric) to ignore a specific record (useful during edit)
 export const checkVehicleMtnInvNo = async (req: Request, res: Response) => {
 	const inv_no = (req.query.inv_no || '').toString().trim();
-	if (!inv_no) return res.status(400).json({ status: 'error', message: 'inv_no is required' });
+	if (!inv_no) return res.status(400).json({ message: 'inv_no is required', status: 'error' });
 	const excludeId = req.query.exclude_id ? Number(req.query.exclude_id) : undefined;
 	const billId = req.query.bill_id ? Number(req.query.bill_id) : undefined;
 	const count = await billingModel.countVehicleMtnByInvNo(inv_no, excludeId, billId);
- 	if (count > 0) return res.json({ status: 'exists', message: 'inv_no already exists', exists: true });
- 	return res.json({ status: 'ok', message: 'inv_no available', exists: false });
+ 	if (count > 0) return res.json({ exists: true, message: 'inv_no already exists', status: 'exists' });
+ 	return res.json({ exists: false, message: 'inv_no available', status: 'ok' });
 };
 
 // Check if a utility bill number already exists (ubill_no)
 export const checkUtilityUbillNo = async (req: Request, res: Response) => {
 	const ubill_no = (req.query.ubill_no || '').toString().trim();
-	if (!ubill_no) return res.status(400).json({ status: 'error', message: 'ubill_no is required' });
+	if (!ubill_no) return res.status(400).json({ message: 'ubill_no is required', status: 'error' });
 	const excludeId = req.query.exclude_id ? Number(req.query.exclude_id) : undefined;
 	const billId = req.query.bill_id ? Number(req.query.bill_id) : undefined;
 	const count = await billingModel.countUtilityByUbillNo(ubill_no, excludeId, billId);
-	if (count > 0) return res.json({ status: 'exists', message: 'ubill_no already exists', exists: true });
-	return res.json({ status: 'ok', message: 'ubill_no available', exists: false });
+	if (count > 0) return res.json({ exists: true, message: 'ubill_no already exists', status: 'exists' });
+	return res.json({ exists: false, message: 'ubill_no available', status: 'ok' });
 };
 
 //Purposely to export maintenance consumption report data to Excel
 export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Response) => {
-	const { from, to, cc } = req.query;
+	const { cc, from, to } = req.query;
 	if (!from || !to) {
-		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+		return res.status(400).json({ message: 'Both from and to dates are required', status: 'error' });
 	}
 	// Fetch all lookup data
 	const [assetsRaw, costcentersRaw, locationsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
@@ -684,7 +685,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	// Build assetMap keyed by both id and vehicle_id for compatibility
-	const assetMap = new Map((assets as any[]).flatMap((a: any) => {
+	const assetMap = new Map((assets).flatMap((a: any) => {
 		const entries: any[] = [[a.id, a]];
 		if (a.asset_id) entries.push([a.asset_id, a]);
 		return entries;
@@ -747,7 +748,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		let owner = null;
 		if (ramcoId && employeeMap.has(ramcoId)) {
 			const empObj = employeeMap.get(ramcoId);
-			owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
+			owner = { name: empObj.full_name, ramco_id: empObj.ramco_id };
 		}
 
 		if (!summary[asset_id]) {
@@ -757,23 +758,23 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 			const locId = (maintenance as any).location_id ?? (maintenance as any).loc_id;
 			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
 			summary[asset_id] = {
+				_yearMap: {}, // temp for grouping by year
+				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
 				asset: asset_id,
-				vehicle: vehicleObj ? (vehicleObj.register_number || vehicleObj.vehicle_regno || null) : null,
-				category,
 				brand,
+				category,
+				classification: vehicleObj ? (vehicleObj.classification || null) : null,
+				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
+				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
+				location: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
 				model,
 				owner,
-				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
-				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
-				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
-				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
-				location: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
-				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
-				total_maintenance: 0,
 				total_amount: 0,
-				_yearMap: {} // temp for grouping by year
+				total_maintenance: 0,
+				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
+				vehicle: vehicleObj ? (vehicleObj.register_number || vehicleObj.vehicle_regno || null) : null
 			};
 		}
 		summary[asset_id].total_maintenance += 1;
@@ -785,21 +786,21 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		}
 		summary[asset_id]._yearMap[year].expenses += parseFloat(maintenance.inv_total || '0');
 		summary[asset_id]._yearMap[year].maintenance.push({
+			amount: maintenance.inv_total,
+			inv_date: maintenance.inv_date,
 			inv_id: maintenance.inv_id,
 			inv_no: maintenance.inv_no,
-			inv_date: maintenance.inv_date,
-			svc_order: maintenance.svc_order,
 			svc_date: maintenance.svc_date,
 			svc_odo: maintenance.svc_odo,
-			amount: maintenance.inv_total
+			svc_order: maintenance.svc_order
 		});
 	}
 	// Format output
 	const result = Object.values(summary).map((asset: any) => {
 		const details = Object.entries(asset._yearMap).map(([year, data]: [string, any]) => ({
-			year: Number(year),
 			expenses: data.expenses.toFixed(2),
-			maintenance: data.maintenance
+			maintenance: data.maintenance,
+			year: Number(year)
 		}));
 		// Remove temp _yearMap from output
 		const { _yearMap, ...rest } = asset;
@@ -814,9 +815,9 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 	});
 
 	res.json({
-		status: 'success',
-		message: `Vehicle maintenance summary from date range ${from} to ${to} retrieved successfully with a total entries: ` + result.length,
 		data: result,
+		message: `Vehicle maintenance summary from date range ${from} to ${to} retrieved successfully with a total entries: ` + result.length,
+		status: 'success',
 	});
 };
 
@@ -825,24 +826,24 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 
 export const getWorkshops = async (req: Request, res: Response) => {
 	const workshops = await billingModel.getWorkshops();
-	res.json({ status: 'success', message: 'Workshops retrieved successfully', data: workshops });
+	res.json({ data: workshops, message: 'Workshops retrieved successfully', status: 'success' });
 };
 
 export const getWorkshopById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const workshop = await billingModel.getWorkshopById(id);
 	if (!workshop) {
-		return res.status(404).json({ status: 'error', message: 'Workshop not found' });
+		return res.status(404).json({ message: 'Workshop not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Workshop retrieved successfully', data: workshop });
+	res.json({ data: workshop, message: 'Workshop retrieved successfully', status: 'success' });
 };
 
 export const createWorkshop = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createWorkshop(req.body);
-		res.status(201).json({ status: 'success', message: 'Workshop created successfully', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Workshop created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create workshop', error });
+		res.status(500).json({ error, message: 'Failed to create workshop', status: 'error' });
 	}
 };
 
@@ -850,9 +851,9 @@ export const updateWorkshop = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateWorkshop(id, req.body);
-		res.json({ status: 'success', message: 'Workshop updated successfully' });
+		res.json({ message: 'Workshop updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update workshop', error });
+		res.status(500).json({ error, message: 'Failed to update workshop', status: 'error' });
 	}
 };
 
@@ -860,9 +861,9 @@ export const deleteWorkshop = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.deleteWorkshop(id);
-		res.json({ status: 'success', message: 'Workshop deleted successfully' });
+		res.json({ message: 'Workshop deleted successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to delete workshop', error });
+		res.status(500).json({ error, message: 'Failed to delete workshop', status: 'error' });
 	}
 };
 
@@ -880,7 +881,7 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 					const name = fv.name;
 					const baseUrl = process.env.BACKEND_URL || '';
 					const logo = fv.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fv.logo).replace(/^\//, '')}` : fv.logo;
-					vendor = { id: bill.stmt_issuer, name, logo };
+					vendor = { id: bill.stmt_issuer, logo, name };
 				}
 			}
 			// Remove fuel_id and stmt_issuer from the result
@@ -888,7 +889,7 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 			return { ...rest, vendor };
 		})
 	);
-	res.json({ status: 'success', message: 'Fuel billing retrieved successfully', data });
+	res.json({ data, message: 'Fuel billing retrieved successfully', status: 'success' });
 };
 
 
@@ -906,7 +907,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 	const ccMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const locationMap = new Map(locations.map((d: any) => [d.id, d]));
 	// Build assetMap keyed by both vehicle_id and id
-	const assetMap = new Map((assets as any[]).flatMap((v: any) => {
+	const assetMap = new Map((assets).flatMap((v: any) => {
 		const entries: any[] = [[v.id, v]];
 		if (v.asset_id) entries.push([v.asset_id, v]);
 		return entries;
@@ -919,7 +920,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const fuelBilling = await billingModel.getFuelBillingById(id);
 	if (!fuelBilling) {
-		return res.status(404).json({ status: 'error', message: 'Fuel billing not found' });
+		return res.status(404).json({ message: 'Fuel billing not found', status: 'error' });
 	}
 
 	// Map fuel_issuer using stmt_issuer (not fuel_id)
@@ -929,7 +930,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		if (fv) {
 			const name = fv.name;
 			const logo = fv.logo ? `${process.env.BACKEND_URL}/${fv.logo}` : null;
-			fuel_vendor = { id: fuelBilling.stmt_issuer, vendor: name, logo };
+			fuel_vendor = { id: fuelBilling.stmt_issuer, logo, vendor: name };
 		}
 	}
 
@@ -947,28 +948,28 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		if (d.asset_id && assetMap.has(d.asset_id)) {
 			const assetData = assetMap.get(d.asset_id) as any;
 			asset = {
-				id: assetData.id,
-				register_number: assetData.register_number,
-				fuel_type: assetData.fuel_type,
 				costcenter: assetData.costcenter_id && ccMap.has(assetData.costcenter_id)
 					? ccMap.get(assetData.costcenter_id)
 					: null,
+				fuel_type: assetData.fuel_type,
+				id: assetData.id,
 				purpose: assetData.purpose || null,
+				register_number: assetData.register_number,
 			};
 		}
 
 		return {
-			s_id: d.s_id,
-			stmt_id: d.stmt_id,
-			fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
+			amount: d.amount,
 			asset,
 			category: fleetCard ? fleetCard.category : null,
-			stmt_date: d.stmt_date,
-			start_odo: d.start_odo,
 			end_odo: d.end_odo,
+			fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
+			s_id: d.s_id,
+			start_odo: d.start_odo,
+			stmt_date: d.stmt_date,
+			stmt_id: d.stmt_id,
 			total_km: d.total_km,
-			total_litre: d.total_litre,
-			amount: d.amount
+			total_litre: d.total_litre
 		};
 	});
 
@@ -976,7 +977,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 	const costcenterSummaryMap = new Map<string, number>();
 
 	details.forEach((detail: any) => {
-		if (detail.asset && detail.asset.costcenter) {
+		if (detail.asset?.costcenter) {
 			const costcenterName = detail.asset.costcenter.name;
 			const purpose = detail.asset.purpose;
 
@@ -1001,24 +1002,24 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		.sort((a, b) => a.name.localeCompare(b.name));
 
 	const msg = `Fuel billing retrieved successfully (${costcenter_summ.length} costcenter group(s), ${details.length} transaction detail(s))`;
-	res.json({ status: 'success', message: msg, data: { ...rest, fuel_vendor, costcenter_summ, details } });
+	res.json({ data: { ...rest, fuel_vendor, costcenter_summ, details }, message: msg, status: 'success' });
 };
 
 // Get fuel consumption records and summary for a specific vehicle (asset_id)
 export const getFuelConsumptionByVehicle = async (req: Request, res: Response) => {
 	const vehicleId = Number(req.params.asset_id || req.params.id);
 	if (!vehicleId || isNaN(vehicleId)) {
-		return res.status(400).json({ status: 'error', message: 'Invalid vehicle id' });
+		return res.status(400).json({ message: 'Invalid vehicle id', status: 'error' });
 	}
 
 	// Fetch fuel detail rows for the vehicle
 	const rows = await billingModel.getFuelVehicleAmountByVehicleId(vehicleId);
 
 	// Try to resolve register_number from assetModel (asset id -> register_number)
-	let registerNumber: string | null = null;
+	let registerNumber: null | string = null;
 	try {
-		const asset = await assetsModel.getAssetById(vehicleId as number);
-		if (asset && asset.register_number) registerNumber = asset.register_number;
+		const asset = await assetsModel.getAssetById(vehicleId);
+		if (asset?.register_number) registerNumber = asset.register_number;
 	} catch (err) {
 		// ignore - fallback to any register_number present in rows
 	}
@@ -1039,28 +1040,26 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 		totalKm += km;
 		if (eff > 0) countEff += 1;
 		return {
+			amount: r.amount,
+			card_id: r.card_id,
+			costcenter_id: r.costcenter_id,
+			effct: r.effct,
+			end_odo: r.end_odo,
+			purpose: r.purpose,
 			s_id: r.s_id,
+			start_odo: r.start_odo,
+			stmt_date: r.stmt_date,
 			stmt_id: r.stmt_id,
 			stmt_no: r.stmt_no,
-			stmt_date: r.stmt_date,
-			card_id: r.card_id,
-			vehicle_id: r.vehicle_id,
-			costcenter_id: r.costcenter_id,
-			purpose: r.purpose,
-			start_odo: r.start_odo,
-			end_odo: r.end_odo,
 			total_km: r.total_km,
 			total_litre: r.total_litre,
-			effct: r.effct,
-			amount: r.amount
+			vehicle_id: r.vehicle_id
 		};
 	});
 
 	const avgEfficiency = countEff > 0 ? (rows.reduce((acc: number, r: any) => acc + parseFloat(r.effct || r.efficiency || '0'), 0) / countEff) : null;
 
 	res.json({
-		status: 'success',
-		message: `Fuel consumption for vehicle ${vehicleId} retrieved successfully`,
 		data: {
 			vehicle_id: vehicleId,
 			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null),
@@ -1069,7 +1068,9 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 			total_km: totalKm.toFixed(2),
 			average_efficiency: avgEfficiency ? Number(avgEfficiency.toFixed(2)) : null,
 			records
-		}
+		},
+		message: `Fuel consumption for vehicle ${vehicleId} retrieved successfully`,
+		status: 'success'
 	});
 };
 
@@ -1077,16 +1078,16 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) => {
 	const assetId = Number(req.params.asset_id || req.params.id);
 	if (!assetId || isNaN(assetId)) {
-		return res.status(400).json({ status: 'error', message: 'Invalid vehicle id' });
+		return res.status(400).json({ message: 'Invalid vehicle id', status: 'error' });
 	}
 
 	const rows = await billingModel.getVehicleMtnBillingByAssetId(assetId);
 
 	// Try to resolve register_number from assetModel
-	let registerNumber: string | null = null;
+	let registerNumber: null | string = null;
 	try {
-		const asset = await assetsModel.getAssetById(assetId as number);
-		if (asset && asset.register_number) registerNumber = asset.register_number;
+		const asset = await assetsModel.getAssetById(assetId);
+		if (asset?.register_number) registerNumber = asset.register_number;
 	} catch (err) {
 		// ignore
 	}
@@ -1098,29 +1099,29 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 		totalMaintenance += 1;
 		totalAmount += parseFloat(r.inv_total || '0');
 		return {
-			inv_id: r.inv_id,
-			req_id: r.svc_order,
-			inv_no: r.inv_no,
 			inv_date: r.inv_date,
-			svc_date: r.svc_date,
-			odometer: r.svc_odo,
-			inv_total: r.inv_total,
+			inv_id: r.inv_id,
+			inv_no: r.inv_no,
+			inv_remarks: r.inv_remarks,
 			inv_stat: r.inv_stat,
-			inv_remarks: r.inv_remarks
+			inv_total: r.inv_total,
+			odometer: r.svc_odo,
+			req_id: r.svc_order,
+			svc_date: r.svc_date
 		};
 	});
 
 	const regNoForMsg = registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null);
 	res.json({
-		status: 'success',
-		message: `Vehicle maintenance for vehicle by asset ID: ${assetId}${regNoForMsg ? ' (' + regNoForMsg + ')' : ''} retrieved successfully`,
 		data: {
 			id: assetId,
 			register_number: regNoForMsg,
 			total_maintenance: totalMaintenance,
 			total_amount: totalAmount.toFixed(2),
 			records
-		}
+		},
+		message: `Vehicle maintenance for vehicle by asset ID: ${assetId}${regNoForMsg ? ' (' + regNoForMsg + ')' : ''} retrieved successfully`,
+		status: 'success'
 	});
 };
 
@@ -1128,27 +1129,13 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 export const createFuelBilling = async (req: Request, res: Response) => {
 	try {
 		// Map frontend payload to backend model
-		const { stmt_no, stmt_date, stmt_litre, stmt_stotal, stmt_disc, stmt_total, stmt_issuer, petrol_amount, diesel_amount, stmt_ron95, stmt_ron97, stmt_diesel, stmt_count, stmt_total_km, details } = req.body;
+		const { details, diesel_amount, petrol_amount, stmt_count, stmt_date, stmt_diesel, stmt_disc, stmt_issuer, stmt_litre, stmt_no, stmt_ron95, stmt_ron97, stmt_stotal, stmt_total, stmt_total_km } = req.body;
 
 		// Convert stmt_issuer to number (fuel_id)
 		const fuel_id = Number(stmt_issuer);
 
 		// Prepare payload for model
 		const payload = {
-			stmt_no,
-			stmt_date,
-			stmt_litre,
-			stmt_stotal,
-			stmt_disc,
-			stmt_total,
-			stmt_issuer: fuel_id,
-			petrol_amount,
-			diesel_amount,
-			stmt_ron95,
-			stmt_ron97,
-			stmt_diesel,
-			stmt_count,
-			stmt_total_km,
 			details: Array.isArray(details) ? details.map((d: any) => ({
 				vehicle_id: d.vehicle_id,
 				asset_id: d.asset_id,
@@ -1166,7 +1153,21 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 				total_litre: d.total_litre,
 				efficiency: d.efficiency,
 				amount: d.amount
-			})) : []
+			})) : [],
+			diesel_amount,
+			petrol_amount,
+			stmt_count,
+			stmt_date,
+			stmt_diesel,
+			stmt_disc,
+			stmt_issuer: fuel_id,
+			stmt_litre,
+			stmt_no,
+			stmt_ron95,
+			stmt_ron97,
+			stmt_stotal,
+			stmt_total,
+			stmt_total_km
 		};
 
 		// Insert parent record
@@ -1176,31 +1177,31 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 		if (Array.isArray(payload.details)) {
 			for (const detail of payload.details) {
 				await billingModel.createFuelVehicleAmount({
-					stmt_id: insertId,
-					stmt_date: detail.stmt_date,
-					card_id: detail.card_id,
-					vehicle_id: detail.vehicle_id,
+					amount: detail.amount,
 					asset_id: detail.asset_id,
-					entry_code: detail.entry_code,
-					costcenter_id: detail.costcenter_id,
-					location_id: detail.location_id,
+					card_id: detail.card_id,
 					category: detail.category,
-					start_odo: detail.start_odo,
+					costcenter_id: detail.costcenter_id,
+					efficiency: detail.efficiency,
 					end_odo: detail.end_odo,
+					entry_code: detail.entry_code,
+					location_id: detail.location_id,
+					start_odo: detail.start_odo,
+					stmt_date: detail.stmt_date,
+					stmt_id: insertId,
 					total_km: detail.total_km,
 					total_litre: detail.total_litre,
-					efficiency: detail.efficiency,
-					amount: detail.amount
+					vehicle_id: detail.vehicle_id
 				});
 			}
 		}
-		res.status(201).json({ status: 'success', message: 'Fuel billing created successfully', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Fuel billing created successfully', status: 'success' });
 	} catch (error) {
 		// Check if it's a duplicate entry error
 		if (error instanceof Error && error.message.includes('already exists')) {
-			res.status(409).json({ status: 'error', message: error.message });
+			res.status(409).json({ message: error.message, status: 'error' });
 		} else {
-			res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to create fuel billing', error });
+			res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to create fuel billing', status: 'error' });
 		}
 	}
 };
@@ -1228,45 +1229,45 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 				if (detail.s_id) {
 					// Update existing row
 					await billingModel.updateFuelVehicleAmount(detail.s_id, {
-						stmt_id: id,
-						stmt_date: detail.stmt_date,
-						card_id: detail.card_id,
-						vehicle_id: detail.vehicle_id,
+						amount: detail.amount,
 						asset_id: detail.asset_id,
-						entry_code: detail.entry_code || null,
-						costcenter_id: detail.costcenter_id,
+						card_id: detail.card_id,
 						category: detail.category,
-						start_odo: detail.start_odo,
+						costcenter_id: detail.costcenter_id,
+						efficiency: detail.efficiency,
 						end_odo: detail.end_odo,
+						entry_code: detail.entry_code || null,
+						start_odo: detail.start_odo,
+						stmt_date: detail.stmt_date,
+						stmt_id: id,
 						total_km: detail.total_km,
 						total_litre: detail.total_litre,
-						efficiency: detail.efficiency,
-						amount: detail.amount
+						vehicle_id: detail.vehicle_id
 					});
 				} else {
 					// Insert new row
 					await billingModel.createFuelVehicleAmount({
-						stmt_id: id,
-						stmt_date: detail.stmt_date,
-						card_id: detail.card_id,
-						vehicle_id: detail.vehicle_id,
+						amount: detail.amount,
 						asset_id: detail.asset_id,
-						entry_code: detail.entry_code || null,
-						costcenter_id: detail.costcenter_id,
+						card_id: detail.card_id,
 						category: detail.category,
-						start_odo: detail.start_odo,
+						costcenter_id: detail.costcenter_id,
+						efficiency: detail.efficiency,
 						end_odo: detail.end_odo,
+						entry_code: detail.entry_code || null,
+						start_odo: detail.start_odo,
+						stmt_date: detail.stmt_date,
+						stmt_id: id,
 						total_km: detail.total_km,
 						total_litre: detail.total_litre,
-						efficiency: detail.efficiency,
-						amount: detail.amount
+						vehicle_id: detail.vehicle_id
 					});
 				}
 			}
 		}
-		res.json({ status: 'success', message: 'Fuel billing updated successfully' });
+		res.json({ message: 'Fuel billing updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update fuel billing', error });
+		res.status(500).json({ error, message: 'Failed to update fuel billing', status: 'error' });
 	}
 };
 
@@ -1275,27 +1276,27 @@ export const deleteFuelBilling = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		if (!Number.isFinite(id) || id <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid fuel statement id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid fuel statement id', status: 'error' });
 		}
 		// Optional: ensure exists
 		const existing = await billingModel.getFuelBillingById(id);
 		if (!existing) {
-			return res.status(404).json({ status: 'error', message: 'Fuel billing not found', data: null });
+			return res.status(404).json({ data: null, message: 'Fuel billing not found', status: 'error' });
 		}
 		// Delete details first, then parent
 		await billingModel.deleteFuelVehicleAmount(id);
 		await billingModel.deleteFuelBilling(id);
-		return res.json({ status: 'success', message: 'Fuel billing deleted successfully', data: { stmt_id: id } });
+		return res.json({ data: { stmt_id: id }, message: 'Fuel billing deleted successfully', status: 'success' });
 	} catch (error: any) {
-		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to delete fuel billing', data: null });
+		return res.status(500).json({ data: null, message: error?.message || 'Failed to delete fuel billing', status: 'error' });
 	}
 };
 
 //Purposely to export fuel consumption report data to Excel
 export const getFuelBillingVehicleSummary = async (req: Request, res: Response) => {
-	const { from, to, cc } = req.query;
+	const { cc, from, to } = req.query;
 	if (!from || !to) {
-		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+		return res.status(400).json({ message: 'Both from and to dates are required', status: 'error' });
 	}
 	// Fetch all lookup data
 	const [assetsRaw, costcentersRaw, districtsRaw, categoriesRaw, brandsRaw, modelsRaw, employeesRaw] = await Promise.all([
@@ -1315,14 +1316,14 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	const models = Array.isArray(modelsRaw) ? modelsRaw : [];
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	// Build asset map keyed by vehicle_id and id for compatibility
-	const assetsArr = assets as any[];
+	const assetsArr = assets;
 	const assetMap = new Map<any, any>();
 	for (const a of assetsArr) {
-		if (a && (a.asset_id !== undefined && a.asset_id !== null)) {
+		if (a?.asset_id !== undefined && a.asset_id !== null) {
 			assetMap.set(a.asset_id, a);
 			assetMap.set(String(a.asset_id), a);
 		}
-		if (a && (a.id !== undefined && a.id !== null)) {
+		if (a?.id !== undefined && a.id !== null) {
 			assetMap.set(a.id, a);
 			assetMap.set(String(a.id), a);
 		}
@@ -1384,7 +1385,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		let owner = null;
 		if (ramcoId && employeeMap.has(ramcoId)) {
 			const empObj = employeeMap.get(ramcoId);
-			owner = { ramco_id: empObj.ramco_id, name: empObj.full_name };
+			owner = { name: empObj.full_name, ramco_id: empObj.ramco_id };
 		}
 
 		if (!summary[asset_id]) {
@@ -1393,23 +1394,23 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 			const locId = d.location_id ?? d.loc_id;
 			const locationObj = locId && locationMap.has(locId) ? locationMap.get(locId) : null;
 			summary[asset_id] = {
+				_yearMap: {}, // temp for grouping by year
+				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
 				asset_id: asset_id,
-				vehicle: vehicleObj ? (vehicleObj.register_number || null) : null,
-				category,
 				brand,
+				category,
+				classification: vehicleObj ? (vehicleObj.classification || null) : null,
+				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
+				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
+				location: locationObj ? { id: locId, name: locationObj.name ?? locationObj.code } : null,
 				model,
 				owner,
-				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
-				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
-				age: vehicleObj ? (vehicleObj.purchase_date ? dayjs().diff(dayjs(vehicleObj.purchase_date), 'year') : (vehicleObj.v_dop ? dayjs().diff(dayjs(vehicleObj.v_dop), 'year') : null)) : null,
-				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
-				location: locationObj ? { id: locId, name: locationObj.name ?? locationObj.code } : null,
-				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				record_status: vehicleObj ? (vehicleObj.record_status || null) : null,
-				total_litre: 0,
 				total_amount: 0,
-				_yearMap: {} // temp for grouping by year
+				total_litre: 0,
+				transmission: vehicleObj ? (vehicleObj.transmission || vehicleObj.vtrans_type || null) : null,
+				vehicle: vehicleObj ? (vehicleObj.register_number || null) : null
 			};
 		}
 		summary[asset_id].total_litre += parseFloat(d.total_litre || '0');
@@ -1419,7 +1420,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		const year = detailDate ? dayjs(detailDate).year() : null;
 		if (year !== null) {
 			if (!summary[asset_id]._yearMap[year]) {
-				summary[asset_id]._yearMap[year] = { total_annual: 0, monthlyMap: {} };
+				summary[asset_id]._yearMap[year] = { monthlyMap: {}, total_annual: 0 };
 			}
 			const amountNum = parseFloat(d.amount || '0');
 			summary[asset_id]._yearMap[year].total_annual += amountNum;
@@ -1428,12 +1429,12 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 			const existing = summary[asset_id]._yearMap[year].monthlyMap[monthNum];
 			if (!existing) {
 				summary[asset_id]._yearMap[year].monthlyMap[monthNum] = {
+					amount: parseFloat(d.amount || '0'),
 					month: monthName,
 					s_id: d.s_id,
-					stmt_id: d.stmt_id,
 					stmt_date: detailDate ? dayjs(detailDate).format('YYYY-MM-DD') : null,
-					total_litre: parseFloat(d.total_litre || '0'),
-					amount: parseFloat(d.amount || '0')
+					stmt_id: d.stmt_id,
+					total_litre: parseFloat(d.total_litre || '0')
 				};
 			} else {
 				// Merge into single monthly entry: sum totals, keep latest stmt info
@@ -1458,18 +1459,18 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 			const monthly_expenses = monthNums.map((mn) => {
 				const m = data.monthlyMap[mn];
 				return {
+					amount: typeof m.amount === 'number' ? m.amount.toFixed(2) : m.amount,
 					month: m.month,
 					s_id: m.s_id,
-					stmt_id: m.stmt_id,
 					stmt_date: m.stmt_date,
-					total_litre: typeof m.total_litre === 'number' ? m.total_litre.toFixed(2) : m.total_litre,
-					amount: typeof m.amount === 'number' ? m.amount.toFixed(2) : m.amount
+					stmt_id: m.stmt_id,
+					total_litre: typeof m.total_litre === 'number' ? m.total_litre.toFixed(2) : m.total_litre
 				};
 			});
 			return {
-				year: Number(year),
+				monthly_expenses,
 				total_annual: (data.total_annual || data.total_annual === 0) ? Number(data.total_annual).toFixed(2) : '0.00',
-				monthly_expenses
+				year: Number(year)
 			};
 		});
 		// Remove temp _yearMap from output
@@ -1485,9 +1486,9 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 	});
 
 	res.json({
-		status: 'success',
-		message: `Fuel billing summary from ${from} to ${to} retrieved successfully with ${result.length} entries`,
 		data: result,
+		message: `Fuel billing summary from ${from} to ${to} retrieved successfully with ${result.length} entries`,
+		status: 'success',
 	});
 };
 
@@ -1496,7 +1497,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 export const getFuelBillingCostcenterSummary = async (req: Request, res: Response) => {
 	const { from, to } = req.query;
 	if (!from || !to) {
-		return res.status(400).json({ status: 'error', message: 'Both from and to dates are required' });
+		return res.status(400).json({ message: 'Both from and to dates are required', status: 'error' });
 	}
 	// Fetch all lookup data
 	const [costcentersRaw] = await Promise.all([
@@ -1516,14 +1517,14 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 			const ccObj = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
 			const ccName = ccObj ? ccObj.name : 'Unknown';
 			if (!summary[ccName]) {
-				summary[ccName] = { costcenter: ccName, _yearMap: {} };
+				summary[ccName] = { _yearMap: {}, costcenter: ccName };
 			}
 			// Group by year and month
 			const date = dayjs(bill.stmt_date);
 			const year = date.year();
 			const month = date.month() + 1; // 1-based month
 			if (!summary[ccName]._yearMap[year]) {
-				summary[ccName]._yearMap[year] = { expenses: 0, _monthMap: {} };
+				summary[ccName]._yearMap[year] = { _monthMap: {}, expenses: 0 };
 			}
 			if (!summary[ccName]._yearMap[year]._monthMap[month]) {
 				summary[ccName]._yearMap[year]._monthMap[month] = { expenses: 0, fuel: [] };
@@ -1532,9 +1533,9 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 			summary[ccName]._yearMap[year].expenses += amount;
 			summary[ccName]._yearMap[year]._monthMap[month].expenses += amount;
 			summary[ccName]._yearMap[year]._monthMap[month].fuel.push({
+				amount: d.amount,
 				s_id: d.s_id,
-				total_litre: d.total_litre,
-				amount: d.amount
+				total_litre: d.total_litre
 			});
 		}
 	}
@@ -1543,14 +1544,14 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 		.map((cc: any) => {
 			const details = Object.entries(cc._yearMap).map(([year, yearData]: [string, any]) => {
 				const months = Object.entries(yearData._monthMap).map(([month, monthData]: [string, any]) => ({
-					month: Number(month),
 					expenses: monthData.expenses.toFixed(2),
+					month: Number(month),
 					//fuel: monthData.fuel
 				}));
 				return {
-					year: Number(year),
 					expenses: yearData.expenses.toFixed(2),
-					months
+					months,
+					year: Number(year)
 				};
 			});
 			const { _yearMap, ...rest } = cc;
@@ -1558,9 +1559,9 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 		})
 		.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
 	res.json({
-		status: 'success',
+		data: result,
 		message: 'Fuel billing costcenter summary by date range retrieved successfully',
-		data: result
+		status: 'success'
 	});
 };
 
@@ -1571,10 +1572,10 @@ export const getFuelVendors = async (req: Request, res: Response) => {
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorsWithUrls = (fuelVendors || []).map((v: any) => ({
 		...v,
-		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo,
-		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2
+		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2,
+		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo
 	}));
-	res.json({ status: 'success', message: 'Fuel vendors retrieved successfully', data: vendorsWithUrls });
+	res.json({ data: vendorsWithUrls, message: 'Fuel vendors retrieved successfully', status: 'success' });
 };
 
 // Insert a new minimal fuel statement detail row for a given statement
@@ -1592,36 +1593,36 @@ export const createFuelNewBillEntry = async (req: Request, res: Response) => {
 		const purpose = typeof body.purpose === 'string' ? String(body.purpose) : null;
 		const stmt_date = typeof body.stmt_date === 'string' ? String(body.stmt_date).slice(0,10) : null;
 
-		if (!Number.isFinite(stmt_id) || stmt_id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid stmt_id', data: null });
-		if (!Number.isFinite(card_id) || card_id <= 0) return res.status(400).json({ status: 'error', message: 'card_id is required', data: null });
-		if (!Number.isFinite(asset_id) || asset_id <= 0) return res.status(400).json({ status: 'error', message: 'asset_id is required', data: null });
-		if (!Number.isFinite(cc_id) || cc_id <= 0) return res.status(400).json({ status: 'error', message: 'cc_id is required', data: null });
-		if (!Number.isFinite(loc_id) || loc_id <= 0) return res.status(400).json({ status: 'error', message: 'loc_id is required', data: null });
-		if (!purpose) return res.status(400).json({ status: 'error', message: 'purpose is required', data: null });
-		if (!stmt_date) return res.status(400).json({ status: 'error', message: 'stmt_date is required', data: null });
+		if (!Number.isFinite(stmt_id) || stmt_id <= 0) return res.status(400).json({ data: null, message: 'Invalid stmt_id', status: 'error' });
+		if (!Number.isFinite(card_id) || card_id <= 0) return res.status(400).json({ data: null, message: 'card_id is required', status: 'error' });
+		if (!Number.isFinite(asset_id) || asset_id <= 0) return res.status(400).json({ data: null, message: 'asset_id is required', status: 'error' });
+		if (!Number.isFinite(cc_id) || cc_id <= 0) return res.status(400).json({ data: null, message: 'cc_id is required', status: 'error' });
+		if (!Number.isFinite(loc_id) || loc_id <= 0) return res.status(400).json({ data: null, message: 'loc_id is required', status: 'error' });
+		if (!purpose) return res.status(400).json({ data: null, message: 'purpose is required', status: 'error' });
+		if (!stmt_date) return res.status(400).json({ data: null, message: 'stmt_date is required', status: 'error' });
 
 		// Reuse model function with minimal fields; leave others null
 		const insertId = await billingModel.createFuelVehicleAmount({
-			stmt_id,
-			stmt_date,
-			card_id,
+			amount: null,
 			asset_id,
-			vehicle_id: null,
-			entry_code: null,
-			costcenter_id: cc_id,
-			location_id: loc_id,
+			card_id,
 			category: purpose,
-			start_odo: null,
+			costcenter_id: cc_id,
+			efficiency: null,
 			end_odo: null,
+			entry_code: null,
+			location_id: loc_id,
+			start_odo: null,
+			stmt_date,
+			stmt_id,
 			total_km: null,
 			total_litre: null,
-			efficiency: null,
-			amount: null
+			vehicle_id: null
 		});
 
-		return res.status(201).json({ status: 'success', message: 'Fuel bill entry created', data: { s_id: insertId } });
+		return res.status(201).json({ data: { s_id: insertId }, message: 'Fuel bill entry created', status: 'success' });
 	} catch (err: any) {
-		return res.status(500).json({ status: 'error', message: err?.message || 'Failed to create fuel bill entry', data: null });
+		return res.status(500).json({ data: null, message: err?.message || 'Failed to create fuel bill entry', status: 'error' });
 	}
 }
 
@@ -1629,23 +1630,23 @@ export const getFuelVendorById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const fuelVendor = await billingModel.getFuelVendorById(id);
 	if (!fuelVendor) {
-		return res.status(404).json({ status: 'error', message: 'Fuel vendor not found' });
+		return res.status(404).json({ message: 'Fuel vendor not found', status: 'error' });
 	}
 	const baseUrl = process.env.BACKEND_URL || '';
 	const vendorWithUrl = {
 		...fuelVendor,
-		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo,
-		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2
+		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2,
+		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo
 	};
-	res.json({ status: 'success', message: 'Fuel vendor retrieved successfully', data: vendorWithUrl });
+	res.json({ data: vendorWithUrl, message: 'Fuel vendor retrieved successfully', status: 'success' });
 };
 
 export const createFuelVendor = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFuelVendor(req.body);
-		res.status(201).json({ status: 'success', message: 'Fuel vendor created successfully', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Fuel vendor created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create fuel vendor', error });
+		res.status(500).json({ error, message: 'Failed to create fuel vendor', status: 'error' });
 	}
 };
 
@@ -1653,9 +1654,9 @@ export const updateFuelVendor = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateFuelVendor(id, req.body);
-		res.json({ status: 'success', message: 'Fuel vendor updated successfully' });
+		res.json({ message: 'Fuel vendor updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update fuel vendor', error });
+		res.status(500).json({ error, message: 'Failed to update fuel vendor', status: 'error' });
 	}
 };
 
@@ -1664,21 +1665,21 @@ export const removeFuelBillEntry = async (req: Request, res: Response) => {
 	try {
 		// URL carries stmt_id, body carries s_id (fallback to query for clients that can't send DELETE bodies)
 		const stmt_id = Number(req.params.id || (req.params as any).stmt_id);
-		const bodySid = (req.body && (req.body.s_id ?? (req.body.sid ?? req.body.id))) as any;
-		const querySid = (req.query && ((req.query as any).s_id ?? (req.query as any).sid)) as any;
+		const bodySid = (req.body && (req.body.s_id ?? (req.body.sid ?? req.body.id)));
+		const querySid = (req.query && ((req.query as any).s_id ?? (req.query as any).sid));
 		const s_id = Number(bodySid !== undefined ? bodySid : querySid);
 
 		if (!Number.isFinite(stmt_id) || stmt_id <= 0) {
-			return res.status(400).json({ status: 'error', message: 'Invalid stmt_id', data: null });
+			return res.status(400).json({ data: null, message: 'Invalid stmt_id', status: 'error' });
 		}
 		if (!Number.isFinite(s_id) || s_id <= 0) {
-			return res.status(400).json({ status: 'error', message: 's_id is required', data: null });
+			return res.status(400).json({ data: null, message: 's_id is required', status: 'error' });
 		}
 
 		await billingModel.deleteFuelVehicleAmountByStmtAndSid(stmt_id, s_id);
-		return res.json({ status: 'success', message: 'Bill entry removed', data: { stmt_id, s_id } });
+		return res.json({ data: { stmt_id, s_id }, message: 'Bill entry removed', status: 'success' });
 	} catch (error: any) {
-		return res.status(500).json({ status: 'error', message: error?.message || 'Failed to remove bill entry', data: null });
+		return res.status(500).json({ data: null, message: error?.message || 'Failed to remove bill entry', status: 'error' });
 	}
 };
 
@@ -1692,12 +1693,12 @@ export const getFleetCards = async (req: Request, res: Response) => {
 		if (vendorQ !== undefined) {
 			const vendorId = Number(vendorQ);
 			if (!Number.isFinite(vendorId)) {
-				return res.status(400).json({ status: 'error', message: 'vendor must be a valid number' });
+				return res.status(400).json({ message: 'vendor must be a valid number', status: 'error' });
 			}
 			const fleetCards = await billingModel.getFleetCardsByVendor(vendorId);
 			// Keep existing enrichment logic but limited to returned cards
-			const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
-			const fuelVendors = await billingModel.getFuelVendor() as any[];
+			const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
+			const fuelVendors = await billingModel.getFuelVendor();
 			const costcenters = await assetsModel.getCostcenters() as any[];
 			const locations = await assetsModel.getLocations() as any[];
 
@@ -1719,35 +1720,35 @@ export const getFleetCards = async (req: Request, res: Response) => {
 				if (card.asset_id && assetMap.has(card.asset_id)) {
 					const assetObj = assetMap.get(card.asset_id);
 					asset = {
-						id: card.asset_id,
-						vehicle_id: assetObj.vehicle_id || null,
-						entry_code: assetObj.entry_code || null,
-						register_number: assetObj.register_number || assetObj.vehicle_regno,
 						costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 							: null,
+						entry_code: assetObj.entry_code || null,
+						fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+						id: card.asset_id,
 						locations: (() => {
 							const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
 							if (!locId) return null;
 							const found = locations.find((loc: any) => loc.id === locId);
 							return found ? { id: locId, code: found.code } : null;
 						})(),
-						fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
 						purpose: assetObj.purpose || null,
+						register_number: assetObj.register_number || assetObj.vehicle_regno,
+						vehicle_id: assetObj.vehicle_id || null,
 					};
 				}
 
 				return {
-					id: card.id,
-					card_no: card.card_no,
-					vendor,
 					asset,
-					vehicle_id: card.vehicle_id,
+					card_no: card.card_no,
+					expiry: card.expiry_date,
+					id: card.id,
+					pin_no: card.pin,
 					reg_date: card.reg_date,
 					remarks: card.remarks,
-					pin_no: card.pin,
 					status: card.status,
-					expiry: card.expiry_date
+					vehicle_id: card.vehicle_id,
+					vendor
 				};
 			});
 
@@ -1755,13 +1756,13 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			const vendorObj = fuelVendorMap.get(vendorId);
 			const vendorName = vendorObj ? (vendorObj.f_issuer || vendorObj.fuel_issuer || vendorObj.name || vendorObj.fuel_name || null) : null;
 			// include length in message & vendor name (resolved vendor) in vendor:
-			return res.json({ status: 'success', message: `Fleet cards retrieved successfully${vendorName ? ` (vendor: ${vendorName})` : ''} - Total: ${data.length}`, data });
+			return res.json({ data, message: `Fleet cards retrieved successfully${vendorName ? ` (vendor: ${vendorName})` : ''} - Total: ${data.length}`, status: 'success' });
 		}
 
 		// No vendor filter - return all fleet cards with enrichment
-		const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+		const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 		const fleetCards = await billingModel.getFleetCards();
-		const fuelVendors = await billingModel.getFuelVendor() as any[];
+		const fuelVendors = await billingModel.getFuelVendor();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
 
@@ -1786,12 +1787,11 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			if (card.asset_id && assetMap.has(card.asset_id)) {
 				const assetObj = assetMap.get(card.asset_id);
 				asset = {
-					id: card.asset_id,
-					register_number: assetObj.register_number || assetObj.vehicle_regno,
 					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
 					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					id: card.asset_id,
 					locations: (() => {
 						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
 						if (!locId) return null;
@@ -1799,41 +1799,42 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						return found ? { id: locId, code: found.code } : null;
 					})(),
 					purpose: assetObj.purpose || null,
+					register_number: assetObj.register_number || assetObj.vehicle_regno,
 				};
 			}
 
 			return {
-				id: card.id,
-				card_no: card.card_no,
-				vendor,
 				asset,
-				vehicle_id: card.vehicle_id,
+				card_no: card.card_no,
+				expiry: card.expiry_date,
+				id: card.id,
+				pin_no: card.pin,
 				reg_date: card.reg_date,
 				remarks: card.remarks,
-				pin_no: card.pin,
 				status: card.status,
-				expiry: card.expiry_date
+				vehicle_id: card.vehicle_id,
+				vendor
 			};
 		});
 
-		res.json({ status: 'success', message: 'Fleet cards retrieved successfully', data });
+		res.json({ data, message: 'Fleet cards retrieved successfully', status: 'success' });
 	} catch (err: any) {
 		logger.error(err);
-		res.status(500).json({ status: 'error', message: err.message || 'Failed to retrieve fleet cards' });
+		res.status(500).json({ message: err.message || 'Failed to retrieve fleet cards', status: 'error' });
 	}
 };
 export const getFleetCardById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	if (!Number.isFinite(id)) {
-		return res.status(400).json({ status: 'error', message: 'Invalid fleet card id' });
+		return res.status(400).json({ message: 'Invalid fleet card id', status: 'error' });
 	}
 	const fleetCard = await billingModel.getFleetCardById(id);
 	if (!fleetCard) {
-		return res.status(404).json({ status: 'error', message: 'Fleet card not found' });
+		return res.status(404).json({ message: 'Fleet card not found', status: 'error' });
 	}
 
-	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
-	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
+	const fuelVendors = await billingModel.getFuelVendor();
 	const costcenters = await assetsModel.getCostcenters() as any[];
 
 	const assetMap = new Map();
@@ -1850,39 +1851,39 @@ export const getFleetCardById = async (req: Request, res: Response) => {
 
 	const asset = fleetCard.asset_id && assetMap.has(fleetCard.asset_id)
 		? {
-			id: fleetCard.asset_id,
-			register_number: assetMap.get(fleetCard.asset_id).register_number || assetMap.get(fleetCard.asset_id).vehicle_regno,
 			costcenter: assetMap.get(fleetCard.asset_id).costcenter_id && costcenterMap.has(assetMap.get(fleetCard.asset_id).costcenter_id)
 				? { id: assetMap.get(fleetCard.asset_id).costcenter_id, name: costcenterMap.get(assetMap.get(fleetCard.asset_id).costcenter_id).name }
 				: null,
 			fuel_type: assetMap.get(fleetCard.asset_id).fuel_type || assetMap.get(fleetCard.asset_id).vfuel_type,
-			purpose: assetMap.get(fleetCard.asset_id).purpose || null
+			id: fleetCard.asset_id,
+			purpose: assetMap.get(fleetCard.asset_id).purpose || null,
+			register_number: assetMap.get(fleetCard.asset_id).register_number || assetMap.get(fleetCard.asset_id).vehicle_regno
 		}
 		: null;
 
 	const data = {
-		id: fleetCard.id,
-		card_no: fleetCard.card_no,
-		vendor,
 		asset,
+		card_no: fleetCard.card_no,
+		expiry: fleetCard.expiry_date,
+		id: fleetCard.id,
+		pin_no: fleetCard.pin,
 		reg_date: fleetCard.reg_date,
 		remarks: fleetCard.remarks,
-		pin_no: fleetCard.pin,
 		status: fleetCard.status,
-		expiry: fleetCard.expiry_date
+		vendor
 	};
 
-	res.json({ status: 'success', message: 'Fleet card retrieved successfully', data });
+	res.json({ data, message: 'Fleet card retrieved successfully', status: 'success' });
 };
 
 export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 	const assetId = Number(req.params.asset_id);
 	if (!assetId || isNaN(assetId)) {
-		return res.status(400).json({ status: 'error', message: 'Invalid asset_id' });
+		return res.status(400).json({ message: 'Invalid asset_id', status: 'error' });
 	}
 	const fleetCards = await billingModel.getFleetCardsByAssetId(assetId);
 	const asset = await assetsModel.getAssetById(assetId) as any || null;
-	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const fuelVendors = await billingModel.getFuelVendor();
 	const costcenters = await assetsModel.getCostcenters() as any[];
 
 	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
@@ -1890,13 +1891,13 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 
 	// Build asset summary
 	const assetSummary = asset ? {
-		id: asset.id,
-		register_number: asset.register_number || asset.vehicle_regno || null,
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id).name }
 			: null,
 		fuel_type: asset.fuel_type || asset.vfuel_type || null,
+		id: asset.id,
 		purpose: asset.purpose || null,
+		register_number: asset.register_number || asset.vehicle_regno || null,
 	} : null;
 
 	// Map each fleet card into a card summary
@@ -1909,51 +1910,38 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 		}
 
 		return {
-			id: card.id,
 			card_no: card.card_no,
-			vendor,
+			expiry: card.expiry_date,
+			id: card.id,
+			pin_no: card.pin,
 			reg_date: card.reg_date,
 			remarks: card.remarks,
-			pin_no: card.pin,
 			status: card.status,
-			expiry: card.expiry_date
+			vendor
 		};
 	});
 
 	const data = [{ asset: assetSummary, cards }];
-	res.json({ status: 'success', message: 'Fleet cards for asset retrieved successfully', data });
+	res.json({ data, message: 'Fleet cards for asset retrieved successfully', status: 'success' });
 };
 export const createFleetCard = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFleetCard(req.body);
-		res.status(201).json({ status: 'success', message: 'Fleet card created successfully', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Fleet card created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create fleet card', error });
+		res.status(500).json({ error, message: 'Failed to create fleet card', status: 'error' });
 	}
 };
 export const updateFleetCard = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateFleetCard(id, req.body);
-		res.json({ status: 'success', message: 'Fleet card updated successfully' });
+		res.json({ message: 'Fleet card updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update fleet card', error });
+		res.status(500).json({ error, message: 'Failed to update fleet card', status: 'error' });
 	}
 }
 
-// Normalize an absolute or arbitrary saved file path into a relative DB-friendly path
-// under 'uploads/...'. Removes configured UPLOAD_BASE_PATH, strips mount points
-// like 'mnt/winshare', and ensures the returned path starts with 'uploads/'.
-// Helper to produce a public URL from a stored path. Mirrors logic used when returning
-// logos: strips mount segments and ensures path is under 'uploads/'.
-function publicUrl(rawPath?: string | null): string | null {
-	if (!rawPath) return null;
-	const baseUrl = process.env.BACKEND_URL || '';
-	let normalized = String(rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
-	normalized = normalized.replace(/(^|\/)mnt\/winshare\/?/ig, '');
-	if (!normalized.startsWith('uploads/')) normalized = `uploads/${normalized.replace(/^\/+/, '')}`;
-	return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
-}
 function normalizeStoredPath(filePath?: string | null): string | null {
 	if (!filePath) return null;
 	let p = String(filePath);
@@ -1978,28 +1966,41 @@ function normalizeStoredPath(filePath?: string | null): string | null {
 	if (!p.startsWith('uploads/')) p = `uploads/${p}`;
 	return p;
 }
+// Normalize an absolute or arbitrary saved file path into a relative DB-friendly path
+// under 'uploads/...'. Removes configured UPLOAD_BASE_PATH, strips mount points
+// like 'mnt/winshare', and ensures the returned path starts with 'uploads/'.
+// Helper to produce a public URL from a stored path. Mirrors logic used when returning
+// logos: strips mount segments and ensures path is under 'uploads/'.
+function publicUrl(rawPath?: string | null): string | null {
+	if (!rawPath) return null;
+	const baseUrl = process.env.BACKEND_URL || '';
+	let normalized = String(rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
+	normalized = normalized.replace(/(^|\/)mnt\/winshare\/?/ig, '');
+	if (!normalized.startsWith('uploads/')) normalized = `uploads/${normalized.replace(/^\/+/, '')}`;
+	return `${baseUrl.replace(/\/$/, '')}/${normalized.replace(/^\/+/, '')}`;
+}
 // Instantly update fleet card from billing
 export const updateFleetCardFromBilling = async (req: Request, res: Response) => {
 	try {
 		await billingModel.updateFleetCardFromBilling(req.body);
-		res.json({ status: 'success', message: 'Fleet card updated from billing successfully' });
+		res.json({ message: 'Fleet card updated from billing successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', error });
+		res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', status: 'error' });
 	}
 };
 
 export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 	const fuel_id = Number(req.params.id);
 	if (!fuel_id) {
-		return res.status(400).json({ status: 'error', message: 'fuel_id is required' });
+		return res.status(400).json({ message: 'fuel_id is required', status: 'error' });
 	}
 
-	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const fleetCards = await billingModel.getFleetCards();
-	const fuelVendors = await billingModel.getFuelVendor() as any[];
+	const fuelVendors = await billingModel.getFuelVendor();
 	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
 
 	const data = fleetCards
@@ -2009,14 +2010,14 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 			if (card.asset_id && assetMap.has(card.asset_id)) {
 				const a = assetMap.get(card.asset_id);
 				asset = {
-					id: a.asset_id,
-					old_id: a.vehicle_id,
-					register_number: a.register_number,
-					fuel_type: a.fuel_type,
 					costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
 						? costcenterMap.get(a.costcenter_id)
 						: null,
-					purpose: a.purpose || null
+					fuel_type: a.fuel_type,
+					id: a.asset_id,
+					old_id: a.vehicle_id,
+					purpose: a.purpose || null,
+					register_number: a.register_number
 				};
 			}
 
@@ -2028,25 +2029,25 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 			}
 
 			return {
-				id: card.id,
+				//expiry: card.expiry_date,
+				asset,
 				card_no: card.card_no,
-				vendor,
+				id: card.id,
 				//reg_date: card.reg_date,
 				//category: card.category,
 				//remarks: card.remarks,
 				//pin_no: card.pin,
 				status: card.status,
-				//expiry: card.expiry_date,
-				asset
+				vendor
 			};
 		});
 
-	res.json({ status: 'success', message: 'Fleet cards by fuel vendor retrieved successfully', data });
+	res.json({ data, message: 'Fleet cards by fuel vendor retrieved successfully', status: 'success' });
 };
 
 // Return all assets populated with their assigned fleet cards (uses fleet_asset join table)
 export const getFleetCardsByAssets = async (req: Request, res: Response) => {
-	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() as any[] : [];
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const links = await billingModel.getFleetAssetLinks();
 	const cards = await billingModel.getFleetCards();
 
@@ -2063,7 +2064,7 @@ export const getFleetCardsByAssets = async (req: Request, res: Response) => {
 		if (!grouped.has(aid)) grouped.set(aid, []);
 		const c = cardMap.get(cid);
 		if (c) {
-			const arr = grouped.get(aid) as any[];
+			const arr = grouped.get(aid)!;
 			arr.push(c);
 		}
 	}
@@ -2074,58 +2075,58 @@ export const getFleetCardsByAssets = async (req: Request, res: Response) => {
 	const data = Array.from(grouped.keys()).map((aid: number) => {
 		const a = assetMap.get(aid);
 		const assetSummary = a ? {
-			id: a.id,
-			register_number: a.register_number || a.vehicle_regno || null,
 			costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
 			fuel_type: a.fuel_type || a.vfuel_type || null,
+			id: a.id,
 			purpose: a.purpose || null,
+			register_number: a.register_number || a.vehicle_regno || null,
 		} : null;
 
 		const cardsForAsset = (grouped.get(aid) || []).map((card: any) => ({
-			id: card.id,
 			card_no: card.card_no,
-			vehicle_id: card.vehicle_id,
+			expiry: card.expiry_date,
+			id: card.id,
+			pin_no: card.pin,
 			reg_date: card.reg_date,
 			remarks: card.remarks,
-			pin_no: card.pin,
 			status: card.status,
-			expiry: card.expiry_date
+			vehicle_id: card.vehicle_id
 		}));
 
 		return { asset: assetSummary, cards: cardsForAsset };
 	});
 
-	res.json({ status: 'success', message: 'Assets with fleet cards retrieved successfully', data });
+	res.json({ data, message: 'Assets with fleet cards retrieved successfully', status: 'success' });
 };
 /* =================== SERVICE OPTION TABLE ========================== */
 
 export const getServiceOptions = async (req: Request, res: Response) => {
 	const serviceOptions = await billingModel.getServiceOptions();
-	res.json({ status: 'success', message: 'Service options retrieved successfully', data: serviceOptions });
+	res.json({ data: serviceOptions, message: 'Service options retrieved successfully', status: 'success' });
 };
 export const getServiceOptionById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const serviceOption = await billingModel.getServiceOptionById(id);
 	if (!serviceOption) {
-		return res.status(404).json({ status: 'error', message: 'Service option not found' });
+		return res.status(404).json({ message: 'Service option not found', status: 'error' });
 	}
-	res.json({ status: 'success', message: 'Service option retrieved successfully', data: serviceOption });
+	res.json({ data: serviceOption, message: 'Service option retrieved successfully', status: 'success' });
 };
 export const createServiceOption = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createServiceOption(req.body);
-		res.status(201).json({ status: 'success', message: 'Service option created successfully', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Service option created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to create service option', error });
+		res.status(500).json({ error, message: 'Failed to create service option', status: 'error' });
 	}
 }
 export const updateServiceOption = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateServiceOption(id, req.body);
-		res.json({ status: 'success', message: 'Service option updated successfully' });
+		res.json({ message: 'Service option updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ status: 'error', message: 'Failed to update service option', error });
+		res.status(500).json({ error, message: 'Failed to update service option', status: 'error' });
 	}
 }
 
@@ -2143,47 +2144,47 @@ export const getServiceParts = async (req: Request, res: Response) => {
 	]);
 
 	const serviceOptions = await billingModel.getServiceOptions();
-	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s as any).svcTypeId, s]));
+	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s).svcTypeId, s]));
 	const enriched = (parts || []).map((p: any) => {
 		const svc = svcMap.has(p.vtype_id) ? svcMap.get(p.vtype_id) : null;
-		const part_category = svc ? { svcTypeId: svc.svcTypeId, svcType: svc.svcType } : null;
+		const part_category = svc ? { svcType: svc.svcType, svcTypeId: svc.svcTypeId } : null;
 		const { vtype_id, ...rest } = p;
 		return { ...rest, part_category };
 	});
 
 	res.json({
-		status: 'success',
-		message: 'Service parts retrieved successfully',
 		data: enriched,
+		message: 'Service parts retrieved successfully',
 		meta: {
 			total,
 			page,
 			per_page,
 			pages: Math.ceil(total / per_page)
-		}
+		},
+		status: 'success'
 	});
 };
 
 export const getServicePartById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const part = await billingModel.getServicePartById(id);
-	if (!part) return res.status(404).json({ status: 'error', message: 'Part not found' });
+	if (!part) return res.status(404).json({ message: 'Part not found', status: 'error' });
 	const serviceOptions = await billingModel.getServiceOptions();
-	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s as any).svcTypeId, s]));
+	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s).svcTypeId, s]));
 	const svc = svcMap.has(part.vtype_id) ? svcMap.get(part.vtype_id) : null;
-	const part_category = svc ? { svcTypeId: svc.svcTypeId, svcType: svc.svcType } : null;
+	const part_category = svc ? { svcType: svc.svcType, svcTypeId: svc.svcTypeId } : null;
 	const { vtype_id, ...rest } = part as any;
 	const enriched = { ...rest, part_category };
-	res.json({ status: 'success', message: 'Service part retrieved successfully', data: enriched });
+	res.json({ data: enriched, message: 'Service part retrieved successfully', status: 'success' });
 };
 
 export const createServicePart = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createServicePart(req.body);
-		res.status(201).json({ status: 'success', message: 'Service part created', id: insertId });
+		res.status(201).json({ id: insertId, message: 'Service part created', status: 'success' });
 	} catch (error) {
 		logger.error('createServicePart error', error);
-		res.status(500).json({ status: 'error', message: 'Failed to create service part', error });
+		res.status(500).json({ error, message: 'Failed to create service part', status: 'error' });
 	}
 };
 
@@ -2191,35 +2192,35 @@ export const updateServicePart = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateServicePart(id, req.body);
-		res.json({ status: 'success', message: 'Service part updated' });
+		res.json({ message: 'Service part updated', status: 'success' });
 	} catch (error) {
 		logger.error('updateServicePart error', error);
-		res.status(500).json({ status: 'error', message: 'Failed to update service part', error });
+		res.status(500).json({ error, message: 'Failed to update service part', status: 'error' });
 	}
 };
 
 export const deleteServicePart = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteServicePart(id);
-	res.json({ status: 'success', message: 'Service part deleted' });
+	res.json({ message: 'Service part deleted', status: 'success' });
 };
 
 // Quick search for typeahead or global search
 export const searchServiceParts = async (req: Request, res: Response) => {
 	const q = String(req.query.q || '').trim();
-	if (!q) return res.json({ status: 'success', message: 'No query provided', data: [] });
+	if (!q) return res.json({ data: [], message: 'No query provided', status: 'success' });
 	const limit = Number(req.query.limit) || 10;
 	const rows = await billingModel.searchServiceParts(q, limit);
 	// attach minimal part_category
 	const serviceOptions = await billingModel.getServiceOptions();
-	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s as any).svcTypeId, s]));
+	const svcMap = new Map((serviceOptions || []).map((s: any) => [(s).svcTypeId, s]));
 	const enriched = (rows || []).map((p: any) => {
 		const svc = svcMap.has(p.vtype_id) ? svcMap.get(p.vtype_id) : null;
-		const part_category = svc ? { svcTypeId: svc.svcTypeId, svcType: svc.svcType } : null;
+		const part_category = svc ? { svcType: svc.svcType, svcTypeId: svc.svcTypeId } : null;
 		const { vtype_id, ...rest } = p;
 		return { ...rest, part_category };
 	});
-	res.json({ status: 'success', message: 'Search results', data: enriched });
+	res.json({ data: enriched, message: 'Search results', status: 'success' });
 };
 
 
@@ -2264,7 +2265,7 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 		const ownerObj = rec.ramco_id && empMap.has(rec.ramco_id)
 			? empMap.get(rec.ramco_id)
 			: null;
-		const owner = ownerObj ? { ramco_id: ownerObj.ramco_id, full_name: ownerObj.full_name } : null;
+		const owner = ownerObj ? { full_name: ownerObj.full_name, ramco_id: ownerObj.ramco_id } : null;
 
 		const brandObj = rec.brand_id && brandMap.has(rec.brand_id)
 			? brandMap.get(rec.brand_id)
@@ -2289,24 +2290,24 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 		const fleetCardObj = rec.card_id && fleetCardMap.has(rec.card_id)
 			? fleetCardMap.get(rec.card_id)
 			: null;
-		const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
+		const fleetcard = fleetCardObj ? { card_no: fleetCardObj.card_no, id: fleetCardObj.id } : null;
 
 		// Map legacy and new asset fields to canonical fields used by the frontend
-		const rest = { ...rec } as any;
+		const rest = { ...rec };
 		const mapped = {
 			...rest,
 			asset_id: rest.asset_id || rest.vehicle_id || rest.id || null,
-			register_number: rest.register_number || rest.vehicle_regno || null,
-			transmission: rest.transmission || rest.vtrans_type || null,
-			fuel_type: rest.fuel_type || rest.vfuel_type || null,
-			purchase_date: rest.purchase_date || rest.v_dop || null,
-			costcenter,
-			owner,
 			brand,
-			model,
 			category,
+			costcenter,
 			department,
-			fleetcard
+			fleetcard,
+			fuel_type: rest.fuel_type || rest.vfuel_type || null,
+			model,
+			owner,
+			purchase_date: rest.purchase_date || rest.v_dop || null,
+			register_number: rest.register_number || rest.vehicle_regno || null,
+			transmission: rest.transmission || rest.vtrans_type || null
 		};
 		// Remove legacy id fields to avoid duplication in response
 		delete mapped.vehicle_id;
@@ -2317,14 +2318,14 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 		return mapped;
 	});
 
-	res.json({ status: 'success', message: 'Temp vehicle records retrieved successfully', data: enriched });
+	res.json({ data: enriched, message: 'Temp vehicle records retrieved successfully', status: 'success' });
 };
 
 export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const record = await billingModel.getTempVehicleRecordById(id);
 	if (!record) {
-		return res.status(404).json({ status: 'error', message: 'Temp vehicle record not found' });
+		return res.status(404).json({ message: 'Temp vehicle record not found', status: 'error' });
 	}
 	// Fetch costcenters, employees, brands, models, categories, departments, and fleet cards lookup
 	const [costcentersRaw, employeesRaw, brandsRaw, modelsRaw, categoriesRaw, departmentsRaw, fleetCardsRaw] = await Promise.all([
@@ -2360,7 +2361,7 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 	const ownerObj = record.ramco_id && empMap.has(record.ramco_id)
 		? empMap.get(record.ramco_id)
 		: null;
-	const owner = ownerObj ? { ramco_id: ownerObj.ramco_id, full_name: ownerObj.full_name } : null;
+	const owner = ownerObj ? { full_name: ownerObj.full_name, ramco_id: ownerObj.ramco_id } : null;
 
 	const brandObj = record.brand_id && brandMap.has(record.brand_id)
 		? brandMap.get(record.brand_id)
@@ -2385,17 +2386,17 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 	const fleetCardObj = record.card_id && fleetCardMap.has(record.card_id)
 		? fleetCardMap.get(record.card_id)
 		: null;
-	const fleetcard = fleetCardObj ? { id: fleetCardObj.id, card_no: fleetCardObj.card_no } : null;
+	const fleetcard = fleetCardObj ? { card_no: fleetCardObj.card_no, id: fleetCardObj.id } : null;
 
-	const { cc_id, ramco_id, brand_id, model_id, category_id, dept_id, card_id, ...rest } = record;
-	res.json({ status: 'success', message: 'Temp vehicle record retrieved successfully', data: { ...rest, costcenter, owner, brand, model, category, department, fleetcard } });
+	const { brand_id, card_id, category_id, cc_id, dept_id, model_id, ramco_id, ...rest } = record;
+	res.json({ data: { ...rest, costcenter, owner, brand, model, category, department, fleetcard }, message: 'Temp vehicle record retrieved successfully', status: 'success' });
 };
 
 export const createTempVehicleRecord = async (req: Request, res: Response) => {
 	const payload = req.body;
 
 	const insertId = await billingModel.createTempVehicleRecord(payload);
-	res.status(201).json({ status: 'success', message: 'Temp vehicle record created successfully', id: insertId });
+	res.status(201).json({ id: insertId, message: 'Temp vehicle record created successfully', status: 'success' });
 };
 
 export const updateTempVehicleRecord = async (req: Request, res: Response) => {
@@ -2403,19 +2404,19 @@ export const updateTempVehicleRecord = async (req: Request, res: Response) => {
 	const payload = req.body;
 
 	await billingModel.updateTempVehicleRecord(id, payload);
-	res.json({ status: 'success', message: 'Temp vehicle record updated successfully' });
+	res.json({ message: 'Temp vehicle record updated successfully', status: 'success' });
 };
 
 export const deleteTempVehicleRecord = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteTempVehicleRecord(id);
-	res.json({ status: 'success', message: 'Temp vehicle record deleted successfully' });
+	res.json({ message: 'Temp vehicle record deleted successfully', status: 'success' });
 };
 
 
 // =================== UTILITIES TABLE CONTROLLER ===================
 export const getUtilityBills = async (req: Request, res: Response) => {
-	const { costcenter, from, to, service } = req.query;
+	const { costcenter, from, service, to } = req.query;
 	let bills = await billingModel.getUtilityBills();
 	const accounts = await billingModel.getBillingAccounts();
 	const accountMap = new Map((accounts || []).map((a: any) => [a.bill_id, a]));
@@ -2466,7 +2467,6 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 				if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
 			}
 			account = {
-				bill_id: acc.bill_id,
 				account: acc.account,
 				beneficiary: benObj ? {
 					id: benObj.id ?? benObj.bfcy_id,
@@ -2475,8 +2475,9 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
 					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
 				} : acc.provider,
-				service: acc.category,
-				desc: acc.bill_desc
+				bill_id: acc.bill_id,
+				desc: acc.bill_desc,
+				service: acc.category
 			};
 		}
 		// Build costcenter object. Prefer account-level costcenter if present.
@@ -2484,7 +2485,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
 		const ccLookupId = acctCcId ?? bill.cc_id;
 		if (ccLookupId && ccMap.has(ccLookupId)) {
-			const cc = ccMap.get(ccLookupId) as any;
+			const cc = ccMap.get(ccLookupId);
 			costcenter = { id: cc.id, name: cc.name };
 		}
 		// Only include required fields
@@ -2493,7 +2494,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		const acctLocId = account && (account as any).location ? (account as any).location.id : null;
 		const locLookupId = acctLocId ?? bill.loc_id;
 		if (locLookupId && locMap.has(locLookupId)) {
-			const d = locMap.get(locLookupId) as any;
+			const d = locMap.get(locLookupId);
 			location = { id: d.id, name: d.name };
 		}
 
@@ -2504,39 +2505,39 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		}
 
 		return {
-			util_id: bill.util_id,
 			account,
+			ubill_bw: bill.ubill_bw,
+			ubill_color: bill.ubill_color,
+			ubill_count: bill.ubill_count,
 			//costcenter,
 			//location,
 			ubill_date: bill.ubill_date,
-			ubill_no: bill.ubill_no,
-			ubill_ref: bill.ubill_ref ?? null,
-			ubill_url: publicUrl(bill.ubill_ref ?? null),
-			ubill_submit: bill.ubill_submit ?? null,
-			ubill_rent: bill.ubill_rent,
-			ubill_color: bill.ubill_color,
-			ubill_bw: bill.ubill_bw,
-			ubill_stotal: bill.ubill_stotal,
-			ubill_taxrate: bill.ubill_taxrate,
-			ubill_tax: bill.ubill_tax,
-			ubill_round: bill.ubill_round,
 			ubill_deduct: bill.ubill_deduct,
-			ubill_gtotal: bill.ubill_gtotal,
-			ubill_count: bill.ubill_count,
 			ubill_disc: bill.ubill_disc,
-			ubill_usage: bill.ubill_usage,
+			ubill_gtotal: bill.ubill_gtotal,
+			ubill_no: bill.ubill_no,
 			ubill_payref: bill.ubill_payref,
-			ubill_paystat: bill.ubill_paystat
+			ubill_paystat: bill.ubill_paystat,
+			ubill_ref: bill.ubill_ref ?? null,
+			ubill_rent: bill.ubill_rent,
+			ubill_round: bill.ubill_round,
+			ubill_stotal: bill.ubill_stotal,
+			ubill_submit: bill.ubill_submit ?? null,
+			ubill_tax: bill.ubill_tax,
+			ubill_taxrate: bill.ubill_taxrate,
+			ubill_url: publicUrl(bill.ubill_ref ?? null),
+			ubill_usage: bill.ubill_usage,
+			util_id: bill.util_id
 		};
 	});
 
 	// Filter by service if provided
 	let final = filtered;
 	if (service) {
-		final = filtered.filter((item: any) => item.account && item.account.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase()));
+		final = filtered.filter((item: any) => item.account?.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase()));
 	}
 
-	res.json({ status: 'success', message: 'Utility bills retrieved successfully', data: final });
+	res.json({ data: final, message: 'Utility bills retrieved successfully', status: 'success' });
 };
 
 // Get utility bills only for printing category (cc_id, loc_id, ubill_rent, ubill_color, ubill_bw, ubill_stotal, ubill_gtotal, ubill_no, ubill_date)
@@ -2604,8 +2605,8 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 					if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
 				}
 				account = {
-					bill_id: acc.bill_id,
 					account: acc.account,
+					bill_id: acc.bill_id,
 					//beneficiary: benObj ? {
 					//	id: benObj.id ?? benObj.bfcy_id,
 					//	name: benObj.bfcy_name ?? benObj.name,
@@ -2619,13 +2620,13 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 			let costcenter = null;
 			const ccLookupId = bill.cc_id;
 			if (ccLookupId && ccMap.has(ccLookupId)) {
-				const cc = ccMap.get(ccLookupId) as any;
+				const cc = ccMap.get(ccLookupId);
 				costcenter = { id: cc.id, name: cc.name };
 			}
 			let location = null;
 			const locLookupId = bill.loc_id;
 			if (locLookupId && locMap.has(locLookupId)) {
-				const d = locMap.get(locLookupId) as any;
+				const d = locMap.get(locLookupId);
 				location = { id: d.id, name: d.name };
 			}
 
@@ -2635,28 +2636,28 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 			}
 
 			return {
-				util_id: bill.util_id,
 				//cc_id: bill.cc_id,
 				//loc_id: bill.loc_id,
 				account,
+				ubill_bw: bill.ubill_bw,
+				ubill_color: bill.ubill_color,
 				//costcenter,
 				//location,
 				ubill_date: bill.ubill_date,
-				ubill_no: bill.ubill_no,
-				ubill_rent: bill.ubill_rent,
-				ubill_color: bill.ubill_color,
-				ubill_bw: bill.ubill_bw,
 				//ubill_stotal: bill.ubill_stotal,
 				ubill_gtotal: bill.ubill_gtotal,
+				ubill_no: bill.ubill_no,
+				ubill_rent: bill.ubill_rent,
+				util_id: bill.util_id,
 				//ubill_ref: bill.ubill_ref ?? null,
 				//ubill_url: publicUrl(bill.ubill_ref ?? null)
 			};
 		});
 
 		// Return the printing bills list directly (no year/month aggregation)
-		res.json({ status: 'success', message: 'Printing utility bills retrieved successfully', data: result });
+		res.json({ data: result, message: 'Printing utility bills retrieved successfully', status: 'success' });
 	} catch (err) {
-		res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch printing bills', data: null });
+		res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing bills', status: 'error' });
 	}
 };
 
@@ -2703,15 +2704,15 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 			if (!d || isNaN(d.getTime())) continue;
 			const year = d.getFullYear();
 			if (!yearMap.has(year)) yearMap.set(year, new Map<number, any>());
-			const accountsMap = yearMap.get(year) as Map<number, any>;
+			const accountsMap = yearMap.get(year)!;
 			const billId = (bill as any).bill_id;
 			if (!billId) continue;
 			if (!accountsMap.has(billId)) {
 				const accRaw = accountMap.get(billId) || null;
 				accountsMap.set(billId, {
-					bill_id: billId,
 					account: accRaw ? accRaw.account : null,
-					monthlyMap: new Map<number, { month: string, rent: number, color: number, bw: number }>()
+					bill_id: billId,
+					monthlyMap: new Map<number, { bw: number; color: number, month: string, rent: number, }>()
 				});
 			}
 			const accEntry = accountsMap.get(billId);
@@ -2721,7 +2722,7 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 			const colorNum = Number((bill as any).ubill_color) || 0;
 			const bwNum = Number((bill as any).ubill_bw) || 0;
 			if (!accEntry.monthlyMap.has(monthIdx)) {
-				accEntry.monthlyMap.set(monthIdx, { month: monthName, rent: 0, color: 0, bw: 0 });
+				accEntry.monthlyMap.set(monthIdx, { bw: 0, color: 0, month: monthName, rent: 0 });
 			}
 			const m = accEntry.monthlyMap.get(monthIdx);
 			m.rent += rentNum;
@@ -2741,17 +2742,17 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 				const monthsList = Array.from(monthsSet).sort((x, y) => x - y);
 				const accountsList = Array.from(accountsMap.values()).map((acc: any) => {
 					const monthly_expenses = monthsList.map((mi: number) => {
-						const m = acc.monthlyMap.get(mi) || { month: monthNames[mi], rent: 0, color: 0, bw: 0 };
+						const m = acc.monthlyMap.get(mi) || { bw: 0, color: 0, month: monthNames[mi], rent: 0 };
 						return {
 							month: m.month,
-							ubill_rent: (m.rent === 0 ? '0' : m.rent.toFixed(2)),
+							ubill_bw: (m.bw === 0 ? '0' : m.bw.toFixed(2)),
 							ubill_color: (m.color === 0 ? '0' : m.color.toFixed(2)),
-							ubill_bw: (m.bw === 0 ? '0' : m.bw.toFixed(2))
+							ubill_rent: (m.rent === 0 ? '0' : m.rent.toFixed(2))
 						};
 					});
 					return {
-						bill_id: acc.bill_id,
 						account: acc.account,
+						bill_id: acc.bill_id,
 						monthly_expenses
 					};
 				});
@@ -2759,15 +2760,15 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 					return s + a.monthly_expenses.reduce((ss: number, m: any) => ss + (Number(m.ubill_rent) || 0) + (Number(m.ubill_color) || 0) + (Number(m.ubill_bw) || 0), 0);
 				}, 0);
 				return {
-					year,
+					details: accountsList,
 					total_annual: total_annual_num.toFixed(2),
-					details: accountsList
+					year
 				};
 			});
 
-		res.json({ status: 'success', message: 'ok', data: detailsArr });
+		res.json({ data: detailsArr, message: 'ok', status: 'success' });
 	} catch (err) {
-		res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch printing summary', data: null });
+		res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing summary', status: 'error' });
 	}
 };
 
@@ -2775,7 +2776,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	const bill = await billingModel.getUtilityBillById(bill_id);
 	if (!bill) {
-		return res.status(404).json({ status: 'error', message: 'Utility bill not found' });
+		return res.status(404).json({ message: 'Utility bill not found', status: 'error' });
 	}
 	// Enrich with account, costcenter, location and beneficiary like getUtilityBills
 	const [accounts, costcentersRaw, locationsRaw] = await Promise.all([
@@ -2806,7 +2807,6 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 			if (accBenId && benById.has(String(accBenId))) benObj = benById.get(String(accBenId));
 		}
 		account = {
-			bill_id: acc.bill_id,
 			account: acc.account,
 			beneficiary: benObj ? {
 				id: benObj.id ?? benObj.bfcy_id,
@@ -2815,15 +2815,16 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 				entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
 				entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
 			} : acc.provider,
-			service: acc.service,
-			desc: acc.bill_desc
+			bill_id: acc.bill_id,
+			desc: acc.bill_desc,
+			service: acc.service
 		};
 	}
 	let costcenter = null;
 	const acctCcId = account && (account as any).costcenter ? (account as any).costcenter.id : null;
 	const ccLookupId = acctCcId ?? bill.cc_id;
 	if (ccLookupId && ccMap.has(ccLookupId)) {
-		const cc = ccMap.get(ccLookupId) as any;
+		const cc = ccMap.get(ccLookupId);
 		costcenter = { id: cc.id, name: cc.name };
 	}
 
@@ -2832,7 +2833,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	const acctLocId = account && (account as any).location ? (account as any).location.id : null;
 	const locLookupId = acctLocId ?? bill.loc_id;
 	if (locLookupId && locMap.has(locLookupId)) {
-		const d = locMap.get(locLookupId) as any;
+		const d = locMap.get(locLookupId);
 		location = { id: d.id, name: d.name };
 	}
 	// ensure account contains costcenter & location
@@ -2842,29 +2843,29 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 	}
 
 	const filtered = {
-		util_id: (bill as any).util_id,
 		account,
-		ubill_date: bill.ubill_date,
-		ubill_no: bill.ubill_no,
-		ubill_rent: bill.ubill_rent,
-		ubill_color: bill.ubill_color,
 		ubill_bw: bill.ubill_bw,
+		ubill_color: bill.ubill_color,
+		ubill_date: bill.ubill_date,
+		ubill_disc: bill.ubill_disc,
+		ubill_gtotal: bill.ubill_gtotal,
+		ubill_no: bill.ubill_no,
+		ubill_paystat: bill.ubill_paystat,
+		ubill_ref: bill.ubill_ref,
+		ubill_rent: bill.ubill_rent,
+		ubill_round: bill.ubill_round,
 		ubill_stotal: bill.ubill_stotal,
 		ubill_tax: bill.ubill_tax,
-		ubill_round: bill.ubill_round,
-		ubill_gtotal: bill.ubill_gtotal,
-		ubill_disc: bill.ubill_disc,
-		ubill_ref: bill.ubill_ref,
-		ubill_paystat: bill.ubill_paystat
+		util_id: (bill as any).util_id
 	};
-	res.json({ status: 'success', message: 'Utility bill retrieved successfully', data: filtered });
+	res.json({ data: filtered, message: 'Utility bill retrieved successfully', status: 'success' });
 };
 
 export const createUtilityBill = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Multer may populate req.file (single) or req.files (fields). Prefer files.ubill_ref, then files.ubill_file, then req.file
 	let file = (req as any).file as Express.Multer.File | undefined;
-	const files = (req as any).files as { [key: string]: Express.Multer.File[] } | undefined;
+	const files = (req as any).files as Record<string, Express.Multer.File[]> | undefined;
 	if (!file && files) {
 		if (files.ubill_ref && files.ubill_ref.length > 0) file = files.ubill_ref[0];
 		else if (files.ubill_file && files.ubill_file.length > 0) file = files.ubill_file[0];
@@ -2877,16 +2878,16 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 	} catch (err: any) {
 		// Handle duplicate/unique constraint errors gracefully
 		const msg = err && (err.message || err.sqlMessage || err.toString());
-		const code = err && err.code;
+		const code = err?.code;
 		// Common MySQL duplicate error code is 'ER_DUP_ENTRY' or message contains 'Duplicate' / 'already exists'
 		if (String(code) === 'ER_DUP_ENTRY' || (typeof msg === 'string' && (/duplicate|already exists|duplicate entry|unique constraint/i).test(msg))) {
-			return res.status(409).json({ status: 'error', message: 'Utility bill already exists' });
+			return res.status(409).json({ message: 'Utility bill already exists', status: 'error' });
 		}
 		// rethrow unknown errors to be handled by outer try/catch below
 		throw err;
 	}
 
-	let finalRef: string | null = null;
+	let finalRef: null | string = null;
 	if (file) {
 		try {
 			const uploadDir = path.dirname(file.path);
@@ -2908,31 +2909,31 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 		} catch (err) {
 			logger.error('Error handling uploaded utility bill file', err);
 			// Don't fail the whole request; respond with created id but note file error
-			return res.status(201).json({ status: 'success', message: 'Utility bill created, but file save failed', id, fileError: String(err) });
+			return res.status(201).json({ fileError: String(err), id, message: 'Utility bill created, but file save failed', status: 'success' });
 		}
 	}
 
-	res.status(201).json({ status: 'success', message: 'Utility bill created', id, ubill_ref: finalRef, ubill_url: publicUrl(finalRef) });
+	res.status(201).json({ id, message: 'Utility bill created', status: 'success', ubill_ref: finalRef, ubill_url: publicUrl(finalRef) });
 };
 
 export const updateUtilityBill = async (req: Request, res: Response) => {
 	const util_id = Number(req.params.id);
 	const data = req.body;
 	await billingModel.updateUtilityBill(util_id, data);
-	res.json({ status: 'success', message: 'Utility bill updated successfully' });
+	res.json({ message: 'Utility bill updated successfully', status: 'success' });
 };
 
 export const deleteUtilityBill = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	await billingModel.deleteUtilityBill(bill_id);
-	res.json({ status: 'success', message: 'Utility bill deleted successfully' });
+	res.json({ message: 'Utility bill deleted successfully', status: 'success' });
 };
 
 
 // Summarize utility bills by cost center, year, and month -- export to Excel
 export const getUtilityBillingCostcenterSummary = async (req: Request, res: Response) => {
-	const { service, from, to } = req.query;
-	let rawBills = await billingModel.getUtilityBills();
+	const { from, service, to } = req.query;
+	const rawBills = await billingModel.getUtilityBills();
 	// Use a single accounts/accountMap declaration for both enrichment and grouping
 	const accounts = await billingModel.getBillingAccounts();
 	const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
@@ -2943,11 +2944,11 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 		if (bill.bill_id && accountMap.has(bill.bill_id)) {
 			const acc = accountMap.get(bill.bill_id);
 			account = {
-				bill_id: acc.bill_id,
 				bill_ac: acc.bill_ac,
+				bill_id: acc.bill_id,
+				desc: acc.bill_desc,
 				provider: acc.provider,
-				service: acc.service,
-				desc: acc.bill_desc
+				service: acc.service
 			};
 		}
 		return { ...bill, account };
@@ -2969,10 +2970,10 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 	// Filter by service if provided (match getUtilityBills logic: item.account.service, fallback to account.provider)
 	if (service) {
 		bills = bills.filter((item: any) => {
-			if (item.account && item.account.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase())) {
+			if (item.account?.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase())) {
 				return true;
 			}
-			if (item.account && item.account.provider && String(item.account.provider).toLowerCase().includes(String(service).toLowerCase())) {
+			if (item.account?.provider && String(item.account.provider).toLowerCase().includes(String(service).toLowerCase())) {
 				return true;
 			}
 			return false;
@@ -3004,7 +3005,7 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 			continue;
 		}
 		if (!summary[ccName]) {
-			summary[ccName] = { costcenter: ccName, _yearMap: {} };
+			summary[ccName] = { _yearMap: {}, costcenter: ccName };
 		}
 		const date = bill.ubill_date ? dayjs(bill.ubill_date) : null;
 		if (!date) continue;
@@ -3013,7 +3014,7 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 		const amount = parseFloat(bill.ubill_gtotal || '0');
 		// Year grouping
 		if (!summary[ccName]._yearMap[year]) {
-			summary[ccName]._yearMap[year] = { expenses: 0, _monthMap: {} };
+			summary[ccName]._yearMap[year] = { _monthMap: {}, expenses: 0 };
 		}
 		summary[ccName]._yearMap[year].expenses += amount;
 		// Month grouping
@@ -3032,7 +3033,6 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 	const result = Object.values(summary).map((cc: any) => ({
 		costcenter: cc.costcenter,
 		details: Object.entries(cc._yearMap).map(([year, yval]: any) => ({
-			year: Number(year),
 			expenses: yval.expenses.toFixed(2),
 			months: Object.entries(yval._monthMap).map(([month, mval]: any) => ({
 				month: Number(month),
@@ -3041,7 +3041,8 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 				  service,
 				  amount: amount.toFixed(2)
 				})) */
-			}))
+			})),
+			year: Number(year)
 		}))
 	}));
 
@@ -3049,16 +3050,16 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 	const sortedResult = result.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
 
 	res.json({
-		status: 'success',
+		data: sortedResult,
 		message: `Utility billing costcenter summary by date range retrieved successfully${service ? ` (filtered by service: ${service})` : ' (no service filter)'}`,
-		data: sortedResult
+		status: 'success'
 	});
 };
 
 // Summarize utility bills by service, with optional costcenter filter and date range
 export const getUtilityBillingServiceSummary = async (req: Request, res: Response) => {
-	const { from, to, costcenter } = req.query;
-	let rawBills = await billingModel.getUtilityBills();
+	const { costcenter, from, to } = req.query;
+	const rawBills = await billingModel.getUtilityBills();
 	const accounts = await billingModel.getBillingAccounts();
 	const accountMap = new Map(accounts.map((a: any) => [a.bill_id, a]));
 
@@ -3068,11 +3069,11 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 		if (bill.bill_id && accountMap.has(bill.bill_id)) {
 			const acc = accountMap.get(bill.bill_id);
 			account = {
-				bill_id: acc.bill_id,
 				bill_ac: acc.bill_ac,
+				bill_id: acc.bill_id,
+				desc: acc.bill_desc,
 				provider: acc.provider,
-				service: acc.service,
-				desc: acc.bill_desc
+				service: acc.service
 			};
 		}
 		return { ...bill, account };
@@ -3106,15 +3107,15 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 	const summary: Record<string, any> = {};
 	for (const bill of bills) {
 		let service = 'Unknown';
-		if (bill.account && bill.account.service) service = bill.account.service;
-		else if (bill.account && bill.account.provider) service = bill.account.provider;
+		if (bill.account?.service) service = bill.account.service;
+		else if (bill.account?.provider) service = bill.account.provider;
 		const date = bill.ubill_date ? dayjs(bill.ubill_date) : null;
 		if (!date) continue;
 		const year = date.year();
 		const month = date.month() + 1;
 		const amount = parseFloat(bill.ubill_gtotal || '0');
-		if (!summary[service]) summary[service] = { service, _yearMap: {} };
-		if (!summary[service]._yearMap[year]) summary[service]._yearMap[year] = { expenses: 0, _monthMap: {} };
+		if (!summary[service]) summary[service] = { _yearMap: {}, service };
+		if (!summary[service]._yearMap[year]) summary[service]._yearMap[year] = { _monthMap: {}, expenses: 0 };
 		summary[service]._yearMap[year].expenses += amount;
 		if (!summary[service]._yearMap[year]._monthMap[month]) summary[service]._yearMap[year]._monthMap[month] = { expenses: 0 };
 		summary[service]._yearMap[year]._monthMap[month].expenses += amount;
@@ -3122,7 +3123,6 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 
 	// Format output
 	const result = Object.values(summary).map((s: any) => ({
-		service: s.service,
 		details: Object.entries(s._yearMap).map(([year, yval]: any) => ({
 			year: Number(year),
 			expenses: yval.expenses.toFixed(2),
@@ -3130,13 +3130,14 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 				month: Number(month),
 				expenses: mval.expenses.toFixed(2)
 			}))
-		}))
+		})),
+		service: s.service
 	})).sort((a, b) => a.service.localeCompare(b.service));
 
 	res.json({
-		status: 'success',
+		data: result,
 		message: `Utility billing service summary by date range${costcenter ? ` (filtered by costcenter: ${costcenterName || costcenter})` : ''}`,
-		data: result
+		status: 'success'
 	});
 };
 
@@ -3171,7 +3172,7 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 			const rawLogo = b.bfcy_logo ?? b.logo ?? b.file_reference ?? null;
 			const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
 			const name = b.bfcy_name ?? b.bfcy_title ?? b.name ?? null;
-			obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), name, logo };
+			obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), logo, name };
 		} else {
 			obj.beneficiary = null;
 		}
@@ -3202,7 +3203,7 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 		return obj;
 	});
 
-	res.json({ status: 'success', message: 'Billing accounts retrieved successfully', data: enriched });
+	res.json({ data: enriched, message: 'Billing accounts retrieved successfully', status: 'success' });
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
@@ -3232,7 +3233,7 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 		const rawLogo = b.bfcy_logo ?? b.logo ?? b.file_reference ?? null;
 		const logo = rawLogo ? `${baseUrl.replace(/\/$/, '')}/${String(rawLogo).replace(/^\//, '')}` : null;
 		const name = b.bfcy_name ?? b.bfcy_title ?? b.name ?? null;
-		obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), name, logo };
+		obj.beneficiary = { id: Number(b.id ?? b.bfcy_id), logo, name };
 	} else {
 		obj.beneficiary = null;
 	}
@@ -3258,7 +3259,7 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	delete obj.loc_id;
 	delete obj.location_id;
 
-	res.json({ status: 'success', message: 'Billing account retrieved successfully', data: obj });
+	res.json({ data: obj, message: 'Billing account retrieved successfully', status: 'success' });
 };
 
 export const createBillingAccount = async (req: Request, res: Response) => {
@@ -3267,16 +3268,16 @@ export const createBillingAccount = async (req: Request, res: Response) => {
 	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
 	if (payload.bill_cont_start) {
 		const d = dayjs(payload.bill_cont_start);
-		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_start date' });
+		if (!d.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_start date', status: 'error' });
 		payload.bill_cont_start = d.format('YYYY-MM-DD');
 	}
 	if (payload.bill_cont_end) {
 		const d2 = dayjs(payload.bill_cont_end);
-		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_end date' });
+		if (!d2.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_end date', status: 'error' });
 		payload.bill_cont_end = d2.format('YYYY-MM-DD');
 	}
 	const id = await billingModel.createBillingAccount(payload);
-	res.status(201).json({ status: 'success', message: 'Billing account created successfully', id });
+	res.status(201).json({ id, message: 'Billing account created successfully', status: 'success' });
 };
 
 export const updateBillingAccount = async (req: Request, res: Response) => {
@@ -3286,22 +3287,22 @@ export const updateBillingAccount = async (req: Request, res: Response) => {
 	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
 	if (data.bill_cont_start) {
 		const d = dayjs(data.bill_cont_start);
-		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_start date' });
+		if (!d.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_start date', status: 'error' });
 		data.bill_cont_start = d.format('YYYY-MM-DD');
 	}
 	if (data.bill_cont_end) {
 		const d2 = dayjs(data.bill_cont_end);
-		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid bill_cont_end date' });
+		if (!d2.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_end date', status: 'error' });
 		data.bill_cont_end = d2.format('YYYY-MM-DD');
 	}
 	await billingModel.updateBillingAccount(bill_id, data);
-	res.json({ status: 'success', message: 'Billing account updated successfully' });
+	res.json({ message: 'Billing account updated successfully', status: 'success' });
 };
 
 export const deleteBillingAccount = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	await billingModel.deleteBillingAccount(bill_id);
-	res.json({ status: 'success', message: 'Billing account deleted successfully' });
+	res.json({ message: 'Billing account deleted successfully', status: 'success' });
 };
 
 
@@ -3430,11 +3431,11 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	// beneficiaryId from route params
 	const beneficiaryId = Number(req.params.beneficiaryId ?? req.params.beneficiary_id ?? req.params.beneficiaryId);
-	if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid beneficiary id in path' });
+	if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ message: 'Invalid beneficiary id in path', status: 'error' });
 
 	// fetch beneficiary record and enrich
 	const ben = await billingModel.getBeneficiaryById(beneficiaryId);
-	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
 	const baseUrl = process.env.BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
 	let logo = rawLogo;
@@ -3447,12 +3448,12 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
-	let beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+	const beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
 	if (ben.entry_by) {
 		const k = String(ben.entry_by);
 		if (empMap.has(k)) {
 			const e = empMap.get(k);
-			beneficiaryResp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			beneficiaryResp.entry_by = { full_name: e.full_name, ramco_id: e.ramco_id };
 		} else {
 			beneficiaryResp.entry_by = { ramco_id: ben.entry_by };
 		}
@@ -3465,7 +3466,7 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
 	else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
 
-	if (ids.length === 0) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+	if (ids.length === 0) return res.status(400).json({ message: 'No util_id provided in request body', status: 'error' });
 
 	// Fetch bills for provided ids and enrichment lookups
 	const bills = await billingModel.getUtilityBillsByIds(ids);
@@ -3505,43 +3506,43 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 		let costcenter = null;
 		const ccLookupId = acc.cc_id ?? acc.costcenter_id ?? bill.cc_id;
 		if (ccLookupId && ccMap.has(ccLookupId)) {
-			const cc = ccMap.get(ccLookupId) as any;
+			const cc = ccMap.get(ccLookupId);
 			costcenter = { id: cc.id, name: cc.name };
 		}
 		let location = null;
 		const locLookupId = acc.loc_id ?? acc.location_id ?? bill.loc_id;
 		if (locLookupId && locMap.has(locLookupId)) {
-			const d = locMap.get(locLookupId) as any;
+			const d = locMap.get(locLookupId);
 			location = { id: d.id, name: d.name };
 		}
 
 		return {
-			util_id: bill.util_id,
 			account: {
 				bill_id: acc.bill_id,
 				account_no: acc.account,
 				costcenter,
 				location
 			},
-			ubill_date: bill.ubill_date,
-			ubill_no: bill.ubill_no,
-			ubill_ref: bill.ubill_ref ?? null,
-			ubill_url: publicUrl(bill.ubill_ref ?? null),
-			ubill_submit: bill.ubill_submit ?? null,
-			ubill_rent: bill.ubill_rent,
-			ubill_color: bill.ubill_color,
 			ubill_bw: bill.ubill_bw,
-			ubill_stotal: bill.ubill_stotal,
-			ubill_taxrate: bill.ubill_taxrate,
-			ubill_tax: bill.ubill_tax,
-			ubill_round: bill.ubill_round,
-			ubill_deduct: bill.ubill_deduct,
-			ubill_gtotal: bill.ubill_gtotal,
+			ubill_color: bill.ubill_color,
 			ubill_count: bill.ubill_count,
+			ubill_date: bill.ubill_date,
+			ubill_deduct: bill.ubill_deduct,
 			ubill_disc: bill.ubill_disc,
-			ubill_usage: bill.ubill_usage,
+			ubill_gtotal: bill.ubill_gtotal,
+			ubill_no: bill.ubill_no,
 			ubill_payref: bill.ubill_payref,
-			ubill_paystat: bill.ubill_paystat
+			ubill_paystat: bill.ubill_paystat,
+			ubill_ref: bill.ubill_ref ?? null,
+			ubill_rent: bill.ubill_rent,
+			ubill_round: bill.ubill_round,
+			ubill_stotal: bill.ubill_stotal,
+			ubill_submit: bill.ubill_submit ?? null,
+			ubill_tax: bill.ubill_tax,
+			ubill_taxrate: bill.ubill_taxrate,
+			ubill_url: publicUrl(bill.ubill_ref ?? null),
+			ubill_usage: bill.ubill_usage,
+			util_id: bill.util_id
 		};
 	}).filter(Boolean) as any[];
 
@@ -3555,11 +3556,11 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 			);
 			// format month and compute trending vs previous element (previous month)
 			const previous_5_bills = (prev || []).map((p: any) => ({
-				ubill_no: p.ubill_no,
 				month: p.ubill_date ? dayjs(p.ubill_date).format('MMM-YYYY') : null,
-				ubill_gtotal: p.ubill_gtotal as string,
 				// temporary placeholder; will fill below
-				trending: null as any
+				trending: null as any,
+				ubill_gtotal: p.ubill_gtotal as string,
+				ubill_no: p.ubill_no
 			}));
 			for (let i = 0; i < previous_5_bills.length; i++) {
 				if (i < previous_5_bills.length - 1) {
@@ -3579,7 +3580,7 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 		})
 	);
 
-	res.json({ status: 'success', message: `${dataWithPrevious.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data: dataWithPrevious });
+	res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} utility bill(s) retrieved`, status: 'success' });
 };
 
 // POST /api/bills/util/by-ids?service=a,b,c
@@ -3587,13 +3588,13 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 // Returns utility bills for the given IDs filtered by service(s), enriched similar to getUtilityBills
 export const postUtilityBillsByIdsByService = async (req: Request, res: Response) => {
 	// Parse IDs from body
-	const bodyIds = (req.body && (req.body.util_id ?? req.body.ids ?? req.body.idsList)) as any;
+	const bodyIds = (req.body && (req.body.util_id ?? req.body.ids ?? req.body.idsList));
 	let ids: number[] = [];
 	if (Array.isArray(bodyIds)) ids = bodyIds.map((v: any) => Number(v)).filter(n => Number.isFinite(n));
 	else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
 	else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
 
-	if (!ids.length) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+	if (!ids.length) return res.status(400).json({ message: 'No util_id provided in request body', status: 'error' });
 
 	// Parse service(s) filter from query: support service=, services=, repeated params, and comma-separated
 	const svcQuery: any = (req.query.service ?? req.query.services);
@@ -3625,41 +3626,41 @@ export const postUtilityBillsByIdsByService = async (req: Request, res: Response
 		let account: any = null;
 		let acc: any = null;
 		if (bill.bill_id && accountMap.has(bill.bill_id)) {
-			acc = accountMap.get(bill.bill_id) as any;
+			acc = accountMap.get(bill.bill_id);
 			// resolve beneficiary for account
 			let benObj: any = null;
 			const providerName = acc.provider ? String(acc.provider).toLowerCase() : null;
 			if (acc.beneficiary_id && benById.has(String(acc.beneficiary_id))) benObj = benById.get(String(acc.beneficiary_id));
 			else if (providerName && benByName.has(providerName)) benObj = benByName.get(providerName);
 			account = {
-				bill_id: acc.bill_id,
 				account: acc.account,
-				// In this codebase, service corresponds to account category
-				service: acc.category,
-				desc: acc.description,
 				beneficiary: benObj ? {
 					id: benObj.id ?? benObj.bfcy_id,
 					name: benObj.bfcy_name ?? benObj.name,
 					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
 					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
 					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
-				} : null
+				} : null,
+				bill_id: acc.bill_id,
+				desc: acc.description,
+				// In this codebase, service corresponds to account category
+				service: acc.category
 			};
 		}
 
 		// Build costcenter object (prefer account-level if present)
 		let costcenter: any = null;
-		const ccLookupId = (acc && acc.costcenter_id) ?? bill.cc_id;
+		const ccLookupId = (acc?.costcenter_id) ?? bill.cc_id;
 		if (ccLookupId && ccMap.has(ccLookupId)) {
-			const cc = ccMap.get(ccLookupId) as any;
+			const cc = ccMap.get(ccLookupId);
 			costcenter = { id: cc.id, name: cc.name };
 		}
 
 		// Build location object (prefer account-level if present)
 		let location: any = null;
-		const locLookupId = (acc && acc.location_id) ?? bill.loc_id;
+		const locLookupId = (acc?.location_id) ?? bill.loc_id;
 		if (locLookupId && locMap.has(locLookupId)) {
-			const d = locMap.get(locLookupId) as any;
+			const d = locMap.get(locLookupId);
 			location = { id: d.id, name: d.name };
 		}
 
@@ -3669,47 +3670,47 @@ export const postUtilityBillsByIdsByService = async (req: Request, res: Response
 		}
 
 		return {
-			util_id: bill.util_id,
 			account,
-			ubill_date: bill.ubill_date,
-			ubill_no: bill.ubill_no,
-			ubill_ref: bill.ubill_ref ?? null,
-			ubill_url: publicUrl(bill.ubill_ref ?? null),
-			ubill_submit: bill.ubill_submit ?? null,
-			ubill_rent: bill.ubill_rent,
-			ubill_color: bill.ubill_color,
 			ubill_bw: bill.ubill_bw,
-			ubill_stotal: bill.ubill_stotal,
-			ubill_taxrate: bill.ubill_taxrate,
-			ubill_tax: bill.ubill_tax,
-			ubill_round: bill.ubill_round,
-			ubill_deduct: bill.ubill_deduct,
-			ubill_gtotal: bill.ubill_gtotal,
+			ubill_color: bill.ubill_color,
 			ubill_count: bill.ubill_count,
+			ubill_date: bill.ubill_date,
+			ubill_deduct: bill.ubill_deduct,
 			ubill_disc: bill.ubill_disc,
-			ubill_usage: bill.ubill_usage,
+			ubill_gtotal: bill.ubill_gtotal,
+			ubill_no: bill.ubill_no,
 			ubill_payref: bill.ubill_payref,
-			ubill_paystat: bill.ubill_paystat
+			ubill_paystat: bill.ubill_paystat,
+			ubill_ref: bill.ubill_ref ?? null,
+			ubill_rent: bill.ubill_rent,
+			ubill_round: bill.ubill_round,
+			ubill_stotal: bill.ubill_stotal,
+			ubill_submit: bill.ubill_submit ?? null,
+			ubill_tax: bill.ubill_tax,
+			ubill_taxrate: bill.ubill_taxrate,
+			ubill_url: publicUrl(bill.ubill_ref ?? null),
+			ubill_usage: bill.ubill_usage,
+			util_id: bill.util_id
 		};
 	}).filter(Boolean);
 
 	// Apply service filter if provided: match getUtilityBills behavior (account.service)
 	const final = normalizedServices.length
-		? enriched.filter((item: any) => item.account && item.account.service && normalizedServices.some(s => String(item.account.service).toLowerCase().includes(s)))
+		? enriched.filter((item: any) => item.account?.service && normalizedServices.some(s => String(item.account.service).toLowerCase().includes(s)))
 		: enriched;
 
-	res.json({ status: 'success', message: `${final.length} utility bill(s) retrieved`, data: final });
+	res.json({ data: final, message: `${final.length} utility bill(s) retrieved`, status: 'success' });
 };
 
 // POST variant for printing bills: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
 export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	// beneficiaryId from route params
 	const beneficiaryId = Number(req.params.beneficiaryId ?? req.params.beneficiary_id ?? req.params.beneficiaryId);
-	if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ status: 'error', message: 'Invalid beneficiary id in path' });
+	if (!Number.isFinite(beneficiaryId) || beneficiaryId <= 0) return res.status(400).json({ message: 'Invalid beneficiary id in path', status: 'error' });
 
 	// fetch beneficiary record and enrich
 	const ben = await billingModel.getBeneficiaryById(beneficiaryId);
-	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
 	const baseUrl = process.env.BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
 	let logo = rawLogo;
@@ -3722,12 +3723,12 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
-	let beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+	const beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
 	if (ben.entry_by) {
 		const k = String(ben.entry_by);
 		if (empMap.has(k)) {
 			const e = empMap.get(k);
-			beneficiaryResp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			beneficiaryResp.entry_by = { full_name: e.full_name, ramco_id: e.ramco_id };
 		} else {
 			beneficiaryResp.entry_by = { ramco_id: ben.entry_by };
 		}
@@ -3740,7 +3741,7 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	else if (typeof bodyIds === 'string') ids = String(bodyIds).split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n));
 	else if (typeof bodyIds === 'number') ids = [Number(bodyIds)];
 
-	if (ids.length === 0) return res.status(400).json({ status: 'error', message: 'No util_id provided in request body' });
+	if (ids.length === 0) return res.status(400).json({ message: 'No util_id provided in request body', status: 'error' });
 
 	// Fetch bills for provided ids and enrichment lookups
 	const bills = await billingModel.getUtilityBillsByIds(ids);
@@ -3783,30 +3784,30 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 		let costcenter = null;
 		const ccLookupId = acc.cc_id ?? acc.costcenter_id ?? bill.cc_id;
 		if (ccLookupId && ccMap.has(ccLookupId)) {
-			const cc = ccMap.get(ccLookupId) as any;
+			const cc = ccMap.get(ccLookupId);
 			costcenter = { id: cc.id, name: cc.name };
 		}
 		let location = null;
 		const locLookupId = acc.loc_id ?? acc.location_id ?? bill.loc_id;
 		if (locLookupId && locMap.has(locLookupId)) {
-			const d = locMap.get(locLookupId) as any;
+			const d = locMap.get(locLookupId);
 			location = { id: d.id, name: d.name };
 		}
 
 		return {
-			util_id: bill.util_id,
 			account: {
 				bill_id: acc.bill_id,
 				account_no: acc.account,
 				costcenter,
 				location
 			},
+			ubill_bw: bill.ubill_bw,
+			ubill_color: bill.ubill_color,
 			ubill_date: bill.ubill_date,
+			ubill_gtotal: bill.ubill_gtotal,
 			ubill_no: bill.ubill_no,
 			ubill_rent: bill.ubill_rent,
-			ubill_color: bill.ubill_color,
-			ubill_bw: bill.ubill_bw,
-			ubill_gtotal: bill.ubill_gtotal
+			util_id: bill.util_id
 		};
 	}).filter(Boolean) as any[];
 
@@ -3819,10 +3820,10 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 				5
 			);
 			const previous_5_bills = (prev || []).map((p: any) => ({
-				ubill_no: p.ubill_no,
 				month: p.ubill_date ? dayjs(p.ubill_date).format('MMM-YYYY') : null,
+				trending: null as any,
 				ubill_gtotal: p.ubill_gtotal as string,
-				trending: null as any
+				ubill_no: p.ubill_no
 			}));
 			for (let i = 0; i < previous_5_bills.length; i++) {
 				if (i < previous_5_bills.length - 1) {
@@ -3842,7 +3843,7 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 		})
 	);
 
-	res.json({ status: 'success', message: `${dataWithPrevious.length} printing bill(s) retrieved`, beneficiary: beneficiaryResp, data: dataWithPrevious });
+	res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} printing bill(s) retrieved`, status: 'success' });
 };
 
 // =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
@@ -3877,7 +3878,7 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 			const key = String(prepRaw);
 			if (empMap.has(key)) {
 				const e = empMap.get(key);
-				obj.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+				obj.entry_by = { full_name: e.full_name, ramco_id: e.ramco_id };
 			} else {
 				obj.entry_by = { ramco_id: prepRaw };
 			}
@@ -3886,13 +3887,13 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 		}
 		return obj;
 	});
-	res.json({ status: 'success', message: 'Beneficiaries retrieved successfully', data: enriched });
+	res.json({ data: enriched, message: 'Beneficiaries retrieved successfully', status: 'success' });
 };
 
 export const getBeneficiaryById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const ben = await billingModel.getBeneficiaryById(id);
-	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
+	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
 	const baseUrl = process.env.BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo || ben.logo || ben.bfcy_pic || null;
 	let logo = rawLogo;
@@ -3916,14 +3917,14 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 		const key = String(prepRaw);
 		if (empMap.has(key)) {
 			const e = empMap.get(key);
-			resp.entry_by = { ramco_id: e.ramco_id, full_name: e.full_name };
+			resp.entry_by = { full_name: e.full_name, ramco_id: e.ramco_id };
 		} else {
 			resp.entry_by = { ramco_id: prepRaw };
 		}
 	} else {
 		resp.entry_by = null;
 	}
-	res.json({ status: 'success', message: 'Beneficiary retrieved successfully', data: resp });
+	res.json({ data: resp, message: 'Beneficiary retrieved successfully', status: 'success' });
 };
 
 export const createBeneficiary = async (req: Request, res: Response) => {
@@ -3934,10 +3935,10 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
-		res.status(201).json({ status: 'success', message: 'Beneficiary created successfully', id });
+		res.status(201).json({ id, message: 'Beneficiary created successfully', status: 'success' });
 	} catch (err: any) {
 		if (err && String(err.message) === 'duplicate_beneficiary') {
-			return res.status(409).json({ status: 'error', message: 'Beneficiary with same name and category already exists' });
+			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
 		}
 		throw err;
 	}
@@ -3955,10 +3956,10 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	if (payload.logo) delete payload.logo;
 	try {
 		await billingModel.updateBeneficiary(id, payload);
-		res.json({ status: 'success', message: 'Beneficiary updated successfully' });
+		res.json({ message: 'Beneficiary updated successfully', status: 'success' });
 	} catch (err: any) {
 		if (err && String(err.message) === 'duplicate_beneficiary') {
-			return res.status(409).json({ status: 'error', message: 'Beneficiary with same name and category already exists' });
+			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
 		}
 		throw err;
 	}
@@ -3967,5 +3968,5 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 export const deleteBeneficiary = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteBeneficiary(id);
-	res.json({ status: 'success', message: 'Beneficiary deleted successfully' });
+	res.json({ message: 'Beneficiary deleted successfully', status: 'success' });
 };

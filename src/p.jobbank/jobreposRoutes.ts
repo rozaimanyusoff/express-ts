@@ -1,7 +1,8 @@
 // src/p.jobbank/jobbankRoutes.ts
 import { Router } from 'express';
-import * as jobReposController from './jobreposController';
+
 import asyncHandler from '../utils/asyncHandler';
+import * as jobReposController from './jobreposController';
 
 const router = Router();
 

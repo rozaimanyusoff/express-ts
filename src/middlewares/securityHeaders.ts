@@ -1,27 +1,27 @@
+import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
-import { Request, Response, NextFunction } from 'express';
 
 const securityHeaders = (req: Request, res: Response, next: NextFunction) => {
     helmet({
         contentSecurityPolicy: {
             directives: {
-                defaultSrc: ["'self'"],
-                scriptSrc: ["'self'", "'unsafe-inline'"],
-                styleSrc: ["'self'", "'unsafe-inline'"],
-                imgSrc: ["'self'", "data:"],
                 connectSrc: [
                     "'self'",
                     'https://serv.ranhilltechnologies.com.my' // ✅ allow XHR/fetch to API
                 ],
+                defaultSrc: ["'self'"],
                 fontSrc: ["'self'", "https:"],
+                imgSrc: ["'self'", "data:"],
                 objectSrc: ["'none'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
                 upgradeInsecureRequests: [],
             },
         },
-        referrerPolicy: { policy: 'no-referrer' },
         frameguard: { action: 'deny' },
-        xssFilter: true,
         hidePoweredBy: true,
+        referrerPolicy: { policy: 'no-referrer' },
+        xssFilter: true,
     })(req, res, next);
 };
 

@@ -1,16 +1,16 @@
 export interface Role {
-    id: number;
-    roleName: string;
     description: string;
+    id: number;
     isActive: boolean;
+    roleName: string;
 }
 
 export interface RoleModulePermission {
     id: number;
-    roleId: number;
-    moduleId: number;
     isCreate: boolean;
+    isDelete: boolean;
     isRead: boolean;
     isUpdate: boolean;
-    isDelete: boolean;
+    moduleId: number;
+    roleId: number;
 }

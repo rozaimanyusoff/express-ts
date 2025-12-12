@@ -1,8 +1,9 @@
 // src/p.training/trainingRoutes.ts
 import { Router } from 'express';
+
 import asyncHandler from '../utils/asyncHandler';
-import * as trainingController from './trainingController';
 import { createUploader } from '../utils/fileUploader';
+import * as trainingController from './trainingController';
 
 const router = Router();
 const uploadTraining = createUploader('trainings');

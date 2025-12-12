@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import * as projectController from './projectController';
+
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
+import * as projectController from './projectController';
 
 const router = Router();
 const projectUploader = createUploader('projects');

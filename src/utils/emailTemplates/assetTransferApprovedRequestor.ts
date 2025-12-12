@@ -2,13 +2,13 @@
 // Usage: assetTransferApprovedRequestorEmail({ request, items, requestor, approver })
 
 interface AssetTransferApprovedRequestorParams {
-  request: any;
-  items: any[];
-  requestor: any; // employee object with full_name, email
   approver: any;  // approver employee object
+  items: any[];
+  request: any;
+  requestor: any; // employee object with full_name, email
 }
 
-export function assetTransferApprovedRequestorEmail({ request, items, requestor, approver }: AssetTransferApprovedRequestorParams) {
+export function assetTransferApprovedRequestorEmail({ approver, items, request, requestor }: AssetTransferApprovedRequestorParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
   const subject = `Asset Transfer Approved - Request #${safe(request?.request_no || request?.id)}`;
@@ -61,5 +61,5 @@ export function assetTransferApprovedRequestorEmail({ request, items, requestor,
       <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
-  return { subject, html };
+  return { html, subject };
 }

@@ -1,30 +1,39 @@
 
 import { Request, Response } from 'express';
-import * as complianceModel from './complianceModel';
+import { promises as fsPromises } from 'fs';
+import path from 'path';
+
+import * as adminNotificationModel from '../p.admin/notificationModel';
 import * as assetModel from '../p.asset/assetModel';
-import { sendMail } from '../utils/mailer';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
 import { renderVehicleAssessmentNotification } from '../utils/emailTemplates/vehicleAssessmentNotification';
 import { getSupervisorBySubordinate } from '../utils/employeeHelper';
-import path from 'path';
-import { promises as fsPromises } from 'fs';
+import { sendMail } from '../utils/mailer';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
-import * as adminNotificationModel from '../p.admin/notificationModel';
+import * as complianceModel from './complianceModel';
 
 // Optional admin CC for summon notifications
 const ADMIN_EMAIL_ENV = (process.env.ADMIN_EMAIL || '').trim();
 
 
-// Helper to normalize a temp file path into stored relative path
-function normalizeStoredPath(filePath?: string | null): string | null {
-  if (!filePath) return null;
-  const filename = path.basename(String(filePath).replace(/\\/g, '/'));
-  return `uploads/compliance/summon/${filename}`;
+// Format as d/m/yyyy (no leading zeros) for myeg_date display per frontend requirement
+function fmtDateDMY(input?: any): null | string {
+  if (!input) return null;
+  try {
+    const d = new Date(String(input));
+    if (isNaN(d.getTime())) return null;
+    const day = String(d.getDate());
+    const month = String(d.getMonth() + 1);
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Format helpers for controller responses
-function fmtDateOnly(input?: any): string | null {
+function fmtDateOnly(input?: any): null | string {
   if (!input) return null;
   try {
     const s = String(input);
@@ -42,22 +51,22 @@ function fmtDateOnly(input?: any): string | null {
   }
 }
 
-// Format as d/m/yyyy (no leading zeros) for myeg_date display per frontend requirement
-function fmtDateDMY(input?: any): string | null {
+function fmtDatetimeMySQL(input?: any): null | string {
   if (!input) return null;
-  try {
-    const d = new Date(String(input));
-    if (isNaN(d.getTime())) return null;
-    const day = String(d.getDate());
-    const month = String(d.getMonth() + 1);
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  } catch (e) {
-    return null;
-  }
+  const s = String(input).trim();
+  // If already in 'YYYY-MM-DD HH:mm:ss' or contains T, normalize
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  const YYYY = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const DD = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
 }
 
-function fmtTimeOnly(input?: any): string | null {
+function fmtTimeOnly(input?: any): null | string {
   if (!input) return null;
   try {
     const s = String(input).trim();
@@ -73,19 +82,11 @@ function fmtTimeOnly(input?: any): string | null {
   }
 }
 
-function fmtDatetimeMySQL(input?: any): string | null {
-  if (!input) return null;
-  const s = String(input).trim();
-  // If already in 'YYYY-MM-DD HH:mm:ss' or contains T, normalize
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return null;
-  const YYYY = d.getFullYear();
-  const MM = String(d.getMonth() + 1).padStart(2, '0');
-  const DD = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
+// Helper to normalize a temp file path into stored relative path
+function normalizeStoredPath(filePath?: null | string): null | string {
+  if (!filePath) return null;
+  const filename = path.basename(String(filePath).replace(/\\/g, '/'));
+  return `uploads/compliance/summon/${filename}`;
 }
 
 // POST /api/compliance/assessments/test-email
@@ -93,25 +94,25 @@ function fmtDatetimeMySQL(input?: any): string | null {
 // Sends a test Vehicle Assessment email using the current template (no attachments)
 export const sendAssessmentTestEmail = async (req: Request, res: Response) => {
   try {
-    const to = String(req.body?.to || req.query?.to || '').trim();
-    if (!to) return res.status(400).json({ status: 'error', message: 'Provide recipient email in body.to' });
+    const to = String(req.body?.to || req.query.to || '').trim();
+    if (!to) return res.status(400).json({ message: 'Provide recipient email in body.to', status: 'error' });
 
-    const asset = req.body?.asset || { id: 999, code: 'TEST-123', name: 'Test Vehicle' };
-    const driver = req.body?.driver || { ramco_id: 'DRV001', full_name: 'Test Recipient', email: to };
+    const asset = req.body?.asset || { code: 'TEST-123', id: 999, name: 'Test Vehicle' };
+    const driver = req.body?.driver || { email: to, full_name: 'Test Recipient', ramco_id: 'DRV001' };
     const now = new Date();
-    const defaultAssess = { id: 1001, date: now.toISOString().slice(0, 10), remark: 'Automated test', rate: '-', ncr: '-' };
+    const defaultAssess = { date: now.toISOString().slice(0, 10), id: 1001, ncr: '-', rate: '-', remark: 'Automated test' };
     const assessment = req.body?.assessment || defaultAssess;
     const securityPin = String(req.body?.securityPin || Math.floor(100000 + Math.random() * 900000));
     const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url';
     const portalLink = req.body?.portalLink || `${frontendUrl}/compliance/assessment/portal/${asset.id}?code=${driver.ramco_id}${securityPin}`;
 
-    const { subject, html, text } = renderVehicleAssessmentNotification({ asset, driver, assessment, details: [], portalLink, securityPin });
+    const { html, subject, text } = renderVehicleAssessmentNotification({ assessment, asset, details: [], driver, portalLink, securityPin });
 
     await sendMail(to, subject, html, { text });
-    return res.json({ status: 'success', message: 'Test email sent', to, subject });
+    return res.json({ message: 'Test email sent', status: 'success', subject, to });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to send test email';
-    return res.status(500).json({ status: 'error', message: msg });
+    return res.status(500).json({ message: msg, status: 'error' });
   }
 };
 
@@ -127,7 +128,7 @@ export const getSummons = async (req: Request, res: Response) => {
       assetModel.getEmployees()
     ]);
 
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -156,49 +157,49 @@ export const getSummons = async (req: Request, res: Response) => {
       if (r.asset_id && assetMap.has(r.asset_id)) {
         const a = assetMap.get(r.asset_id);
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
         asset = {
-          id: r.asset_id,
-          register_number: a.register_number || a.vehicle_regno || null,
           costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          id: r.asset_id,
           location: (() => {
             const locId = a.location_id ?? a.location?.id ?? null;
             if (!locId) return null;
             const found = locationMap.get(locId);
-            return found ? { id: locId, code: found.code || found.name || null } : null;
+            return found ? { code: found.code || found.name || null, id: locId } : null;
           })(),
-          owner
+          owner,
+          register_number: a.register_number || a.vehicle_regno || null
         };
       }
 
       const employee = r.ramco_id && employeeMap.has(r.ramco_id) ? (() => {
         const e = employeeMap.get(r.ramco_id);
-        return { ramco_id: r.ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
+        return { contact: e.contact_no || e.contact || null, email: e.email || null, full_name: e.full_name || e.name || null, ramco_id: r.ramco_id };
       })() : null;
 
-      const { reg_no, f_name, v_email, ...rest } = r as any;
+      const { f_name, reg_no, v_email, ...rest } = r;
       // format date/time fields for API consumers
       if (rest.myeg_date) rest.myeg_date = fmtDateDMY(rest.myeg_date);
       if (rest.receipt_date) rest.receipt_date = fmtDateDMY(rest.receipt_date);
       if (rest.summon_date) rest.summon_date = fmtDateDMY(rest.summon_date);
       if (rest.summon_time) rest.summon_time = fmtTimeOnly(rest.summon_time);
       if (rest.summon_dt) rest.summon_dt = fmtDatetimeMySQL(rest.summon_dt);
-      return { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+      return { ...rest, asset, attachment_url, employee, summon_receipt, summon_upl };
     });
 
-    res.json({ status: 'success', message: 'Summons retrieved', data });
+    res.json({ data, message: 'Summons retrieved', status: 'success' });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch summons', data: null });
+    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summons', status: 'error' });
   }
 };
 
 export const getSummonById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
 
     const rows = await complianceModel.getSummonById(id);
-    if (!rows) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+    if (!rows) return res.status(404).json({ data: null, message: 'Summon not found', status: 'error' });
     const r = Array.isArray(rows) ? rows[0] : rows;
 
     const base = (process.env.BACKEND_URL || '').replace(/\/$/, '');
@@ -208,7 +209,7 @@ export const getSummonById = async (req: Request, res: Response) => {
       assetModel.getLocations(),
       assetModel.getEmployees()
     ]);
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -235,38 +236,38 @@ export const getSummonById = async (req: Request, res: Response) => {
     if (r.asset_id && assetMap.has(r.asset_id)) {
       const a = assetMap.get(r.asset_id);
       const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
       asset = {
-        id: r.asset_id,
-        register_number: a.register_number || a.vehicle_regno || null,
         costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+        id: r.asset_id,
         location: (() => {
           const locId = a.location_id ?? a.location?.id ?? null;
           if (!locId) return null;
           const found = locationMap.get(locId);
-          return found ? { id: locId, code: found.code || found.name || null } : null;
+          return found ? { code: found.code || found.name || null, id: locId } : null;
         })(),
-        owner
+        owner,
+        register_number: a.register_number || a.vehicle_regno || null
       };
     }
 
     const employee = r.ramco_id && employeeMap.has(r.ramco_id) ? (() => {
       const e = employeeMap.get(r.ramco_id);
-      return { ramco_id: r.ramco_id, full_name: e.full_name || e.name || null, email: e.email || null, contact: e.contact_no || e.contact || null };
+      return { contact: e.contact_no || e.contact || null, email: e.email || null, full_name: e.full_name || e.name || null, ramco_id: r.ramco_id };
     })() : null;
 
-    const { reg_no, f_name, v_email, ...rest } = r as any;
-    const data = { ...rest, summon_upl, summon_receipt, attachment_url, asset, employee };
+    const { f_name, reg_no, v_email, ...rest } = r;
+    const data = { ...rest, asset, attachment_url, employee, summon_receipt, summon_upl };
     // format date/time fields for API consumers
-    if ((data as any).myeg_date) (data as any).myeg_date = fmtDateDMY((data as any).myeg_date);
-    if ((data as any).receipt_date) (data as any).receipt_date = fmtDateDMY((data as any).receipt_date);
-    if ((data as any).summon_date) (data as any).summon_date = fmtDateDMY((data as any).summon_date);
-    if ((data as any).summon_time) (data as any).summon_time = fmtTimeOnly((data as any).summon_time);
-    if ((data as any).summon_dt) (data as any).summon_dt = fmtDatetimeMySQL((data as any).summon_dt);
+    if ((data).myeg_date) (data).myeg_date = fmtDateDMY((data).myeg_date);
+    if ((data).receipt_date) (data).receipt_date = fmtDateDMY((data).receipt_date);
+    if ((data).summon_date) (data).summon_date = fmtDateDMY((data).summon_date);
+    if ((data).summon_time) (data).summon_time = fmtTimeOnly((data).summon_time);
+    if ((data).summon_dt) (data).summon_dt = fmtDatetimeMySQL((data).summon_dt);
 
-    res.json({ status: 'success', message: 'Summon retrieved', data });
+    res.json({ data, message: 'Summon retrieved', status: 'success' });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to fetch summon', data: null });
+    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summon', status: 'error' });
   }
 };
 
@@ -277,11 +278,11 @@ export const createSummon = async (req: Request, res: Response) => {
     const id = await complianceModel.createSummon(data);
 
     // If there was an uploaded file, validate, move it into final storage and update the record
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)' }); }
+      if (!['.gif', '.jpeg', '.jpg', '.pdf', '.png', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)', status: 'error' }); }
       const filename = `summon-${id}-${Date.now()}${ext}`;
       const base = await getUploadBase();
       const destDir = path.join(base, 'compliance', 'summon');
@@ -317,11 +318,11 @@ export const createSummon = async (req: Request, res: Response) => {
         const html = renderSummonNotification({
           driverName: localTestName || (emp?.full_name || emp?.name) || null,
           smn_id: r?.smn_id || id,
-          summon_no: r?.summon_no || null,
+          summon_agency: r?.summon_agency || null,
+          summon_amt: r?.summon_amt || null,
           summon_dt: r?.summon_dt || null,
           summon_loc: r?.summon_loc || null,
-          summon_amt: r?.summon_amt || null,
-          summon_agency: r?.summon_agency || null,
+          summon_no: r?.summon_no || null,
         });
 
         try {
@@ -336,16 +337,16 @@ export const createSummon = async (req: Request, res: Response) => {
       }
     })();
 
-    res.status(201).json({ status: 'success', message: 'Summon created', data: { id, smn_id: id } });
+    res.status(201).json({ data: { id, smn_id: id }, message: 'Summon created', status: 'success' });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to create summon', data: null });
+    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to create summon', status: 'error' });
   }
 };
 
 export const updateSummon = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
 
     const body: any = { ...req.body };
     const payload: any = {};
@@ -364,18 +365,18 @@ export const updateSummon = async (req: Request, res: Response) => {
 
     if (body.myeg_date !== undefined) payload.myeg_date = body.myeg_date ? String(body.myeg_date).trim() : null;
 
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)' }); }
+      if (!['.gif', '.jpeg', '.jpg', '.pdf', '.png', '.webp'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg,gif,webp)', status: 'error' }); }
       const normalized = normalizeStoredPath(tempPath);
-      if (normalized) payload.summon_upl = normalized as string;
+      if (normalized) payload.summon_upl = normalized;
     }
 
     await complianceModel.updateSummon(id, payload);
 
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = path.extname(originalName) || path.extname(tempPath) || '';
@@ -389,9 +390,9 @@ export const updateSummon = async (req: Request, res: Response) => {
       await complianceModel.updateSummon(id, { summon_upl: stored });
     }
 
-    res.json({ status: 'success', message: 'Updated' });
+    res.json({ message: 'Updated', status: 'success' });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to update summon', data: null });
+    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to update summon', status: 'error' });
   }
 };
 
@@ -399,19 +400,19 @@ export const updateSummon = async (req: Request, res: Response) => {
 export const uploadSummonPayment = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
 
     const existing = await complianceModel.getSummonById(id);
-    if (!existing) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+    if (!existing) return res.status(404).json({ data: null, message: 'Summon not found', status: 'error' });
 
     const payload: any = {};
     if (req.body && req.body.receipt_date !== undefined) payload.receipt_date = req.body.receipt_date ? String(req.body.receipt_date).trim() : null;
 
-    if ((req as any).file && (req as any).file.path) {
+    if ((req as any).file?.path) {
       const tempPath: string = (req as any).file.path;
       const originalName: string = (req as any).file.originalname || path.basename(tempPath);
       const ext = (path.extname(originalName) || path.extname(tempPath) || '').toLowerCase();
-      if (!['.pdf', '.png', '.jpg', '.jpeg'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ status: 'error', message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg)' }); }
+      if (!['.jpeg', '.jpg', '.pdf', '.png'].includes(ext)) { await fsPromises.unlink(tempPath).catch(() => { }); return res.status(400).json({ message: 'Only PDF and common image uploads are allowed (png,jpg,jpeg)', status: 'error' }); }
 
       const filename = `summon-receipt-${id}-${Date.now()}${ext}`;
       const base = await getUploadBase();
@@ -423,7 +424,7 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
       payload.summon_receipt = storedRel;
     }
 
-    if (Object.keys(payload).length === 0) return res.status(400).json({ status: 'error', message: 'No data provided' });
+    if (Object.keys(payload).length === 0) return res.status(400).json({ message: 'No data provided', status: 'error' });
 
     await complianceModel.updateSummon(id, payload);
     // Notify admins via in-app notifications and optionally email
@@ -432,22 +433,22 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
         const created = await complianceModel.getSummonById(id);
         const r = Array.isArray(created) ? created[0] : created;
         const msg = `Payment receipt uploaded for summon #${r?.smn_id || id} by ${r?.ramco_id || 'unknown'}`;
-        await adminNotificationModel.createAdminNotification({ type: 'summon_payment', message: msg });
+        await adminNotificationModel.createAdminNotification({ message: msg, type: 'summon_payment' });
 
         // Also send email to configured ADMIN_EMAIL (best-effort)
         const ADMIN_EMAIL = process.env.ADMIN_EMAIL || null;
         if (ADMIN_EMAIL) {
           const html = renderSummonPaymentReceipt({
             adminName: 'Admin',
-            smn_id: r?.smn_id || id,
-            summon_no: r?.summon_no || null,
-            summon_dt: r?.summon_dt || null,
-            summon_loc: r?.summon_loc || null,
-            summon_amt: r?.summon_amt || null,
-            summon_agency: r?.summon_agency || null,
+            payer: payload.payer || null,
             ramco_id: r?.ramco_id || null,
             receipt_date: payload.receipt_date || null,
-            payer: payload.payer || null,
+            smn_id: r?.smn_id || id,
+            summon_agency: r?.summon_agency || null,
+            summon_amt: r?.summon_amt || null,
+            summon_dt: r?.summon_dt || null,
+            summon_loc: r?.summon_loc || null,
+            summon_no: r?.summon_no || null,
           });
           try { await sendMail(ADMIN_EMAIL, `Summon payment received #${r?.smn_id || id}`, html); } catch (e) { console.error('admin email send failed', e); }
         }
@@ -456,9 +457,9 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
       }
     })();
 
-    res.json({ status: 'success', message: 'Payment receipt uploaded', data: { id } });
+    res.json({ data: { id }, message: 'Payment receipt uploaded', status: 'success' });
   } catch (err) {
-    res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to upload payment receipt', data: null });
+    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to upload payment receipt', status: 'error' });
   }
 };
 
@@ -467,10 +468,10 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
   try {
     // Allow id in body or query
     const id = Number((req.body && (req.body.id || req.body.smn_id)) || req.query.id || req.query.smn_id);
-    if (!id || Number.isNaN(id)) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id || Number.isNaN(id)) return res.status(400).json({ message: 'Invalid id', status: 'error' });
 
     const record = await complianceModel.getSummonById(id);
-    if (!record) return res.status(404).json({ status: 'error', message: 'Summon not found', data: null });
+    if (!record) return res.status(404).json({ data: null, message: 'Summon not found', status: 'error' });
     const r = Array.isArray(record) ? record[0] : record;
 
     // TEST EMAIL OVERRIDE: prefer query/body override, then env TEST_EMAIL/TEST_NAME
@@ -488,16 +489,16 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
   const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
   const adminCc = (ADMIN_EMAIL_ENV && isValidEmail(ADMIN_EMAIL_ENV)) ? ADMIN_EMAIL_ENV : undefined;
   const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
-  if (!toEmail) return res.status(400).json({ status: 'error', message: 'Recipient email not found', data: null });
+  if (!toEmail) return res.status(400).json({ data: null, message: 'Recipient email not found', status: 'error' });
 
     const html = renderSummonNotification({
       driverName: localTestName || (emp?.full_name || emp?.name) || null,
       smn_id: r?.smn_id || id,
-      summon_no: r?.summon_no || null,
+      summon_agency: r?.summon_agency || null,
+      summon_amt: r?.summon_amt || null,
       summon_dt: r?.summon_dt || null,
       summon_loc: r?.summon_loc || null,
-      summon_amt: r?.summon_amt || null,
-      summon_agency: r?.summon_agency || null,
+      summon_no: r?.summon_no || null,
     });
 
     try {
@@ -505,14 +506,14 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
       await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, mailOpts);
       // mark emailStat = 1 (best-effort)
       await complianceModel.updateSummon(id, { emailStat: 1 }).catch(() => { });
-      return res.json({ status: 'success', message: 'Notification sent', data: { id, sentTo: toEmail, testMode: !!localTestEmail } });
+      return res.json({ data: { id, sentTo: toEmail, testMode: !!localTestEmail }, message: 'Notification sent', status: 'success' });
     } catch (mailErr) {
       // don't expose mail errors, but return failure status
       console.error('resendSummonNotification: mailer error', mailErr);
-      return res.status(500).json({ status: 'error', message: 'Failed to send email', data: null });
+      return res.status(500).json({ data: null, message: 'Failed to send email', status: 'error' });
     }
   } catch (err) {
-    return res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Unknown error', data: null });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Unknown error', status: 'error' });
   }
 };
 
@@ -529,12 +530,12 @@ export const deleteSummon = async (req: Request, res: Response) => {
       await fsPromises.unlink(full).catch(() => { });
     }
     await complianceModel.deleteSummon(id);
-    res.json({ status: 'success', message: 'Summon deleted', data: null });
+    res.json({ data: null, message: 'Summon deleted', status: 'success' });
   } catch (err) {
     if (err instanceof Error && err.message === 'Summon record not found') {
-      res.status(404).json({ status: 'error', message: err.message, data: null });
+      res.status(404).json({ data: null, message: err.message, status: 'error' });
     } else {
-      res.status(500).json({ status: 'error', message: err instanceof Error ? err.message : 'Failed to delete summon', data: null });
+      res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to delete summon', status: 'error' });
     }
   }
 };
@@ -549,22 +550,22 @@ export const getSummonTypes = async (req: Request, res: Response) => {
       const agencies = await complianceModel.getAgenciesByType(Number(t.id));
       out.push({ ...t, agencies });
     }
-    return res.json({ status: 'success', message: 'Summon types retrieved', data: out });
+    return res.json({ data: out, message: 'Summon types retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon types', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch summon types', status: 'error' });
   }
 };
 
 export const getSummonTypeById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getSummonTypeById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Summon type not found', data: null });
+    if (!row) return res.status(404).json({ data: null, message: 'Summon type not found', status: 'error' });
     const agencies = await complianceModel.getAgenciesByType(id);
-    return res.json({ status: 'success', message: 'Summon type retrieved', data: { ...row, agencies } });
+    return res.json({ data: { ...row, agencies }, message: 'Summon type retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon type', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch summon type', status: 'error' });
   }
 };
 
@@ -579,19 +580,19 @@ export const createSummonType = async (req: Request, res: Response) => {
     if (Array.isArray(data.agency_ids) && data.agency_ids.length > 0) {
       const toAssign = data.agency_ids.map((v: any) => Number(v)).filter((v: number) => !!v);
       for (const ag of toAssign) {
-        await complianceModel.createSummonTypeAgency({ type_id: id, agency_id: ag }).catch(() => { });
+        await complianceModel.createSummonTypeAgency({ agency_id: ag, type_id: id }).catch(() => { });
       }
     }
-    return res.status(201).json({ status: 'success', message: 'Summon type created', data: { id } });
+    return res.status(201).json({ data: { id }, message: 'Summon type created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create summon type', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create summon type', status: 'error' });
   }
 };
 
 export const updateSummonType = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     // avoid passing agency_ids into the DB update for summon_type
     const payload: any = { ...data };
@@ -605,28 +606,28 @@ export const updateSummonType = async (req: Request, res: Response) => {
       const currentIds = current.map(c => Number(c.agency_id));
       // create missing
       for (const aid of desired) {
-        if (!currentIds.includes(aid)) await complianceModel.createSummonTypeAgency({ type_id: id, agency_id: aid }).catch(() => { });
+        if (!currentIds.includes(aid)) await complianceModel.createSummonTypeAgency({ agency_id: aid, type_id: id }).catch(() => { });
       }
       // delete extras
       for (const c of current) {
         if (!desired.includes(Number(c.agency_id))) await complianceModel.deleteSummonTypeAgency(Number(c.id)).catch(() => { });
       }
     }
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update summon type', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update summon type', status: 'error' });
   }
 };
 
 export const deleteSummonType = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteSummonType(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete summon type', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete summon type', status: 'error' });
   }
 };
 
@@ -634,21 +635,21 @@ export const deleteSummonType = async (req: Request, res: Response) => {
 export const getSummonAgencies = async (req: Request, res: Response) => {
   try {
     const rows = await complianceModel.getSummonAgencies();
-    return res.json({ status: 'success', message: 'Summon agencies retrieved', data: rows });
+    return res.json({ data: rows, message: 'Summon agencies retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon agencies', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch summon agencies', status: 'error' });
   }
 };
 
 export const getSummonAgencyById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getSummonAgencyById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Summon agency not found', data: null });
-    return res.json({ status: 'success', message: 'Summon agency retrieved', data: row });
+    if (!row) return res.status(404).json({ data: null, message: 'Summon agency not found', status: 'error' });
+    return res.json({ data: row, message: 'Summon agency retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch summon agency', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch summon agency', status: 'error' });
   }
 };
 
@@ -656,33 +657,33 @@ export const createSummonAgency = async (req: Request, res: Response) => {
   try {
     const data: any = req.body || {};
     const id = await complianceModel.createSummonAgency(data);
-    return res.status(201).json({ status: 'success', message: 'Summon agency created', data: { id } });
+    return res.status(201).json({ data: { id }, message: 'Summon agency created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create summon agency', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create summon agency', status: 'error' });
   }
 };
 
 export const updateSummonAgency = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     await complianceModel.updateSummonAgency(id, data);
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update summon agency', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update summon agency', status: 'error' });
   }
 };
 
 export const deleteSummonAgency = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteSummonAgency(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete summon agency', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete summon agency', status: 'error' });
   }
 };
 
@@ -690,21 +691,21 @@ export const deleteSummonAgency = async (req: Request, res: Response) => {
 export const getSummonTypeAgencies = async (req: Request, res: Response) => {
   try {
     const rows = await complianceModel.getSummonTypeAgencies();
-    return res.json({ status: 'success', message: 'Mappings retrieved', data: rows });
+    return res.json({ data: rows, message: 'Mappings retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch mappings', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch mappings', status: 'error' });
   }
 };
 
 export const getSummonTypeAgencyById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getSummonTypeAgencyById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Mapping not found', data: null });
-    return res.json({ status: 'success', message: 'Mapping retrieved', data: row });
+    if (!row) return res.status(404).json({ data: null, message: 'Mapping not found', status: 'error' });
+    return res.json({ data: row, message: 'Mapping retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch mapping', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch mapping', status: 'error' });
   }
 };
 
@@ -712,34 +713,34 @@ export const createSummonTypeAgency = async (req: Request, res: Response) => {
   try {
     const data: any = req.body || {};
     const id = await complianceModel.createSummonTypeAgency(data);
-    return res.status(201).json({ status: 'success', message: 'Mapping created', data: { id } });
+    return res.status(201).json({ data: { id }, message: 'Mapping created', status: 'success' });
   } catch (e) {
-    return res.status(400).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create mapping', data: null });
+    return res.status(400).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create mapping', status: 'error' });
   }
 };
 
 export const updateSummonTypeAgency = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     await complianceModel.updateSummonTypeAgency(id, data);
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('exists')) return res.status(400).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update mapping', data: null });
+    if (e instanceof Error && e.message.includes('exists')) return res.status(400).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update mapping', status: 'error' });
   }
 };
 
 export const deleteSummonTypeAgency = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteSummonTypeAgency(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete mapping', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete mapping', status: 'error' });
   }
 };
 
@@ -747,11 +748,11 @@ export const deleteSummonTypeAgency = async (req: Request, res: Response) => {
 export const getAgenciesByType = async (req: Request, res: Response) => {
   try {
     const typeId = Number(req.params.typeId || req.query.typeId);
-    if (!typeId) return res.status(400).json({ status: 'error', message: 'Invalid type id' });
+    if (!typeId) return res.status(400).json({ message: 'Invalid type id', status: 'error' });
     const rows = await complianceModel.getAgenciesByType(typeId);
-    return res.json({ status: 'success', message: 'Agencies retrieved', data: rows });
+    return res.json({ data: rows, message: 'Agencies retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch agencies by type', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch agencies by type', status: 'error' });
   }
 };
 
@@ -759,9 +760,9 @@ export const getAgenciesByType = async (req: Request, res: Response) => {
 export const getSummonTypesWithAgencies = async (req: Request, res: Response) => {
   try {
     const rows = await complianceModel.getSummonTypesWithAgencies();
-    return res.json({ status: 'success', message: 'Types with agencies retrieved', data: rows });
+    return res.json({ data: rows, message: 'Types with agencies retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch types with agencies', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch types with agencies', status: 'error' });
   }
 };
 
@@ -778,8 +779,8 @@ export const getAssessmentCriteria = async (req: Request, res: Response) => {
       : undefined;
 
     // Validate status if provided
-    if (statusParam !== undefined && statusParam !== '' && !['active', 'inactive', '1', '0'].includes(statusParam)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid status filter. Use active or inactive', data: null });
+    if (statusParam !== undefined && statusParam !== '' && !['0', '1', 'active', 'inactive'].includes(statusParam)) {
+      return res.status(400).json({ data: null, message: 'Invalid status filter. Use active or inactive', status: 'error' });
     }
 
   const rows = await complianceModel.getAssessmentCriteria();
@@ -787,7 +788,7 @@ export const getAssessmentCriteria = async (req: Request, res: Response) => {
     // If no filters, return raw rows
     if ((!statusParam || String(statusParam).trim() === '') && (!typeParam || String(typeParam).trim() === '') && (ownershipParam === undefined)) {
       const count = Array.isArray(rows) ? rows.length : 0;
-      return res.json({ status: 'success', message: `Assessment criteria retrieved (${count})`, data: rows });
+      return res.json({ data: rows, message: `Assessment criteria retrieved (${count})`, status: 'success' });
     }
 
     // Helper to interpret qset_stat values flexibly
@@ -826,21 +827,21 @@ export const getAssessmentCriteria = async (req: Request, res: Response) => {
     });
 
   const count = Array.isArray(filtered) ? filtered.length : 0;
-  return res.json({ status: 'success', message: `Assessment criteria retrieved (${count})`, data: filtered });
+  return res.json({ data: filtered, message: `Assessment criteria retrieved (${count})`, status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', status: 'error' });
   }
 };
 
 export const getAssessmentCriteriaById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getAssessmentCriteriaById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment criteria not found', data: null });
-    return res.json({ status: 'success', message: 'Assessment criteria retrieved', data: row });
+    if (!row) return res.status(404).json({ data: null, message: 'Assessment criteria not found', status: 'error' });
+    return res.json({ data: row, message: 'Assessment criteria retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', status: 'error' });
   }
 };
 
@@ -848,49 +849,49 @@ export const createAssessmentCriteria = async (req: Request, res: Response) => {
   try {
     const data: any = req.body || {};
     const qset_id = await complianceModel.createAssessmentCriteria(data);
-    return res.status(201).json({ status: 'success', message: 'Assessment criteria created', data: { qset_id } });
+    return res.status(201).json({ data: { qset_id }, message: 'Assessment criteria created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment criteria', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create assessment criteria', status: 'error' });
   }
 };
 
 export const updateAssessmentCriteria = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     await complianceModel.updateAssessmentCriteria(id, data);
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment criteria', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update assessment criteria', status: 'error' });
   }
 };
 
 export const deleteAssessmentCriteria = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteAssessmentCriteria(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment criteria', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment criteria', status: 'error' });
   }
 };
 
 export const reorderAssessmentCriteria = async (req: Request, res: Response) => {
   try {
     const qset_id = Number(req.params.id);
-    if (!qset_id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!qset_id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const newOrderRaw = req.body && (req.body.qset_order ?? req.body.newOrder ?? req.body.order);
-    if (newOrderRaw === undefined || newOrderRaw === null) return res.status(400).json({ status: 'error', message: 'new qset_order is required' });
+    if (newOrderRaw === undefined || newOrderRaw === null) return res.status(400).json({ message: 'new qset_order is required', status: 'error' });
     const newOrder = Number(newOrderRaw);
-    if (!Number.isFinite(newOrder) || newOrder < 1) return res.status(400).json({ status: 'error', message: 'Invalid new qset_order' });
+    if (!Number.isFinite(newOrder) || newOrder < 1) return res.status(400).json({ message: 'Invalid new qset_order', status: 'error' });
 
     await complianceModel.reorderAssessmentCriteria(qset_id, newOrder);
-    return res.json({ status: 'success', message: 'Reordered' });
+    return res.json({ message: 'Reordered', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to reorder assessment criteria', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to reorder assessment criteria', status: 'error' });
   }
 };
 
@@ -900,9 +901,9 @@ export const reorderAssessmentCriteria = async (req: Request, res: Response) => 
 export const getAssessmentCriteriaOwnerships = async (req: Request, res: Response) => {
   try {
     const rows = await complianceModel.getAssessmentCriteriaOwnerships();
-    return res.json({ status: 'success', message: `Assessment criteria ownerships retrieved (${rows.length})`, data: rows });
+    return res.json({ data: rows, message: `Assessment criteria ownerships retrieved (${rows.length})`, status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria ownerships', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria ownerships', status: 'error' });
   }
 };
 
@@ -910,27 +911,27 @@ export const getAssessmentCriteriaOwnerships = async (req: Request, res: Respons
 export const getAssessmentCriteriaOwnershipById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getAssessmentCriteriaOwnershipById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment criteria ownership not found', data: null });
-    return res.json({ status: 'success', message: 'Assessment criteria ownership retrieved', data: row });
+    if (!row) return res.status(404).json({ data: null, message: 'Assessment criteria ownership not found', status: 'error' });
+    return res.json({ data: row, message: 'Assessment criteria ownership retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria ownership', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria ownership', status: 'error' });
   }
 };
 
 //add a new ownership member
 export const createAssessmentCriteriaOwnership = async (req: Request, res: Response) => {
   try {
-    const { ramco_id, department_id, status } = req.body || {};
+    const { department_id, ramco_id, status } = req.body || {};
     if (typeof status !== 'string' || !status.trim()) {
-      return res.status(400).json({ status: 'error', message: 'Invalid status value', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid status value', status: 'error' });
     }
     // Store status as string
-    await complianceModel.createAssessmentCriteriaOwnership({ ramco_id, department_id, status });
-    return res.status(201).json({ status: 'success', message: 'Assessment criteria ownership created', data: { ramco_id, department_id, status } });
+    await complianceModel.createAssessmentCriteriaOwnership({ department_id, ramco_id, status });
+    return res.status(201).json({ data: { department_id, ramco_id, status }, message: 'Assessment criteria ownership created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment criteria ownership', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create assessment criteria ownership', status: 'error' });
   }
 };
 
@@ -938,18 +939,18 @@ export const createAssessmentCriteriaOwnership = async (req: Request, res: Respo
 export const updateAssessmentCriteriaOwnership = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
     const { ownership, status } = req.body || {};
     if (ownership !== null && (ownership === undefined || Number.isNaN(Number(ownership)))) {
-      return res.status(400).json({ status: 'error', message: 'Invalid ownership value', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid ownership value', status: 'error' });
     }
     if (typeof status !== 'string' || !status.trim()) {
-      return res.status(400).json({ status: 'error', message: 'Invalid status value', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid status value', status: 'error' });
     }
     await complianceModel.updateAssessmentCriteria(id, { ownership, qset_stat: status } as any);
-    return res.json({ status: 'success', message: 'Ownership and status updated', data: null });
+    return res.json({ data: null, message: 'Ownership and status updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update ownership', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update ownership', status: 'error' });
   }
 };
 
@@ -957,25 +958,25 @@ export const updateAssessmentCriteriaOwnership = async (req: Request, res: Respo
 export const deleteAssessmentCriteriaOwnership = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
     // Check if ownership exists in any criteria
     const rows = await complianceModel.getAssessmentCriteria();
-    const ownerships = Array.from(new Set(rows?.map((r: any) => r.ownership).filter(Boolean)));
+    const ownerships = Array.from(new Set(rows.map((r: any) => r.ownership).filter(Boolean)));
     if (!ownerships.includes(id)) {
-      return res.status(404).json({ status: 'error', message: 'Ownership not found', data: null });
+      return res.status(404).json({ data: null, message: 'Ownership not found', status: 'error' });
     }
   // Remove ownership from all criteria that have it
     for (const r of rows) {
       if (r.ownership === id) {
         // ensure qset_id is a valid number before calling the model
-        const qsetId = (r && r.qset_id !== undefined && r.qset_id !== null) ? Number(r.qset_id) : NaN;
+        const qsetId = (r.qset_id !== undefined && r.qset_id !== null) ? Number(r.qset_id) : NaN;
         if (!Number.isFinite(qsetId) || qsetId <= 0) continue;
         await complianceModel.updateAssessmentCriteria(qsetId, { ownership: null } as any);
       }
     }
-    return res.json({ status: 'success', message: 'Ownership deleted from all criteria', data: null });
+    return res.json({ data: null, message: 'Ownership deleted from all criteria', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete ownership', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete ownership', status: 'error' });
   }
 }
 
@@ -991,18 +992,18 @@ export const getAssessments = async (req: Request, res: Response) => {
     // Validate year if provided
     if (yearParam && (isNaN(year!) || year! < 1900 || year! > new Date().getFullYear() + 10)) {
       return res.status(400).json({
-        status: 'error',
+        data: null,
         message: 'Invalid year parameter. Must be between 1900 and current year + 10.',
-        data: null
+        status: 'error'
       });
     }
 
     // Validate asset_id if provided
     if (assetParam && isNaN(asset_id!)) {
       return res.status(400).json({
-        status: 'error',
+        data: null,
         message: 'Invalid asset parameter. Must be a valid number.',
-        data: null
+        status: 'error'
       });
     }
 
@@ -1016,7 +1017,7 @@ export const getAssessments = async (req: Request, res: Response) => {
       assetModel.getEmployees()
     ]);
 
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -1033,7 +1034,7 @@ export const getAssessments = async (req: Request, res: Response) => {
         const a = assetMap.get(r.asset_id);
         // compute purchase_date and age if available
         const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
-        let age: number | null = null;
+        let age: null | number = null;
         if (purchase_date) {
           const pd = new Date(String(purchase_date));
           if (!isNaN(pd.getTime())) {
@@ -1042,55 +1043,55 @@ export const getAssessments = async (req: Request, res: Response) => {
           }
         }
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
         asset = {
-          id: r.asset_id,
-          register_number: a.register_number || a.vehicle_regno || null,
-          purchase_date,
           age,
           costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          id: r.asset_id,
           location: (() => {
             const locId = a.location_id ?? a.location?.id ?? null;
             if (!locId) return null;
             const found = locationMap.get(locId);
-            return found ? { id: locId, code: found.code || found.name || null } : null;
+            return found ? { code: found.code || found.name || null, id: locId } : null;
           })(),
-          owner
+          owner,
+          purchase_date,
+          register_number: a.register_number || a.vehicle_regno || null
         };
       }
       // omit reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id from response (these are internal identifiers)
-      const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id, ...clean } = r as any;
+      const { a_loc, asset_id, loc_id, location_id, ownership, reg_no, vehicle_id, ...clean } = r;
       // attach assessed_location resolved from location_id (if present)
       const assessed_location = (r.location_id && locationMap.has(r.location_id)) ? (() => {
         const l = locationMap.get(r.location_id);
-        return { id: r.location_id, code: l.code || l.name || null };
+        return { code: l.code || l.name || null, id: r.location_id };
       })() : null;
       
       // Convert upload paths to full public URLs
       return { 
         ...clean, 
-        asset, 
-        assessed_location,
         // Convert attachment fields to full URLs
-        a_upload: toPublicUrl(clean.a_upload),
+        a_upload: toPublicUrl(clean.a_upload), 
         a_upload2: toPublicUrl(clean.a_upload2),
         a_upload3: toPublicUrl(clean.a_upload3),
         a_upload4: toPublicUrl(clean.a_upload4),
+        assessed_location,
+        asset,
       };
     });
 
-    return res.json({ status: 'success', message: 'Assessments retrieved', data });
+    return res.json({ data, message: 'Assessments retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessments', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessments', status: 'error' });
   }
 };
 
 export const getAssessmentById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getAssessmentById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment not found', data: null });
+    if (!row) return res.status(404).json({ data: null, message: 'Assessment not found', status: 'error' });
     // also fetch child details and include them
     const details = await complianceModel.getAssessmentDetails(id).catch(() => []);
 
@@ -1098,7 +1099,7 @@ export const getAssessmentById = async (req: Request, res: Response) => {
     const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
     const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
     const qsetMap = new Map<number, string>();
-    for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+    for (const c of criteria) if (c?.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
 
     // enrich asset_id into full asset object (reuse same enrichment pattern as other endpoints)
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
@@ -1107,7 +1108,7 @@ export const getAssessmentById = async (req: Request, res: Response) => {
       assetModel.getLocations(),
       assetModel.getEmployees()
     ]);
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -1122,7 +1123,7 @@ export const getAssessmentById = async (req: Request, res: Response) => {
       const a = assetMap.get((row as any).asset_id);
       // compute purchase_date and age if available
       const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
-      let age: number | null = null;
+      let age: null | number = null;
       if (purchase_date) {
         const pd = new Date(String(purchase_date));
         if (!isNaN(pd.getTime())) {
@@ -1131,62 +1132,62 @@ export const getAssessmentById = async (req: Request, res: Response) => {
         }
       }
       const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+      const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
       asset = {
-        id: (row as any).asset_id,
-        register_number: a.register_number || a.vehicle_regno || null,
-        purchase_date,
         age,
         costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+        id: (row as any).asset_id,
         location: (() => {
           const locId = a.location_id ?? a.location?.id ?? null;
           if (!locId) return null;
           const found = locationMap.get(locId);
-          return found ? { id: locId, code: found.code || found.name || null } : null;
+          return found ? { code: found.code || found.name || null, id: locId } : null;
         })(),
-        owner
+        owner,
+        purchase_date,
+        register_number: a.register_number || a.vehicle_regno || null
       };
     }
 
     // attach qset_desc to each detail (if available)
     const enrichedDetails = (Array.isArray(details) ? details : []).map((d: any) => {
-      const qid = d && d.adt_item ? Number(d.adt_item) : null;
+      const qid = d?.adt_item ? Number(d.adt_item) : null;
       const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
       const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
       // remove internal ids from detail response
-      const { vehicle_id, asset_id, ...rest } = d || {};
+      const { asset_id, vehicle_id, ...rest } = d || {};
       return { 
         ...rest, 
-        qset_desc, 
-        qset_type,
         // Convert detail image URL to full path
-        adt_image: toPublicUrl(rest.adt_image)
+        adt_image: toPublicUrl(rest.adt_image), 
+        qset_desc,
+        qset_type
       };
     });
 
     // omit internal fields before returning
-    const { reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id, ...cleanRow } = row as any;
+    const { a_loc, asset_id, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanRow } = row as any;
     const assessment_location = ((row as any).location_id && locationMap.has((row as any).location_id)) ? (() => {
       const l = locationMap.get((row as any).location_id);
-      return { id: (row as any).location_id, code: l.code || l.name || null };
+      return { code: l.code || l.name || null, id: (row as any).location_id };
     })() : null;
 
     // Convert upload paths to full public URLs
     const responseData = {
       ...cleanRow,
-      asset,
-      assessment_location,
-      details: enrichedDetails,
       // Convert attachment fields to full URLs
       a_upload: toPublicUrl(cleanRow.a_upload),
       a_upload2: toPublicUrl(cleanRow.a_upload2),
       a_upload3: toPublicUrl(cleanRow.a_upload3),
       a_upload4: toPublicUrl(cleanRow.a_upload4),
+      assessment_location,
+      asset,
+      details: enrichedDetails,
     };
 
-    return res.json({ status: 'success', message: 'Assessment retrieved', data: responseData });
+    return res.json({ data: responseData, message: 'Assessment retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment', status: 'error' });
   }
 };
 
@@ -1208,7 +1209,7 @@ export const createAssessment = async (req: Request, res: Response) => {
           // Handle object with numeric keys: { '0': {...}, '1': {...} }
           const keys = Object.keys(body.details).filter(k => /^\d+$/.test(k)).sort((a,b)=>Number(a)-Number(b));
           if (keys.length > 0) {
-            details = keys.map(k => (body.details as any)[k]);
+            details = keys.map(k => (body.details)[k]);
           }
         }
       } catch (err) {
@@ -1224,8 +1225,8 @@ export const createAssessment = async (req: Request, res: Response) => {
         /^details\.(\d+)\.([^.]+)$/
       ];
       for (const [k, vRaw] of Object.entries(body)) {
-        let idx: number | null = null;
-        let field: string | null = null;
+        let idx: null | number = null;
+        let field: null | string = null;
         for (const re of keyPatterns) {
           const m = re.exec(k);
           if (m) { idx = Number(m[1]); field = m[2]; break; }
@@ -1235,9 +1236,9 @@ export const createAssessment = async (req: Request, res: Response) => {
         const val = vRaw as any;
         if (['adt_item', 'adt_ncr', 'adt_rate2', 'vehicle_id'].includes(field)) {
           const num = Number(val);
-          (indexedMap.get(idx) as any)[field] = isNaN(num) ? null : num;
+          (indexedMap.get(idx))[field] = isNaN(num) ? null : num;
         } else {
-          (indexedMap.get(idx) as any)[field] = val;
+          (indexedMap.get(idx))[field] = val;
         }
       }
       if (indexedMap.size > 0) {
@@ -1321,7 +1322,7 @@ export const createAssessment = async (req: Request, res: Response) => {
     const adtImageArray = filesByField.get('adt_image') || filesByField.get('adt_images') || [];
 
     // Helper to persist a temp file and return stored relative path
-    const persistDetailFile = async (file: Express.Multer.File, index: number, adtItem?: any): Promise<string | null> => {
+    const persistDetailFile = async (file: Express.Multer.File, index: number, adtItem?: any): Promise<null | string> => {
       try {
         const tempPath = file.path;
         const ext = path.extname(file.originalname || tempPath) || '';
@@ -1341,9 +1342,9 @@ export const createAssessment = async (req: Request, res: Response) => {
     };
 
     for (let i = 0; i < details.length; i++) {
-      const d = { ...details[i] } as any;
+      const d = { ...details[i] };
       d.assess_id = assessId;
-      let attachedPath: string | null = null;
+      let attachedPath: null | string = null;
 
       // Strategy 0: bracket/dot-nested fieldnames e.g. details[0][adt_image]
       if (!attachedPath) {
@@ -1440,11 +1441,11 @@ export const createAssessment = async (req: Request, res: Response) => {
 
         // Build template data
         const assessmentDate = (assess as any).a_date || (assess as any).a_dt || null;
-        const { subject, html, text } = renderVehicleAssessmentNotification({
-          asset: { id: asset?.id || assetId, code: asset?.register_number || asset?.asset_code || String(assetId), name: asset?.model_name, ramco_id: asset?.ramco_id },
-          driver: { ramco_id: driver?.ramco_id || '', full_name: driver?.full_name || driver?.name || '', email: toEmail },
-          assessment: { id: assessId, date: String(assessmentDate || ''), remark: (assess as any).a_remark, rate: (assess as any).a_rate, ncr: (assess as any).a_ncr },
+        const { html, subject, text } = renderVehicleAssessmentNotification({
+          assessment: { date: String(assessmentDate || ''), id: assessId, ncr: (assess as any).a_ncr, rate: (assess as any).a_rate, remark: (assess as any).a_remark },
+          asset: { code: asset?.register_number || asset?.asset_code || String(assetId), id: asset?.id || assetId, name: asset?.model_name, ramco_id: asset?.ramco_id },
           details: [],
+          driver: { email: toEmail, full_name: driver?.full_name || driver?.name || '', ramco_id: driver?.ramco_id || '' },
           portalLink,
           securityPin,
         });
@@ -1462,13 +1463,13 @@ export const createAssessment = async (req: Request, res: Response) => {
           // If basePath exists, attach file via absolute path; else, skip attaching and rely on links in email body
           const absPath = basePath ? path.join(basePath, p.replace(/^uploads\//, '')) : undefined;
           return absPath ? { filename, path: absPath } : null;
-        }).filter(Boolean) as Array<{ filename: string; path: string }>;
+        }).filter(Boolean) as { filename: string; path: string }[];
 
         try {
           await sendMail(toEmail, subject, html, { 
-            text, 
-            attachments,
-            cc: supervisorEmail || undefined
+            attachments, 
+            cc: supervisorEmail || undefined,
+            text
           });
         } catch (mailErr) {
           console.error('createAssessment: mail send error', mailErr);
@@ -1478,33 +1479,33 @@ export const createAssessment = async (req: Request, res: Response) => {
       }
     })();
 
-    return res.status(201).json({ status: 'success', message: 'Assessment created', data: { id: assessId } });
+    return res.status(201).json({ data: { id: assessId }, message: 'Assessment created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create assessment', status: 'error' });
   }
 };
 
 export const updateAssessment = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     await complianceModel.updateAssessment(id, data);
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update assessment', status: 'error' });
   }
 };
 
 export const deleteAssessment = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteAssessment(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment', status: 'error' });
   }
 };
 
@@ -1512,16 +1513,16 @@ export const deleteAssessment = async (req: Request, res: Response) => {
 export const acceptAssessment = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid assessment id' });
+    if (!id) return res.status(400).json({ message: 'Invalid assessment id', status: 'error' });
     const { acceptance_status } = req.body;
     if (![1, 2].includes(Number(acceptance_status))) {
-      return res.status(400).json({ status: 'error', message: 'Invalid acceptance_status (must be 1 or 2)' });
+      return res.status(400).json({ message: 'Invalid acceptance_status (must be 1 or 2)', status: 'error' });
     }
     const acceptance_date = new Date();
     await complianceModel.updateAssessmentAcceptance(id, Number(acceptance_status), acceptance_date);
-    return res.json({ status: 'success', message: 'Assessment acceptance updated' });
+    return res.json({ message: 'Assessment acceptance updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update acceptance', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update acceptance', status: 'error' });
   }
 };
 
@@ -1529,42 +1530,42 @@ export const acceptAssessment = async (req: Request, res: Response) => {
 export const getAssessmentDetails = async (req: Request, res: Response) => {
   try {
     const assess_id = Number(req.params.assessId || req.query.assess_id || req.query.assessId);
-    if (!assess_id) return res.status(400).json({ status: 'error', message: 'Invalid assess_id' });
+    if (!assess_id) return res.status(400).json({ message: 'Invalid assess_id', status: 'error' });
     const rows = await complianceModel.getAssessmentDetails(assess_id);
     const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
     const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
     const qsetMap = new Map<number, string>();
-    for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+    for (const c of criteria) if (c?.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
     const enriched = (Array.isArray(rows) ? rows : []).map((r: any) => {
-      const qid = r && r.adt_item ? Number(r.adt_item) : null;
+      const qid = r?.adt_item ? Number(r.adt_item) : null;
       const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
       const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
-      const { vehicle_id, asset_id, ...rest } = r || {};
+      const { asset_id, vehicle_id, ...rest } = r || {};
       return { ...rest, qset_desc, qset_type };
     });
-    return res.json({ status: 'success', message: 'Assessment details retrieved', data: enriched });
+    return res.json({ data: enriched, message: 'Assessment details retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment details', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment details', status: 'error' });
   }
 };
 
 export const getAssessmentDetailById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const row = await complianceModel.getAssessmentDetailById(id);
-    if (!row) return res.status(404).json({ status: 'error', message: 'Assessment detail not found', data: null });
+    if (!row) return res.status(404).json({ data: null, message: 'Assessment detail not found', status: 'error' });
     const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
     const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
     const qsetMap = new Map<number, string>();
-    for (const c of criteria) if (c && c.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+    for (const c of criteria) if (c?.qset_id) qsetMap.set(Number(c.qset_id), c.qset_desc || null);
     const qid = row && (row as any).adt_item ? Number((row as any).adt_item) : null;
     const qset_desc = qid && qsetMap.has(qid) ? qsetMap.get(qid) : null;
     const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
-    const { vehicle_id, asset_id, ...rest } = (row as any) || {};
-    return res.json({ status: 'success', message: 'Assessment detail retrieved', data: { ...rest, qset_desc, qset_type } });
+    const { asset_id, vehicle_id, ...rest } = (row as any) || {};
+    return res.json({ data: { ...rest, qset_desc, qset_type }, message: 'Assessment detail retrieved', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to fetch assessment detail', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment detail', status: 'error' });
   }
 };
 
@@ -1572,33 +1573,33 @@ export const createAssessmentDetail = async (req: Request, res: Response) => {
   try {
     const data: any = req.body || {};
     const id = await complianceModel.createAssessmentDetail(data);
-    return res.status(201).json({ status: 'success', message: 'Assessment detail created', data: { id } });
+    return res.status(201).json({ data: { id }, message: 'Assessment detail created', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to create assessment detail', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to create assessment detail', status: 'error' });
   }
 };
 
 export const updateAssessmentDetail = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     const data: any = req.body || {};
     await complianceModel.updateAssessmentDetail(id, data);
-    return res.json({ status: 'success', message: 'Updated' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to update assessment detail', data: null });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update assessment detail', status: 'error' });
   }
 };
 
 export const deleteAssessmentDetail = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ status: 'error', message: 'Invalid id' });
+    if (!id) return res.status(400).json({ message: 'Invalid id', status: 'error' });
     await complianceModel.deleteAssessmentDetail(id);
-    return res.json({ status: 'success', message: 'Deleted' });
+    return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ status: 'error', message: e.message, data: null });
-    return res.status(500).json({ status: 'error', message: e instanceof Error ? e.message : 'Failed to delete assessment detail', data: null });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment detail', status: 'error' });
   }
 };
 
@@ -1609,21 +1610,21 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
     const yearParam = req.query.year as string;
 
     if (!assetParam) {
-      return res.status(400).json({ status: 'error', message: 'asset parameter is required', data: null });
+      return res.status(400).json({ data: null, message: 'asset parameter is required', status: 'error' });
     }
 
     const asset_id = parseInt(assetParam, 10);
     if (isNaN(asset_id)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid asset parameter', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid asset parameter', status: 'error' });
     }
 
     if (!yearParam) {
-      return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+      return res.status(400).json({ data: null, message: 'year parameter is required', status: 'error' });
     }
 
     const year = parseInt(yearParam, 10);
     if (isNaN(year) || year < 1900 || year > new Date().getFullYear() + 10) {
-      return res.status(400).json({ status: 'error', message: 'Invalid year parameter', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid year parameter', status: 'error' });
     }
 
     const assessments = await complianceModel.getAssessmentDetailsByAssetAndYear(asset_id, year);
@@ -1636,7 +1637,7 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
       assetModel.getEmployees()
     ]);
 
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -1652,7 +1653,7 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
     const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
     const qsetMap = new Map<number, any>();
     for (const c of criteria) {
-      if (c && c.qset_id) {
+      if (c?.qset_id) {
         qsetMap.set(Number(c.qset_id), { 
           qset_desc: c.qset_desc || null,
           qset_type: c.qset_type || null
@@ -1663,25 +1664,25 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
     // Enrich details with criteria descriptions and convert URLs
     const enrichedData = assessments.map((assessment: any) => {
       const enrichedDetails = (assessment.details || []).map((d: any) => {
-        const qid = d && d.adt_item ? Number(d.adt_item) : null;
+        const qid = d?.adt_item ? Number(d.adt_item) : null;
         const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
-        const { vehicle_id, asset_id, ...rest } = d || {};
+        const { asset_id, vehicle_id, ...rest } = d || {};
         return { 
           ...rest, 
+          adt_image: toPublicUrl(rest.adt_image),
           qset_desc: qset_info.qset_desc,
-          qset_type: qset_info.qset_type,
-          adt_image: toPublicUrl(rest.adt_image)
+          qset_type: qset_info.qset_type
         };
       });
 
-      const { details, reg_no, vehicle_id, asset_id: aid, a_loc, ownership, loc_id, location_id, ...cleanAssessment } = assessment;
+      const { a_loc, asset_id: aid, details, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanAssessment } = assessment;
       
       // Build asset object
       let asset = null;
       if (aid && assetMap.has(aid)) {
         const a = assetMap.get(aid);
         const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
-        let age: number | null = null;
+        let age: null | number = null;
         if (purchase_date) {
           const pd = new Date(String(purchase_date));
           if (!isNaN(pd.getTime())) {
@@ -1690,50 +1691,50 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
           }
         }
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
         asset = {
-          id: aid,
-          register_number: a.register_number || a.vehicle_regno || null,
-          purchase_date,
           age,
           costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          id: aid,
           location: (() => {
             const locId = a.location_id ?? a.location?.id ?? null;
             if (!locId) return null;
             const found = locationMap.get(locId);
-            return found ? { id: locId, code: found.code || found.name || null } : null;
+            return found ? { code: found.code || found.name || null, id: locId } : null;
           })(),
-          owner
+          owner,
+          purchase_date,
+          register_number: a.register_number || a.vehicle_regno || null
         };
       }
 
       // Build assessed_location
       const assessed_location = location_id && locationMap.has(location_id) 
-        ? { id: location_id, code: locationMap.get(location_id).code || locationMap.get(location_id).name || null }
+        ? { code: locationMap.get(location_id).code || locationMap.get(location_id).name || null, id: location_id }
         : null;
 
       return {
         ...cleanAssessment,
-        asset,
-        assessed_location,
-        details: enrichedDetails,
         a_upload: toPublicUrl(cleanAssessment.a_upload),
         a_upload2: toPublicUrl(cleanAssessment.a_upload2),
         a_upload3: toPublicUrl(cleanAssessment.a_upload3),
         a_upload4: toPublicUrl(cleanAssessment.a_upload4),
+        assessed_location,
+        asset,
+        details: enrichedDetails,
       };
     });
 
     return res.json({ 
-      status: 'success', 
+      data: enrichedData, 
       message: `${enrichedData.length} assessment(s) retrieved`, 
-      data: enrichedData 
+      status: 'success' 
     });
   } catch (e) {
     return res.status(500).json({ 
-      status: 'error', 
+      data: null, 
       message: e instanceof Error ? e.message : 'Failed to fetch assessment details', 
-      data: null 
+      status: 'error' 
     });
   }
 };
@@ -1745,21 +1746,21 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     const yearParam = req.query.year as string;
 
     if (!assetParam) {
-      return res.status(400).json({ status: 'error', message: 'asset parameter is required', data: null });
+      return res.status(400).json({ data: null, message: 'asset parameter is required', status: 'error' });
     }
 
     const asset_id = parseInt(assetParam, 10);
     if (isNaN(asset_id)) {
-      return res.status(400).json({ status: 'error', message: 'Invalid asset parameter', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid asset parameter', status: 'error' });
     }
 
     if (!yearParam) {
-      return res.status(400).json({ status: 'error', message: 'year parameter is required', data: null });
+      return res.status(400).json({ data: null, message: 'year parameter is required', status: 'error' });
     }
 
     const year = parseInt(yearParam, 10);
     if (isNaN(year) || year < 1900 || year > new Date().getFullYear() + 10) {
-      return res.status(400).json({ status: 'error', message: 'Invalid year parameter', data: null });
+      return res.status(400).json({ data: null, message: 'Invalid year parameter', status: 'error' });
     }
 
     const assessments = await complianceModel.getAssessmentNCRDetailsByAsset(asset_id, year);
@@ -1772,7 +1773,7 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
       assetModel.getEmployees()
     ]);
 
-    const assets = Array.isArray(assetsRaw) ? (assetsRaw as any[]) : [];
+    const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
     const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
     const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
@@ -1788,7 +1789,7 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
     const qsetMap = new Map<number, any>();
     for (const c of criteria) {
-      if (c && c.qset_id) {
+      if (c?.qset_id) {
         qsetMap.set(Number(c.qset_id), { 
           qset_desc: c.qset_desc || null,
           qset_type: c.qset_type || null
@@ -1799,25 +1800,25 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     // Enrich details with criteria descriptions and convert URLs
     const enrichedData = assessments.map((assessment: any) => {
       const enrichedDetails = (assessment.details || []).map((d: any) => {
-        const qid = d && d.adt_item ? Number(d.adt_item) : null;
+        const qid = d?.adt_item ? Number(d.adt_item) : null;
         const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
-        const { vehicle_id, asset_id, ...rest } = d || {};
+        const { asset_id, vehicle_id, ...rest } = d || {};
         return { 
           ...rest, 
+          adt_image: toPublicUrl(rest.adt_image),
           qset_desc: qset_info.qset_desc,
-          qset_type: qset_info.qset_type,
-          adt_image: toPublicUrl(rest.adt_image)
+          qset_type: qset_info.qset_type
         };
       });
 
-      const { details, reg_no, vehicle_id, asset_id: aid, a_loc, ownership, loc_id, location_id, ...cleanAssessment } = assessment;
+      const { a_loc, asset_id: aid, details, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanAssessment } = assessment;
       
       // Build asset object
       let asset = null;
       if (aid && assetMap.has(aid)) {
         const a = assetMap.get(aid);
         const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
-        let age: number | null = null;
+        let age: null | number = null;
         if (purchase_date) {
           const pd = new Date(String(purchase_date));
           if (!isNaN(pd.getTime())) {
@@ -1826,50 +1827,50 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
           }
         }
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { ramco_id: ownerRamco, full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null } : null;
+        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
         asset = {
-          id: aid,
-          register_number: a.register_number || a.vehicle_regno || null,
-          purchase_date,
           age,
           costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
+          id: aid,
           location: (() => {
             const locId = a.location_id ?? a.location?.id ?? null;
             if (!locId) return null;
             const found = locationMap.get(locId);
-            return found ? { id: locId, code: found.code || found.name || null } : null;
+            return found ? { code: found.code || found.name || null, id: locId } : null;
           })(),
-          owner
+          owner,
+          purchase_date,
+          register_number: a.register_number || a.vehicle_regno || null
         };
       }
 
       // Build assessed_location
       const assessed_location = location_id && locationMap.has(location_id) 
-        ? { id: location_id, code: locationMap.get(location_id).code || locationMap.get(location_id).name || null }
+        ? { code: locationMap.get(location_id).code || locationMap.get(location_id).name || null, id: location_id }
         : null;
 
       return {
         ...cleanAssessment,
-        asset,
-        assessed_location,
-        details: enrichedDetails,
         a_upload: toPublicUrl(cleanAssessment.a_upload),
         a_upload2: toPublicUrl(cleanAssessment.a_upload2),
         a_upload3: toPublicUrl(cleanAssessment.a_upload3),
         a_upload4: toPublicUrl(cleanAssessment.a_upload4),
+        assessed_location,
+        asset,
+        details: enrichedDetails,
       };
     });
 
     return res.json({ 
-      status: 'success', 
+      data: enrichedData, 
       message: `${enrichedData.length} assessment(s) with NCR retrieved`, 
-      data: enrichedData 
+      status: 'success' 
     });
   } catch (e) {
     return res.status(500).json({ 
-      status: 'error', 
+      data: null, 
       message: e instanceof Error ? e.message : 'Failed to fetch NCR assessment details', 
-      data: null 
+      status: 'error' 
     });
   }
 };

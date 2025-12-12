@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import asyncHandler from "../../utils/asyncHandler";
 
+import asyncHandler from "../../utils/asyncHandler";
 import * as organizationController from './organizationController';
 
 const router = Router();

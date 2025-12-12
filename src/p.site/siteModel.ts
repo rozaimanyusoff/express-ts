@@ -1,5 +1,5 @@
 import { pool3 } from "../utils/db";
-import { SiteSummary, District } from "./interface";
+import { District, SiteSummary } from "./interface";
 
 export const fetchSiteInfo = async (offset: number, pageSize: number): Promise<SiteSummary[]> => {
   const [rows] = await pool3.query(`

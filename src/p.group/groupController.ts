@@ -1,13 +1,14 @@
 import { Request, Response } from 'express';
-import { getAllGroups, getGroupById, createGroup, updateGroup, assignUserToGroups } from './groupModel';
+
+import { getNavigationByGroups, setNavigationPermissionsForGroup, updateNavigationPermission } from '../p.nav/navModel';
 import { getAllUsers } from '../p.user/userModel';
-import { getNavigationByGroups, updateNavigationPermission, setNavigationPermissionsForGroup } from '../p.nav/navModel';
+import { assignUserToGroups, createGroup, getAllGroups, getGroupById, updateGroup } from './groupModel';
 
 // Get all groups
 export const getAllGroups1 = async (_req: Request, res: Response): Promise<Response> => {
     try {
         const groups = await getAllGroups();
-        return res.status(200).json({ success: true, groups });
+        return res.status(200).json({ groups, success: true });
     } catch (error) {
         console.error('Error getting all groups:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -43,11 +44,11 @@ export const createGroup1 = async (req: Request, res: Response): Promise<Respons
 // Update group
 export const updateGroup1 = async (req: Request, res: Response): Promise<Response> => {
     const { id } = req.params;
-    const { name, desc, status, userIds, navIds } = req.body;
+    const { desc, name, navIds, status, userIds } = req.body;
 
     try {
         // Update group basic info
-        await updateGroup(Number(id), { name, desc, status });
+        await updateGroup(Number(id), { desc, name, status });
 
         // Update user-group associations
         if (Array.isArray(userIds)) {
@@ -59,7 +60,7 @@ export const updateGroup1 = async (req: Request, res: Response): Promise<Respons
             await setNavigationPermissionsForGroup(Number(id), navIds);
         }
 
-        return res.status(200).json({ success: true, message: 'Group updated successfully' });
+        return res.status(200).json({ message: 'Group updated successfully', success: true });
     } catch (error) {
         console.error('Error updating group:', error);
         return res.status(500).json({ error: 'Internal server error' });
@@ -73,17 +74,17 @@ export const getAllGroupsStructured = async (_req: Request, res: Response): Prom
         const users = await getAllUsers();
 
         // Map groupId to users
-        const userGroupsMap: { [groupId: number]: any[] } = {};
+        const userGroupsMap: Record<number, any[]> = {};
         users.forEach(user => {
             if (user.usergroups) {
                 user.usergroups.split(',').forEach((gid: string) => {
                     const groupId = parseInt(gid, 10);
                     if (!userGroupsMap[groupId]) userGroupsMap[groupId] = [];
                     userGroupsMap[groupId].push({
+                        email: user.email,
                         id: user.id,
-                        username: user.username,
                         name: user.fname,
-                        email: user.email
+                        username: user.username
                     });
                 });
             }
@@ -95,20 +96,20 @@ export const getAllGroupsStructured = async (_req: Request, res: Response): Prom
             // Limit navTree fields to id, title, path
             const navTree = navTreeRaw.map((nav: any) => ({
                 navId: nav.id,
-                title: nav.title,
-                path: nav.path
+                path: nav.path,
+                title: nav.title
             }));
             return {
                 ...group,
-                users: userGroupsMap[group.id] || [],
-                navTree: navTree || []
+                navTree: navTree || [],
+                users: userGroupsMap[group.id] || []
             };
         }));
 
         return res.status(200).json({
-            success: true,
+            data,
             message: 'Groups data retrieved successfully',
-            data
+            success: true
         });
     } catch (error) {
         console.error('Error getting all groups:', error);

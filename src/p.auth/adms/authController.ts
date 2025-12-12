@@ -1,27 +1,28 @@
-import { Request, Response } from 'express';
-import dotenv from 'dotenv';
-import * as userModel from '../../p.user/userModel';
-import * as navModel from '../../p.nav/navModel';
-import * as groupModel from '../../p.group/groupModel';
-import * as pendingUserModel from '../../p.user/pendingUserModel';
-import * as logModel from '../../p.admin/logModel';
-import * as notificationModel from '../../p.admin/notificationModel';
-import logger from '../../utils/logger';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { sendMail } from '../../utils/mailer';
 import os from 'os';
 import { URL } from 'url';
+import { v4 as uuidv4 } from 'uuid';
+
+import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../middlewares/rateLimiter';
+import * as logModel from '../../p.admin/logModel';
+import * as notificationModel from '../../p.admin/notificationModel';
+import * as assetModel from '../../p.asset/assetModel';
+import * as groupModel from '../../p.group/groupModel';
+import * as navModel from '../../p.nav/navModel';
+import * as pendingUserModel from '../../p.user/pendingUserModel';
+import * as userModel from '../../p.user/userModel';
+import {pool} from '../../utils/db';
+import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
+import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
+import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
+import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
+import logger from '../../utils/logger';
+import { sendMail } from '../../utils/mailer';
 import buildNavigationTree from '../../utils/navBuilder';
 import { toPublicUrl } from '../../utils/uploadUtil';
-import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
-import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
-import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
-import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
-import { v4 as uuidv4 } from 'uuid';
-import * as assetModel from '../../p.asset/assetModel';
-import {pool} from '../../utils/db';
-import { clearClientBlock, resetAttempts, recordFailedAttempt } from '../../middlewares/rateLimiter';
 
 dotenv.config();
 
@@ -37,7 +38,7 @@ try {
 
 // Register a new user (mirrors frontend handler validation)
 export const register = async (req: Request, res: Response): Promise<Response> => {
-    const { name = '', email = '', contact = '', userType, username = '' } = req.body || {};
+    const { contact = '', email = '', name = '', username = '', userType } = req.body || {};
 
     // Helper: company email check (configurable via COMPANY_EMAIL_DOMAINS env, comma separated)
     const companyDomains = (process.env.COMPANY_EMAIL_DOMAINS || '')
@@ -87,7 +88,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     }
 
     if (Object.keys(errors).length > 0) {
-        return res.status(400).json({ status: 'error', code: 400, message: 'Validation failed', errors });
+        return res.status(400).json({ code: 400, errors, message: 'Validation failed', status: 'error' });
     }
 
     // Normalize email/contact for duplicate checks (email lowercased; contact as provided)
@@ -101,7 +102,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
 
         // If already an activated account -> treat as success guidance
         if (existingAccounts.length > 0 && existingAccounts[0].activated_at) {
-            return res.status(200).json({ status: 'success', message: 'Account already exists. Please login.' });
+            return res.status(200).json({ message: 'Account already exists. Please login.', status: 'success' });
         }
 
         // If pending exists -> idempotent behavior
@@ -120,22 +121,22 @@ export const register = async (req: Request, res: Response): Promise<Response> =
                 } catch (mailErr) {
                     logger.error('Resend activation email error:', mailErr);
                 }
-                return res.status(200).json({ status: 'success', message: 'Activation email resent. Please check your inbox.' });
+                return res.status(200).json({ message: 'Activation email resent. Please check your inbox.', status: 'success' });
             }
             // Non-employee pending
-            return res.status(200).json({ status: 'success', message: 'Registration already received and pending admin approval.' });
+            return res.status(200).json({ message: 'Registration already received and pending admin approval.', status: 'success' });
         }
 
         // Username required & uniqueness check only for employees (user_type = 1)
         if (Number(userType) === 1) {
             if (!username.trim()) {
-                return res.status(400).json({ status: 'error', code: 400, message: 'Username (Ramco ID) is required for employee registration' });
+                return res.status(400).json({ code: 400, message: 'Username (Ramco ID) is required for employee registration', status: 'error' });
             }
             try {
                 const [userRows]: any[] = await pool.query('SELECT id FROM users WHERE username = ? LIMIT 1', [username.trim()]);
                 const [pendingRows]: any[] = await pool.query('SELECT id FROM pending_users WHERE username = ? LIMIT 1', [username.trim()]);
                 if ((Array.isArray(userRows) && userRows.length) || (Array.isArray(pendingRows) && pendingRows.length)) {
-                    return res.status(409).json({ status: 'error', code: 409, message: 'Username already in use' });
+                    return res.status(409).json({ code: 409, message: 'Username already in use', status: 'error' });
                 }
             } catch (unameErr) {
                 logger.error('Username duplicate check error:', unameErr);
@@ -147,15 +148,15 @@ export const register = async (req: Request, res: Response): Promise<Response> =
             // Employee flow: immediate activation email (similar to invitation)
             const activationCode = crypto.randomBytes(32).toString('hex');
             await pendingUserModel.createPendingUser({
-                fname: name.trim(),
-                username: username.trim(),
-                email: normalizedEmail,
-                contact: normalizedContact,
-                user_type: 1,
-                status: 2, // auto-approved state
                 activation_code: activationCode,
-                ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || null,
+                contact: normalizedContact,
+                email: normalizedEmail,
+                fname: name.trim(),
+                ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+                status: 2, // auto-approved state
                 user_agent: req.headers['user-agent'] || null,
+                user_type: 1,
+                username: username.trim(),
             });
 
             const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
@@ -163,43 +164,43 @@ export const register = async (req: Request, res: Response): Promise<Response> =
                 await sendMail(normalizedEmail, 'Account Activation', accountActivationTemplate(name.trim(), activationLink));
             } catch (mailErr) {
                 logger.error('Employee activation email send error:', mailErr);
-                return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email' });
+                return res.status(500).json({ code: 500, message: 'Failed to send activation email', status: 'error' });
             }
 
             // Optional: notify admins of auto employee registration
             try {
                 await notificationModel.createNotification({
-                    userId: 0,
-                    type: 'registration',
                     message: `Employee registration (auto activation sent): ${name} (${normalizedEmail})`,
+                    type: 'registration',
+                    userId: 0,
                 });
             } catch (notifyErr) {
                 logger.error('Notification creation error (non-fatal):', notifyErr);
             }
 
             return res.status(201).json({
-                status: 'success',
                 message: 'Registration successful. Please check your email to activate your account.',
+                status: 'success',
             });
         } else {
             // Non-employee flow: pending admin approval (no activation code yet)
             await pendingUserModel.createPendingUser({
-                fname: name.trim(),
-                username: username?.trim() || null,
-                email: normalizedEmail,
-                contact: normalizedContact,
-                user_type: Number(userType),
-                status: 1, // 1 = awaiting admin approval
                 activation_code: null,
-                ip: (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || null,
+                contact: normalizedContact,
+                email: normalizedEmail,
+                fname: name.trim(),
+                ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+                status: 1, // 1 = awaiting admin approval
                 user_agent: req.headers['user-agent'] || null,
+                user_type: Number(userType),
+                username: username?.trim() || null,
             });
 
             try {
                 await notificationModel.createNotification({
-                    userId: 0,
-                    type: 'registration',
                     message: `New user registration pending admin approval: ${name} (${normalizedEmail})`,
+                    type: 'registration',
+                    userId: 0,
                 });
             } catch (notifyErr) {
                 logger.error('Notification creation error (non-fatal):', notifyErr);
@@ -212,14 +213,14 @@ export const register = async (req: Request, res: Response): Promise<Response> =
             }
 
             return res.status(201).json({
-                status: 'success',
                 message: 'Registration successful. Awaiting admin approval.',
+                status: 'success',
             });
         }
     } catch (error: unknown) {
         logger.error('Registration error:', error);
-        await logModel.logAuthActivity(0, 'register', 'fail', { reason: 'exception', error: String(error) }, req);
-        return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
+        await logModel.logAuthActivity(0, 'register', 'fail', { error: String(error), reason: 'exception' }, req);
+        return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
     }
 };
 
@@ -227,16 +228,16 @@ export const register = async (req: Request, res: Response): Promise<Response> =
 export const approvePendingUser = async (req: Request, res: Response): Promise<Response> => {
     const { user_ids } = req.body;
     if (!Array.isArray(user_ids) || user_ids.length === 0) {
-        return res.status(400).json({ status: 'error', message: 'user_ids must be a non-empty array' });
+        return res.status(400).json({ message: 'user_ids must be a non-empty array', status: 'error' });
     }
     const results = [];
     for (const pendingUserId of user_ids) {
         try {
             // Fetch pending user
             const [pendingUsers]: any[] = await pool.query('SELECT * FROM pending_users WHERE id = ?', [pendingUserId]);
-            const pendingUser = pendingUsers && pendingUsers[0];
+            const pendingUser = pendingUsers?.[0];
             if (!pendingUser) {
-                results.push({ user_id: pendingUserId, status: 'not_found' });
+                results.push({ status: 'not_found', user_id: pendingUserId });
                 continue;
             }
             // Generate activation code and link
@@ -247,41 +248,41 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
             // Send activation email
             const mailOptions = {
                 from: process.env.EMAIL_FROM,
-                to: pendingUser.email,
-                subject: 'Account Activation',
                 html: accountActivationTemplate(pendingUser.fname, activationLink),
+                subject: 'Account Activation',
+                to: pendingUser.email,
             };
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
             await logModel.logAuthActivity(0, 'register', 'success', { pendingUserId }, req);
-            results.push({ user_id: pendingUserId, status: 'sent' });
+            results.push({ status: 'sent', user_id: pendingUserId });
         } catch (error) {
             logger.error('Admin approval error:', error);
-            results.push({ user_id: pendingUserId, status: 'error', error: String(error) });
+            results.push({ error: String(error), status: 'error', user_id: pendingUserId });
         }
     }
-    return res.status(200).json({ status: 'success', results });
+    return res.status(200).json({ results, status: 'success' });
 };
 
 // Validate user prior to registration
 export const validateActivationDetails = async (req: Request, res: Response): Promise<Response> => {
-    const { email, contact, activationCode } = req.body;
+    const { activationCode, contact, email } = req.body;
 
     try {
         const pendingUser = await pendingUserModel.findPendingUserByActivation(email, contact, activationCode);
         if (pendingUser) {
-            return res.status(200).json({ status: 'success', message: 'Validation successful', user_type: pendingUser.user_type });
+            return res.status(200).json({ message: 'Validation successful', status: 'success', user_type: pendingUser.user_type });
         } else {
-            return res.status(401).json({ status: 'error', code: 401, message: 'Invalid activation details' });
+            return res.status(401).json({ code: 401, message: 'Invalid activation details', status: 'error' });
         }
     } catch (error) {
         logger.error('Validation error:', error);
-        return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
+        return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
     }
 };
 
 // Activate user account from bulk invite or individual registration
 export const activateAccount = async (req: Request, res: Response): Promise<Response> => {
-    const { email, contact, activationCode, username, password } = req.body;
+    const { activationCode, contact, email, password, username } = req.body;
 
     try {
         // 1. Validate activation details in pending_users
@@ -290,13 +291,13 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
             // Check if user exists and is already activated
             const existingUsers = await userModel.findUserByEmailOrContact(email, contact);
             if (existingUsers.length > 0 && existingUsers[0].activated_at) {
-                logger.info('Activation attempt for already activated account', { email, contact });
-                await logModel.logAuthActivity(existingUsers[0].id, 'activate', 'fail', { reason: 'already_activated', email, contact }, req);
-                return res.status(409).json({ status: 'error', code: 409, message: 'Account already activated. Please log in.' });
+                logger.info('Activation attempt for already activated account', { contact, email });
+                await logModel.logAuthActivity(existingUsers[0].id, 'activate', 'fail', { contact, email, reason: 'already_activated' }, req);
+                return res.status(409).json({ code: 409, message: 'Account already activated. Please log in.', status: 'error' });
             }
-            logger.error('Activation failed: invalid activation details', { email, contact, activationCode });
-            await logModel.logAuthActivity(0, 'activate', 'fail', { reason: 'invalid_activation_details', email, contact }, req);
-            return res.status(401).json({ status: 'error', code: 401, message: 'Activation failed. Please check your details.' });
+            logger.error('Activation failed: invalid activation details', { activationCode, contact, email });
+            await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, reason: 'invalid_activation_details' }, req);
+            return res.status(401).json({ code: 401, message: 'Activation failed. Please check your details.', status: 'error' });
         }
 
         // 2. Move user from pending_users to users table
@@ -329,8 +330,6 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         // 6. Send activation email
         const mailOptions = {
             from: process.env.EMAIL_FROM,
-            to: email,
-            subject: 'Account Activation',
             html: accountActivatedTemplate(
                 username,
                 email,
@@ -338,27 +337,29 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                 groupNames.filter(Boolean).join(', '),
                 `${sanitizedFrontendUrl}/auth/login`
             ),
+            subject: 'Account Activation',
+            to: email,
         };
         try {
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
         } catch (mailError) {
             logger.error('Activation email send error:', mailError);
-            await logModel.logAuthActivity(newUserId, 'activate', 'fail', { reason: 'email_failed', email, contact }, req);
-            return res.status(500).json({ status: 'error', code: 500, message: 'Failed to send activation email. Activation aborted.' });
+            await logModel.logAuthActivity(newUserId, 'activate', 'fail', { contact, email, reason: 'email_failed' }, req);
+            return res.status(500).json({ code: 500, message: 'Failed to send activation email. Activation aborted.', status: 'error' });
         }
 
         // Notify all admins about the new user activation
         await notificationModel.createAdminNotification({
-            type: 'activation',
-            message: `User ${username} (${email}) has activated their account.`
+            message: `User ${username} (${email}) has activated their account.`,
+            type: 'activation'
         });
 
         await logModel.logAuthActivity(newUserId, 'activate', 'success', {}, req);
-        return res.status(200).json({ status: 'success', message: 'Account activated successfully.' });
+        return res.status(200).json({ message: 'Account activated successfully.', status: 'success' });
     } catch (error) {
         logger.error('Activation error:', error);
-        await logModel.logAuthActivity(0, 'activate', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
-        return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
+        await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
+        return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
     }
 }
 
@@ -372,15 +373,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             // Count only failed logins towards remaining-attempts
             try { recordFailedAttempt(req); } catch {}
             // Security: do not leak remaining attempts or specific reason
-            return res.status(401).json({ status: 'error', code: 401, message: 'Invalid credential' });
+            return res.status(401).json({ code: 401, message: 'Invalid credential', status: 'error' });
         }
 
         if (result.user.status === 0) {
-            return res.status(403).json({ status: 'error', code: 403, message: 'Account not activated. Please check your email for the activation link.' });
+            return res.status(403).json({ code: 403, message: 'Account not activated. Please check your email for the activation link.', status: 'error' });
         }
 
         if (result.user.status === 3) {
-            return res.status(403).json({ status: 'error', code: 403, message: 'Password reset required. Please check your email for the reset link.' });
+            return res.status(403).json({ code: 403, message: 'Password reset required. Please check your email for the reset link.', status: 'error' });
         }
 
         // Single-session enforcement (configurable, allow same browser/IP re-login)
@@ -390,7 +391,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             if (existingSession) {
                 // Block login if session exists (optionally, could check user-agent/IP here if desired)
                 await logModel.logAuthActivity(result.user.id, 'login', 'fail', { reason: 'already_logged_in' }, req);
-                return res.status(403).json({ status: 'error', code: 403, message: 'This account is already logged in elsewhere. Only one session is allowed.' });
+                return res.status(403).json({ code: 403, message: 'This account is already logged in elsewhere. Only one session is allowed.', status: 'error' });
             }
         }
 
@@ -408,8 +409,8 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
         const userAgent = req.headers['user-agent'] || null;
         await userModel.updateUserLoginDetails(result.user.id, {
-            ip: userIp,
             host: req.hostname || null,
+            ip: userIp,
             os: userAgent || os.platform()
         });
 
@@ -417,7 +418,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
-    const token = jwt.sign({ userId: result.user.id, email: result.user.email, contact: result.user.contact, session: sessionToken }, process.env.JWT_SECRET, { expiresIn: '1h', algorithm: 'HS256' });
+    const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
 
         const navigation = await navModel.getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 
@@ -430,13 +431,13 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
         const flatNavItems = uniqueFlatNavItems.map((nav: any) => ({
             navId: nav.navId,
+            parent_nav_id: nav.parent_nav_id,
+            path: nav.path,
+            position: nav.position,
+            section_id: nav.section_id,
+            status: nav.status,
             title: nav.title,
             type: nav.type,
-            position: nav.position,
-            status: nav.status,
-            path: nav.path,
-            parent_nav_id: nav.parent_nav_id,
-            section_id: nav.section_id,
         }));
 
         const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
@@ -456,32 +457,32 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
         // Fetch user profile
         const userProfile = await userModel.getUserProfile(result.user.id);
-        const avatarUrl = toPublicUrl((result.user as any).avatar || null);
+        const avatarUrl = toPublicUrl((result.user).avatar || null);
         return res.status(200).json({
-            status: 'success',
-            message: 'Login successful',
-            token,
             data: {
+                navTree: structuredNavTree,
                 user: {
-                    id: result.user.id,
-                    email: result.user.email,
-                    username: result.user.username,
-                    contact: result.user.contact,
-                    name: result.user.fname,
                     avatar: avatarUrl,
-                    userType: result.user.user_type,
-                    status: result.user.status,
+                    contact: result.user.contact,
+                    email: result.user.email,
+                    id: result.user.id,
                     lastNav: result.user.last_nav,
-                    role: roleObj,
+                    name: result.user.fname,
                     profile: userProfile || {},
+                    role: roleObj,
+                    status: result.user.status,
+                    username: result.user.username,
+                    userType: result.user.user_type,
                 },
                 usergroups: usergroups.filter(Boolean),
-                navTree: structuredNavTree,
             },
+            message: 'Login successful',
+            status: 'success',
+            token,
         });
     } catch (error) {
         logger.error('Login error:', error);
-        return res.status(500).json({ status: 'error', code: 500, message: 'Internal server error' });
+        return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
     }
 };
 
@@ -494,9 +495,9 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 // 3. If still no match, attempt fuzzy name (case-insensitive) + email.
 // Returns { matched: boolean, ramco_id, confidence, strategy } on success.
 export const verifyRegisterUser = async (req: Request, res: Response): Promise<Response> => {
-    const { name, email, contact } = req.body || {};
+    const { contact, email, name } = req.body || {};
     if (!name || !email || !contact) {
-        return res.status(400).json({ status: 'error', message: 'Missing required fields (name, email, contact)' });
+        return res.status(400).json({ message: 'Missing required fields (name, email, contact)', status: 'error' });
     }
     try {
         // Load exclusion lists from environment variables (comma-separated) - when matched, skip duplicate check only
@@ -525,7 +526,7 @@ export const verifyRegisterUser = async (req: Request, res: Response): Promise<R
                 const existingAccounts = await userModel.findUserByEmailOrContact(email, contact);
                 const pendingAccounts = await pendingUserModel.findPendingUserByEmailOrContact(email, contact);
                 if ((existingAccounts && existingAccounts.length > 0) || (pendingAccounts && pendingAccounts.length > 0)) {
-                    return res.status(409).json({ status: 'error', message: 'Account already exists or is pending activation', data: { matched: false, duplicate: true, excluded: false } });
+                    return res.status(409).json({ data: { duplicate: true, excluded: false, matched: false }, message: 'Account already exists or is pending activation', status: 'error' });
                 }
             } catch (dupErr) {
                 logger.error('verifyRegisterUser duplicate check error', dupErr);
@@ -545,11 +546,11 @@ export const verifyRegisterUser = async (req: Request, res: Response): Promise<R
             const emailVal = emp.email || emp.work_email || emp.personal_email || '';
             const contactVal = emp.contact || emp.phone || emp.mobile || emp.contact_no || emp.phone_no || '';
             return {
-                fullNameRaw: fullName,
-                fullName: norm(fullName),
-                email: norm(emailVal),
                 contact: norm(String(contactVal).replace(/[^0-9+]/g, '')),
                 contactRaw: contactVal || null,
+                email: norm(emailVal),
+                fullName: norm(fullName),
+                fullNameRaw: fullName,
                 ramco_id: emp.ramco_id || emp.employee_id || emp.id || null
             };
         };
@@ -558,53 +559,53 @@ export const verifyRegisterUser = async (req: Request, res: Response): Promise<R
 
         // Strategy 1: exact triple match
         const exact = extracted.find(e => e.fullName === targetName && e.email === targetEmail && e.contact === targetContact);
-        if (exact && exact.ramco_id) {
-            return res.json({ status: 'success', message: 'Employee verified (exact match)', data: { matched: true, ramco_id: exact.ramco_id, employee_full_name: exact.fullNameRaw, employee_contact: exact.contactRaw, confidence: 'high', strategy: 'exact_triple', excluded: isExcluded } });
+        if (exact?.ramco_id) {
+            return res.json({ data: { confidence: 'high', employee_contact: exact.contactRaw, employee_full_name: exact.fullNameRaw, excluded: isExcluded, matched: true, ramco_id: exact.ramco_id, strategy: 'exact_triple' }, message: 'Employee verified (exact match)', status: 'success' });
         }
 
         // Strategy 2: email + contact match (unique)
         const emailContactMatches = extracted.filter(e => e.email === targetEmail && e.contact === targetContact && e.ramco_id);
         if (emailContactMatches.length === 1) {
             const m = emailContactMatches[0];
-            return res.json({ status: 'success', message: 'Employee verified (email+contact match)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'medium', strategy: 'email_contact', excluded: isExcluded } });
+            return res.json({ data: { confidence: 'medium', employee_contact: m.contactRaw, employee_full_name: m.fullNameRaw, excluded: isExcluded, matched: true, ramco_id: m.ramco_id, strategy: 'email_contact' }, message: 'Employee verified (email+contact match)', status: 'success' });
         }
 
         // Strategy 3: name + email
         const nameEmailMatches = extracted.filter(e => e.fullName === targetName && e.email === targetEmail && e.ramco_id);
         if (nameEmailMatches.length === 1) {
             const m = nameEmailMatches[0];
-            return res.json({ status: 'success', message: 'Employee verified (name+email match)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'medium', strategy: 'name_email', excluded: isExcluded } });
+            return res.json({ data: { confidence: 'medium', employee_contact: m.contactRaw, employee_full_name: m.fullNameRaw, excluded: isExcluded, matched: true, ramco_id: m.ramco_id, strategy: 'name_email' }, message: 'Employee verified (name+email match)', status: 'success' });
         }
 
         // Optional fallback: partial name + email (startswith)
         const partialNameEmailMatches = extracted.filter(e => e.fullName.startsWith(targetName) && e.email === targetEmail && e.ramco_id);
         if (partialNameEmailMatches.length === 1) {
             const m = partialNameEmailMatches[0];
-            return res.json({ status: 'success', message: 'Employee verified (partial name + email)', data: { matched: true, ramco_id: m.ramco_id, employee_full_name: m.fullNameRaw, employee_contact: m.contactRaw, confidence: 'low', strategy: 'partial_name_email', excluded: isExcluded } });
+            return res.json({ data: { confidence: 'low', employee_contact: m.contactRaw, employee_full_name: m.fullNameRaw, excluded: isExcluded, matched: true, ramco_id: m.ramco_id, strategy: 'partial_name_email' }, message: 'Employee verified (partial name + email)', status: 'success' });
         }
 
-        return res.status(404).json({ status: 'error', message: 'No matching employee found', data: { matched: false } });
+        return res.status(404).json({ data: { matched: false }, message: 'No matching employee found', status: 'error' });
     } catch (err) {
         logger.error('verifyRegisterUser error', err);
-        return res.status(500).json({ status: 'error', message: 'Internal server error' });
+        return res.status(500).json({ message: 'Internal server error', status: 'error' });
     }
 };
 
 // Reset password controller
 export const resetPassword = async (req: Request, res: Response): Promise<Response> => {
-    const { email, contact } = req.body;
+    const { contact, email } = req.body;
 
     try {
         const users = await userModel.findUserByEmailOrContact(email, contact);
         const user = users[0];
         if (!user) {
-            await logModel.logAuthActivity(0, 'reset_password', 'fail', { reason: 'user_not_found', email, contact }, req);
-            return res.status(404).json({ status: 'error', code: 404, message: 'User not found' });
+            await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'user_not_found' }, req);
+            return res.status(404).json({ code: 404, message: 'User not found', status: 'error' });
         }
 
         const payload = {
-            e: email.split('@')[0],
             c: contact.slice(-4),
+            e: email.split('@')[0],
             x: Date.now() + (60 * 60 * 1000)
         };
 
@@ -616,19 +617,19 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 
         const mailOptions = {
             from: process.env.EMAIL_FROM,
-            to: email,
-            subject: 'Reset Password',
             html: resetPasswordTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
+            subject: 'Reset Password',
+            to: email,
         };
 
         await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
         await logModel.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
-        return res.status(200).json({ status: 'success', message: 'Reset password email sent successfully' });
+        return res.status(200).json({ message: 'Reset password email sent successfully', status: 'success' });
     } catch (error) {
         logger.error('Reset password error:', error);
-        await logModel.logAuthActivity(0, 'reset_password', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
-        return res.status(500).json({ status: 'error', code: 500, message: 'Error processing reset password request' });
+        await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
+        return res.status(500).json({ code: 500, message: 'Error processing reset password request', status: 'error' });
     }
 };
 
@@ -640,10 +641,10 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
         const user = await userModel.findUserByResetToken(token);
         if (!user) {
             return res.status(400).json({
-                status: 'error',
                 code: 400,
-                valid: false,
-                message: 'Invalid reset link'
+                message: 'Invalid reset link',
+                status: 'error',
+                valid: false
             });
         }
 
@@ -654,51 +655,51 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
             await userModel.reactivateUser(user.id);
 
             return res.status(400).json({
-                status: 'error',
                 code: 400,
-                valid: false,
-                message: 'Reset link has expired. Your account has been reactivated. Please login with your previous credentials or request a new reset link.'
+                message: 'Reset link has expired. Your account has been reactivated. Please login with your previous credentials or request a new reset link.',
+                status: 'error',
+                valid: false
             });
         }
 
         return res.json({
-            status: 'success',
-            valid: true,
+            contact: user.contact,
             email: user.email,
-            contact: user.contact
+            status: 'success',
+            valid: true
         });
     } catch (error) {
         logger.error('Token verification error:', error);
         return res.status(400).json({
-            status: 'error',
             code: 400,
-            valid: false,
-            message: 'Invalid reset link'
+            message: 'Invalid reset link',
+            status: 'error',
+            valid: false
         });
     }
 };
 
 // Update password function to match new token format
 export const updatePassword = async (req: Request, res: Response): Promise<Response> => {
-    const { token, email, contact, newPassword } = req.body;
+    const { contact, email, newPassword, token } = req.body;
 
     try {
         const user = await userModel.findUserByResetToken(token);
         if (!user) {
-            await logModel.logAuthActivity(0, 'reset_password', 'fail', { reason: 'invalid_token', email, contact }, req);
+            await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'invalid_token' }, req);
             return res.status(400).json({
-                status: 'error',
                 code: 400,
-                message: 'Invalid or expired reset token'
+                message: 'Invalid or expired reset token',
+                status: 'error'
             });
         }
 
         if (user.email !== email || user.contact !== contact) {
-            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { reason: 'invalid_credentials', email, contact }, req);
+            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'invalid_credentials' }, req);
             return res.status(400).json({
-                status: 'error',
                 code: 400,
-                message: 'Invalid credentials'
+                message: 'Invalid credentials',
+                status: 'error'
             });
         }
 
@@ -707,11 +708,11 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
         if (Date.now() > payload.x) {
             await userModel.reactivateUser(user.id);
-            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { reason: 'expired_token', email, contact }, req);
+            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'expired_token' }, req);
             return res.status(400).json({
-                status: 'error',
                 code: 400,
-                message: 'Reset token has expired'
+                message: 'Reset token has expired',
+                status: 'error'
             });
         }
 
@@ -720,25 +721,25 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
         const mailOptions = {
             from: process.env.EMAIL_FROM,
-            to: email,
-            subject: 'Password Changed Successfully',
             html: passwordChangedTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/login`),
+            subject: 'Password Changed Successfully',
+            to: email,
         };
 
         await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
         await logModel.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
         return res.json({
-            status: 'success',
-            message: 'Password updated successfully'
+            message: 'Password updated successfully',
+            status: 'success'
         });
     } catch (error) {
         logger.error('Update password error:', error);
-        await logModel.logAuthActivity(0, 'reset_password', 'fail', { reason: 'exception', error: String(error), email, contact }, req);
+        await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
         return res.status(500).json({
-            status: 'error',
             code: 500,
-            message: 'Error updating password'
+            message: 'Error updating password',
+            status: 'error'
         });
     }
 };
@@ -752,22 +753,22 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
         }
         res.clearCookie('token', {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict'
+            sameSite: 'strict',
+            secure: process.env.NODE_ENV === 'production'
         });
 
         await logModel.logAuthActivity((req as any).user?.id || 0, 'logout', 'success', {}, req);
 
         return res.status(200).json({
-            status: 'success',
-            message: 'Logged out successfully'
+            message: 'Logged out successfully',
+            status: 'success'
         });
     } catch (error) {
         logger.error('Logout error:', error);
         return res.status(500).json({
-            status: 'error',
             code: 500,
-            message: 'Error logging out'
+            message: 'Error logging out',
+            status: 'error'
         });
     }
 };
@@ -778,7 +779,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
 
     if (!token) {
         await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'no_token' }, req);
-        return res.status(401).json({ status: 'error', code: 401, message: 'No token provided' });
+        return res.status(401).json({ code: 401, message: 'No token provided', status: 'error' });
     }
 
     try {
@@ -804,14 +805,14 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
 
         if (typeof decoded !== 'object' || !('userId' in decoded)) {
             await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'invalid_token' }, req);
-            return res.status(401).json({ status: 'error', code: 401, message: 'Invalid token' });
+            return res.status(401).json({ code: 401, message: 'Invalid token', status: 'error' });
         }
 
         // Verify user still exists and is active
         const user = await userModel.getUserById(decoded.userId);
         if (!user || user.status !== 1) {
             await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'user_inactive' }, req);
-            return res.status(401).json({ status: 'error', code: 401, message: 'User account is inactive' });
+            return res.status(401).json({ code: 401, message: 'User account is inactive', status: 'error' });
         }
 
         // Validate session token if present (for single-session enforcement)
@@ -819,7 +820,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
             const currentSession = await userModel.getUserSessionToken(decoded.userId);
             if (currentSession !== decoded.session) {
                 await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'session_mismatch' }, req);
-                return res.status(401).json({ status: 'error', code: 401, message: 'Session expired elsewhere' });
+                return res.status(401).json({ code: 401, message: 'Session expired elsewhere', status: 'error' });
             }
         }
 
@@ -829,13 +830,13 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
 
         const newToken = jwt.sign(
             { 
-                userId: decoded.userId, 
+                contact: decoded.contact, 
                 email: decoded.email, 
-                contact: decoded.contact,
-                session: newSessionToken 
+                session: newSessionToken,
+                userId: decoded.userId 
             },
             process.env.JWT_SECRET,
-            { expiresIn: '1h', algorithm: 'HS256' }
+            { algorithm: 'HS256', expiresIn: '1h' }
         );
 
         await logModel.logAuthActivity(decoded.userId, 'other', 'success', {}, req);
@@ -845,8 +846,8 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
         });
     } catch (error) {
         logger.error('Refresh token error:', error);
-        await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'exception', error: String(error) }, req);
-        return res.status(401).json({ status: 'error', code: 401, message: 'Invalid or expired refresh token' });
+        await logModel.logAuthActivity(0, 'other', 'fail', { error: String(error), reason: 'exception' }, req);
+        return res.status(401).json({ code: 401, message: 'Invalid or expired refresh token', status: 'error' });
     }
 };
 
@@ -854,14 +855,14 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
 export const resetPasswordMulti = async (req: Request, res: Response): Promise<Response> => {
     const { user_ids } = req.body;
     if (!Array.isArray(user_ids) || user_ids.length === 0) {
-        return res.status(400).json({ status: 'error', message: 'user_ids must be a non-empty array' });
+        return res.status(400).json({ message: 'user_ids must be a non-empty array', status: 'error' });
     }
 
     try {
         // Fetch user info for all user_ids using pool directly
         const [users]: any[] = await pool.query('SELECT * FROM users WHERE id IN (?)', [user_ids]);
         if (!users || users.length === 0) {
-            return res.status(404).json({ status: 'error', message: 'No users found for the provided IDs' });
+            return res.status(404).json({ message: 'No users found for the provided IDs', status: 'error' });
         }
 
         const results = [];
@@ -871,8 +872,8 @@ export const resetPasswordMulti = async (req: Request, res: Response): Promise<R
                 const contact = user.contact;
                 const name = user.fname || user.name || user.username || 'User';
                 const payload = {
-                    e: email.split('@')[0],
                     c: contact ? contact.slice(-4) : '',
+                    e: email.split('@')[0],
                     x: Date.now() + (60 * 60 * 1000)
                 };
                 const tokenString = Buffer.from(JSON.stringify(payload)).toString('base64');
@@ -887,21 +888,21 @@ export const resetPasswordMulti = async (req: Request, res: Response): Promise<R
                 // Send reset email
                 const mailOptions = {
                     from: process.env.EMAIL_FROM,
-                    to: email,
-                    subject: 'Reset Password',
                     html: resetPasswordTemplate(name, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
+                    subject: 'Reset Password',
+                    to: email,
                 };
                 await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
-                results.push({ user_id: user.id, email, status: 'sent' });
+                results.push({ email, status: 'sent', user_id: user.id });
             } catch (err) {
                 logger.error('Error sending reset email for user', user.id, err);
-                results.push({ user_id: user.id, email: user.email, status: 'error', error: (err instanceof Error ? err.message : JSON.stringify(err)) });
+                results.push({ email: user.email, error: (err instanceof Error ? err.message : JSON.stringify(err)), status: 'error', user_id: user.id });
             }
         }
-        return res.status(200).json({ status: 'success', message: 'Reset password emails processed', results });
+        return res.status(200).json({ message: 'Reset password emails processed', results, status: 'success' });
     } catch (error) {
         logger.error('Batch reset password error:', error);
-        return res.status(500).json({ status: 'error', message: 'Error processing batch reset password request' });
+        return res.status(500).json({ message: 'Error processing batch reset password request', status: 'error' });
     }
 };
 
@@ -913,11 +914,11 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
         if (req.body.fullname || req.body.name) {
             users = [req.body];
         } else {
-            return res.status(400).json({ status: 'error', message: 'users must be a non-empty array' });
+            return res.status(400).json({ message: 'users must be a non-empty array', status: 'error' });
         }
     }
     if (!users.length) {
-        return res.status(400).json({ status: 'error', message: 'users must be a non-empty array' });
+        return res.status(400).json({ message: 'users must be a non-empty array', status: 'error' });
     }
     const results = [];
     for (const user of users) {
@@ -928,7 +929,7 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
         const userType = user.userType || user.user_type;
         // Only require email and contact for duplicate check
         if (!email || !contact) {
-            results.push({ email, status: 'error', message: 'Missing required fields' });
+            results.push({ email, message: 'Missing required fields', status: 'error' });
             continue;
         }
         try {
@@ -945,37 +946,37 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
             const name = user.name || user.fullname;
             const userType = user.userType || user.user_type;
             if (!name || !userType) {
-                results.push({ email, status: 'error', message: 'Missing required fields' });
+                results.push({ email, message: 'Missing required fields', status: 'error' });
                 continue;
             }
             // Create pending user with status approved (2)
             const activationCode = crypto.randomBytes(32).toString('hex');
             await pendingUserModel.createPendingUser({
-                fname: name,
-                email: normalizedEmail,
-                contact: normalizedContact,
-                user_type: userType,
-                status: 2, // approved
                 activation_code: activationCode,
+                contact: normalizedContact,
+                email: normalizedEmail,
+                fname: name,
                 ip: null,
+                status: 2, // approved
                 user_agent: null,
+                user_type: userType,
             });
             // Send activation email
             const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
             const mailOptions = {
                 from: process.env.EMAIL_FROM,
-                to: email,
-                subject: 'Account Activation',
                 html: accountActivationTemplate(name, activationLink),
+                subject: 'Account Activation',
+                to: email,
             };
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
             results.push({ email, status: 'invited' });
         } catch (error) {
             logger.error('Invite user error:', error);
-            results.push({ email, status: 'error', message: String(error) });
+            results.push({ email, message: String(error), status: 'error' });
         }
     }
-    return res.status(200).json({ status: 'success', results });
+    return res.status(200).json({ results, status: 'success' });
 };
 
 // Delete pending user (admin)
@@ -985,7 +986,7 @@ export const deletePendingUser = async (req: Request, res: Response): Promise<Re
     const raw = body.user_ids;
 
     if (raw === undefined || raw === null) {
-        return res.status(400).json({ status: 'error', message: 'user_ids is required' });
+        return res.status(400).json({ message: 'user_ids is required', status: 'error' });
     }
 
     let userIds: number[] = [];
@@ -993,31 +994,31 @@ export const deletePendingUser = async (req: Request, res: Response): Promise<Re
         userIds = raw.map((v: any) => Number(v)).filter((n: number) => !Number.isNaN(n));
     } else {
         const n = Number(raw);
-        if (Number.isNaN(n)) return res.status(400).json({ status: 'error', message: 'user_ids must contain valid numeric ids' });
+        if (Number.isNaN(n)) return res.status(400).json({ message: 'user_ids must contain valid numeric ids', status: 'error' });
         userIds = [n];
     }
 
     if (!userIds.length) {
-        return res.status(400).json({ status: 'error', message: 'user_ids must contain at least one valid id' });
+        return res.status(400).json({ message: 'user_ids must contain at least one valid id', status: 'error' });
     }
 
-    const results: Array<{ user_id: number; status: string; error?: string }> = [];
+    const results: { error?: string; status: string; user_id: number; }[] = [];
     for (const uid of userIds) {
         try {
             const pendingUser = await pendingUserModel.getPendingUserById(uid);
             if (!pendingUser) {
-                results.push({ user_id: uid, status: 'not_found' });
+                results.push({ status: 'not_found', user_id: uid });
                 continue;
             }
             await pendingUserModel.deletePendingUser(uid);
-            await logModel.logAuthActivity(0, 'other', 'success', { pendingUserId: uid, action: 'delete_pending_user' }, req);
-            results.push({ user_id: uid, status: 'deleted' });
+            await logModel.logAuthActivity(0, 'other', 'success', { action: 'delete_pending_user', pendingUserId: uid }, req);
+            results.push({ status: 'deleted', user_id: uid });
         } catch (error) {
             logger.error('Delete pending user error for id ' + uid + ':', error);
-            await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'exception', error: String(error), pendingUserId: uid, action: 'delete_pending_user' }, req);
-            results.push({ user_id: uid, status: 'error', error: String(error instanceof Error ? error.message : error) });
+            await logModel.logAuthActivity(0, 'other', 'fail', { action: 'delete_pending_user', error: String(error), pendingUserId: uid, reason: 'exception' }, req);
+            results.push({ error: String(error instanceof Error ? error.message : error), status: 'error', user_id: uid });
         }
     }
 
-    return res.status(200).json({ status: 'success', message: 'Pending users processed', results });
+    return res.status(200).json({ message: 'Pending users processed', results, status: 'success' });
 }

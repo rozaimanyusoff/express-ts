@@ -2,30 +2,30 @@
 // Usage: renderVehicleAssessmentNotification({ asset, driver, assessment, details })
 
 interface VehicleAssessmentNotificationParams {
-  asset: {
+  assessment: {
+    date: string;
     id: number;
+    ncr?: string;
+    rate?: string;
+    remark?: string;
+  };
+  asset: {
     code: string;
+    id: number;
     name?: string;
     ramco_id?: string;
   };
-  driver: {
-    ramco_id: string;
-    full_name: string;
-    email: string;
-  };
-  assessment: {
-    id: number;
-    date: string;
-    remark?: string;
-    rate?: string;
-    ncr?: string;
-  };
   details?: any[];
+  driver: {
+    email: string;
+    full_name: string;
+    ramco_id: string;
+  };
   portalLink?: string;
   securityPin?: string;
 }
 
-export function renderVehicleAssessmentNotification({ asset, driver, assessment, details, portalLink, securityPin }: VehicleAssessmentNotificationParams): { subject: string; html: string; text: string } {
+export function renderVehicleAssessmentNotification({ assessment, asset, details, driver, portalLink, securityPin }: VehicleAssessmentNotificationParams): { html: string; subject: string; text: string } {
   const subject = `Vehicle Assessment Notification: ${asset.code || asset.id}`;
   // Acceptance button URL (to be replaced with actual backend URL in production)
   const acceptanceUrl = `${process.env.BACKEND_URL || 'https://your-backend-url'}/api/compliance/assessments/${assessment.id}/acceptance`;
@@ -51,5 +51,5 @@ export function renderVehicleAssessmentNotification({ asset, driver, assessment,
   
   const text = `Vehicle Assessment Completed\n\nAsset: ${asset.code} ${asset.name ? `- ${asset.name}` : ''}\nDriver: ${driver.full_name} (${driver.email})\nAssessment Date: ${assessment.date}\nRemark: ${assessment.remark || '-'}\nRate: ${assessment.rate || '-'}\nNCR: ${assessment.ncr || '-'}\n${portalLink && securityPin ? `\nAssessment Portal Access:\nClick link to access the assessment portal.\nSecurity PIN: ${securityPin}\nUse this PIN to access your assessment details securely.\n` : ''}\n\nThis is an automated notification.`;
   
-  return { subject, html, text };
+  return { html, subject, text };
 }

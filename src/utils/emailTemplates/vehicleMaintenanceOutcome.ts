@@ -1,15 +1,15 @@
 export default function vehicleMaintenanceOutcomeEmail(data: any): string {
   const {
-    requestNo,
-    date,
-    greetingName = 'Tuan/Puan',
-    status = 'Approved', // 'Approved' | 'Rejected'
     applicant,
+    date,
     deptLocation,
-    vehicleInfo,
-    requestType,
+    footerName = 'ADMS (v4)',
+    greetingName = 'Tuan/Puan',
     portalUrl,
-    footerName = 'ADMS (v4)'
+    requestNo,
+    requestType,
+    status = 'Approved', // 'Approved' | 'Rejected'
+    vehicleInfo
   } = data || {};
 
   const statusWord = String(status || 'Approved');

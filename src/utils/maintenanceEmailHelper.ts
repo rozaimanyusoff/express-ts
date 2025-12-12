@@ -1,6 +1,6 @@
-import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 import * as assetModel from '../p.asset/assetModel';
 import * as billingModel from '../p.billing/billingModel';
+import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 
 // Build applicant/dept/location/vehicle/requestType + recentRequests + annualSummary for a resolved record
 export async function buildSectionsForRecord(rec: any) {
@@ -12,13 +12,13 @@ export async function buildSectionsForRecord(rec: any) {
   const applicant = applicantName + (applicantDetails.length ? ` (${applicantDetails.join(' • ')})` : '');
 
   // Dept/Location
-  const deptLocation = rec?.asset && rec.asset.costcenter
+  const deptLocation = rec?.asset?.costcenter
     ? `${rec.asset.costcenter.name}${rec.asset.location ? ' / ' + rec.asset.location.name : ''}`
     : '';
 
   // Vehicle info
   const vehicleInfo = rec?.asset
-    ? (`${rec.asset.register_number || ''} ${(rec.asset.brand && rec.asset.brand.name) || ''} ${(rec.asset.model && rec.asset.model.name) || ''}`.trim()
+    ? (`${rec.asset.register_number || ''} ${(rec.asset.brand?.name) || ''} ${(rec.asset.model?.name) || ''}`.trim()
         + (rec.asset.age_years !== null && rec.asset.age_years !== undefined ? ` — ${rec.asset.age_years} yrs` : ''))
     : '';
 
@@ -33,7 +33,7 @@ export async function buildSectionsForRecord(rec: any) {
   }
 
   // Annual summary and recent requests (asset scoped)
-  let annualSummary: Array<{ year: number; amount: number; requests: number }> = [];
+  let annualSummary: { amount: number; requests: number; year: number; }[] = [];
   let recentRequests: any[] = [];
   try {
     const assetId = rec?.asset?.id ? Number(rec.asset.id) : null;
@@ -64,7 +64,7 @@ export async function buildSectionsForRecord(rec: any) {
       const yearList = Array.from(years).sort((a, b) => b - a);
       const currentYear = new Date().getFullYear();
       const validYears = yearList.filter(y => Number.isFinite(y) && y >= 2000 && y <= currentYear).slice(0, 5);
-      annualSummary = validYears.map(y => ({ year: y, amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0 }));
+      annualSummary = validYears.map(y => ({ amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0, year: y }));
 
       // Recent requests (exclude current)
       const [svcTypesRaw, workshopsRaw, rrRaw] = await Promise.all([
@@ -75,7 +75,7 @@ export async function buildSectionsForRecord(rec: any) {
       const svcTypeMapLocal = new Map((Array.isArray(svcTypesRaw) ? svcTypesRaw : []).map((s: any) => [s.svcTypeId || s.id || s.id, s]));
       const wsMapLocal = new Map((Array.isArray(workshopsRaw) ? workshopsRaw : []).map((w: any) => [w.ws_id || w.id || String(w.ws_id), w]));
       const rr = Array.isArray(rrRaw) ? rrRaw : (rrRaw ? [rrRaw] : []);
-      const currentReqId = Number((rec && rec.req_id) ? rec.req_id : 0);
+      const currentReqId = Number((rec?.req_id) ? rec.req_id : 0);
       const others = (rr as any[]).filter((r: any) => Number(r.req_id) !== currentReqId);
       recentRequests = others
         .map((r: any) => {
@@ -90,8 +90,8 @@ export async function buildSectionsForRecord(rec: any) {
           let workshopName = '';
           if (r.ws_name) workshopName = r.ws_name;
           else if (r.workshop) workshopName = r.workshop;
-          else if (r.ws_id && wsMapLocal && wsMapLocal.has(r.ws_id)) workshopName = (wsMapLocal.get(r.ws_id) as any)?.ws_name || '';
-          return { req_id: r.req_id, date: dateFormatted, dateRaw: rd && !Number.isNaN(rd.getTime()) ? rd.getTime() : 0, requestType: svcNames || (r.svc_opt || ''), status: statusVal, comment: r.req_comment || '', workshop: workshopName };
+          else if (r.ws_id && wsMapLocal && wsMapLocal.has(r.ws_id)) workshopName = (wsMapLocal.get(r.ws_id))?.ws_name || '';
+          return { comment: r.req_comment || '', date: dateFormatted, dateRaw: rd && !Number.isNaN(rd.getTime()) ? rd.getTime() : 0, req_id: r.req_id, requestType: svcNames || (r.svc_opt || ''), status: statusVal, workshop: workshopName };
         })
         .sort((a: any, b: any) => (b.dateRaw || 0) - (a.dateRaw || 0))
         .slice(0, 5)
@@ -101,7 +101,7 @@ export async function buildSectionsForRecord(rec: any) {
     // swallow computation issues, return partials
   }
 
-  return { applicant, deptLocation, vehicleInfo, requestType, recentRequests, annualSummary, formattedDate };
+  return { annualSummary, applicant, deptLocation, formattedDate, recentRequests, requestType, vehicleInfo };
 }
 
 export function getAdminCcList(): { ccArray: string[]; ccString?: string } {

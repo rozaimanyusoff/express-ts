@@ -1,19 +1,20 @@
 // Asset Transfer Request Email Template
 // Usage: import and call with { request, items, requestor, supervisor }
 
-import { AssetTransferDetailItem } from '../../p.asset/assetController';
 import crypto from 'crypto';
 
+import { AssetTransferDetailItem } from '../../p.asset/assetController';
+
 interface EmailData {
-  request: any;
+  actionBaseUrl?: string; // e.g. https://yourdomain.com/api/asset-transfer
+  actionToken?: string; // For supervisor action links
   items: any[];
+  request: any;
   requestor: any;
   supervisor: any;
-  actionToken?: string; // For supervisor action links
-  actionBaseUrl?: string; // e.g. https://yourdomain.com/api/asset-transfer
 }
 
-export default function assetTransferRequestEmail({ request, items, requestor, supervisor, actionToken, actionBaseUrl }: EmailData) {
+export default function assetTransferRequestEmail({ actionBaseUrl, actionToken, items, request, requestor, supervisor }: EmailData) {
   // Helpers
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
@@ -104,5 +105,5 @@ export default function assetTransferRequestEmail({ request, items, requestor, s
       <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
-  return { subject, html };
+  return { html, subject };
 }

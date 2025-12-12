@@ -2,14 +2,14 @@
 // Usage: assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, newOwner, requestor, approver })
 
 interface AssetTransferApprovedNewOwnerParams {
-  request: any;
+  approver?: any; // approver
   itemsForNewOwner: any[]; // subset of items that affect this new owner
   newOwner: any; // employee
+  request: any;
   requestor?: any; // requestor employee
-  approver?: any; // approver
 }
 
-export function assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, newOwner, requestor, approver }: AssetTransferApprovedNewOwnerParams) {
+export function assetTransferApprovedNewOwnerEmail({ approver, itemsForNewOwner, newOwner, request, requestor }: AssetTransferApprovedNewOwnerParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
   const subject = `Asset Transfer Approved - You are the new owner (Request #${safe(request?.request_no || request?.id)})`;
@@ -61,5 +61,5 @@ export function assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, 
       <div style="margin-top: 1.2em;">Thank you.</div>
     </div>
   `;
-  return { subject, html };
+  return { html, subject };
 }

@@ -8,11 +8,11 @@ export const findAllDistricts = async (): Promise<District[]> => {
 	try {
 		const { rows } = await pgPool.query<District>(`SELECT * FROM auth.${districtTable} order BY id ASC`);
 		return rows.map((row: District) => ({
-			id: row.id,
-			organizationId: row.organizationId,
-			name: row.name,
 			code: row.code,
-			isActive: row.isActive
+			id: row.id,
+			isActive: row.isActive,
+			name: row.name,
+			organizationId: row.organizationId
 		}));
 	} catch (error) {
 		logger.error(`Database error in findAllDistrict: ${error}`);

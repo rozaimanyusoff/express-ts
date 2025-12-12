@@ -1,7 +1,8 @@
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import path from 'path';
+
 // src/p.purchase/purchaseModel.ts
 import {pool} from '../utils/db';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import path from 'path';
 
 // Table names
 const db = 'assetdata';
@@ -11,41 +12,41 @@ const purchaseRequestRegisterNumbersTable = `${db}.purchase_request_register_num
 
 // Parent: purchase_request
 export interface PurchaseRequest {
-    id?: number;
-    request_type: string;
     backdated_purchase: boolean;
-    request_reference: string;
-    request_no: string;
-    request_date: string;
-    ramco_id: string; // ramco_id
     costcenter_id: number;
-    department_id: number;
-    po_no: string;
-    po_date: string;
-    supplier: string;
-    do_no: string;
-    do_date: string;
-    inv_no: string;
-    inv_date: string;
-    delivery_status: string;
     delivery_remarks: string;
+    delivery_status: string;
+    department_id: number;
+    do_date: string;
+    do_no: string;
+    id?: number;
+    inv_date: string;
+    inv_no: string;
+    po_date: string;
+    po_no: string;
+    ramco_id: string; // ramco_id
+    request_date: string;
+    request_no: string;
+    request_reference: string;
+    request_type: string;
     request_upload: string;
+    supplier: string;
 }
 
 // Child: purchase_request_details
 export interface PurchaseRequestDetail {
-    id?: number;
-    pr_id: number;
-    type_id: number;
     category_id: number;
-    item_desc: string;
-    quantity: number;
-    justification: string;
-    supplier?: string;
-    unit_price?: number;
-    delivery_status?: string;
     delivery_remarks?: string;
+    delivery_status?: string;
+    id?: number;
+    item_desc: string;
+    justification: string;
+    pr_id: number;
+    quantity: number;
     register_numbers?: string[];
+    supplier?: string;
+    type_id: number;
+    unit_price?: number;
 }
 
 export const getAllPurchaseRequests = async (): Promise<PurchaseRequest[]> => {
@@ -53,7 +54,7 @@ export const getAllPurchaseRequests = async (): Promise<PurchaseRequest[]> => {
     return rows as PurchaseRequest[];
 };
 
-export const getPurchaseRequestById = async (id: number): Promise<PurchaseRequest | null> => {
+export const getPurchaseRequestById = async (id: number): Promise<null | PurchaseRequest> => {
     const [rows] = await pool.query(`SELECT * FROM ${purchaseRequestTable} WHERE id = ?`, [id]);
     return (rows as PurchaseRequest[])[0] || null;
 };
