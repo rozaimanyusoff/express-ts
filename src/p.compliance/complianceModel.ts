@@ -834,99 +834,99 @@ export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: num
 
 /* ========== COMPUTER ASSESSMENT ========== */
 export interface ComputerAssessment {
+  adapter_equipped?: boolean | null;
+  adapter_output?: null | string;
+  assessment_date?: null | string;
   // Assessment metadata
   assessment_year?: null | string;
-  assessment_date?: null | string;
-  technician?: null | string;
-  overall_score?: null | number;
-  remarks?: null | string;
-  id?: number;
-
   // Asset reference
   asset_id?: null | number;
-  register_number?: null | string;
-  category?: null | string;
-  brand?: null | string;
-  model?: null | string;
-  purchase_date?: null | string;
-
-  // Asset ownership
-  costcenter_id?: null | number;
-  department_id?: null | number;
-  location_id?: null | number;
-  ramco_id?: null | string;
-
-  // OS specifications
-  os_name?: null | string;
-  os_version?: null | string;
-  os_patch_status?: null | string;
-
-  // CPU specifications
-  cpu_manufacturer?: null | string;
-  cpu_model?: null | string;
-  cpu_generation?: null | string;
-
-  // Memory specifications
-  memory_manufacturer?: null | string;
-  memory_type?: null | string;
-  memory_size_gb?: null | number;
-
-  // Storage specifications
-  storage_manufacturer?: null | string;
-  storage_type?: null | string;
-  storage_size_gb?: null | number;
-
-  // Graphics specifications
-  graphics_type?: null | string;
-  graphics_manufacturer?: null | string;
-  graphics_specs?: null | string;
-
-  // Display specifications
-  display_manufacturer?: null | string;
-  display_size?: null | number; // inches
-  display_resolution?: null | string;
-  display_form_factor?: null | string;
-  display_interfaces?: null | string; // JSON array stored as string
-
-  // Ports
-  ports_usb_a?: null | number;
-  ports_usb_c?: null | number;
-  ports_thunderbolt?: null | number;
-  ports_ethernet?: null | number;
-  ports_hdmi?: null | number;
-  ports_displayport?: null | number;
-  ports_vga?: null | number;
-  ports_sdcard?: null | number;
-  ports_audiojack?: null | number;
-
-  // Battery & Adapter
-  battery_equipped?: null | boolean;
-  battery_capacity?: null | string;
-  adapter_equipped?: null | boolean;
-  adapter_output?: null | string;
-
   // Security & VPN
   av_installed?: null | string; // 'Installed', 'Not installed', etc.
-  av_vendor?: null | string;
-  av_status?: null | string;
+
   av_license?: null | string;
-  vpn_installed?: null | string;
-  vpn_setup_type?: null | string;
-  vpn_username?: null | string;
+  av_status?: null | string;
+  av_vendor?: null | string;
+  battery_capacity?: null | string;
+  // Battery & Adapter
+  battery_equipped?: boolean | null;
+  brand?: null | string;
+
+  category?: null | string;
+  // Asset ownership
+  costcenter_id?: null | number;
+  cpu_generation?: null | string;
+  // CPU specifications
+  cpu_manufacturer?: null | string;
+
+  cpu_model?: null | string;
+  // Metadata
+  created_at?: null | string;
+  department_id?: null | number;
+
+  display_form_factor?: null | string;
+  display_interfaces?: null | string; // JSON array stored as string
+  // Display specifications
+  display_manufacturer?: null | string;
+
+  display_resolution?: null | string;
+  display_size?: null | number; // inches
+  graphics_manufacturer?: null | string;
+
+  graphics_specs?: null | string;
+  // Graphics specifications
+  graphics_type?: null | string;
+  id?: number;
 
   // Software
   installed_software?: null | string;
+  location_id?: null | number;
+  // Memory specifications
+  memory_manufacturer?: null | string;
 
-  // Metadata
-  created_at?: null | string;
+  memory_size_gb?: null | number;
+  memory_type?: null | string;
+  model?: null | string;
+  // OS specifications
+  os_name?: null | string;
+  os_patch_status?: null | string;
+
+  os_version?: null | string;
+  overall_score?: null | number;
+  ports_audiojack?: null | number;
+  ports_displayport?: null | number;
+  ports_ethernet?: null | number;
+  ports_hdmi?: null | number;
+  ports_sdcard?: null | number;
+  ports_thunderbolt?: null | number;
+  // Ports
+  ports_usb_a?: null | number;
+
+  ports_usb_c?: null | number;
+  ports_vga?: null | number;
+  purchase_date?: null | string;
+  ramco_id?: null | string;
+
+  register_number?: null | string;
+  remarks?: null | string;
+  // Storage specifications
+  storage_manufacturer?: null | string;
+  storage_size_gb?: null | number;
+  storage_type?: null | string;
+  technician?: null | string;
   updated_at?: null | string;
+
+  vpn_installed?: null | string;
+
+  vpn_setup_type?: null | string;
+  vpn_username?: null | string;
 }
 
 export const getComputerAssessments = async (filters?: {
-  asset_id?: number;
   assessment_year?: string;
-  technician?: string;
+  asset_id?: number;
   ramco_id?: string;
+  technician?: string;
 }): Promise<ComputerAssessment[]> => {
   let query = `SELECT * FROM ${computerAssessmentTable}`;
   const params: any[] = [];
@@ -980,9 +980,9 @@ export const createComputerAssessment = async (data: Partial<ComputerAssessment>
   const payload = {
     ...data,
     assessment_date: assessmentDate,
-    purchase_date: purchaseDate,
-    display_interfaces: displayInterfaces,
     created_at: now,
+    display_interfaces: displayInterfaces,
+    purchase_date: purchaseDate,
     updated_at: now,
   } as any;
 

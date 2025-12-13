@@ -85,25 +85,25 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			const inv_stat = calculateInvStat((b).inv_no, (b).inv_date, form_upload_date, (b).inv_total);
 			return {
 				asset: assetMap.has(asset_id) ? {
+					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
+					fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
 					id: asset_id,
-					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
-					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
-					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
-					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
+					location: (loc_id && locationMap.has(loc_id)) ? { code: (locationMap.get(loc_id))?.code, id: (locationMap.get(loc_id))?.id } : null,
+					register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null
 				} : null,
-				entry_date: (b as any).entry_date,
+				entry_date: (b).entry_date,
 				form_upload_date: form_upload_date,
-				inv_date: (b as any).inv_date,
-				inv_id: (b as any).inv_id,
-				inv_no: (b as any).inv_no,
-				inv_remarks: (b as any).inv_remarks,
+				inv_date: (b).inv_date,
+				inv_id: (b).inv_id,
+				inv_no: (b).inv_no,
+				inv_remarks: (b).inv_remarks,
 				inv_stat: inv_stat,
-				inv_total: (b as any).inv_total,
-				running_no: (b as any).running_no,
-				svc_date: (b as any).svc_date,
-				svc_odo: (b as any).svc_odo,
+				inv_total: (b).inv_total,
+				running_no: (b).running_no,
+				svc_date: (b).svc_date,
+				svc_odo: (b).svc_odo,
 				svc_order: svc_order,
-				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null
+				workshop: wsMap.has((b).ws_id) ? { id: (b).ws_id, name: (wsMap.get((b).ws_id))?.ws_name } : null
 			};
 		});
 		return res.json({ data, message: `Vehicle maintenance billings retrieved successfully total entries: ${data.length}`, status: 'success' });
@@ -145,24 +145,24 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 			const loc_id = (b).location_id ?? (b).loc_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
+					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
+					fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
 					id: asset_id,
-					register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
-					fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
-					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
-					location: (loc_id && locationMap.has(loc_id)) ? { id: (locationMap.get(loc_id) as any)?.id, code: (locationMap.get(loc_id) as any)?.code } : null
+					location: (loc_id && locationMap.has(loc_id)) ? { code: (locationMap.get(loc_id))?.code, id: (locationMap.get(loc_id))?.id } : null,
+					register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null
 				} : null,
-				entry_date: (b as any).entry_date,
-				inv_date: (b as any).inv_date,
-				inv_id: (b as any).inv_id,
-				inv_no: (b as any).inv_no,
-				inv_remarks: (b as any).inv_remarks,
-				inv_stat: (b as any).inv_stat,
-				inv_total: (b as any).inv_total,
-				running_no: (b as any).running_no,
-				svc_date: (b as any).svc_date,
-				svc_odo: (b as any).svc_odo,
-				svc_order: (b as any).svc_order,
-				workshop: wsMap.has((b as any).ws_id) ? { id: (b as any).ws_id, name: (wsMap.get((b as any).ws_id) as any)?.ws_name } : null
+				entry_date: (b).entry_date,
+				inv_date: (b).inv_date,
+				inv_id: (b).inv_id,
+				inv_no: (b).inv_no,
+				inv_remarks: (b).inv_remarks,
+				inv_stat: (b).inv_stat,
+				inv_total: (b).inv_total,
+				running_no: (b).running_no,
+				svc_date: (b).svc_date,
+				svc_odo: (b).svc_odo,
+				svc_order: (b).svc_order,
+				workshop: wsMap.has((b).ws_id) ? { id: (b).ws_id, name: (wsMap.get((b).ws_id))?.ws_name } : null
 			};
 		});
 		return res.json({ data, message: `Vehicle maintenance billings (inv_date) retrieved successfully`, status: 'success' });
@@ -263,16 +263,16 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 
 	const structuredBilling = {
 		asset: assetMap.has(asset_id) ? {
-			id: asset_id,
-			register_number: (assetMap.get(asset_id) as any)?.register_number,
 			costcenter: ccMap.has(cc_id) ? {
 				id: cc_id,
-				name: (ccMap.get(cc_id) as any)?.name
+				name: (ccMap.get(cc_id))?.name
 			} : null,
+			id: asset_id,
 			location: (loc_id && locationMap.has(loc_id)) ? {
-				id: (locationMap.get(loc_id) as any)?.id,
-				code: (locationMap.get(loc_id) as any)?.code
-			} : null
+				code: (locationMap.get(loc_id))?.code,
+				id: (locationMap.get(loc_id))?.id
+			} : null,
+			register_number: (assetMap.get(asset_id))?.register_number
 		} : null,
 		inv_date: billing.inv_date,
 		inv_id: billing.inv_id,
@@ -291,7 +291,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null),
 		workshop: wsMap.has(billing.ws_id) ? {
 			id: billing.ws_id,
-			name: (wsMap.get(billing.ws_id) as any)?.ws_name
+			name: (wsMap.get(billing.ws_id))?.ws_name
 		} : null
 	};
 
@@ -353,16 +353,16 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 
 			return {
 				asset: assetMap.has(asset_id) ? {
-					id: asset_id,
-					register_number: (assetMap.get(asset_id) as any)?.register_number,
 					costcenter: ccMap.has(cc_id) ? {
 						id: cc_id,
-						name: (ccMap.get(cc_id) as any)?.name
+						name: (ccMap.get(cc_id))?.name
 					} : null,
+					id: asset_id,
 					location: (loc_id && locationMap.has(loc_id)) ? {
-						id: (locationMap.get(loc_id) as any)?.id,
-						code: (locationMap.get(loc_id) as any)?.code
-					} : null
+						code: (locationMap.get(loc_id))?.code,
+						id: (locationMap.get(loc_id))?.id
+					} : null,
+					register_number: (assetMap.get(asset_id))?.register_number
 				} : null,
 				inv_date: billing.inv_date,
 				inv_id: billing.inv_id,
@@ -378,7 +378,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 				upload_url: toPublicUrl((billing as any).upload ?? (billing as any).attachment ?? null),
 				workshop: wsMap.has(billing.ws_id) ? {
 					id: billing.ws_id,
-					name: (wsMap.get(billing.ws_id) as any)?.ws_name
+					name: (wsMap.get(billing.ws_id))?.ws_name
 				} : null
 			};
 		});
@@ -446,11 +446,11 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 		});
 		return {
 			asset: assetMap.has(asset_id) ? {
+				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
+				fuel_type: (assetMap.get(asset_id))?.fuel_type,
 				id: asset_id,
-				register_number: (assetMap.get(asset_id) as any)?.register_number,
-				fuel_type: (assetMap.get(asset_id) as any)?.fuel_type,
-				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id) as any)?.name } : null,
-				location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id) as any)?.code } : null
+				location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id))?.code } : null,
+				register_number: (assetMap.get(asset_id))?.register_number
 			} : null,
 			inv_date: b.inv_date,
 			inv_id: b.inv_id,
@@ -463,8 +463,8 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			svc_date: b.svc_date,
 			svc_odo: b.svc_odo,
 			svc_order: b.svc_order,
-					upload_url: toPublicUrl((b as any).upload ?? (b as any).attachment ?? null),
-					workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id) as any)?.ws_name } : null
+					upload_url: toPublicUrl((b).upload ?? (b).attachment ?? null),
+					workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id))?.ws_name } : null
 		};
 	});
 
@@ -606,14 +606,14 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 		return {
 			asset: assetMap.has(asset_id) ? {
 				asset_id: asset_id,
-				register_number: (assetMap.get(asset_id) as any)?.register_number || (assetMap.get(asset_id) as any)?.vehicle_regno || null,
-				transmission: (assetMap.get(asset_id) as any)?.transmission || (assetMap.get(asset_id) as any)?.vtrans_type || null,
-				fuel_type: (assetMap.get(asset_id) as any)?.fuel_type || (assetMap.get(asset_id) as any)?.vfuel_type || null,
-				purchase_date: (assetMap.get(asset_id) as any)?.purchase_date || (assetMap.get(asset_id) as any)?.v_dop || null
+				fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
+				purchase_date: (assetMap.get(asset_id))?.purchase_date || (assetMap.get(asset_id))?.v_dop || null,
+				register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null,
+				transmission: (assetMap.get(asset_id))?.transmission || (assetMap.get(asset_id))?.vtrans_type || null
 			} : null,
 			costcenter: ccMap.has(b.costcenter_id) ? {
 				id: b.costcenter_id,
-				name: (ccMap.get(b.costcenter_id) as any)?.name
+				name: (ccMap.get(b.costcenter_id))?.name
 			} : null,
 			inv_date: b.inv_date,
 			inv_id: b.inv_id,
@@ -623,7 +623,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 			inv_total: b.inv_total,
 			location: locationMap.has(b.location_id) ? {
 				id: b.location_id,
-				name: (locationMap.get(b.location_id) as any)?.code
+				name: (locationMap.get(b.location_id))?.code
 			} : null,
 			running_no: b.running_no,
 			svc_date: b.svc_date,
@@ -631,7 +631,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 			svc_order: b.svc_order,
 			workshop: wsMap.has(b.ws_id) ? {
 				id: b.ws_id,
-				name: (wsMap.get(b.ws_id) as any)?.ws_name
+				name: (wsMap.get(b.ws_id))?.ws_name
 			} : null
 		};
 	});
@@ -766,7 +766,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 				classification: vehicleObj ? (vehicleObj.classification || null) : null,
 				costcenter: ccObj ? { id: ccId, name: ccObj.name } : null,
 				fuel: vehicleObj ? (vehicleObj.fuel_type || vehicleObj.vfuel_type || null) : null,
-				location: locationObj ? { id: locId, code: locationObj.code ?? locationObj.name } : null,
+				location: locationObj ? { code: locationObj.code ?? locationObj.name, id: locId } : null,
 				model,
 				owner,
 				purchase_date: vehicleObj?.purchase_date ? dayjs(vehicleObj.purchase_date).format('DD/MM/YYYY') : (vehicleObj?.v_dop ? dayjs(vehicleObj.v_dop).format('DD/MM/YYYY') : null),
@@ -963,7 +963,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 			asset,
 			category: fleetCard ? fleetCard.category : null,
 			end_odo: d.end_odo,
-			fleetcard: fleetCard ? { id: fleetCard.id, card_no: fleetCard.card_no } : null,
+			fleetcard: fleetCard ? { card_no: fleetCard.card_no, id: fleetCard.id } : null,
 			s_id: d.s_id,
 			start_odo: d.start_odo,
 			stmt_date: d.stmt_date,
@@ -1002,7 +1002,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		.sort((a, b) => a.name.localeCompare(b.name));
 
 	const msg = `Fuel billing retrieved successfully (${costcenter_summ.length} costcenter group(s), ${details.length} transaction detail(s))`;
-	res.json({ data: { ...rest, fuel_vendor, costcenter_summ, details }, message: msg, status: 'success' });
+	res.json({ data: { ...rest, costcenter_summ, details, fuel_vendor }, message: msg, status: 'success' });
 };
 
 // Get fuel consumption records and summary for a specific vehicle (asset_id)
@@ -1019,7 +1019,7 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 	let registerNumber: null | string = null;
 	try {
 		const asset = await assetsModel.getAssetById(vehicleId);
-		if (asset?.register_number) registerNumber = asset.register_number;
+		if (asset.register_number) registerNumber = asset.register_number;
 	} catch (err) {
 		// ignore - fallback to any register_number present in rows
 	}
@@ -1061,13 +1061,13 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 
 	res.json({
 		data: {
-			vehicle_id: vehicleId,
-			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null),
-			total_litre: totalLitre.toFixed(2),
+			average_efficiency: avgEfficiency ? Number(avgEfficiency.toFixed(2)) : null,
+			records,
+			register_number: registerNumber || ((rows && rows.length > 0) ? (rows[0]).register_number : null),
 			total_amount: totalAmount.toFixed(2),
 			total_km: totalKm.toFixed(2),
-			average_efficiency: avgEfficiency ? Number(avgEfficiency.toFixed(2)) : null,
-			records
+			total_litre: totalLitre.toFixed(2),
+			vehicle_id: vehicleId
 		},
 		message: `Fuel consumption for vehicle ${vehicleId} retrieved successfully`,
 		status: 'success'
@@ -1087,7 +1087,7 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 	let registerNumber: null | string = null;
 	try {
 		const asset = await assetsModel.getAssetById(assetId);
-		if (asset?.register_number) registerNumber = asset.register_number;
+		if (asset.register_number) registerNumber = asset.register_number;
 	} catch (err) {
 		// ignore
 	}
@@ -1115,10 +1115,10 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 	res.json({
 		data: {
 			id: assetId,
+			records,
 			register_number: regNoForMsg,
-			total_maintenance: totalMaintenance,
 			total_amount: totalAmount.toFixed(2),
-			records
+			total_maintenance: totalMaintenance
 		},
 		message: `Vehicle maintenance for vehicle by asset ID: ${assetId}${regNoForMsg ? ' (' + regNoForMsg + ')' : ''} retrieved successfully`,
 		status: 'success'
@@ -1137,22 +1137,22 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 		// Prepare payload for model
 		const payload = {
 			details: Array.isArray(details) ? details.map((d: any) => ({
-				vehicle_id: d.vehicle_id,
+				amount: d.amount,
 				asset_id: d.asset_id,
-				entry_code: d.entry_code || null, // entry_code is not used currently
-				stmt_date: d.stmt_date,
 				card_id: d.card_id,
+				category: d.category,
 				cc_id: d.cc_id,
 				costcenter_id: d.costcenter_id,
+				efficiency: d.efficiency,
+				end_odo: d.end_odo,
+				entry_code: d.entry_code || null, // entry_code is not used currently
 				loc_id: d.loc_id,
 				location_id: d.location_id || null, // location_id is not used currently
-				category: d.category,
 				start_odo: d.start_odo,
-				end_odo: d.end_odo,
+				stmt_date: d.stmt_date,
 				total_km: d.total_km,
 				total_litre: d.total_litre,
-				efficiency: d.efficiency,
-				amount: d.amount
+				vehicle_id: d.vehicle_id
 			})) : [],
 			diesel_amount,
 			petrol_amount,
@@ -1677,7 +1677,7 @@ export const removeFuelBillEntry = async (req: Request, res: Response) => {
 		}
 
 		await billingModel.deleteFuelVehicleAmountByStmtAndSid(stmt_id, s_id);
-		return res.json({ data: { stmt_id, s_id }, message: 'Bill entry removed', status: 'success' });
+		return res.json({ data: { s_id, stmt_id }, message: 'Bill entry removed', status: 'success' });
 	} catch (error: any) {
 		return res.status(500).json({ data: null, message: error?.message || 'Failed to remove bill entry', status: 'error' });
 	}
@@ -1730,7 +1730,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 							const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
 							if (!locId) return null;
 							const found = locations.find((loc: any) => loc.id === locId);
-							return found ? { id: locId, code: found.code } : null;
+							return found ? { code: found.code, id: locId } : null;
 						})(),
 						purpose: assetObj.purpose || null,
 						register_number: assetObj.register_number || assetObj.vehicle_regno,
@@ -1796,7 +1796,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
 						if (!locId) return null;
 						const found = locations.find((loc: any) => loc.id === locId);
-						return found ? { id: locId, code: found.code } : null;
+						return found ? { code: found.code, id: locId } : null;
 					})(),
 					purpose: assetObj.purpose || null,
 					register_number: assetObj.register_number || assetObj.vehicle_regno,
@@ -1942,7 +1942,7 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 	}
 }
 
-function normalizeStoredPath(filePath?: string | null): string | null {
+function normalizeStoredPath(filePath?: null | string): null | string {
 	if (!filePath) return null;
 	let p = String(filePath);
 	// normalize separators
@@ -1971,7 +1971,7 @@ function normalizeStoredPath(filePath?: string | null): string | null {
 // like 'mnt/winshare', and ensures the returned path starts with 'uploads/'.
 // Helper to produce a public URL from a stored path. Mirrors logic used when returning
 // logos: strips mount segments and ensures path is under 'uploads/'.
-function publicUrl(rawPath?: string | null): string | null {
+function publicUrl(rawPath?: null | string): null | string {
 	if (!rawPath) return null;
 	const baseUrl = process.env.BACKEND_URL || '';
 	let normalized = String(rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
@@ -2156,10 +2156,10 @@ export const getServiceParts = async (req: Request, res: Response) => {
 		data: enriched,
 		message: 'Service parts retrieved successfully',
 		meta: {
-			total,
 			page,
+			pages: Math.ceil(total / per_page),
 			per_page,
-			pages: Math.ceil(total / per_page)
+			total
 		},
 		status: 'success'
 	});
@@ -2389,7 +2389,7 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 	const fleetcard = fleetCardObj ? { card_no: fleetCardObj.card_no, id: fleetCardObj.id } : null;
 
 	const { brand_id, card_id, category_id, cc_id, dept_id, model_id, ramco_id, ...rest } = record;
-	res.json({ data: { ...rest, costcenter, owner, brand, model, category, department, fleetcard }, message: 'Temp vehicle record retrieved successfully', status: 'success' });
+	res.json({ data: { ...rest, brand, category, costcenter, department, fleetcard, model, owner }, message: 'Temp vehicle record retrieved successfully', status: 'success' });
 };
 
 export const createTempVehicleRecord = async (req: Request, res: Response) => {
@@ -2469,11 +2469,11 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 			account = {
 				account: acc.account,
 				beneficiary: benObj ? {
-					id: benObj.id ?? benObj.bfcy_id,
-					name: benObj.bfcy_name ?? benObj.name,
-					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
 					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
-					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
+					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null,
+					id: benObj.id ?? benObj.bfcy_id,
+					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+					name: benObj.bfcy_name ?? benObj.name
 				} : acc.provider,
 				bill_id: acc.bill_id,
 				desc: acc.bill_desc,
@@ -2809,11 +2809,11 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 		account = {
 			account: acc.account,
 			beneficiary: benObj ? {
-				id: benObj.id ?? benObj.bfcy_id,
-				name: benObj.bfcy_name ?? benObj.name,
-				logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
 				entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
-				entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
+				entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null,
+				id: benObj.id ?? benObj.bfcy_id,
+				logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+				name: benObj.bfcy_name ?? benObj.name
 			} : acc.provider,
 			bill_id: acc.bill_id,
 			desc: acc.bill_desc,
@@ -3035,8 +3035,8 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 		details: Object.entries(cc._yearMap).map(([year, yval]: any) => ({
 			expenses: yval.expenses.toFixed(2),
 			months: Object.entries(yval._monthMap).map(([month, mval]: any) => ({
-				month: Number(month),
 				expenses: mval.expenses.toFixed(2),
+				month: Number(month),
 				/* details: Object.entries(mval._serviceMap).map(([service, amount]: any) => ({
 				  service,
 				  amount: amount.toFixed(2)
@@ -3124,12 +3124,12 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 	// Format output
 	const result = Object.values(summary).map((s: any) => ({
 		details: Object.entries(s._yearMap).map(([year, yval]: any) => ({
-			year: Number(year),
 			expenses: yval.expenses.toFixed(2),
 			months: Object.entries(yval._monthMap).map(([month, mval]: any) => ({
-				month: Number(month),
-				expenses: mval.expenses.toFixed(2)
-			}))
+				expenses: mval.expenses.toFixed(2),
+				month: Number(month)
+			})),
+			year: Number(year)
 		})),
 		service: s.service
 	})).sort((a, b) => a.service.localeCompare(b.service));
@@ -3448,7 +3448,7 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
-	const beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+	const beneficiaryResp: any = { entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null, id: ben.id ?? ben.bfcy_id, logo: logo, name: ben.bfcy_name ?? ben.name ?? null };
 	if (ben.entry_by) {
 		const k = String(ben.entry_by);
 		if (empMap.has(k)) {
@@ -3518,8 +3518,8 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 
 		return {
 			account: {
-				bill_id: acc.bill_id,
 				account_no: acc.account,
+				bill_id: acc.bill_id,
 				costcenter,
 				location
 			},
@@ -3635,11 +3635,11 @@ export const postUtilityBillsByIdsByService = async (req: Request, res: Response
 			account = {
 				account: acc.account,
 				beneficiary: benObj ? {
-					id: benObj.id ?? benObj.bfcy_id,
-					name: benObj.bfcy_name ?? benObj.name,
-					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
 					entry_by: benObj.entry_by ? (typeof benObj.entry_by === 'object' ? benObj.entry_by : { ramco_id: benObj.entry_by }) : null,
-					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null
+					entry_position: benObj.entry_position ? (typeof benObj.entry_position === 'object' ? benObj.entry_position : { ramco_id: benObj.entry_position }) : null,
+					id: benObj.id ?? benObj.bfcy_id,
+					logo: benObj.bfcy_logo ? publicUrl(benObj.bfcy_logo) : (benObj.logo ? publicUrl(benObj.logo) : null),
+					name: benObj.bfcy_name ?? benObj.name
 				} : null,
 				bill_id: acc.bill_id,
 				desc: acc.description,
@@ -3723,7 +3723,7 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 	const empMap = new Map((employees || []).map((e: any) => [String(e.ramco_id), e]));
-	const beneficiaryResp: any = { id: ben.id ?? ben.bfcy_id, name: ben.bfcy_name ?? ben.name ?? null, logo: logo, entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null };
+	const beneficiaryResp: any = { entry_by: null, entry_position: ben.entry_position || null, filing: ben.file_reference || null, id: ben.id ?? ben.bfcy_id, logo: logo, name: ben.bfcy_name ?? ben.name ?? null };
 	if (ben.entry_by) {
 		const k = String(ben.entry_by);
 		if (empMap.has(k)) {
@@ -3796,8 +3796,8 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 
 		return {
 			account: {
-				bill_id: acc.bill_id,
 				account_no: acc.account,
+				bill_id: acc.bill_id,
 				costcenter,
 				location
 			},
