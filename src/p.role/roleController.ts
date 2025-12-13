@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 
-const { updateUsersRole } = require('../p.user/userModel');
+import { updateUsersRole } from '../p.user/userModel.js';
 import { createRole, getAllRoles, getRoleById, updateRole } from './roleModel.js';
 
 // Get all roles

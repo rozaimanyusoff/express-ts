@@ -461,7 +461,8 @@ export const getUserAuthLogs = async (req: Request, res: Response): Promise<Resp
         return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
     }
     try {
-        const { getUserAuthLogs } = require('../models/logModel');
+        const logModel = await import('../p.admin/logModel.js');
+        const { getUserAuthLogs } = logModel;
         const logs = await getUserAuthLogs(userId);
         return res.status(200).json({ logs, status: 'success' });
     } catch (error) {

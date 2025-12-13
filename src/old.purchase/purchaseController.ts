@@ -130,8 +130,8 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
     // Handle uploaded file: move from multer temp to correct location if present
     let request_upload = undefined;
     if (req.file) {
-      const fs = require('fs');
-      const path = require('path');
+      const fs = (await import('fs')).default;
+      const path = (await import('path')).default;
       const uploadBase = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
       const purchaseDir = path.join(uploadBase, 'purchase');
       if (!fs.existsSync(purchaseDir)) {

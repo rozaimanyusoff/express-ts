@@ -2857,7 +2857,8 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			}
 		}
 		// Generate action token and base URL for supervisor email (legacy buttons)
-		const actionToken = require('crypto').randomBytes(32).toString('hex');
+		const crypto = await import('crypto');
+		const actionToken = crypto.randomBytes(32).toString('hex');
 		const actionBaseUrl = `${req.protocol}://${req.get('host')}/api/assets/asset-transfer`;
 		// Build frontend approval portal URL with signed credential token if approver is available
 		let portalUrl: string | undefined = undefined;
