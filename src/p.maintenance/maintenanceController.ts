@@ -2524,7 +2524,7 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 				.split(/[,;\s]+/)
 				.map((s: string) => s.trim())
 				.filter((s: string) => s.length > 0);
-			const unique = Array.from(new Set(ids));
+			const unique = Array.from(new Set(ids)) as string[];
 			const passenger = unique.map((rid: string) => {
 				const emp = empMap.get(rid);
 				return { full_name: emp ? (emp.full_name || emp.name || null) : null, ramco_id: rid };

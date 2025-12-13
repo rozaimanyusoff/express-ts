@@ -14,6 +14,8 @@ const assessmentDetailTable = `${dbName}.v_assess_dt2`; // linked to v_assess2 v
 
 const criteriaOwnershipTable = `${dbName}.criteria_ownership`;
 
+const computerAssessmentTable = `${dbName}.computer_assessment`;
+
 
 export interface SummonAgency {
   code?: null | string;
@@ -828,4 +830,193 @@ export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: num
   }
 
   return result;
+};
+
+/* ========== COMPUTER ASSESSMENT ========== */
+export interface ComputerAssessment {
+  // Assessment metadata
+  assessment_year?: null | string;
+  assessment_date?: null | string;
+  technician?: null | string;
+  overall_score?: null | number;
+  remarks?: null | string;
+  id?: number;
+
+  // Asset reference
+  asset_id?: null | number;
+  register_number?: null | string;
+  category?: null | string;
+  brand?: null | string;
+  model?: null | string;
+  purchase_date?: null | string;
+
+  // Asset ownership
+  costcenter_id?: null | number;
+  department_id?: null | number;
+  location_id?: null | number;
+  ramco_id?: null | string;
+
+  // OS specifications
+  os_name?: null | string;
+  os_version?: null | string;
+  os_patch_status?: null | string;
+
+  // CPU specifications
+  cpu_manufacturer?: null | string;
+  cpu_model?: null | string;
+  cpu_generation?: null | string;
+
+  // Memory specifications
+  memory_manufacturer?: null | string;
+  memory_type?: null | string;
+  memory_size_gb?: null | number;
+
+  // Storage specifications
+  storage_manufacturer?: null | string;
+  storage_type?: null | string;
+  storage_size_gb?: null | number;
+
+  // Graphics specifications
+  graphics_type?: null | string;
+  graphics_manufacturer?: null | string;
+  graphics_specs?: null | string;
+
+  // Display specifications
+  display_manufacturer?: null | string;
+  display_size?: null | number; // inches
+  display_resolution?: null | string;
+  display_form_factor?: null | string;
+  display_interfaces?: null | string; // JSON array stored as string
+
+  // Ports
+  ports_usb_a?: null | number;
+  ports_usb_c?: null | number;
+  ports_thunderbolt?: null | number;
+  ports_ethernet?: null | number;
+  ports_hdmi?: null | number;
+  ports_displayport?: null | number;
+  ports_vga?: null | number;
+  ports_sdcard?: null | number;
+  ports_audiojack?: null | number;
+
+  // Battery & Adapter
+  battery_equipped?: null | boolean;
+  battery_capacity?: null | string;
+  adapter_equipped?: null | boolean;
+  adapter_output?: null | string;
+
+  // Security & VPN
+  av_installed?: null | string; // 'Installed', 'Not installed', etc.
+  av_vendor?: null | string;
+  av_status?: null | string;
+  av_license?: null | string;
+  vpn_installed?: null | string;
+  vpn_setup_type?: null | string;
+  vpn_username?: null | string;
+
+  // Software
+  installed_software?: null | string;
+
+  // Metadata
+  created_at?: null | string;
+  updated_at?: null | string;
+}
+
+export const getComputerAssessments = async (filters?: {
+  asset_id?: number;
+  assessment_year?: string;
+  technician?: string;
+  ramco_id?: string;
+}): Promise<ComputerAssessment[]> => {
+  let query = `SELECT * FROM ${computerAssessmentTable}`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  if (filters?.asset_id) {
+    conditions.push('asset_id = ?');
+    params.push(filters.asset_id);
+  }
+  if (filters?.assessment_year) {
+    conditions.push('assessment_year = ?');
+    params.push(filters.assessment_year);
+  }
+  if (filters?.technician) {
+    conditions.push('technician = ?');
+    params.push(filters.technician);
+  }
+  if (filters?.ramco_id) {
+    conditions.push('ramco_id = ?');
+    params.push(filters.ramco_id);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ${conditions.join(' AND ')}`;
+  }
+
+  query += ` ORDER BY id DESC`;
+  const [rows] = await pool2.query(query, params);
+  return rows as ComputerAssessment[];
+};
+
+export const getComputerAssessmentById = async (id: number): Promise<ComputerAssessment | null> => {
+  const [rows] = await pool2.query(`SELECT * FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
+  const data = rows as ComputerAssessment[];
+  return data.length > 0 ? data[0] : null;
+};
+
+export const createComputerAssessment = async (data: Partial<ComputerAssessment>): Promise<number> => {
+  const now = formatToMySQLDatetime(new Date());
+  
+  // Handle date formatting
+  const assessmentDate = data.assessment_date ? formatToDateOnly(data.assessment_date) : null;
+  const purchaseDate = data.purchase_date ? formatToDateOnly(data.purchase_date) : null;
+
+  // Handle display_interfaces (convert array to JSON string if needed)
+  let displayInterfaces = data.display_interfaces;
+  if (Array.isArray(displayInterfaces)) {
+    displayInterfaces = JSON.stringify(displayInterfaces);
+  }
+
+  const payload = {
+    ...data,
+    assessment_date: assessmentDate,
+    purchase_date: purchaseDate,
+    display_interfaces: displayInterfaces,
+    created_at: now,
+    updated_at: now,
+  } as any;
+
+  const [result] = await pool2.query(`INSERT INTO ${computerAssessmentTable} SET ?`, [payload]);
+  return (result as ResultSetHeader).insertId;
+};
+
+export const updateComputerAssessment = async (id: number, data: Partial<ComputerAssessment>): Promise<void> => {
+  // Handle date formatting
+  if ('assessment_date' in data && data.assessment_date) {
+    (data as any).assessment_date = formatToDateOnly(data.assessment_date);
+  }
+  if ('purchase_date' in data && data.purchase_date) {
+    (data as any).purchase_date = formatToDateOnly(data.purchase_date);
+  }
+
+  // Handle display_interfaces (convert array to JSON string if needed)
+  if ('display_interfaces' in data && Array.isArray(data.display_interfaces)) {
+    (data as any).display_interfaces = JSON.stringify(data.display_interfaces);
+  }
+
+  const payload: any = { ...data };
+  payload.updated_at = formatToMySQLDatetime(new Date());
+
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload).map(v => v === undefined ? null : v);
+
+  if (fields) {
+    await pool2.query(`UPDATE ${computerAssessmentTable} SET ${fields} WHERE id = ?`, [...values, id]);
+  }
+};
+
+export const deleteComputerAssessment = async (id: number): Promise<void> => {
+  const [result] = await pool2.query(`DELETE FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('Computer assessment not found');
 };

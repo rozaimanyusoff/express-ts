@@ -389,11 +389,17 @@ export const getAssetById = async (req: Request, res: Response) => {
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
 			: null,
+		department: asset.department_id && departmentMap.has(asset.department_id)
+			? { id: asset.department_id, code: departmentMap.get(asset.department_id)?.code || null }
+			: null,
 		depreciation_length: asset.depreciation_length,
 		depreciation_rate: asset.depreciation_rate,
 		disposed_date: asset.disposed_date,
 		entry_code: asset.entry_code,
 		id: asset.id,
+		location: asset.location_id && locationMap.has(asset.location_id)
+			? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
+			: null,
 		model: asset.model_id && modelMap.has(asset.model_id)
 			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
 			: null,

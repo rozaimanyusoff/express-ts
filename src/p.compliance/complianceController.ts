@@ -1874,3 +1874,138 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     });
   }
 };
+
+/* ========== COMPUTER ASSESSMENT ENDPOINTS ========== */
+
+export const getComputerAssessments = async (req: Request, res: Response) => {
+  try {
+    const assetIdParam = req.query.asset_id;
+    const assessmentYearParam = req.query.assessment_year;
+    const technicianParam = req.query.technician;
+    const ramcoIdParam = req.query.ramco_id;
+
+    const filters: any = {};
+    if (assetIdParam) filters.asset_id = Number(assetIdParam);
+    if (assessmentYearParam) filters.assessment_year = String(assessmentYearParam);
+    if (technicianParam) filters.technician = String(technicianParam);
+    if (ramcoIdParam) filters.ramco_id = String(ramcoIdParam);
+
+    const assessments = await complianceModel.getComputerAssessments(filters);
+    
+    // Parse display_interfaces from JSON string to array
+    const enriched = assessments.map((a: any) => ({
+      ...a,
+      display_interfaces: a.display_interfaces ? JSON.parse(a.display_interfaces) : null,
+    }));
+
+    return res.json({
+      data: enriched,
+      message: `${enriched.length} computer assessment(s) retrieved`,
+      status: 'success',
+    });
+  } catch (e) {
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to fetch computer assessments',
+      status: 'error',
+    });
+  }
+};
+
+export const getComputerAssessmentById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid assessment ID', status: 'error' });
+
+    const assessment = await complianceModel.getComputerAssessmentById(id);
+    if (!assessment) {
+      return res.status(404).json({ data: null, message: 'Computer assessment not found', status: 'error' });
+    }
+
+    // Parse display_interfaces from JSON string to array
+    const enriched = {
+      ...assessment,
+      display_interfaces: assessment.display_interfaces ? JSON.parse(assessment.display_interfaces) : null,
+    };
+
+    return res.json({
+      data: enriched,
+      message: 'Computer assessment retrieved successfully',
+      status: 'success',
+    });
+  } catch (e) {
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to fetch computer assessment',
+      status: 'error',
+    });
+  }
+};
+
+export const createComputerAssessment = async (req: Request, res: Response) => {
+  try {
+    const data = req.body;
+    const id = await complianceModel.createComputerAssessment(data);
+
+    return res.status(201).json({
+      data: { id },
+      message: 'Computer assessment created successfully',
+      status: 'success',
+    });
+  } catch (e) {
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to create computer assessment',
+      status: 'error',
+    });
+  }
+};
+
+export const updateComputerAssessment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid assessment ID', status: 'error' });
+
+    const data = req.body;
+    await complianceModel.updateComputerAssessment(id, data);
+
+    const updated = await complianceModel.getComputerAssessmentById(id);
+    const enriched = {
+      ...updated,
+      display_interfaces: updated?.display_interfaces ? JSON.parse(updated.display_interfaces) : null,
+    };
+
+    return res.json({
+      data: enriched,
+      message: 'Computer assessment updated successfully',
+      status: 'success',
+    });
+  } catch (e) {
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to update computer assessment',
+      status: 'error',
+    });
+  }
+};
+
+export const deleteComputerAssessment = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid assessment ID', status: 'error' });
+
+    await complianceModel.deleteComputerAssessment(id);
+
+    return res.json({
+      data: null,
+      message: 'Computer assessment deleted successfully',
+      status: 'success',
+    });
+  } catch (e) {
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to delete computer assessment',
+      status: 'error',
+    });
+  }
+};
