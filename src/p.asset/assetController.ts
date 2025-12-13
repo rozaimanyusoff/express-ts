@@ -3122,7 +3122,8 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	// If using multer array, req.files may be object or array depending on setup. We'll read both.
 	let filePaths: string[] | undefined = undefined;
 	const filesAny: any = (req as any).files || (req as any).file || undefined;
-	const ensureDbPath = (filename: string) => require('../utils/uploadUtil').toDbPath('assets/transfers/acceptance', filename);
+	const uploadUtil = await import('../utils/uploadUtil.js');
+	const ensureDbPath = (filename: string) => uploadUtil.toDbPath('assets/transfers/acceptance', filename);
 	if (Array.isArray(filesAny)) {
 		filePaths = filesAny.map(f => ensureDbPath(f.filename));
 	} else if (filesAny && typeof filesAny === 'object' && Array.isArray(filesAny.acceptance_attachments)) {

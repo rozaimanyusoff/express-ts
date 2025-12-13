@@ -95,7 +95,8 @@ router.get('/requests/items/:id', asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   // Fallback: get item by id from rt_stock_request_items
-  const [rows] = await require('../../utils/db').query('SELECT * FROM stock.rt_stock_request_items WHERE id = ?', [id]);
+  const { pool } = await import('../../utils/db.js');
+  const [rows] = await pool.query('SELECT * FROM stock.rt_stock_request_items WHERE id = ?', [id]);
   const item = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
   res.json({

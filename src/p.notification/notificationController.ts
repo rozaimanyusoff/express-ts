@@ -15,7 +15,8 @@ export const getNotifications = async (req: Request, res: Response) => {
       if (!Number.isNaN(requested) && requested !== authUserId) {
          try {
             // Fetch authenticated user's role
-            const authUser = await require('../p.user/userModel').getUserById(authUserId);
+            const userModel = await import('../p.user/userModel.js');
+            const authUser = await userModel.getUserById(authUserId);
             if (!authUser || authUser.role !== 1) {
                return res.status(403).json({ message: 'Forbidden: only admins can view other users\' notifications', status: 'error' });
             }

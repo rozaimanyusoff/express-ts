@@ -328,11 +328,12 @@ export const getStockTrackings = async (_req: Request, res: Response) => {
   const updatedByIds = trackings.map((t: any) => t.updated_by).filter(Boolean);
 
   // Fetch all related data in batch
+  const userModel = await import('../../p.user/userModel.js');
   const [allItems, allPurchases, allUsers, allTeams] = await Promise.all([
     itemIds.length ? stockModel.getStockItems() : [],
     purchaseIds.length ? stockModel.getStockPurchases() : [],
     (issueToIds.length || registeredByIds.length || updatedByIds.length)
-      ? require('../../p.user/userModel').getAllUsers() : [],
+      ? userModel.getAllUsers() : [],
     stockModel.getTeams()
   ]);
   const items = isRowDataPacketArray(allItems) ? allItems : [];
@@ -416,11 +417,12 @@ export const getStockTrackingById = async (req: Request, res: Response) => {
   if (!t) return res.status(404).json({ message: 'Stock tracking not found', status: 'error' });
 
   // Fetch related entities for this record
+  const userModel = await import('../../p.user/userModel.js');
   const [item, purchase, allUsers, allTeams] = await Promise.all([
     t.item_id ? stockModel.getStockItemById(t.item_id) : null,
     t.purchase_id ? stockModel.getStockPurchaseById(t.purchase_id) : null,
     (t.issue_to || t.registered_by || t.updated_by)
-      ? require('../../p.user/userModel').getAllUsers() : [],
+      ? userModel.getAllUsers() : [],
     stockModel.getTeams()
   ]);
   const users = isRowDataPacketArray(allUsers) ? allUsers : [];
@@ -491,11 +493,12 @@ export const updateStockTracking = async (req: Request, res: Response) => {
   if (!t) return res.status(404).json({ message: 'Stock tracking not found', status: 'error' });
 
   // Fetch related entities for this record
+  const userModel = await import('../../p.user/userModel.js');
   const [item, purchase, allUsers, allTeams] = await Promise.all([
     t.item_id ? stockModel.getStockItemById(t.item_id) : null,
     t.purchase_id ? stockModel.getStockPurchaseById(t.purchase_id) : null,
     (t.issue_to || t.registered_by || t.updated_by)
-      ? require('../../p.user/userModel').getAllUsers() : [],
+      ? userModel.getAllUsers() : [],
     stockModel.getTeams()
   ]);
   const users = Array.isArray(allUsers) ? allUsers : [];
@@ -582,11 +585,12 @@ export const getStockAnalysis = async (_req: Request, res: Response) => {
   const updatedByIds = trackings.map((t: any) => t.updated_by).filter(Boolean);
 
   // Fetch all related data in batch
+  const userModel = await import('../../p.user/userModel.js');
   const [allItems, allPurchases, allUsers, allTeams] = await Promise.all([
     itemIds.length ? stockModel.getStockItems() : [],
     purchaseIds.length ? stockModel.getStockPurchases() : [],
     (issueToIds.length || registeredByIds.length || updatedByIds.length)
-      ? require('../../p.user/userModel').getAllUsers() : [],
+      ? userModel.getAllUsers() : [],
     stockModel.getTeams()
   ]);
   const items = Array.isArray(allItems) ? allItems : [];

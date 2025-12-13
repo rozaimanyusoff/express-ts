@@ -443,7 +443,8 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
         // Fetch role details
-        const userRole = await require('../../p.role/roleModel').getRoleById(result.user.role);
+        const roleModel = await import('../../p.role/roleModel.js');
+        const userRole = await roleModel.getRoleById(result.user.role);
         const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
 
         // Fetch user groups as objects
