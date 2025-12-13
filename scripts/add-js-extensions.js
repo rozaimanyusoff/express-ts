@@ -15,19 +15,19 @@ function addJsExtensions(dir) {
     } else if (file.endsWith('.js')) {
       let content = fs.readFileSync(fullPath, 'utf8');
 
-      // Replace require statements
-      content = content.replace(/(require\(['"])(\.\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
-        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      // Replace require statements - handles both ./ and ../ paths
+      content = content.replace(/(require\(['"])(\.{0,2}\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') || p2.endsWith('.json') ? match : `${p1}${p2}.js${p3}`;
       });
 
-      // Replace ES module import statements
-      content = content.replace(/(from ['"])(\.\/.*?)(['"])/g, (match, p1, p2, p3) => {
-        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      // Replace ES module import statements - handles both ./ and ../ paths
+      content = content.replace(/(from ['"])(\.{0,2}\/.*?)(['"])/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') || p2.endsWith('.json') ? match : `${p1}${p2}.js${p3}`;
       });
 
-      // Replace dynamic imports
-      content = content.replace(/(import\(['"])(\.\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
-        return p2.endsWith('.js') ? match : `${p1}${p2}.js${p3}`;
+      // Replace dynamic imports - handles both ./ and ../ paths
+      content = content.replace(/(import\(['"])(\.{0,2}\/.*?)(['"]\))/g, (match, p1, p2, p3) => {
+        return p2.endsWith('.js') || p2.endsWith('.json') ? match : `${p1}${p2}.js${p3}`;
       });
 
       fs.writeFileSync(fullPath, content, 'utf8');
