@@ -958,6 +958,108 @@ export const getComputerAssessments = async (filters?: {
   return rows as ComputerAssessment[];
 };
 
+/**
+ * Get all IT assets (type_id = 1) with assessment status
+ * Combines asset data with computer assessments to show which assets have been assessed
+ */
+export const getITAssetsWithAssessmentStatus = async (filters?: {
+  assessment_year?: string;
+  assessed_only?: boolean;
+  not_assessed_only?: boolean;
+}): Promise<any[]> => {
+  // Get all IT assets (type_id = 1)
+  const [assetRows] = await pool.query(
+    `SELECT * FROM assets.assetdata WHERE type_id = 1 ORDER BY register_number ASC`
+  );
+  const assets = assetRows as any[];
+
+  // Get all computer assessments
+  let assessmentQuery = `SELECT asset_id, register_number, assessment_year, id FROM ${computerAssessmentTable}`;
+  const assessmentParams: any[] = [];
+
+  if (filters?.assessment_year) {
+    assessmentQuery += ` WHERE assessment_year = ?`;
+    assessmentParams.push(filters.assessment_year);
+  }
+
+  const [assessmentRows] = await pool2.query(assessmentQuery, assessmentParams);
+  const assessments = assessmentRows as any[];
+
+  // Create a map of asset_id -> assessment records for quick lookup
+  const assessmentMap = new Map<number, any[]>();
+  assessments.forEach((a: any) => {
+    const assetId = Number(a.asset_id);
+    if (!assessmentMap.has(assetId)) {
+      assessmentMap.set(assetId, []);
+    }
+    assessmentMap.get(assetId)!.push(a);
+  });
+
+  // Combine asset with assessment data
+  let combined = assets.map((asset: any) => {
+    const assetId = Number(asset.id);
+    const assetAssessments = assessmentMap.get(assetId) || [];
+    const isAssessed = assetAssessments.length > 0;
+
+    return {
+      asset: asset,
+      assessed: isAssessed,
+      assessment_count: assetAssessments.length,
+      assessments: assetAssessments,
+      last_assessment: assetAssessments.length > 0 
+        ? assetAssessments.sort((a: any, b: any) => 
+            Number(b.assessment_year) - Number(a.assessment_year)
+          )[0] 
+        : null,
+    };
+  });
+
+  // Apply filters
+  if (filters?.assessed_only) {
+    combined = combined.filter((item: any) => item.assessed);
+  }
+  if (filters?.not_assessed_only) {
+    combined = combined.filter((item: any) => !item.assessed);
+  }
+
+  return combined;
+};
+
+/**
+ * Get a single IT asset (type_id = 1) with assessment status by ID
+ */
+export const getITAssetWithAssessmentStatusById = async (assetId: number): Promise<any | null> => {
+  // Get the specific IT asset
+  const [assetRows] = await pool.query(
+    `SELECT * FROM assets.assetdata WHERE id = ? AND type_id = 1`,
+    [assetId]
+  );
+  const assets = assetRows as any[];
+  
+  if (!assets || assets.length === 0) {
+    return null;
+  }
+
+  const asset = assets[0];
+
+  // Get all computer assessments for this asset with full data
+  const [assessmentRows] = await pool2.query(
+    `SELECT * FROM ${computerAssessmentTable} WHERE asset_id = ? ORDER BY assessment_year DESC`,
+    [assetId]
+  );
+  const assessments = assessmentRows as any[];
+
+  const isAssessed = assessments.length > 0;
+
+  return {
+    asset,
+    assessed: isAssessed,
+    assessment_count: assessments.length,
+    assessments,
+    last_assessment: isAssessed ? assessments[0] : null,
+  };
+};
+
 export const getComputerAssessmentById = async (id: number): Promise<ComputerAssessment | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
   const data = rows as ComputerAssessment[];

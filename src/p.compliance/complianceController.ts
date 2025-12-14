@@ -8,6 +8,7 @@ import * as assetModel from '../p.asset/assetModel';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
 import { renderVehicleAssessmentNotification } from '../utils/emailTemplates/vehicleAssessmentNotification';
+import { renderITAssessmentNotification } from '../utils/emailTemplates/itAssessmentNotification';
 import { getSupervisorBySubordinate } from '../utils/employeeHelper';
 import { sendMail } from '../utils/mailer';
 import { getUploadBase, safeMove, toPublicUrl } from '../utils/uploadUtil';
@@ -1965,15 +1966,15 @@ export const getComputerAssessments = async (req: Request, res: Response) => {
     }));
 
     return res.json({
-      data: enriched,
-      message: `${enriched.length} computer assessment(s) retrieved`,
       status: 'success',
+      message: `${enriched.length} computer assessment(s) retrieved`,
+      data: enriched,
     });
   } catch (e) {
     return res.status(500).json({
-      data: null,
-      message: e instanceof Error ? e.message : 'Failed to fetch computer assessments',
       status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch computer assessments',
+      data: null,
     });
   }
 };
@@ -2019,15 +2020,15 @@ export const getComputerAssessmentById = async (req: Request, res: Response) => 
     };
 
     return res.json({
-      data: enriched,
-      message: 'Computer assessment retrieved successfully',
       status: 'success',
+      message: 'Computer assessment retrieved successfully',
+      data: enriched,
     });
   } catch (e) {
     return res.status(500).json({
-      data: null,
-      message: e instanceof Error ? e.message : 'Failed to fetch computer assessment',
       status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch computer assessment',
+      data: null,
     });
   }
 };
@@ -2035,18 +2036,77 @@ export const getComputerAssessmentById = async (req: Request, res: Response) => 
 export const createComputerAssessment = async (req: Request, res: Response) => {
   try {
     const data = req.body;
+    
+    // Check for duplicate assessment (same year, asset_id, and register_number)
+    const existingAssessments = await complianceModel.getComputerAssessments({
+      assessment_year: String(data.assessment_year),
+      asset_id: Number(data.asset_id),
+    });
+    
+    const isDuplicate = existingAssessments.some((a: any) => 
+      a.register_number === data.register_number &&
+      a.assessment_year === data.assessment_year &&
+      a.asset_id === data.asset_id
+    );
+    
+    if (isDuplicate) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Assessment already exists for asset ${data.register_number} in year ${data.assessment_year}`,
+        data: null,
+      });
+    }
+
     const id = await complianceModel.createComputerAssessment(data);
 
+    // Send notification email to technician
+    try {
+      if (data.ramco_id) {
+        const employeesRaw = await assetModel.getEmployees();
+        const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+        const technician = employees.find((e: any) => e.ramco_id === data.ramco_id) as any;
+        
+        if (technician && technician.email) {
+          const { html, subject } = renderITAssessmentNotification({
+            assessment: {
+              date: data.assessment_date ? new Date(data.assessment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              id,
+              overall_score: data.overall_score,
+              remarks: data.remarks,
+              year: data.assessment_year,
+            },
+            asset: {
+              brand: data.brand,
+              category: data.category,
+              id: data.asset_id,
+              model: data.model,
+              register_number: data.register_number,
+            },
+            technician: {
+              email: technician.email,
+              full_name: technician.full_name || technician.name || 'Technician',
+              ramco_id: data.ramco_id,
+            },
+          });
+          
+          await sendMail(technician.email, subject, html);
+        }
+      }
+    } catch (emailErr) {
+      // Log email error but don't fail the assessment creation
+      console.error('Error sending IT assessment notification email:', emailErr);
+    }
+
     return res.status(201).json({
-      data: { id },
-      message: 'Computer assessment created successfully',
       status: 'success',
+      message: 'Computer assessment created successfully',
+      data: { id },
     });
   } catch (e) {
     return res.status(500).json({
-      data: null,
-      message: e instanceof Error ? e.message : 'Failed to create computer assessment',
       status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to create computer assessment',
+      data: null,
     });
   }
 };
@@ -2092,15 +2152,15 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     };
 
     return res.json({
-      data: enriched,
-      message: 'Computer assessment updated successfully',
       status: 'success',
+      message: 'Computer assessment updated successfully',
+      data: enriched,
     });
   } catch (e) {
     return res.status(500).json({
-      data: null,
-      message: e instanceof Error ? e.message : 'Failed to update computer assessment',
       status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to update computer assessment',
+      data: null,
     });
   }
 };
@@ -2113,15 +2173,319 @@ export const deleteComputerAssessment = async (req: Request, res: Response) => {
     await complianceModel.deleteComputerAssessment(id);
 
     return res.json({
-      data: null,
-      message: 'Computer assessment deleted successfully',
       status: 'success',
+      message: 'Computer assessment deleted successfully',
+      data: null,
     });
   } catch (e) {
     return res.status(500).json({
-      data: null,
-      message: e instanceof Error ? e.message : 'Failed to delete computer assessment',
       status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to delete computer assessment',
+      data: null,
+    });
+  }
+};
+
+/**
+ * Get all IT assets with their assessment status
+ * Shows which IT assets have been assessed and which haven't
+ * Enriches asset data with lookup tables (brand, category, type, costcenter, department, location, owner)
+ * Query params:
+ * - assessment_year: Filter by specific year
+ * - assessed_only: true to show only assessed assets
+ * - not_assessed_only: true to show only assets without assessments
+ */
+export const getITAssetsWithAssessmentStatus = async (req: Request, res: Response) => {
+  try {
+    const assessmentYearParam = req.query.assessment_year;
+    const assessedOnlyParam = req.query.assessed_only;
+    const notAssessedOnlyParam = req.query.not_assessed_only;
+
+    const filters: any = {};
+    if (assessmentYearParam) filters.assessment_year = String(assessmentYearParam);
+    if (assessedOnlyParam === 'true') filters.assessed_only = true;
+    if (notAssessedOnlyParam === 'true') filters.not_assessed_only = true;
+
+    const result = await complianceModel.getITAssetsWithAssessmentStatus(filters);
+
+    // Fetch lookup data in parallel for enrichment
+    const [
+      typesRaw,
+      categoriesRaw,
+      brandsRaw,
+      modelsRaw,
+      departmentsRaw,
+      costcentersRaw,
+      locationsRaw,
+      employeesRaw
+    ] = await Promise.all([
+      assetModel.getTypes(),
+      assetModel.getCategories(),
+      assetModel.getBrands(),
+      assetModel.getModels(),
+      (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+
+    // Build lookup maps
+    const typeMap = new Map((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [t.id, t]));
+    const categoryMap = new Map((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [c.id, c]));
+    const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+    const modelMap = new Map((Array.isArray(modelsRaw) ? modelsRaw : []).map((m: any) => [m.id, m]));
+    const departmentMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [d.id, d]));
+    const costcenterMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((c: any) => [c.id, c]));
+    const locationMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [l.id, l]));
+    const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+
+    // Enrich assets with lookup data
+    const enrichedResult = result.map((item: any) => {
+      const asset = item.asset;
+      const type = typeMap.get(asset.type_id);
+      const nbv = assetModel.calculateNBV(asset.unit_price, asset.purchase_year);
+      const age = assetModel.calculateAge(asset.purchase_year);
+
+      return {
+        ...item,
+        asset: {
+          age,
+          asset_code: asset.asset_code,
+          brand: asset.brand_id && brandMap.has(asset.brand_id)
+            ? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+            : null,
+          category: asset.category_id && categoryMap.has(asset.category_id)
+            ? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+            : null,
+          classification: asset.classification,
+          condition_status: asset.condition_status,
+          costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+            ? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+            : null,
+          department: asset.department_id && departmentMap.has(asset.department_id)
+            ? { id: asset.department_id, name: departmentMap.get(asset.department_id)?.code || null }
+            : null,
+          disposed_date: asset.disposed_date,
+          entry_code: asset.entry_code,
+          id: asset.id,
+          location: asset.location_id && locationMap.has(asset.location_id)
+            ? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
+            : null,
+          model: asset.model_id && modelMap.has(asset.model_id)
+            ? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+            : null,
+          nbv,
+          owner: asset.ramco_id && employeeMap.has(asset.ramco_id)
+            ? {
+              full_name: employeeMap.get(asset.ramco_id)?.full_name || null,
+              ramco_id: employeeMap.get(asset.ramco_id)?.ramco_id || null
+            }
+            : null,
+          purchase_date: asset.purchase_date,
+          purchase_id: asset.purchase_id,
+          purchase_year: asset.purchase_year,
+          purpose: asset.purpose,
+          record_status: asset.record_status,
+          register_number: asset.register_number,
+          type: type ? { id: type.id, name: type.name } : null,
+          unit_price: asset.unit_price,
+        }
+      };
+    });
+
+    return res.json({
+      status: 'success',
+      message: `${enrichedResult.length} IT asset(s) retrieved with assessment status`,
+      data: enrichedResult,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch IT assets with assessment status',
+      data: null,
+    });
+  }
+};
+/**
+ * Get a single IT asset with its assessment status by ID
+ * Returns enriched asset data with assessment history
+ */
+export const getITAssetWithAssessmentStatusById = async (req: Request, res: Response) => {
+  try {
+    const assetId = Number(req.params.id);
+    if (!assetId || isNaN(assetId)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid asset ID',
+        data: null,
+      });
+    }
+
+    const result = await complianceModel.getITAssetWithAssessmentStatusById(assetId);
+
+    if (!result) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'IT asset not found',
+        data: null,
+      });
+    }
+
+    // Fetch lookup data in parallel for enrichment
+    const [
+      typesRaw,
+      categoriesRaw,
+      brandsRaw,
+      modelsRaw,
+      departmentsRaw,
+      costcentersRaw,
+      locationsRaw,
+      employeesRaw
+    ] = await Promise.all([
+      assetModel.getTypes(),
+      assetModel.getCategories(),
+      assetModel.getBrands(),
+      assetModel.getModels(),
+      (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees()
+    ]);
+
+    // Build lookup maps
+    const typeMap = new Map((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [t.id, t]));
+    const categoryMap = new Map((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [c.id, c]));
+    const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [b.id, b]));
+    const modelMap = new Map((Array.isArray(modelsRaw) ? modelsRaw : []).map((m: any) => [m.id, m]));
+    const departmentMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [d.id, d]));
+    const costcenterMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((c: any) => [c.id, c]));
+    const locationMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [l.id, l]));
+    const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+
+    // Enrich asset with lookup data
+    const asset = result.asset;
+    const type = typeMap.get(asset.type_id);
+    const nbv = assetModel.calculateNBV(asset.unit_price, asset.purchase_year);
+    const age = assetModel.calculateAge(asset.purchase_year);
+
+    const enrichedAsset = {
+      age,
+      asset_code: asset.asset_code,
+      brand: asset.brand_id && brandMap.has(asset.brand_id)
+        ? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+        : null,
+      category: asset.category_id && categoryMap.has(asset.category_id)
+        ? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+        : null,
+      classification: asset.classification,
+      condition_status: asset.condition_status,
+      costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+        ? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+        : null,
+      department: asset.department_id && departmentMap.has(asset.department_id)
+        ? { id: asset.department_id, name: departmentMap.get(asset.department_id)?.code || null }
+        : null,
+      disposed_date: asset.disposed_date,
+      entry_code: asset.entry_code,
+      id: asset.id,
+      location: asset.location_id && locationMap.has(asset.location_id)
+        ? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
+        : null,
+      model: asset.model_id && modelMap.has(asset.model_id)
+        ? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+        : null,
+      nbv,
+      owner: asset.ramco_id && employeeMap.has(asset.ramco_id)
+        ? {
+          full_name: employeeMap.get(asset.ramco_id)?.full_name || null,
+          ramco_id: employeeMap.get(asset.ramco_id)?.ramco_id || null
+        }
+        : null,
+      purchase_date: asset.purchase_date,
+      purchase_id: asset.purchase_id,
+      purchase_year: asset.purchase_year,
+      purpose: asset.purpose,
+      record_status: asset.record_status,
+      register_number: asset.register_number,
+      type: type ? { id: type.id, name: type.name } : null,
+      unit_price: asset.unit_price,
+    };
+
+    // Enrich assessments with lookup data (same as getComputerAssessmentById)
+    // Remove redundant fields that are already in the asset object (brand, category, model, purchase_date)
+    const enrichedAssessments = result.assessments.map((a: any) => ({
+      id: a.id,
+      asset_id: a.asset_id,
+      register_number: a.register_number,
+      assessment_year: a.assessment_year,
+      assessment_date: a.assessment_date,
+      overall_score: a.overall_score,
+      remarks: a.remarks,
+      os_name: a.os_name,
+      os_version: a.os_version,
+      os_patch_status: a.os_patch_status,
+      cpu_manufacturer: a.cpu_manufacturer,
+      cpu_model: a.cpu_model,
+      cpu_generation: a.cpu_generation,
+      memory_manufacturer: a.memory_manufacturer,
+      memory_type: a.memory_type,
+      memory_size_gb: a.memory_size_gb,
+      storage_manufacturer: a.storage_manufacturer,
+      storage_type: a.storage_type,
+      storage_size_gb: a.storage_size_gb,
+      graphics_type: a.graphics_type,
+      graphics_manufacturer: a.graphics_manufacturer,
+      graphics_specs: a.graphics_specs,
+      display_manufacturer: a.display_manufacturer,
+      display_size: a.display_size,
+      display_resolution: a.display_resolution,
+      display_form_factor: a.display_form_factor,
+      display_interfaces: parseCommaSeparatedArray(a.display_interfaces),
+      ports_usb_a: a.ports_usb_a,
+      ports_usb_c: a.ports_usb_c,
+      ports_thunderbolt: a.ports_thunderbolt,
+      ports_ethernet: a.ports_ethernet,
+      ports_hdmi: a.ports_hdmi,
+      ports_displayport: a.ports_displayport,
+      ports_vga: a.ports_vga,
+      ports_sdcard: a.ports_sdcard,
+      ports_audiojack: a.ports_audiojack,
+      battery_equipped: a.battery_equipped,
+      battery_capacity: a.battery_capacity,
+      adapter_equipped: a.adapter_equipped,
+      adapter_output: a.adapter_output,
+      av_installed: a.av_installed,
+      av_vendor: a.av_vendor,
+      av_status: a.av_status,
+      av_license: a.av_license,
+      vpn_installed: a.vpn_installed,
+      vpn_setup_type: a.vpn_setup_type,
+      vpn_username: a.vpn_username,
+      installed_software: parseCommaSeparatedArray(a.installed_software),
+      created_at: a.created_at,
+      updated_at: a.updated_at,
+      costcenter: a.costcenter_id ? { id: Number(a.costcenter_id), name: costcenterMap.get(Number(a.costcenter_id))?.name || null } : null,
+      department: a.department_id ? { id: Number(a.department_id), name: departmentMap.get(Number(a.department_id))?.code || null } : null,
+      employee: a.ramco_id && employeeMap.has(a.ramco_id) ? { full_name: employeeMap.get(a.ramco_id).full_name || employeeMap.get(a.ramco_id).name || null, ramco_id: a.ramco_id } : null,
+      location: a.location_id ? { id: Number(a.location_id), name: locationMap.get(Number(a.location_id))?.name || null } : null,
+      technician_name: a.technician,
+    }));
+
+    return res.json({
+      status: 'success',
+      message: 'IT asset with assessment status retrieved successfully',
+      data: {
+        asset: enrichedAsset,
+        assessed: result.assessed,
+        assessment_count: result.assessment_count,
+        assessments: enrichedAssessments,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch IT asset with assessment status',
+      data: null,
     });
   }
 };
