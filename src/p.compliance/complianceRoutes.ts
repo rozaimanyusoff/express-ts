@@ -68,6 +68,13 @@ router.put('/assessments/details/:id', asyncHandler(complianceController.updateA
 router.delete('/assessments/details/:id', asyncHandler(complianceController.deleteAssessmentDetail));
 
 
+/* ========== COMPUTER ASSESSMENT ROUTES ========== */
+router.get('/it-assess/:id', asyncHandler(complianceController.getComputerAssessmentById));
+router.get('/it-assess', asyncHandler(complianceController.getComputerAssessments));
+router.post('/it-assess', asyncHandler(complianceController.createComputerAssessment));
+router.put('/it-assess/:id', asyncHandler(complianceController.updateComputerAssessment));
+router.delete('/it-assess/:id', asyncHandler(complianceController.deleteComputerAssessment));
+
 /* ========== ASSESSMENTS (parent) ROUTES ========== */
 const uploadAssessment = createUploader('compliance/assessment');
 
@@ -83,13 +90,6 @@ router.post('/assessments/test-email', asyncHandler(complianceController.sendAss
 
 router.delete('/assessments/:id', asyncHandler(complianceController.deleteAssessment));
 
-
-/* ========== COMPUTER ASSESSMENT ROUTES ========== */
-router.get('/it-assess/:id', asyncHandler(complianceController.getComputerAssessmentById));
-router.get('/it-assess', asyncHandler(complianceController.getComputerAssessments));
-router.post('/it-assess', asyncHandler(complianceController.createComputerAssessment));
-router.put('/it-assess/:id', asyncHandler(complianceController.updateComputerAssessment));
-router.delete('/it-assess/:id', asyncHandler(complianceController.deleteComputerAssessment));
 
 
 export default router;

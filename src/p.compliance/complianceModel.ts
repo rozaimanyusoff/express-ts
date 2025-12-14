@@ -971,10 +971,16 @@ export const createComputerAssessment = async (data: Partial<ComputerAssessment>
   const assessmentDate = data.assessment_date ? formatToDateOnly(data.assessment_date) : null;
   const purchaseDate = data.purchase_date ? formatToDateOnly(data.purchase_date) : null;
 
-  // Handle display_interfaces (convert array to JSON string if needed)
-  let displayInterfaces = data.display_interfaces;
-  if (Array.isArray(displayInterfaces)) {
-    displayInterfaces = JSON.stringify(displayInterfaces);
+  // Handle display_interfaces (convert string or array to JSON string)
+  let displayInterfaces = null;
+  if (data.display_interfaces) {
+    if (Array.isArray(data.display_interfaces)) {
+      displayInterfaces = JSON.stringify(data.display_interfaces);
+    } else if (typeof data.display_interfaces === 'string') {
+      // If it's a comma-separated string, convert to array then to JSON
+      const interfaces = data.display_interfaces.split(',').map((i: string) => i.trim()).filter((i: string) => i);
+      displayInterfaces = JSON.stringify(interfaces);
+    }
   }
 
   const payload = {
@@ -999,9 +1005,15 @@ export const updateComputerAssessment = async (id: number, data: Partial<Compute
     (data as any).purchase_date = formatToDateOnly(data.purchase_date);
   }
 
-  // Handle display_interfaces (convert array to JSON string if needed)
-  if ('display_interfaces' in data && Array.isArray(data.display_interfaces)) {
-    (data as any).display_interfaces = JSON.stringify(data.display_interfaces);
+  // Handle display_interfaces (convert string or array to JSON string if needed)
+  if ('display_interfaces' in data && data.display_interfaces) {
+    if (Array.isArray(data.display_interfaces)) {
+      (data as any).display_interfaces = JSON.stringify(data.display_interfaces);
+    } else if (typeof data.display_interfaces === 'string') {
+      // If it's a comma-separated string, convert to array then to JSON
+      const interfaces = data.display_interfaces.split(',').map((i: string) => i.trim()).filter((i: string) => i);
+      (data as any).display_interfaces = JSON.stringify(interfaces);
+    }
   }
 
   const payload: any = { ...data };

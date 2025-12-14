@@ -51,6 +51,48 @@ function fmtDateOnly(input?: any): null | string {
   }
 }
 
+// Safe JSON parse for display_interfaces varchar field
+function parseDisplayInterfaces(value: any): string[] | null {
+  if (!value) return null;
+  try {
+    if (typeof value === 'string') {
+      // Try to parse as JSON first
+      try {
+        return JSON.parse(value);
+      } catch (parseErr) {
+        // If JSON parse fails, treat as comma-separated string
+        const interfaces = value.split(',').map((i: string) => i.trim()).filter((i: string) => i);
+        return interfaces.length > 0 ? interfaces : null;
+      }
+    }
+    return Array.isArray(value) ? value : null;
+  } catch (e) {
+    // If all else fails, return null
+    return null;
+  }
+}
+
+// Safe parse for comma-separated varchar fields (display_interfaces, installed_software, etc.)
+function parseCommaSeparatedArray(value: any): string[] | null {
+  if (!value) return null;
+  try {
+    if (typeof value === 'string') {
+      // Try to parse as JSON first
+      try {
+        return JSON.parse(value);
+      } catch (parseErr) {
+        // If JSON parse fails, treat as comma-separated string
+        const items = value.split(',').map((i: string) => i.trim()).filter((i: string) => i);
+        return items.length > 0 ? items : null;
+      }
+    }
+    return Array.isArray(value) ? value : null;
+  } catch (e) {
+    // If all else fails, return null
+    return null;
+  }
+}
+
 function fmtDatetimeMySQL(input?: any): null | string {
   if (!input) return null;
   const s = String(input).trim();
@@ -1892,10 +1934,34 @@ export const getComputerAssessments = async (req: Request, res: Response) => {
 
     const assessments = await complianceModel.getComputerAssessments(filters);
     
-    // Parse display_interfaces from JSON string to array
+    // Fetch lookup data in parallel
+    const [costcentersRaw, departmentsRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getCostcenters(),
+      (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getLocations(),
+      assetModel.getEmployees(),
+    ]);
+
+    // Build lookup maps
+    const ccMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((cc: any) => [Number(cc.id), cc]));
+    const deptMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
+    const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+    const empMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+
+    // Parse and enrich data
     const enriched = assessments.map((a: any) => ({
       ...a,
-      display_interfaces: a.display_interfaces ? JSON.parse(a.display_interfaces) : null,
+      costcenter: a.costcenter_id ? { id: Number(a.costcenter_id), name: (ccMap.get(Number(a.costcenter_id)))?.name || null } : null,
+      department: a.department_id ? { id: Number(a.department_id), name: (deptMap.get(Number(a.department_id)))?.code || null } : null,
+      display_interfaces: parseCommaSeparatedArray(a.display_interfaces),
+      employee: a.ramco_id && empMap.has(a.ramco_id) ? { full_name: empMap.get(a.ramco_id).full_name || empMap.get(a.ramco_id).name || null, ramco_id: a.ramco_id } : null,
+      installed_software: parseCommaSeparatedArray(a.installed_software),
+      location: a.location_id ? { id: Number(a.location_id), name: (locMap.get(Number(a.location_id)))?.name || null } : null,
+      technician_name: a.technician, // Keep original technician (ramco_id)
+      costcenter_id: undefined,
+      department_id: undefined,
+      location_id: undefined,
+      ramco_id: undefined,
     }));
 
     return res.json({
@@ -1922,10 +1988,34 @@ export const getComputerAssessmentById = async (req: Request, res: Response) => 
       return res.status(404).json({ data: null, message: 'Computer assessment not found', status: 'error' });
     }
 
-    // Parse display_interfaces from JSON string to array
+    // Fetch lookup data in parallel
+    const [costcentersRaw, departmentsRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getCostcenters(),
+      (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getLocations(),
+      assetModel.getEmployees(),
+    ]);
+
+    // Build lookup maps
+    const ccMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((cc: any) => [Number(cc.id), cc]));
+    const deptMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
+    const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+    const empMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+
+    // Parse and enrich data
     const enriched = {
       ...assessment,
-      display_interfaces: assessment.display_interfaces ? JSON.parse(assessment.display_interfaces) : null,
+      costcenter: assessment.costcenter_id ? { id: Number(assessment.costcenter_id), name: (ccMap.get(Number(assessment.costcenter_id)))?.name || null } : null,
+      department: assessment.department_id ? { id: Number(assessment.department_id), name: (deptMap.get(Number(assessment.department_id)))?.code || null } : null,
+      display_interfaces: parseCommaSeparatedArray(assessment.display_interfaces),
+      employee: assessment.ramco_id && empMap.has(assessment.ramco_id) ? { full_name: empMap.get(assessment.ramco_id).full_name || empMap.get(assessment.ramco_id).name || null, ramco_id: assessment.ramco_id } : null,
+      installed_software: parseCommaSeparatedArray(assessment.installed_software),
+      location: assessment.location_id ? { id: Number(assessment.location_id), name: (locMap.get(Number(assessment.location_id)))?.name || null } : null,
+      technician_name: assessment.technician, // Keep original technician (ramco_id)
+      costcenter_id: undefined,
+      department_id: undefined,
+      location_id: undefined,
+      ramco_id: undefined,
     };
 
     return res.json({
@@ -1970,9 +2060,35 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     await complianceModel.updateComputerAssessment(id, data);
 
     const updated = await complianceModel.getComputerAssessmentById(id);
+    
+    // Fetch lookup data in parallel
+    const [costcentersRaw, departmentsRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getCostcenters(),
+      (assetModel as any).getDepartments ? (assetModel as any).getDepartments() : Promise.resolve([]),
+      assetModel.getLocations(),
+      assetModel.getEmployees(),
+    ]);
+
+    // Build lookup maps
+    const ccMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((cc: any) => [Number(cc.id), cc]));
+    const deptMap = new Map((Array.isArray(departmentsRaw) ? departmentsRaw : []).map((d: any) => [Number(d.id), d]));
+    const locMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+    const empMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
+
+    // Parse and enrich data
     const enriched = {
       ...updated,
-      display_interfaces: updated?.display_interfaces ? JSON.parse(updated.display_interfaces) : null,
+      costcenter: updated?.costcenter_id ? { id: Number(updated.costcenter_id), name: (ccMap.get(Number(updated.costcenter_id)))?.name || null } : null,
+      department: updated?.department_id ? { id: Number(updated.department_id), name: (deptMap.get(Number(updated.department_id)))?.code || null } : null,
+      display_interfaces: parseCommaSeparatedArray(updated?.display_interfaces),
+      employee: updated?.ramco_id && empMap.has(updated.ramco_id) ? { full_name: empMap.get(updated.ramco_id).full_name || empMap.get(updated.ramco_id).name || null, ramco_id: updated.ramco_id } : null,
+      installed_software: parseCommaSeparatedArray(updated?.installed_software),
+      location: updated?.location_id ? { id: Number(updated.location_id), name: (locMap.get(Number(updated.location_id)))?.name || null } : null,
+      technician_name: updated?.technician, // Keep original technician (ramco_id)
+      costcenter_id: undefined,
+      department_id: undefined,
+      location_id: undefined,
+      ramco_id: undefined,
     };
 
     return res.json({
