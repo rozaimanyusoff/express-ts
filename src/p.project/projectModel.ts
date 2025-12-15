@@ -7,6 +7,7 @@ const BASE_PROGRESS = 'project_progress_logs';
 const T_PROJECTS = `${projectDB}.${BASE_PROJECTS}`;
 const T_ASSIGN = `${projectDB}.project_assignments`;
 const T_SCOPES = `${projectDB}.project_scopes`;
+const T_ACTIVITIES = `${projectDB}.project_scope_activities`;
 const T_PROGRESS = `${projectDB}.${BASE_PROGRESS}`;
 const T_TAGS = `${projectDB}.project_tags`;
 const T_TAG_LINKS = `${projectDB}.project_tag_links`;
@@ -22,6 +23,23 @@ const cachedLogProgressCol: null | ProgressCol = null;
 export type AssignmentRole = 'collaborator' | 'observer' | 'primary';
 
 export type AssignmentType = 'project' | 'support' | 'task';
+
+export type ScopeStatus = 'not_started' | 'in_progress' | 'to_review' | 'completed' | 'on_hold' | 'cancelled';
+
+export type ActivityType = 'status_change' | 'review_comment' | 'progress_update' | 'assignee_change' | 'attachment_added' | 'priority_change';
+
+export interface ScopeActivity {
+  id?: number;
+  scope_id: number;
+  project_id: number;
+  activity_type: ActivityType;
+  old_status?: null | ScopeStatus;
+  new_status?: null | ScopeStatus;
+  reason?: null | string;
+  comments?: null | string;
+  changed_by: string;
+  created_at?: string;
+}
 
 
 export interface NewProject {
@@ -537,4 +555,79 @@ export async function upsertAssignment(row: AssignmentRow): Promise<void> {
       [row.project_id, row.scope_id, row.assignee ?? null, row.actual_mandays ?? null]
     );
   }
+}
+
+/* ======= SCOPE ACTIVITIES ======= */
+
+export async function createActivity(activity: Omit<ScopeActivity, 'id'>): Promise<number> {
+  const payload: any = {
+    scope_id: activity.scope_id,
+    project_id: activity.project_id,
+    activity_type: activity.activity_type,
+    old_status: activity.old_status ?? null,
+    new_status: activity.new_status ?? null,
+    reason: activity.reason ?? null,
+    comments: activity.comments ?? null,
+    changed_by: activity.changed_by
+  };
+  const [res]: any = await pool.query(`INSERT INTO ${T_ACTIVITIES} SET ?`, [payload]);
+  return Number(res.insertId);
+}
+
+export async function getActivityHistory(scopeId: number, limit: number = 50): Promise<ScopeActivity[]> {
+  const sql = `
+    SELECT 
+      id,
+      scope_id,
+      project_id,
+      activity_type,
+      old_status,
+      new_status,
+      reason,
+      comments,
+      changed_by,
+      created_at
+    FROM ${T_ACTIVITIES}
+    WHERE scope_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `;
+  const [rows]: any = await pool.query(sql, [scopeId, limit]);
+  return rows.map((r: any) => ({
+    id: Number(r.id),
+    scope_id: Number(r.scope_id),
+    project_id: Number(r.project_id),
+    activity_type: String(r.activity_type) as ActivityType,
+    old_status: r.old_status ? (String(r.old_status) as ScopeStatus) : null,
+    new_status: r.new_status ? (String(r.new_status) as ScopeStatus) : null,
+    reason: r.reason ? String(r.reason) : null,
+    comments: r.comments ? String(r.comments) : null,
+    changed_by: String(r.changed_by),
+    created_at: r.created_at
+  }));
+}
+
+export async function getActivitySummary(scopeId: number): Promise<{ total_status_changes: number; total_rework_count: number; last_status_change: null | string }> {
+  const sql = `
+    SELECT 
+      COUNT(*) as total_status_changes,
+      SUM(CASE WHEN old_status = 'to_review' AND new_status = 'in_progress' THEN 1 ELSE 0 END) as rework_count,
+      MAX(created_at) as last_change
+    FROM ${T_ACTIVITIES}
+    WHERE scope_id = ? AND activity_type = 'status_change'
+  `;
+  const [rows]: any = await pool.query(sql, [scopeId]);
+  if (rows.length) {
+    const r = rows[0];
+    return {
+      last_status_change: r.last_change ? String(r.last_change) : null,
+      total_rework_count: Number(r.rework_count ?? 0),
+      total_status_changes: Number(r.total_status_changes ?? 0)
+    };
+  }
+  return {
+    last_status_change: null,
+    total_rework_count: 0,
+    total_status_changes: 0
+  };
 }

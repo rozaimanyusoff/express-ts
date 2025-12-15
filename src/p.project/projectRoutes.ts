@@ -42,16 +42,25 @@ router.get('/assignments/workload', asyncHandler(projectController.getWorkloadSu
 router.get('/assignments/assignee/:assignee', asyncHandler(projectController.getAssignmentsByAssignee));
 router.get('/assignments', asyncHandler(projectController.getAllAssignments));
 
+/* ========== SCOPES ========== */
+
+router.post('/:id/scopes', projectUploader.any(), asyncHandler(projectController.addScope));
+// Important: place the more specific route before the dynamic :scopeId route to avoid matching "reorder" as a scopeId
+router.put('/:id/scopes/reorder', asyncHandler(projectController.reorderScopes));
+// Activity routes - must come before :scopeId routes
+router.get('/:id/scopes/:scopeId/activities', asyncHandler(projectController.getScopeActivityHistory));
+router.get('/:id/scopes/:scopeId/activity-summary', asyncHandler(projectController.getScopeActivitySummary));
+// Individual scope routes
+router.get('/:id/scopes/:scopeId', asyncHandler(projectController.getScopeById));
+router.put('/:id/scopes/:scopeId', projectUploader.any(), asyncHandler(projectController.updateScope));
+router.delete('/:id/scopes/:scopeId', asyncHandler(projectController.removeScope));
+
 /* ========== PROJECTS ========== */
 router.get('/:id', asyncHandler(projectController.getProjectById));
 router.get('/', asyncHandler(projectController.getProjects));
 router.post('/', projectUploader.any(), asyncHandler(projectController.createProject));
 router.put('/:id', projectUploader.any(), asyncHandler(projectController.updateProject));
-router.post('/:id/scopes', projectUploader.any(), asyncHandler(projectController.addScope));
-// Important: place the more specific route before the dynamic :scopeId route to avoid matching "reorder" as a scopeId
-router.put('/:id/scopes/reorder', asyncHandler(projectController.reorderScopes));
-router.put('/:id/scopes/:scopeId', projectUploader.any(), asyncHandler(projectController.updateScope));
-router.delete('/:id/scopes/:scopeId', asyncHandler(projectController.removeScope));
+
 router.get('/:id/assignments', asyncHandler(projectController.getProjectAssignments));
 router.delete('/:id', asyncHandler(projectController.deleteProject));
 

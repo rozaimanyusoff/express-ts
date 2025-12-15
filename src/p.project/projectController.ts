@@ -16,15 +16,37 @@ export const getProjects = async (req: Request, res: Response) => {
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 
-    // Enrich each project with assignments summary
+    // Enrich each project with assignments summary and scopes
     const enrichedProjects = await Promise.all(
       projects.map(async (project: any) => {
         const scopes = await projectModel.getScopeByProjectId(project.id);
 
+        // Enrich scopes with assignee employee data
+        const enrichedScopes = scopes.map((scope: any) => {
+          const { assignee, ...scopeWithoutAssignee } = scope;
+          if (assignee) {
+            const emp = empMap.get(String(assignee));
+            return {
+              ...scopeWithoutAssignee,
+              assignee: emp ? {
+                full_name: emp.full_name || emp.name || null,
+                ramco_id: String(assignee)
+              } : {
+                full_name: null,
+                ramco_id: String(assignee)
+              }
+            };
+          }
+          return {
+            ...scopeWithoutAssignee,
+            assignee: null
+          };
+        });
+
         // Calculate assignments summary grouped by assignee
         const assignmentsMap = new Map<string, { actual_mandays: number; assignee: { full_name: null | string; ramco_id: string; }; planned_mandays: number; scope_count: number }>();
 
-        for (const scope of scopes) {
+        for (const scope of enrichedScopes) {
           const assigneeId = scope.assignee || 'unassigned';
           const plannedMandays = Number(scope.planned_mandays) || 0;
           const actualMandays = Number(scope.actual_mandays) || 0;
@@ -54,7 +76,8 @@ export const getProjects = async (req: Request, res: Response) => {
 
         return {
           ...project,
-          assignments
+          assignments,
+          scopes: enrichedScopes
         };
       })
     );
@@ -82,10 +105,31 @@ export const getProjectById = async (req: Request, res: Response) => {
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
 
+    // Enrich scopes with assignee employee data
+    const enrichedScopes = scopes.map((scope: any) => {
+      if (scope.assignee) {
+        const emp = empMap.get(String(scope.assignee));
+        return {
+          ...scope,
+          assignee_details: emp ? {
+            full_name: emp.full_name || emp.name || null,
+            ramco_id: String(scope.assignee)
+          } : {
+            full_name: null,
+            ramco_id: String(scope.assignee)
+          }
+        };
+      }
+      return {
+        ...scope,
+        assignee_details: null
+      };
+    });
+
     // Calculate assignments summary grouped by assignee
     const assignmentsMap = new Map<string, { actual_mandays: number; assignee: { full_name: null | string; ramco_id: string; }; planned_mandays: number; scope_count: number }>();
 
-    for (const scope of scopes) {
+    for (const scope of enrichedScopes) {
       const assigneeId = scope.assignee || 'unassigned';
       const plannedMandays = Number(scope.planned_mandays) || 0;
       const actualMandays = Number(scope.actual_mandays) || 0;
@@ -120,7 +164,7 @@ export const getProjectById = async (req: Request, res: Response) => {
         ...rest,
         assignments,
         overall_progress: progress,
-        scopes
+        scopes: enrichedScopes
       },
       message: 'Project retrieved',
       status: 'success'
@@ -470,6 +514,34 @@ export const removeScope = async (req: Request, res: Response) => {
   }
 };
 
+// GET /api/projects/:id/scopes/:scopeId - Get a single scope by ID
+export const getScopeById = async (req: Request, res: Response) => {
+  try {
+    const projectId = Number(req.params.id);
+    const scopeId = Number(req.params.scopeId);
+
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
+    }
+    if (!Number.isFinite(scopeId) || scopeId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid scope id', status: 'error' });
+    }
+
+    const scope = await projectModel.getScopeById(scopeId);
+    if (!scope || Number(scope.project_id) !== projectId) {
+      return res.status(404).json({ data: null, message: 'Scope not found for this project', status: 'error' });
+    }
+
+    return res.status(200).json({
+      data: scope,
+      message: 'Scope retrieved',
+      status: 'success'
+    });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope', status: 'error' });
+  }
+};
+
 // PUT /api/projects/:id/scopes/:scopeId - Update a single scope (fields and attachments)
 export const updateScope = async (req: Request, res: Response) => {
   try {
@@ -590,6 +662,73 @@ export const updateScope = async (req: Request, res: Response) => {
     if (Object.keys(updates).length) {
       await projectModel.updateScope(scopeId, updates);
     }
+
+    // Log activity if status changed
+    if (updates.status !== undefined && updates.status !== scope.status) {
+      const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
+      const reason = body.activity_reason || body.reason || null;
+      const comments = body.review_comments || body.comments || null;
+      
+      await projectModel.createActivity({
+        scope_id: scopeId,
+        project_id: projectId,
+        activity_type: 'status_change',
+        old_status: scope.status as projectModel.ScopeStatus,
+        new_status: updates.status as projectModel.ScopeStatus,
+        reason: reason,
+        comments: comments,
+        changed_by: changedBy
+      });
+    }
+
+    // Log activity if priority changed
+    if (updates.priority !== undefined && updates.priority !== scope.priority) {
+      const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
+      await projectModel.createActivity({
+        scope_id: scopeId,
+        project_id: projectId,
+        activity_type: 'priority_change',
+        reason: `Priority changed from ${scope.priority} to ${updates.priority}`,
+        changed_by: changedBy
+      });
+    }
+
+    // Log activity if progress changed
+    if (updates.progress !== undefined && updates.progress !== scope.progress) {
+      const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
+      await projectModel.createActivity({
+        scope_id: scopeId,
+        project_id: projectId,
+        activity_type: 'progress_update',
+        reason: `Progress updated from ${scope.progress ?? 0} to ${updates.progress ?? 0}`,
+        changed_by: changedBy
+      });
+    }
+
+    // Log activity if assignee changed
+    if (updates.assignee !== undefined && updates.assignee !== scope.assignee) {
+      const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
+      await projectModel.createActivity({
+        scope_id: scopeId,
+        project_id: projectId,
+        activity_type: 'assignee_change',
+        reason: `Assignee changed from ${scope.assignee || 'unassigned'} to ${updates.assignee || 'unassigned'}`,
+        changed_by: changedBy
+      });
+    }
+
+    // Log activity if attachments were added
+    if (movedPaths.length) {
+      const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
+      await projectModel.createActivity({
+        scope_id: scopeId,
+        project_id: projectId,
+        activity_type: 'attachment_added',
+        reason: `Attachments added: ${movedPaths.join(', ')}`,
+        changed_by: changedBy
+      });
+    }
+
     // Maintain assignment row when assignee or actual_mandays potentially changed
     if (updates.assignee !== undefined || updates.actual_mandays !== undefined) {
       await projectModel.upsertAssignment({
@@ -652,6 +791,70 @@ export const reorderScopes = async (req: Request, res: Response) => {
   }
 };
 
+/* ======= SCOPE ACTIVITIES ======= */
+
+// GET /api/projects/:id/scopes/:scopeId/activities - Get activity history for a scope
+export const getScopeActivityHistory = async (req: Request, res: Response) => {
+  try {
+    const projectId = Number(req.params.id);
+    const scopeId = Number(req.params.scopeId);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
+    }
+    if (!Number.isFinite(scopeId) || scopeId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid scope id', status: 'error' });
+    }
+
+    // Verify scope belongs to project
+    const scope = await projectModel.getScopeById(scopeId);
+    if (!scope || Number(scope.project_id) !== projectId) {
+      return res.status(404).json({ data: null, message: 'Scope not found for this project', status: 'error' });
+    }
+
+    const activities = await projectModel.getActivityHistory(scopeId, limit);
+
+    return res.status(200).json({
+      data: activities,
+      message: `Retrieved ${activities.length} activity records`,
+      status: 'success'
+    });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope activity history', status: 'error' });
+  }
+};
+
+// GET /api/projects/:id/scopes/:scopeId/activity-summary - Get activity summary for a scope
+export const getScopeActivitySummary = async (req: Request, res: Response) => {
+  try {
+    const projectId = Number(req.params.id);
+    const scopeId = Number(req.params.scopeId);
+
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid project id', status: 'error' });
+    }
+    if (!Number.isFinite(scopeId) || scopeId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid scope id', status: 'error' });
+    }
+
+    // Verify scope belongs to project
+    const scope = await projectModel.getScopeById(scopeId);
+    if (!scope || Number(scope.project_id) !== projectId) {
+      return res.status(404).json({ data: null, message: 'Scope not found for this project', status: 'error' });
+    }
+
+    const summary = await projectModel.getActivitySummary(scopeId);
+
+    return res.status(200).json({
+      data: summary,
+      message: 'Activity summary retrieved',
+      status: 'success'
+    });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope activity summary', status: 'error' });
+  }
+};
 
 /* ======= ASSIGNMENTS ======= */
 
