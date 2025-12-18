@@ -14,6 +14,8 @@ const T_TAG_LINKS = `${projectDB}.project_tag_links`;
 const T_SUPPORT = `${projectDB}.project_support_shifts`;
 const T_DEV_TASKS = `${projectDB}.dev_core_tasks`;
 const T_CORE_FEATURES = `${projectDB}.app_core_features`;
+const T_DEV_CHECKLISTS = `${projectDB}.dev_checklists`;
+const T_SCOPE_CHECKLIST_MAP = `${projectDB}.dev_checklist_items`;
 
 // --- Schema adaptability helpers ---
 type ProgressCol = 'overall_progress' | 'percent_complete';
@@ -631,3 +633,117 @@ export async function getActivitySummary(scopeId: number): Promise<{ total_statu
     total_status_changes: 0
   };
 }
+
+/* ======= CHECKLISTS ======= */
+
+export interface DevChecklist {
+  id: number;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ScopeChecklistMap {
+  id?: number;
+  project_id: number;
+  scope_id: number;
+  checklist_id: number;
+  remarks?: null | string;
+  status?: null | number;
+  created_by?: null | string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const getChecklists = async (): Promise<DevChecklist[]> => {
+  const [rows]: any = await pool.query(`SELECT * FROM ${T_DEV_CHECKLISTS} ORDER BY name ASC`);
+  return rows;
+};
+
+export const getChecklistById = async (id: number): Promise<DevChecklist | null> => {
+  const [rows]: any = await pool.query(`SELECT * FROM ${T_DEV_CHECKLISTS} WHERE id = ? LIMIT 1`, [id]);
+  return rows.length ? rows[0] : null;
+};
+
+export const createChecklist = async (name: string): Promise<number> => {
+  const [res]: any = await pool.query(`INSERT INTO ${T_DEV_CHECKLISTS} (name) VALUES (?)`, [name]);
+  return Number(res.insertId);
+};
+
+export const updateChecklist = async (id: number, name: string): Promise<void> => {
+  await pool.query(`UPDATE ${T_DEV_CHECKLISTS} SET name = ? WHERE id = ?`, [name, id]);
+};
+
+export const deleteChecklist = async (id: number): Promise<void> => {
+  await pool.query(`DELETE FROM ${T_DEV_CHECKLISTS} WHERE id = ?`, [id]);
+};
+
+export const getScopeChecklistsByScope = async (scopeId: number): Promise<ScopeChecklistMap[]> => {
+  const sql = `
+    SELECT scm.*, dc.name as checklist_name
+    FROM ${T_SCOPE_CHECKLIST_MAP} scm
+    JOIN ${T_DEV_CHECKLISTS} dc ON dc.id = scm.checklist_id
+    WHERE scm.scope_id = ?
+    ORDER BY scm.created_at DESC
+  `;
+  const [rows]: any = await pool.query(sql, [scopeId]);
+  return rows;
+};
+
+export const getScopeChecklistsByProject = async (projectId: number): Promise<ScopeChecklistMap[]> => {
+  const sql = `
+    SELECT scm.*, dc.name as checklist_name
+    FROM ${T_SCOPE_CHECKLIST_MAP} scm
+    JOIN ${T_DEV_CHECKLISTS} dc ON dc.id = scm.checklist_id
+    WHERE scm.project_id = ?
+    ORDER BY scm.scope_id, scm.created_at DESC
+  `;
+  const [rows]: any = await pool.query(sql, [projectId]);
+  return rows;
+};
+
+export const getScopeChecklistMapById = async (id: number): Promise<ScopeChecklistMap | null> => {
+  const sql = `
+    SELECT scm.*, dc.name as checklist_name
+    FROM ${T_SCOPE_CHECKLIST_MAP} scm
+    JOIN ${T_DEV_CHECKLISTS} dc ON dc.id = scm.checklist_id
+    WHERE scm.id = ? LIMIT 1
+  `;
+  const [rows]: any = await pool.query(sql, [id]);
+  return rows.length ? rows[0] : null;
+};
+
+export const createScopeChecklistMap = async (data: ScopeChecklistMap): Promise<number> => {
+  const [res]: any = await pool.query(
+    `INSERT INTO ${T_SCOPE_CHECKLIST_MAP} (project_id, scope_id, checklist_id, remarks, status, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
+    [data.project_id, data.scope_id, data.checklist_id, data.remarks ?? null, data.status ?? null, data.created_by ?? null]
+  );
+  return Number(res.insertId);
+};
+
+export const updateScopeChecklistMap = async (id: number, data: Partial<ScopeChecklistMap>): Promise<void> => {
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (data.remarks !== undefined) {
+    updates.push('remarks = ?');
+    values.push(data.remarks);
+  }
+  if (data.status !== undefined) {
+    updates.push('status = ?');
+    values.push(data.status);
+  }
+
+  if (updates.length > 0) {
+    values.push(id);
+    await pool.query(`UPDATE ${T_SCOPE_CHECKLIST_MAP} SET ${updates.join(', ')} WHERE id = ?`, values);
+  }
+};
+
+export const deleteScopeChecklistMap = async (id: number): Promise<void> => {
+  await pool.query(`DELETE FROM ${T_SCOPE_CHECKLIST_MAP} WHERE id = ?`, [id]);
+};
+
+export const deleteScopeChecklistsForScope = async (scopeId: number): Promise<void> => {
+  await pool.query(`DELETE FROM ${T_SCOPE_CHECKLIST_MAP} WHERE scope_id = ?`, [scopeId]);
+};

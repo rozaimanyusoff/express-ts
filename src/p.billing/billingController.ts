@@ -241,8 +241,8 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	}
 
 	// Structure the billing data with nested objects
-	const asset_id = (billing as any).asset_id;
-	const cc_id = (billing as any).cc_id;
+	const asset_id = (billing as any).asset_id ?? (billing as any).vehicle_id;
+	const cc_id = (billing as any).cc_id ?? (billing as any).costcenter_id;
 	const loc_id = (billing as any).location_id ?? (billing as any).loc_id;
 
 	// Enrich parts: resolve autopart_id -> part_name using bulk fetch
@@ -261,6 +261,15 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 	const form_upload_date = svcOrderDetails?.form_upload_date ?? null;
 	const inv_stat = calculateInvStat(billing.inv_no, billing.inv_date, form_upload_date, billing.inv_total);
 
+	// Extract service details from svc_type array (already populated by billingModel)
+	let serviceDetails = null;
+	if (Array.isArray((billing as any).svc_type) && (billing as any).svc_type.length > 0) {
+		serviceDetails = (billing as any).svc_type
+			.map((st: any) => st.name)
+			.filter((name: string) => name)
+			.join(', ');
+	}
+
 	const structuredBilling = {
 		asset: assetMap.has(asset_id) ? {
 			costcenter: ccMap.has(cc_id) ? {
@@ -278,6 +287,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		inv_id: billing.inv_id,
 		inv_no: billing.inv_no,
 		inv_remarks: billing.inv_remarks,
+		service_details: serviceDetails,
 		inv_stat: inv_stat,
 		inv_total: billing.inv_total,
 		parts: enrichedParts,
@@ -338,8 +348,8 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 
 		// Structure the billing data without parts
 		const structuredBillings = validBillings.map(billing => {
-			const asset_id = (billing as any).asset_id;
-			const cc_id = (billing as any).cc_id;
+			const asset_id = (billing as any).asset_id ?? (billing as any).vehicle_id;
+			const cc_id = (billing as any).cc_id ?? (billing as any).costcenter_id;
 			const loc_id = (billing as any).location_id ?? (billing as any).loc_id;
 
 			// Extract service details from svc_type array (already populated by billingModel)

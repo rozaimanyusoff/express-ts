@@ -1259,3 +1259,220 @@ export const deleteCoreFeature = async (req: Request, res: Response) => {
     return res.status(500).json({ data: null, message: e?.message || 'Failed to delete core feature', status: 'error' });
   }
 };
+
+/* ======= CHECKLISTS ======= */
+
+export const getChecklists = async (req: Request, res: Response) => {
+  try {
+    const checklists = await projectModel.getChecklists();
+    return res.json({ data: checklists, message: 'Checklists retrieved', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklists', status: 'error' });
+  }
+};
+
+export const getChecklistById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist ID', status: 'error' });
+    }
+
+    const checklist = await projectModel.getChecklistById(id);
+    if (!checklist) {
+      return res.status(404).json({ data: null, message: 'Checklist not found', status: 'error' });
+    }
+
+    return res.json({ data: checklist, message: 'Checklist retrieved', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklist', status: 'error' });
+  }
+};
+
+export const createChecklist = async (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ data: null, message: 'Checklist name is required', status: 'error' });
+    }
+
+    const id = await projectModel.createChecklist(name.trim());
+    const checklist = await projectModel.getChecklistById(id);
+
+    return res.status(201).json({ data: checklist, message: 'Checklist created successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create checklist', status: 'error' });
+  }
+};
+
+export const updateChecklist = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { name } = req.body;
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist ID', status: 'error' });
+    }
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ data: null, message: 'Checklist name is required', status: 'error' });
+    }
+
+    const existing = await projectModel.getChecklistById(id);
+    if (!existing) {
+      return res.status(404).json({ data: null, message: 'Checklist not found', status: 'error' });
+    }
+
+    await projectModel.updateChecklist(id, name.trim());
+    const updated = await projectModel.getChecklistById(id);
+
+    return res.json({ data: updated, message: 'Checklist updated successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update checklist', status: 'error' });
+  }
+};
+
+export const deleteChecklist = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist ID', status: 'error' });
+    }
+
+    const existing = await projectModel.getChecklistById(id);
+    if (!existing) {
+      return res.status(404).json({ data: null, message: 'Checklist not found', status: 'error' });
+    }
+
+    await projectModel.deleteChecklist(id);
+    return res.json({ data: null, message: 'Checklist deleted successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete checklist', status: 'error' });
+  }
+};
+
+export const getScopeChecklists = async (req: Request, res: Response) => {
+  try {
+    const scopeId = Number(req.params.scopeId);
+
+    if (!Number.isFinite(scopeId) || scopeId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid scope ID', status: 'error' });
+    }
+
+    const checklists = await projectModel.getScopeChecklistsByScope(scopeId);
+    return res.json({ data: checklists, message: 'Scope checklists retrieved', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope checklists', status: 'error' });
+  }
+};
+
+export const getProjectChecklists = async (req: Request, res: Response) => {
+  try {
+    const projectId = Number(req.params.projectId);
+
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid project ID', status: 'error' });
+    }
+
+    const checklists = await projectModel.getScopeChecklistsByProject(projectId);
+    return res.json({ data: checklists, message: 'Project checklists retrieved', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch project checklists', status: 'error' });
+  }
+};
+
+export const getScopeChecklistMapById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist mapping ID', status: 'error' });
+    }
+
+    const mapping = await projectModel.getScopeChecklistMapById(id);
+    if (!mapping) {
+      return res.status(404).json({ data: null, message: 'Checklist mapping not found', status: 'error' });
+    }
+
+    return res.json({ data: mapping, message: 'Checklist mapping retrieved', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklist mapping', status: 'error' });
+  }
+};
+
+export const createScopeChecklistMap = async (req: Request, res: Response) => {
+  try {
+    const { project_id, scope_id, checklist_id, remarks, status, created_by } = req.body;
+
+    if (!Number.isFinite(project_id) || project_id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid project ID', status: 'error' });
+    }
+    if (!Number.isFinite(scope_id) || scope_id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid scope ID', status: 'error' });
+    }
+    if (!Number.isFinite(checklist_id) || checklist_id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist ID', status: 'error' });
+    }
+
+    const id = await projectModel.createScopeChecklistMap({
+      checklist_id,
+      created_by: created_by || null,
+      project_id,
+      remarks: remarks || null,
+      scope_id,
+      status: status || null
+    });
+
+    const mapping = await projectModel.getScopeChecklistMapById(id);
+    return res.status(201).json({ data: mapping, message: 'Checklist mapping created successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to create checklist mapping', status: 'error' });
+  }
+};
+
+export const updateScopeChecklistMap = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { remarks, status } = req.body;
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist mapping ID', status: 'error' });
+    }
+
+    const existing = await projectModel.getScopeChecklistMapById(id);
+    if (!existing) {
+      return res.status(404).json({ data: null, message: 'Checklist mapping not found', status: 'error' });
+    }
+
+    await projectModel.updateScopeChecklistMap(id, {
+      remarks: remarks !== undefined ? remarks : undefined,
+      status: status !== undefined ? status : undefined
+    });
+
+    const updated = await projectModel.getScopeChecklistMapById(id);
+    return res.json({ data: updated, message: 'Checklist mapping updated successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to update checklist mapping', status: 'error' });
+  }
+};
+
+export const deleteScopeChecklistMap = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ data: null, message: 'Invalid checklist mapping ID', status: 'error' });
+    }
+
+    const existing = await projectModel.getScopeChecklistMapById(id);
+    if (!existing) {
+      return res.status(404).json({ data: null, message: 'Checklist mapping not found', status: 'error' });
+    }
+
+    await projectModel.deleteScopeChecklistMap(id);
+    return res.json({ data: null, message: 'Checklist mapping deleted successfully', status: 'success' });
+  } catch (e: any) {
+    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete checklist mapping', status: 'error' });
+  }
+};

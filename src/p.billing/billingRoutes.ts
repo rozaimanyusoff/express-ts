@@ -40,10 +40,10 @@ router.get('/mtn/summary/vehicle', asyncHandler(billingController.getVehicleMtnB
 router.get('/mtn/summary/filter', asyncHandler(billingController.getVehicleMtnBillingByDate)); // /api/bills/vehicle/filter?from=2024-01-01&to=2024-12-31 -- EXCEL GENERATED REPORT
 // Find maintenance billings by request id (svc_order)
 router.get('/mtn/request/:svc_order', asyncHandler(billingController.getVehicleMtnBillingByRequestId));
-router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById));
+router.get('/mtn/:id', asyncHandler(billingController.getVehicleMtnBillingById)); // use on invoicing memo
 
 router.get('/mtn', asyncHandler(billingController.getVehicleMtnBillings));
-// POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts
+// POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts - use on invoicing memo (bulk)
 router.post('/mtn', asyncHandler(billingController.getVehicleMtnBillingsByIds));
 
 

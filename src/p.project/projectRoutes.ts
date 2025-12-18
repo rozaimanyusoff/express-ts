@@ -50,10 +50,26 @@ router.put('/:id/scopes/reorder', asyncHandler(projectController.reorderScopes))
 // Activity routes - must come before :scopeId routes
 router.get('/:id/scopes/:scopeId/activities', asyncHandler(projectController.getScopeActivityHistory));
 router.get('/:id/scopes/:scopeId/activity-summary', asyncHandler(projectController.getScopeActivitySummary));
+router.get('/:id/scopes/:scopeId/checklists', asyncHandler(projectController.getScopeChecklists));
 // Individual scope routes
 router.get('/:id/scopes/:scopeId', asyncHandler(projectController.getScopeById));
 router.put('/:id/scopes/:scopeId', projectUploader.any(), asyncHandler(projectController.updateScope));
 router.delete('/:id/scopes/:scopeId', asyncHandler(projectController.removeScope));
+
+/* ========== CHECKLISTS ========== */
+// Checklist CRUD
+router.get('/checklists/:id', asyncHandler(projectController.getChecklistById));
+router.get('/checklists', asyncHandler(projectController.getChecklists));
+router.post('/checklists', asyncHandler(projectController.createChecklist));
+router.put('/checklists/:id', asyncHandler(projectController.updateChecklist));
+router.delete('/checklists/:id', asyncHandler(projectController.deleteChecklist));
+
+// Scope-Checklist mapping
+router.get('/:projectId/checklists', asyncHandler(projectController.getProjectChecklists));
+router.get('/checklist-map/:id', asyncHandler(projectController.getScopeChecklistMapById));
+router.post('/checklist-map', asyncHandler(projectController.createScopeChecklistMap));
+router.put('/checklist-map/:id', asyncHandler(projectController.updateScopeChecklistMap));
+router.delete('/checklist-map/:id', asyncHandler(projectController.deleteScopeChecklistMap));
 
 /* ========== PROJECTS ========== */
 router.get('/:id', asyncHandler(projectController.getProjectById));
