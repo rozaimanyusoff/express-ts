@@ -46,8 +46,8 @@ router.post('/account-subs', asyncHandler(TelcoController.createAccountSub)); //
 router.post('/bills/by-ids', asyncHandler(TelcoController.getTelcoBillingsByIds));
 router.get('/bills/:id', asyncHandler(TelcoController.getTelcoBillingById)); // show subscriber billing by id
 router.get('/bills/:id/report/account', asyncHandler(TelcoController.getTelcoBillingByAccountId)); // summary report of cost centers by account id
-// summary report of accounts by cost center id
-router.get('/bills/:id/report/costcenter', asyncHandler(TelcoController.getTelcoBillingByCostcenterId));
+// summary report of accounts by cost center ids - query params: cc=23,26&from={}&to={}
+router.get('/bills/report/costcenter', asyncHandler(TelcoController.getTelcoBillingByCostcenterId));
 router.get('/bills', asyncHandler(TelcoController.getTelcoBillings)); // list subscribers billing
 router.post('/bills', asyncHandler(TelcoController.createTelcoBilling));
 router.put('/bills/:id', asyncHandler(TelcoController.updateTelcoBilling));
