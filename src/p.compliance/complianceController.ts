@@ -1030,7 +1030,7 @@ export const getAssessments = async (req: Request, res: Response) => {
     const yearParam = req.query.year as string;
     const assetParam = req.query.asset as string;
     const year = yearParam ? parseInt(yearParam, 10) : undefined;
-    const asset_id = assetParam ? parseInt(assetParam, 10) : undefined;
+    const asset = assetParam ? parseInt(assetParam, 10) : undefined;
 
     // Validate year if provided
     if (yearParam && (isNaN(year!) || year! < 1900 || year! > new Date().getFullYear() + 10)) {
@@ -1042,7 +1042,7 @@ export const getAssessments = async (req: Request, res: Response) => {
     }
 
     // Validate asset_id if provided
-    if (assetParam && isNaN(asset_id!)) {
+    if (assetParam && isNaN(asset!)) {
       return res.status(400).json({
         data: null,
         message: 'Invalid asset parameter. Must be a valid number.',
@@ -1050,7 +1050,7 @@ export const getAssessments = async (req: Request, res: Response) => {
       });
     }
 
-    const rows = await complianceModel.getAssessments(year, asset_id);
+    const rows = await complianceModel.getAssessments(year, asset);
 
     // enrich asset_id into full asset object (reuse same enrichment pattern as summons)
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
@@ -1646,6 +1646,66 @@ export const deleteAssessmentDetail = async (req: Request, res: Response) => {
   }
 };
 
+export const closeNCRItem = async (req: Request, res: Response) => {
+  try {
+    const assessId = Number(req.params.assess_id);
+    const adtId = Number(req.params.adt_id);
+    
+    if (!assessId || !adtId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Assessment ID and NCR detail ID are required',
+        data: null,
+      });
+    }
+    
+    const { ncr_status, closed_at, action, svc_order } = req.body;
+    
+    if (!ncr_status || !closed_at || !action || svc_order === undefined) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'ncr_status, closed_at, action, and svc_order are required',
+        data: null,
+      });
+    }
+    
+    // Update the NCR item
+    const affectedRows = await complianceModel.closeNCRItem(adtId, {
+      ncr_status,
+      closed_at,
+      action,
+      svc_order,
+    });
+    
+    return res.json({
+      status: 'success',
+      message: 'NCR item closed successfully',
+      data: {
+        adt_id: adtId,
+        assess_id: assessId,
+        ncr_status,
+        closed_at,
+        action,
+        svc_order,
+        updated_rows: affectedRows,
+      },
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('not found')) {
+      return res.status(404).json({
+        status: 'error',
+        message: e.message,
+        data: null,
+      });
+    }
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to close NCR item',
+      data: null,
+    });
+  }
+};
+
 // GET /api/compliance/assessments/details?asset={asset_id}&year={year}
 export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Response) => {
   try {
@@ -1842,17 +1902,20 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
 
     // Enrich details with criteria descriptions and convert URLs
     const enrichedData = assessments.map((assessment: any) => {
-      const enrichedDetails = (assessment.details || []).map((d: any) => {
-        const qid = d?.adt_item ? Number(d.adt_item) : null;
-        const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
-        const { asset_id, vehicle_id, ...rest } = d || {};
-        return { 
-          ...rest, 
-          adt_image: toPublicUrl(rest.adt_image),
-          qset_desc: qset_info.qset_desc,
-          qset_type: qset_info.qset_type
-        };
-      });
+      // Filter out closed NCR items - only show open ones
+      const enrichedDetails = (assessment.details || [])
+        .filter((d: any) => !d.ncr_status || d.ncr_status !== 'closed')
+        .map((d: any) => {
+          const qid = d?.adt_item ? Number(d.adt_item) : null;
+          const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
+          const { asset_id, vehicle_id, ...rest } = d || {};
+          return { 
+            ...rest, 
+            adt_image: toPublicUrl(rest.adt_image),
+            qset_desc: qset_info.qset_desc,
+            qset_type: qset_info.qset_type
+          };
+        });
 
       const { a_loc, asset_id: aid, details, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanAssessment } = assessment;
       
@@ -1904,9 +1967,12 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
       };
     });
 
+    // Filter out assessments with no open NCR items
+    const filteredData = enrichedData.filter((assessment: any) => assessment.details.length > 0);
+
     return res.json({ 
-      data: enrichedData, 
-      message: `${enrichedData.length} assessment(s) with NCR retrieved`, 
+      data: filteredData, 
+      message: `${filteredData.length} assessment(s) with open NCR retrieved`, 
       status: 'success' 
     });
   } catch (e) {
@@ -2485,6 +2551,196 @@ export const getITAssetWithAssessmentStatusById = async (req: Request, res: Resp
     return res.status(500).json({
       status: 'error',
       message: e instanceof Error ? e.message : 'Failed to fetch IT asset with assessment status',
+      data: null,
+    });
+  }
+};
+
+/**
+ * Track driver actions for NCR items in a vehicle assessment
+ * Returns assessment with NCR details and corresponding maintenance actions taken by driver
+ */
+export const trackAssessmentNCRActions = async (req: Request, res: Response) => {
+  try {
+    const assessmentId = Number(req.params.id);
+    if (!assessmentId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Assessment ID is required',
+        data: null,
+      });
+    }
+
+    // Fetch the assessment
+    const assessment = await complianceModel.getAssessmentById(assessmentId);
+    if (!assessment) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Assessment not found',
+        data: null,
+      });
+    }
+
+    // Fetch assessment details (which include adt_ncr flags)
+    const details = await complianceModel.getAssessmentDetails(assessmentId).catch(() => []);
+
+    // Get asset information
+    const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      assetModel.getAssets(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees(),
+    ]);
+    const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
+    const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+    const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+    const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
+
+    const assetMap = new Map();
+    for (const a of assets) {
+      if (a.id) assetMap.set(a.id, a);
+      if (a.asset_id) assetMap.set(a.asset_id, a);
+    }
+    const costcenterMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const locationMap = new Map(locations.map((l: any) => [l.id, l]));
+    const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+
+    // Enrich asset information
+    let asset = null;
+    if ((assessment as any).asset_id && assetMap.has((assessment as any).asset_id)) {
+      const a = assetMap.get((assessment as any).asset_id);
+      const purchase_date = a.purchase_date || a.pur_date || a.purchaseDate || null;
+      let age: null | number = null;
+      if (purchase_date) {
+        const pd = new Date(String(purchase_date));
+        if (!isNaN(pd.getTime())) {
+          const diffMs = Date.now() - pd.getTime();
+          age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365));
+        }
+      }
+      const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
+      const owner = ownerRamco && employeeMap.has(ownerRamco)
+        ? {
+            full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null,
+            ramco_id: ownerRamco,
+          }
+        : null;
+      asset = {
+        age,
+        costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+          ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name }
+          : null,
+        id: (assessment as any).asset_id,
+        location: (() => {
+          const locId = a.location_id ?? a.location?.id ?? null;
+          if (!locId) return null;
+          const found = locationMap.get(locId);
+          return found ? { code: found.code || found.name || null, id: locId } : null;
+        })(),
+        owner,
+        purchase_date,
+        register_number: a.register_number || a.vehicle_regno || null,
+      };
+    }
+
+    // Fetch NCR maintenance actions for this asset after assessment date
+    const ncrActions = (assessment as any).asset_id && (assessment as any).a_date
+      ? await complianceModel.getNCRActionsByAssetAndAssessmentDate((assessment as any).asset_id, (assessment as any).a_date).catch(() => [])
+      : [];
+
+    // Filter assessment details to only include NCR items (adt_ncr = 2 means non-compliance)
+    const ncrItems = Array.isArray(details)
+      ? details.filter((d: any) => d.adt_ncr === 2)
+      : [];
+
+    // Load assessment criteria to resolve adt_item (qset_id) -> qset_desc
+    const criteriaRaw = await complianceModel.getAssessmentCriteria().catch(() => []);
+    const criteria = Array.isArray(criteriaRaw) ? (criteriaRaw as any[]) : [];
+    const qsetMap = new Map<number, string>();
+    const qsetTypeMap = new Map<number, string>();
+    for (const c of criteria) {
+      if (c?.qset_id) {
+        qsetMap.set(Number(c.qset_id), c.qset_desc || null);
+        qsetTypeMap.set(Number(c.qset_id), c.qset_type || null);
+      }
+    }
+
+    // Enrich NCR items with criteria information
+    const enrichedNCRItems = ncrItems.map((item: any) => {
+      const qid = item?.adt_item ? Number(item.adt_item) : null;
+      return {
+        ...item,
+        qset_desc: qid && qsetMap.has(qid) ? qsetMap.get(qid) : null,
+        qset_type: qid && qsetTypeMap.has(qid) ? qsetTypeMap.get(qid) : null,
+      };
+    });
+
+    // Summary statistics
+    const ncrCount = ncrItems.length;
+    const actionsTaken = ncrActions.length;
+
+    return res.json({
+      status: 'success',
+      message: 'Assessment NCR tracking retrieved',
+      data: {
+        assessment: {
+          assess_id: (assessment as any).assess_id,
+          a_date: (assessment as any).a_date,
+          a_rate: (assessment as any).a_rate,
+          a_remark: (assessment as any).a_remark,
+          asset,
+        },
+        ncr_items: {
+          count: ncrCount,
+          items: enrichedNCRItems,
+        },
+        driver_actions: {
+          total_taken: actionsTaken,
+          records: ncrActions.map((action: any) => ({
+            req_id: action.req_id,
+            req_date: action.req_date,
+            req_comment: action.req_comment,
+            drv_stat: action.drv_stat,
+            drv_date: action.drv_date,
+            verification_stat: action.verification_stat,
+            verification_date: action.verification_date,
+            recommendation_stat: action.recommendation_stat,
+            recommendation_date: action.recommendation_date,
+            approval_stat: action.approval_stat,
+            approval_date: action.approval_date,
+          })),
+        },
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch assessment NCR tracking',
+      data: null,
+    });
+  }
+};
+
+/**
+ * Debug endpoint: Show which asset_ids have NCR maintenance records with forms
+ * Helps diagnose asset_id mismatches between assessments and maintenance records
+ */
+export const debugNCRMaintenance = async (req: Request, res: Response) => {
+  try {
+    const records = await complianceModel.debugNCRRecords();
+    
+    return res.json({
+      status: 'success',
+      message: 'Debug: Asset IDs with NCR maintenance records',
+      data: {
+        total_groups: records.length,
+        asset_groups: records,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to fetch debug data',
       data: null,
     });
   }

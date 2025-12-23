@@ -512,7 +512,7 @@ export interface AssessmentRecord {
   ownership?: null | number;
 }
 
-export const getAssessments = async (year?: number, asset_id?: number): Promise<AssessmentRecord[]> => {
+export const getAssessments = async (year?: number, asset?: number): Promise<AssessmentRecord[]> => {
   let query = `SELECT * FROM ${assessmentTable}`;
   const params: any[] = [];
   const conditions: string[] = [];
@@ -522,9 +522,9 @@ export const getAssessments = async (year?: number, asset_id?: number): Promise<
     params.push(year, year);
   }
 
-  if (asset_id) {
+  if (asset) {
     conditions.push(`asset_id = ?`);
-    params.push(asset_id);
+    params.push(asset);
   }
 
   if (conditions.length > 0) {
@@ -600,10 +600,10 @@ export const updateAssessmentAcceptance = async (id: number, acceptance_status: 
 export interface AssessmentDetailRecord {
   adt_id?: number;
   adt_item?: null | string;
-  adt_ncr?: null | number;
+  adt_ncr?: null | number; //2=non-compliance, 1=compliance
   adt_rate?: null | string;
   adt_rate2?: null | number;
-  adt_rem?: null | string;
+  adt_rem?: null | string; //remarks is mandatory for non-compliance only
   assess_id?: number;
   created_at?: null | string;
   updated_at?: null | string;
@@ -642,6 +642,38 @@ export const deleteAssessmentDetail = async (id: number) => {
   const [result] = await pool2.query(`DELETE FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Assessment detail not found');
+};
+
+export const closeNCRItem = async (adt_id: number, data: {
+  ncr_status: string;
+  closed_at: string | Date | null;
+  action: string;
+  svc_order: string | number;
+}) => {
+  const payload: any = {
+    ncr_status: data.ncr_status,
+    action: data.action,
+    svc_order: data.svc_order,
+    updated_at: formatToMySQLDatetime(new Date()),
+  };
+  
+  // Format closed_at as date only (YYYY-MM-DD)
+  if (data.closed_at) {
+    payload.closed_at = formatToDateOnly(data.closed_at);
+  }
+  
+  const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
+  const values = Object.values(payload);
+  
+  const [result] = await pool2.query(
+    `UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`,
+    [...values, adt_id]
+  );
+  
+  const r = result as ResultSetHeader;
+  if (r.affectedRows === 0) throw new Error('NCR item not found');
+  
+  return r.affectedRows;
 };
 
 // ========== Transaction helpers and bulk detail replacement ==========
@@ -1133,4 +1165,91 @@ export const deleteComputerAssessment = async (id: number): Promise<void> => {
   const [result] = await pool2.query(`DELETE FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Computer assessment not found');
+};
+
+/**
+ * Fetch NCR (Non-Conformance) maintenance actions for a vehicle assessed
+ * Searches for maintenance requests with svc_opt=32 (NCR) where form_upload IS NOT NULL
+ * Optionally filters by req_date being after assessment date, but shows all matching records
+ */
+export const getNCRActionsByAssetAndAssessmentDate = async (
+  assetId: number,
+  assessmentDate: string | Date | null
+): Promise<any[]> => {
+  if (!assetId) return [];
+  
+  const dbMaintenance = 'applications';
+  const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
+  
+  // Extract year from assessment date to filter maintenance records from same year
+  let assessmentYear: number | null = null;
+  if (assessmentDate) {
+    try {
+      const d = assessmentDate instanceof Date ? assessmentDate : new Date(String(assessmentDate));
+      if (!isNaN(d.getTime())) {
+        assessmentYear = d.getFullYear();
+      }
+    } catch (e) {
+      // ignore parsing errors
+    }
+  }
+  
+  // Query: Find all NCR maintenance requests (svc_opt = 32) with form submitted for this asset in the same year
+  let query = `
+    SELECT 
+      req_id,
+      asset_id,
+      ramco_id,
+      req_date,
+      svc_opt,
+      req_comment,
+      drv_stat,
+      drv_date,
+      verification_stat,
+      verification_date,
+      recommendation_stat,
+      recommendation_date,
+      approval_stat,
+      approval_date,
+      form_upload
+    FROM ${vehicleMaintenanceTable}
+    WHERE asset_id = ?
+      AND svc_opt = 32
+      AND form_upload IS NOT NULL
+  `;
+  
+  const params: any[] = [assetId];
+  
+  if (assessmentYear) {
+    query += ` AND YEAR(req_date) = ?`;
+    params.push(assessmentYear);
+  }
+  
+  query += ` ORDER BY req_date DESC`;
+  
+  const [rows] = await pool.query(query, params);
+  return Array.isArray(rows) ? rows : [];
+};
+
+/**
+ * Debug function: Check if maintenance records exist with svc_opt=32 and form_upload
+ * Returns what asset_ids have these records (for debugging asset_id mismatches)
+ */
+export const debugNCRRecords = async (): Promise<any[]> => {
+  const dbMaintenance = 'applications';
+  const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
+  
+  const query = `
+    SELECT 
+      DISTINCT asset_id,
+      COUNT(*) as count
+    FROM ${vehicleMaintenanceTable}
+    WHERE svc_opt = 32
+      AND form_upload IS NOT NULL
+    GROUP BY asset_id
+    ORDER BY count DESC
+  `;
+  
+  const [rows] = await pool.query(query);
+  return Array.isArray(rows) ? rows : [];
 };

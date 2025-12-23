@@ -82,6 +82,12 @@ const uploadAssessment = createUploader('compliance/assessment');
 
 router.get('/assessments', asyncHandler(complianceController.getAssessments));
 router.get('/assessments/:id', asyncHandler(complianceController.getAssessmentById));
+// Track driver NCR actions for an assessment (must be before generic :id/... routes)
+router.get('/assessments/:id/ncr-tracking', asyncHandler(complianceController.trackAssessmentNCRActions));
+// Close NCR item for an assessment
+router.put('/assessments/:assess_id/close-ncr/:adt_id', asyncHandler(complianceController.closeNCRItem));
+// Debug endpoint: Show which asset_ids have NCR maintenance records
+router.get('/assessments/debug/ncr-records', asyncHandler(complianceController.debugNCRMaintenance));
 // Accept multiple files: vehicle_images[] and per-detail images (adt_image, adt_image_N, etc.)
 router.post('/assessments', uploadAssessment.any(), asyncHandler(complianceController.createAssessment));
 // Driver acceptance endpoint
