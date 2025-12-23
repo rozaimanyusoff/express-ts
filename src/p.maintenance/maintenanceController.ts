@@ -428,18 +428,58 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		}
 		// Support ?pendingstatus={verification|recommendation|approval}
 		const pendingStatus = typeof req.query.pendingstatus === 'string' ? req.query.pendingstatus : undefined;
+		// Support ?includeInvoice=true to optionally include billing data (off by default for performance)
+		const includeInvoice = req.query.includeInvoice === 'true';
 
 		const records = await maintenanceModel.getVehicleMtnRequests(status, ramco, years, pendingStatus);
 
-		// Fetch all lookup data in parallel
-		const [assetsRaw, costcentersRaw, workshopsRaw, employeesRaw, svcTypeRaw, billingsRaw] = await Promise.all([
-			assetModel.getAssets(),
-			assetModel.getCostcenters(),
-			billingModel.getWorkshops(),
-			assetModel.getEmployees(),
-			maintenanceModel.getServiceTypes(),
-			billingModel.getVehicleMtnBillings()
-		]);
+		// Collect only the IDs we need from records to minimize lookup queries
+		const assetIds = new Set<number>();
+		const costcenterIds = new Set<number>();
+		const workshopIds = new Set<number>();
+		const ramcoIds = new Set<string>();
+		const svcTypeIds = new Set<number>();
+		const billingIds = new Set<string>();
+		
+		records.forEach((rec: any) => {
+			if (rec.asset_id) assetIds.add(rec.asset_id);
+			if (rec.costcenter_id) costcenterIds.add(rec.costcenter_id);
+			if (rec.ws_id) workshopIds.add(rec.ws_id);
+			if (rec.ramco_id) ramcoIds.add(rec.ramco_id);
+			if (rec.verification) ramcoIds.add(rec.verification);
+			if (rec.recommendation) ramcoIds.add(rec.recommendation);
+			if (rec.approval) ramcoIds.add(rec.approval);
+			if (rec.svc_opt) {
+				rec.svc_opt.split(',').forEach((id: string) => {
+					const parsed = parseInt(id.trim());
+					if (Number.isFinite(parsed)) svcTypeIds.add(parsed);
+				});
+			}
+			if (includeInvoice && rec.req_id) billingIds.add(String(rec.req_id));
+		});
+
+		// Fetch only required lookup data - filtered to what's actually needed
+		const fetchPromises: Promise<any>[] = [
+			assetModel.getAssets().then(assets => (Array.isArray(assets) ? assets : []).filter((a: any) => assetIds.has(a.id))),
+			assetModel.getCostcenters().then(ccs => (Array.isArray(ccs) ? ccs : []).filter((c: any) => costcenterIds.has(c.id))),
+			billingModel.getWorkshops().then(ws => (Array.isArray(ws) ? ws : []).filter((w: any) => workshopIds.has(w.ws_id))),
+			assetModel.getEmployees().then(emps => (Array.isArray(emps) ? emps : []).filter((e: any) => ramcoIds.has(e.ramco_id))),
+			maintenanceModel.getServiceTypes().then(svcs => (Array.isArray(svcs) ? svcs : []).filter((s: any) => svcTypeIds.has(s.svcTypeId)))
+		];
+		
+		// Only fetch billings if explicitly requested
+		if (includeInvoice) {
+			fetchPromises.push(
+				billingModel.getVehicleMtnBillings().then(billings => {
+					const arr = Array.isArray(billings) ? billings : (billings ? [billings] : []);
+					return arr.filter((b: any) => billingIds.has(String(b.svc_order)));
+				})
+			);
+		} else {
+			fetchPromises.push(Promise.resolve([]));
+		}
+
+		const [assetsRaw, costcentersRaw, workshopsRaw, employeesRaw, svcTypeRaw, billingsRaw] = await Promise.all(fetchPromises);
 
 		// Ensure arrays
 		const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
@@ -447,17 +487,6 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		const workshops = Array.isArray(workshopsRaw) ? workshopsRaw : [];
 		const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
 		const svcTypes = Array.isArray(svcTypeRaw) ? svcTypeRaw : [];
-		const allBillings = Array.isArray(billingsRaw) ? billingsRaw : (billingsRaw ? [billingsRaw] : []);
-		// Build billing index by req_id/svc_order for quick lookup (prefer svc_order)
-		const billingBySvcOrder = new Map<string, any>();
-		const billingByReqId = new Map<string, any>();
-		for (const inv of allBillings) {
-			const invAny: any = inv as any;
-			const so = invAny?.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
-			const rid = invAny?.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
-			if (so && !billingBySvcOrder.has(so)) billingBySvcOrder.set(so, inv);
-			if (rid && !billingByReqId.has(rid)) billingByReqId.set(rid, inv);
-		}
 
 		// Build lookup maps for fast access
 		const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
@@ -465,6 +494,20 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		const wsMap = new Map(workshops.map((ws: any) => [ws.ws_id, ws]));
 		const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 		const svcTypeMap = new Map(svcTypes.map((svc: any) => [svc.svcTypeId, svc]));
+
+		// Build billing index by req_id/svc_order for quick lookup (only if included)
+		const billingBySvcOrder = new Map<string, any>();
+		const billingByReqId = new Map<string, any>();
+		if (includeInvoice) {
+			const allBillings = Array.isArray(billingsRaw) ? billingsRaw : (billingsRaw ? [billingsRaw] : []);
+			for (const inv of allBillings) {
+				const invAny: any = inv as any;
+				const so = invAny?.svc_order !== undefined && invAny.svc_order !== null ? String(invAny.svc_order) : '';
+				const rid = invAny?.req_id !== undefined && invAny.req_id !== null ? String(invAny.req_id) : '';
+				if (so && !billingBySvcOrder.has(so)) billingBySvcOrder.set(so, inv);
+				if (rid && !billingByReqId.has(rid)) billingByReqId.set(rid, inv);
+			}
+		}
 
 		// Only return selected fields with nested structure
 		const resolvedRecords = records.map((record: any) => {
@@ -481,7 +524,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 					};
 				});
 
-			const base = {
+			const result = {
 				approval_by: employeeMap.has(record.approval) ? {
 					email: (employeeMap.get(record.approval))?.email,
 					name: (employeeMap.get(record.approval))?.full_name,
@@ -525,9 +568,14 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 					name: (wsMap.get(record.ws_id))?.ws_name
 				} : null
 			};
-			const key = String(record.req_id);
-			const invoice = billingBySvcOrder.get(key) || billingByReqId.get(key) || null;
-			return { ...base, invoice };
+			
+			// Only include invoice if it was requested
+			if (includeInvoice) {
+				const key = String(record.req_id);
+				const invoice = billingBySvcOrder.get(key) || billingByReqId.get(key) || null;
+				return { ...result, invoice };
+			}
+			return result;
 		});
 
 		const total = resolvedRecords.length;

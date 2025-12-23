@@ -45,7 +45,14 @@ const tngDetailTable = `${dbAssets}.touchngo_det`;
 
 // Example placeholder functions:
 export const getVehicleMtnRequests = async (status?: string, ramco?: string, years?: number[], pendingStatus?: string) => {
-    let query = `SELECT * FROM ${vehicleMaintenanceTable}`;
+    // Select only essential columns to minimize payload
+    let query = `SELECT 
+        req_id, asset_id, ramco_id, req_date, ws_id, svc_opt,
+        verification_stat, recommendation_stat, approval_stat, drv_stat,
+        verification_date, recommendation_date, approval_date, form_upload_date,
+        cc_id, costcenter_id, req_comment, upload_date, form_upload, emailStat, drv_date, inv_status,
+        recommendation, approval
+    FROM ${vehicleMaintenanceTable}`;
     const params: any[] = [];
     const conditions: string[] = [];
 
@@ -773,8 +780,7 @@ export const getTngRecords = async () => {
 };
 export const getTngRecordById = async (id: number) => {
     const [rows] = await pool2.query(`SELECT * FROM ${tngTable} WHERE tng_id = ?`, [id]);
-    return (rows as RowDataPacket[])[0];
-};
+    return (rows as RowDataPacket[])};
 export const createTngRecord = async (data: any) => {
     const [result] = await pool2.query(`INSERT INTO ${tngTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
