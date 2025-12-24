@@ -1000,7 +1000,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
   not_assessed_only?: boolean;
 }): Promise<any[]> => {
   // Get all IT assets (type_id = 1)
-  const [assetRows] = await pool.query(
+  const [assetRows] = await pool2.query(
     `SELECT * FROM assets.assetdata WHERE type_id = 1 ORDER BY register_number ASC`
   );
   const assets = assetRows as any[];
@@ -1062,7 +1062,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
  */
 export const getITAssetWithAssessmentStatusById = async (assetId: number): Promise<any | null> => {
   // Get the specific IT asset
-  const [assetRows] = await pool.query(
+  const [assetRows] = await pool2.query(
     `SELECT * FROM assets.assetdata WHERE id = ? AND type_id = 1`,
     [assetId]
   );
@@ -1227,7 +1227,7 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
   
   query += ` ORDER BY req_date DESC`;
   
-  const [rows] = await pool.query(query, params);
+  const [rows] = await pool2.query(query, params);
   return Array.isArray(rows) ? rows : [];
 };
 
@@ -1250,6 +1250,6 @@ export const debugNCRRecords = async (): Promise<any[]> => {
     ORDER BY count DESC
   `;
   
-  const [rows] = await pool.query(query);
+  const [rows] = await pool2.query(query);
   return Array.isArray(rows) ? rows : [];
 };
