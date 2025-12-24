@@ -536,6 +536,48 @@ export const getAssessments = async (year?: number, asset?: number): Promise<Ass
   return rows as AssessmentRecord[];
 };
 
+/**
+ * Get assessments with detailed NCR information
+ * Returns assessment records with embedded ncr_details array containing all NCR items
+ * Optimized with batch query to avoid N+1 problem
+ */
+export const getAssessmentsWithNCRDetails = async (
+  year?: number,
+  asset?: number
+): Promise<(AssessmentRecord & { ncr_details: AssessmentDetailRecord[] })[]> => {
+  const assessments = await getAssessments(year, asset);
+  
+  if (assessments.length === 0) {
+    return [];
+  }
+  
+  // Batch fetch all NCR details for all assessments in a single query
+  const assessmentIds = assessments.map(a => a.assess_id).filter(id => id !== undefined);
+  const placeholders = assessmentIds.map(() => '?').join(',');
+  const [allNcrDetails] = await pool2.query(
+    `SELECT * FROM ${assessmentDetailTable} WHERE assess_id IN (${placeholders}) AND adt_ncr = 2 ORDER BY assess_id, adt_id ASC`,
+    assessmentIds
+  );
+  
+  // Create a map of assess_id -> ncr_details for O(1) lookup
+  const ncrMap = new Map<number, AssessmentDetailRecord[]>();
+  for (const detail of allNcrDetails as AssessmentDetailRecord[]) {
+    const assessId = detail.assess_id!;
+    if (!ncrMap.has(assessId)) {
+      ncrMap.set(assessId, []);
+    }
+    ncrMap.get(assessId)!.push(detail);
+  }
+  
+  // Map assessments with their NCR details
+  const result = assessments.map(assessment => ({
+    ...assessment,
+    ncr_details: ncrMap.get(assessment.assess_id!) || []
+  }));
+  
+  return result;
+};
+
 export const getAssessmentById = async (id: number): Promise<AssessmentRecord | null> => {
   const [rows] = await pool2.query(`SELECT * FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
   const data = rows as AssessmentRecord[];
@@ -608,6 +650,10 @@ export interface AssessmentDetailRecord {
   created_at?: null | string;
   updated_at?: null | string;
   vehicle_id?: null | number;
+  ncr_status?: null | string; // Status of NCR: null (open) or specific status (closed, etc.)
+  closed_at?: null | string; // Date when NCR was closed (YYYY-MM-DD)
+  action?: null | string; // Action taken to resolve NCR
+  svc_order?: null | string | number; // Service order reference
 }
 
 export const getAssessmentDetails = async (assess_id: number): Promise<AssessmentDetailRecord[]> => {

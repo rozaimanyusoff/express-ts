@@ -1026,11 +1026,13 @@ export const deleteAssessmentCriteriaOwnership = async (req: Request, res: Respo
 /* ========== ASSESSMENTS (parent) CONTROLLERS ========== */
 export const getAssessments = async (req: Request, res: Response) => {
   try {
-    // Parse optional year and asset filter from query params
+    // Parse optional year, asset, and owner filter from query params
     const yearParam = req.query.year as string;
     const assetParam = req.query.asset as string;
+    const ownerParam = req.query.owner as string;
     const year = yearParam ? parseInt(yearParam, 10) : undefined;
     const asset = assetParam ? parseInt(assetParam, 10) : undefined;
+    const owner = ownerParam ? String(ownerParam).trim() : undefined;
 
     // Validate year if provided
     if (yearParam && (isNaN(year!) || year! < 1900 || year! > new Date().getFullYear() + 10)) {
@@ -1050,7 +1052,8 @@ export const getAssessments = async (req: Request, res: Response) => {
       });
     }
 
-    const rows = await complianceModel.getAssessments(year, asset);
+    // Fetch assessments with NCR details
+    const rows = await complianceModel.getAssessmentsWithNCRDetails(year, asset);
 
     // enrich asset_id into full asset object (reuse same enrichment pattern as summons)
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
@@ -1073,6 +1076,8 @@ export const getAssessments = async (req: Request, res: Response) => {
 
     const data = (rows || []).map((r: any) => {
       let asset = null;
+      let ownerRamcoForFilter = null;
+      
       if (r.asset_id && assetMap.has(r.asset_id)) {
         const a = assetMap.get(r.asset_id);
         // compute purchase_date and age if available
@@ -1086,7 +1091,8 @@ export const getAssessments = async (req: Request, res: Response) => {
           }
         }
         const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
-        const owner = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
+        ownerRamcoForFilter = ownerRamco; // Store for filtering
+        const ownerData = ownerRamco && employeeMap.has(ownerRamco) ? { full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null, ramco_id: ownerRamco } : null;
         asset = {
           age,
           costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
@@ -1097,18 +1103,27 @@ export const getAssessments = async (req: Request, res: Response) => {
             const found = locationMap.get(locId);
             return found ? { code: found.code || found.name || null, id: locId } : null;
           })(),
-          owner,
+          owner: ownerData,
           purchase_date,
           register_number: a.register_number || a.vehicle_regno || null
         };
       }
       // omit reg_no, vehicle_id, asset_id, a_loc, ownership, loc_id, location_id from response (these are internal identifiers)
-      const { a_loc, asset_id, loc_id, location_id, ownership, reg_no, vehicle_id, ...clean } = r;
+      const { a_loc, asset_id, loc_id, location_id, ownership, reg_no, vehicle_id, ncr_details, ...clean } = r;
       // attach assessed_location resolved from location_id (if present)
       const assessed_location = (r.location_id && locationMap.has(r.location_id)) ? (() => {
         const l = locationMap.get(r.location_id);
         return { code: l.code || l.name || null, id: r.location_id };
       })() : null;
+      
+      // Transform ncr_details: remove internal fields and map status
+      const formattedNcrDetails = (ncr_details || []).map((detail: any) => {
+        const { created_at, updated_at, vehicle_id: vid, assess_id: aid, ...ncrClean } = detail;
+        return {
+          ...ncrClean,
+          is_closed: detail.ncr_status !== null && detail.ncr_status !== 'open'
+        };
+      });
       
       // Convert upload paths to full public URLs
       return { 
@@ -1120,7 +1135,19 @@ export const getAssessments = async (req: Request, res: Response) => {
         a_upload4: toPublicUrl(clean.a_upload4),
         assessed_location,
         asset,
+        ncr_details: formattedNcrDetails,
+        _ownerRamco: ownerRamcoForFilter, // Internal field for filtering
       };
+    }).filter(item => {
+      // Apply owner filter if provided
+      if (owner && item._ownerRamco !== owner) {
+        return false;
+      }
+      return true;
+    }).map(item => {
+      // Remove internal filter field before returning
+      const { _ownerRamco, ...finalItem } = item;
+      return finalItem;
     });
 
     return res.json({ data, message: 'Assessments retrieved', status: 'success' });

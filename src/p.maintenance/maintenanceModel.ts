@@ -201,7 +201,7 @@ const getRequestStatus = (record: any): string => {
 };
 
 // Detailed application status including rejections/cancellation
-const getApplicationStatus = (record: any): string => {
+export const getApplicationStatus = (record: any): string => {
     const v = Number(record?.verification_stat ?? null);
     const r = Number(record?.recommendation_stat ?? null);
     const a = Number(record?.approval_stat ?? null);

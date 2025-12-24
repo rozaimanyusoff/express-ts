@@ -2059,6 +2059,7 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 					ramco_id: record.approval
 				} : null,
 				approval_date: record.approval_date,
+				application_status: maintenanceModel.getApplicationStatus(record),
 				costcenter: ccMap.has(record.costcenter_id) ? {
 					id: record.costcenter_id,
 					name: (ccMap.get(record.costcenter_id))?.name
