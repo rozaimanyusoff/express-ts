@@ -1,5 +1,6 @@
 import {pool} from '../utils/db';
 import logger from '../utils/logger';
+import { logAuthActivityToFile } from '../utils/fileAuthLogger';
 
 export type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
 
@@ -22,6 +23,21 @@ export const logAuthActivity = async (
     if (reason && (typeof reason !== 'object' || Object.keys(reason).length > 0)) {
       details = JSON.stringify(reason);
     }
+    
+    // Log to file (primary logging mechanism)
+    const entry = {
+      user_id: userId,
+      action,
+      status,
+      ip,
+      user_agent: userAgent,
+      details,
+      created_at: new Date().toISOString()
+    };
+    
+    await logAuthActivityToFile(entry);
+    
+    // Keep database logging for backward compatibility - can be disabled later
     await pool.query(
       `INSERT INTO logs_auth (user_id, action, status, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`,
       [userId, action, status, ip, userAgent, details]
@@ -59,66 +75,23 @@ export const getUserAuthLogs = async (userId: number): Promise<any[]> => {
 };
 
 // Batched time spent computation for multiple users
-// Returns total seconds spent per user based on login/logout pairs.
-// Semantics match the controller's original getUserTimeSpent logic:
-// - Consecutive logins: ignore subsequent logins until a logout occurs
-// - If still logged in (no following logout), count up to NOW()
+// Returns time_spent from users table (optimized - no longer queries logs_auth with millions of entries)
 export const getTimeSpentByUsers = async (userIds: number[]): Promise<{ time_spent: number; user_id: number; }[]> => {
   if (!Array.isArray(userIds) || userIds.length === 0) return [];
   try {
+    // Query time_spent directly from users table
+    const placeholders = userIds.map(() => '?').join(',');
     const [rows]: any[] = await pool.query(
-      `SELECT user_id, action, created_at
-       FROM logs_auth
-       WHERE user_id IN (?) AND action IN ('login','logout')
-       ORDER BY user_id, created_at ASC`,
-      [userIds]
+      `SELECT id as user_id, COALESCE(time_spent, 0) as time_spent
+       FROM auth.users
+       WHERE id IN (${placeholders})`,
+      userIds
     );
 
-    const resultMap = new Map<number, number>();
-    let currentUser: null | number = null;
-    let lastLogin: Date | null = null;
-
-    const flushUser = (userId: number) => {
-      if (!resultMap.has(userId)) resultMap.set(userId, 0);
-      // if session still open at boundary switch, add until now
-      if (lastLogin) {
-        const add = Math.max(0, Math.round((Date.now() - lastLogin.getTime()) / 1000));
-        resultMap.set(userId, (resultMap.get(userId) || 0) + add);
-      }
-      lastLogin = null;
-    };
-
-    for (const row of rows as { action: string; created_at: Date | string; user_id: number; }[]) {
-      const uid = Number(row.user_id);
-      if (currentUser === null) currentUser = uid;
-      if (uid !== currentUser) {
-        // finalize previous user before switching
-        flushUser(currentUser);
-        currentUser = uid;
-      }
-
-      const action = String(row.action);
-      const ts = new Date(row.created_at);
-
-      if (action === 'login') {
-        if (!lastLogin) {
-          lastLogin = ts;
-        }
-      } else if (action === 'logout') {
-        if (lastLogin) {
-          const diff = Math.max(0, Math.round((ts.getTime() - lastLogin.getTime()) / 1000));
-          resultMap.set(uid, (resultMap.get(uid) || 0) + diff);
-          lastLogin = null;
-        }
-      }
-    }
-
-    if (currentUser !== null) {
-      // finalize last user after loop
-      flushUser(currentUser);
-    }
-
-    return Array.from(resultMap.entries()).map(([user_id, time_spent]) => ({ time_spent, user_id }));
+    return rows.map((row: any) => ({
+      user_id: Number(row.user_id),
+      time_spent: Number(row.time_spent) || 0
+    }));
   } catch (error) {
     logger.error('Database error in getTimeSpentByUsers:', error);
     throw error;

@@ -31,6 +31,8 @@ CREATE TABLE `users` (
   `last_os` varchar(255) DEFAULT NULL,
   `last_nav` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
   `avatar` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `last_logout` timestamp NULL DEFAULT NULL,
+  `time_spent` int DEFAULT '0' COMMENT 'Total seconds spent in app',
   `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

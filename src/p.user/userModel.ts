@@ -436,6 +436,45 @@ export const updateUserLoginDetails = async (
     }
 };
 
+// Update user logout and time spent
+export const updateUserLogoutAndTimeSpent = async (userId: number): Promise<void> => {
+    try {
+        // Get user's last_login timestamp
+        const [rows]: any[] = await pool.query(
+            `SELECT last_login, time_spent FROM ${usersTable} WHERE id = ?`,
+            [userId]
+        );
+        
+        if (!rows || rows.length === 0) {
+            logger.warn(`User ${userId} not found for logout update`);
+            return;
+        }
+        
+        const user = rows[0];
+        let sessionSeconds = 0;
+        
+        // Calculate session duration from last_login to now
+        if (user.last_login) {
+            const loginTime = new Date(user.last_login).getTime();
+            const now = Date.now();
+            sessionSeconds = Math.max(0, Math.floor((now - loginTime) / 1000));
+        }
+        
+        // Update user with new logout time and accumulated time_spent
+        const newTimeSpent = (user.time_spent || 0) + sessionSeconds;
+        
+        await pool.query(
+            `UPDATE ${usersTable} SET last_logout = NOW(), time_spent = ? WHERE id = ?`,
+            [newTimeSpent, userId]
+        );
+        
+        logger.info(`Updated user ${userId} logout: session=${sessionSeconds}s, total_time=${newTimeSpent}s`);
+    } catch (error) {
+        logger.error(`Database error in updateUserLogoutAndTimeSpent: ${error}`);
+        throw error;
+    }
+};
+
 // Bulk update users' role
 export const updateUsersRole = async (userIds: number[], roleId: number): Promise<void> => {
     if (!userIds.length) return;

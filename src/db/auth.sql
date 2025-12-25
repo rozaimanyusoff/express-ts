@@ -377,6 +377,8 @@ CREATE TABLE `users` (
   `reset_token` text,
   `activated_at` timestamp NULL DEFAULT NULL,
   `current_session_token` varchar(255) DEFAULT NULL,
+  `last_logout` timestamp NULL DEFAULT NULL,
+  `time_spent` int DEFAULT '0' COMMENT 'Total seconds spent in app',
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB AUTO_INCREMENT=232 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -746,17 +746,22 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 // Logout controller
 export const logout = async (req: Request, res: Response): Promise<Response> => {
     try {
+        const userId = (req as any).user?.id;
+        
         // Clear session token on logout
-        if ((req as any).user?.id) {
-            await userModel.setUserSessionToken((req as any).user.id, null);
+        if (userId) {
+            await userModel.setUserSessionToken(userId, null);
+            // Update user logout time and calculate session time_spent
+            await userModel.updateUserLogoutAndTimeSpent(userId);
         }
+        
         res.clearCookie('token', {
             httpOnly: true,
             sameSite: 'strict',
             secure: process.env.NODE_ENV === 'production'
         });
 
-        await logModel.logAuthActivity((req as any).user?.id || 0, 'logout', 'success', {}, req);
+        await logModel.logAuthActivity(userId || 0, 'logout', 'success', {}, req);
 
         return res.status(200).json({
             message: 'Logged out successfully',
