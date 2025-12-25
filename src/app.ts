@@ -16,6 +16,7 @@ import securityHeaders from './middlewares/securityHeaders';
 import tokenValidator from './middlewares/tokenValidator';
 import adminRoutes from './p.admin/adminRoutes';
 import importRoutes from './p.admin/importerRoutes';
+import logsRoutes from './p.admin/logsRoutes';
 import assetRoutes from './p.asset/assetRoutes';
 import authRoutes from './p.auth/adms/authRoutes';
 import billingRoutes from './p.billing/billingRoutes';
@@ -100,6 +101,7 @@ app.get('/api/health', async (req, res) => {
 });
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/logs', tokenValidator, logsRoutes);
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
 app.use('/api/stock', stockRoutes);
