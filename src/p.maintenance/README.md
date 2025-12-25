@@ -1,7 +1,8 @@
 # Maintenance Module (p.maintenance)
 
 ## Overview
-The maintenance module handles all maintenance-related operations including maintenance records, types, scheduling, and reporting for asset management system.
+
+The maintenance module manages all vehicle maintenance-related operations including maintenance requests, approvals, recommendations, billing integrations, and real-time notifications.
 
 ## Module Structure
 ```

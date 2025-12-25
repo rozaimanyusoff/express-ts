@@ -10,8 +10,7 @@ import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../midd
 import * as logModel from '../../p.admin/logModel';
 import * as notificationModel from '../../p.admin/notificationModel';
 import * as assetModel from '../../p.asset/assetModel';
-import * as groupModel from '../../p.group/groupModel';
-import * as navModel from '../../p.nav/navModel';
+import * as adminModel from '../../p.admin/adminModel';
 import * as pendingUserModel from '../../p.user/pendingUserModel';
 import * as userModel from '../../p.user/userModel';
 import {pool} from '../../utils/db';
@@ -317,12 +316,12 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         await pendingUserModel.deletePendingUser(pendingUser.id!);
 
         // 5. Assign group
-        await groupModel.assignGroupByUserId(newUserId, 5);
+        await adminModel.assignGroupByUserId(newUserId, 5);
         // Fetch group names instead of just IDs
-        const groupIds = await groupModel.getGroupsByUserId(newUserId);
+        const groupIds = await adminModel.getGroupsByUserId(newUserId);
         const groupNames = await Promise.all(
             groupIds.map(async (groupId: number) => {
-                const group = await groupModel.getGroupById(groupId);
+                const group = await adminModel.getGroupById(groupId);
                 return group ? group.name : null;
             })
         );
@@ -420,7 +419,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
     const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
 
-        const navigation = await navModel.getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
+        const navigation = await adminModel.getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
 
         // Remove duplicate nav items by navId at the flat level
         const uniqueFlatNavItems = Array.from(
@@ -443,15 +442,14 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const structuredNavTree = buildNavigationTree(flatNavItems); // Build the navigation tree structure
 
         // Fetch role details
-        const roleModel = await import('../../p.role/roleModel.js');
-        const userRole = await roleModel.getRoleById(result.user.role);
+        const userRole = await adminModel.getRoleById(result.user.role);
         const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
 
         // Fetch user groups as objects
-        const groupIds = await groupModel.getGroupsByUserId(result.user.id);
+        const groupIds = await adminModel.getGroupsByUserId(result.user.id);
         const usergroups = await Promise.all(
             groupIds.map(async (groupId: number) => {
-                const group = await groupModel.getGroupById(groupId);
+                const group = await adminModel.getGroupById(groupId);
                 return group ? { id: group.id, name: group.name } : null;
             })
         );

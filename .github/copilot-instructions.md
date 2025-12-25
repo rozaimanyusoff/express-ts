@@ -130,3 +130,81 @@ src/p.newmodule/
 ├── newmoduleModel.ts      # Database operations  
 └── newmoduleRoutes.ts     # Route definitions
 ```
+
+## Module Documentation Standards
+
+### 4-File Markdown Template
+
+Each module should have exactly 4 markdown files for consistency and maintainability:
+
+#### 1. **README.md** - Module Overview
+- Brief module description (1-2 sentences)
+- Key features (bullet list)
+- Architecture section with MVC structure and database design
+- Main workflows (numbered list with steps)
+- Quick start examples (bash curl commands)
+- Module dependencies table
+- Technologies used
+- Access control description
+- Key metrics (table count, endpoint count, etc.)
+- Common error scenarios
+- Next steps (links to other 3 markdown files)
+
+#### 2. **SCHEMA.md** - Database Schema
+- For each table:
+  - SQL CREATE TABLE definition
+  - TypeScript Interface
+  - Key Queries (common operations)
+- Database relationships diagram
+- Performance considerations (indexes, optimization)
+- Sample data (JSON examples)
+
+#### 3. **API.md** - Complete API Reference
+- Base URL, authentication, content-type headers
+- For each endpoint:
+  - Endpoint method/path
+  - Path/query parameters table
+  - Request body (with example)
+  - Success response (200) with example
+  - Error responses (4xx/5xx scenarios)
+- Standard response format (success/error structure)
+- Error codes reference table
+- Testing checklist
+
+#### 4. **ENHANCEMENTS.md** - Features & Improvements
+- Feature descriptions with workflow diagrams (ASCII)
+- Implementation patterns with code examples
+- Detailed feature explanations
+- Error handling & validation patterns
+- Database optimization details
+- Security considerations
+- Integration points with other modules
+- Future enhancements (short-term, medium-term, long-term)
+
+### Implementation Checklist
+
+When consolidating or documenting a module:
+- [ ] Read all existing code files (Model, Controller, Routes)
+- [ ] Extract database tables and create SCHEMA.md
+- [ ] Document all endpoints with examples in API.md
+- [ ] Create comprehensive README.md with quick start
+- [ ] Write feature descriptions in ENHANCEMENTS.md
+- [ ] Verify all 4 files are consistent and complete
+- [ ] Delete any old/redundant markdown files from module
+- [ ] Link between markdown files (e.g., "See SCHEMA.md for database structure")
+
+### Documentation Examples
+
+**Completed modules following this template**:
+- `src/p.maintenance/` - 4 files, vehicle maintenance & forms
+- `src/p.compliance/` - 4 files, assessments & summons
+- `src/p.billing/` - 4 files, invoices, fuel, fleet cards, utilities
+- `src/p.purchase/` - 4 files, purchase orders & asset registry
+
+### Benefits
+
+- **Consistency**: All modules documented in identical structure
+- **Discoverability**: Developers know where to find specific information
+- **Maintainability**: Centralized documentation reduces file sprawl
+- **Scalability**: Easy to apply same template to new modules
+- **Reference**: Clear patterns for future module development

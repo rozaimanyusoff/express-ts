@@ -6,8 +6,7 @@ import path from 'path';
 
 import * as logModel from '../p.admin/logModel';
 import * as assetModel from '../p.asset/assetModel';
-import * as groupModel from '../p.group/groupModel';
-import * as roleModel from '../p.role/roleModel';
+import * as adminModel from '../p.admin/adminModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
 import {pool} from '../utils/db';
 import logger from '../utils/logger';
@@ -99,8 +98,8 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
 
     // Batch fetch roles, groups, and time spent
     const [roles, groups, timeSpentRows] = await Promise.all([
-      roleModel.getAllRoles(),
-      groupModel.getAllGroups(),
+      adminModel.getAllRoles(),
+      adminModel.getAllGroups(),
       (await import('../p.admin/logModel.js')).getTimeSpentByUsers(userIds)
     ]);
 
