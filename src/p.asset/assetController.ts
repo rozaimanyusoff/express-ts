@@ -1282,8 +1282,24 @@ export const updateModel = async (req: Request, res: Response) => {
 };
 
 export const deleteModel = async (req: Request, res: Response) => {
-	const result = await assetModel.deleteModel(Number(req.params.id));
-	res.json(result);
+	const modelId = Number(req.params.id);
+	
+	// Check if model exists in assets table
+	const assetCount = await assetModel.checkModelInAssets(modelId);
+	if (assetCount > 0) {
+		return res.status(400).json({
+			status: 'error',
+			message: `Cannot delete model. This model is currently used by ${assetCount} asset(s).`,
+			data: null
+		});
+	}
+	
+	const result = await assetModel.deleteModel(modelId);
+	res.json({
+		status: 'success',
+		message: 'Model deleted successfully',
+		data: result
+	});
 };
 
 

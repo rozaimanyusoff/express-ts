@@ -1031,6 +1031,11 @@ export const updateModel = async (id: number, data: any) => {
   return result;
 };
 
+export const checkModelInAssets = async (model_id: number) => {
+  const [rows] = await pool.query(`SELECT COUNT(*) as count FROM ${assetTable} WHERE model_id = ?`, [model_id]);
+  return (rows as any[])[0]?.count || 0;
+};
+
 export const deleteModel = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${modelTable} WHERE id = ?`, [id]);
   return result;
