@@ -883,11 +883,28 @@ export const createBrand = async (data: any) => {
     type_id ? [name, logo, type_id] : [name, logo]
   );
   const insertId = (result as any).insertId as number | undefined;
+  
+  // Handle brand-category associations
   if (insertId && Array.isArray(category_ids) && category_ids.length > 0) {
+    // Fetch the newly created brand to get its code
+    const [brandRows] = await pool.query(`SELECT code FROM ${brandTable} WHERE id = ?`, [insertId]);
+    const brand = (brandRows as RowDataPacket[])[0];
+    const brandCode = brand?.code || String(insertId); // Use brand code or fallback to ID
+    
+    // Fetch category codes for the provided category IDs
+    const placeholders = category_ids.map(() => '?').join(',');
+    const [categoryRows] = await pool.query(
+      `SELECT id, code FROM ${categoryTable} WHERE id IN (${placeholders})`,
+      category_ids
+    );
+    const categoryMap = new Map((categoryRows as RowDataPacket[]).map((c: any) => [c.id, c.code]));
+    
+    // Insert into brand_category table with codes
     for (const category_id of category_ids) {
+      const categoryCode = categoryMap.get(category_id) || String(category_id);
       await pool.query(
-        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
-        [insertId, category_id]
+        `INSERT INTO ${brandCategoryTable} (brand_id, category_id, brand_code, category_code) VALUES (?, ?, ?, ?)`,
+        [insertId, category_id, brandCode, categoryCode]
       );
     }
   }
@@ -918,12 +935,31 @@ export const updateBrand = async (id: number, data: any) => {
   }
   // Reset brand-category associations if category_ids provided
   if (Array.isArray(category_ids)) {
+    // Fetch the brand to get its code
+    const [brandRows] = await pool.query(`SELECT code FROM ${brandTable} WHERE id = ?`, [id]);
+    const brand = (brandRows as RowDataPacket[])[0];
+    const brandCode = brand?.code || String(id);
+    
+    // Delete old associations
     await pool.query(`DELETE FROM ${brandCategoryTable} WHERE brand_id = ?`, [id]);
-    for (const category_id of category_ids) {
-      await pool.query(
-        `INSERT INTO ${brandCategoryTable} (brand_id, category_id) VALUES (?, ?)`,
-        [id, category_id]
+    
+    if (category_ids.length > 0) {
+      // Fetch category codes for the provided category IDs
+      const placeholders = category_ids.map(() => '?').join(',');
+      const [categoryRows] = await pool.query(
+        `SELECT id, code FROM ${categoryTable} WHERE id IN (${placeholders})`,
+        category_ids
       );
+      const categoryMap = new Map((categoryRows as RowDataPacket[]).map((c: any) => [c.id, c.code]));
+      
+      // Insert new associations with codes
+      for (const category_id of category_ids) {
+        const categoryCode = categoryMap.get(category_id) || String(category_id);
+        await pool.query(
+          `INSERT INTO ${brandCategoryTable} (brand_id, category_id, brand_code, category_code) VALUES (?, ?, ?, ?)`,
+          [id, category_id, brandCode, categoryCode]
+        );
+      }
     }
   }
   return { ok: true } as any;

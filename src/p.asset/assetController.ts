@@ -18,6 +18,7 @@ import * as assetModel from './assetModel';
 export const getAssets = async (req: Request, res: Response) => {
 	// Support ?type=[type_id] and ?status=[status] params
 	const typeIdParam = req.query.type;
+	const categoryParam = req.query.category; // ?category=[category_id] for chain filtering
 	const statusParam = req.query.status;
 	const purposeParam = req.query.purpose;
 	const classificationParam = req.query.classification;
@@ -34,6 +35,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	const sortByParam = req.query.sortBy;
 	const sortDirParam = req.query.sortDir;
 	let typeIds: number[] | undefined = undefined;
+	let categoryId: number | undefined = undefined;
 	let status: string | undefined = undefined;
 	let purpose: string | string[] | undefined = undefined;
 	let classification: string | undefined = undefined;
@@ -93,6 +95,10 @@ export const getAssets = async (req: Request, res: Response) => {
 		// Support comma-separated type IDs
 		typeIds = typeIdParam.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
 		if (typeIds.length === 0) typeIds = undefined;
+	}
+	if (typeof categoryParam === 'string' && categoryParam !== '' && categoryParam !== 'all') {
+		const n = Number(categoryParam);
+		if (!isNaN(n)) categoryId = n;
 	}
 	if (typeof classificationParam === 'string' && classificationParam !== '') {
 		classification = classificationParam;
@@ -174,9 +180,17 @@ export const getAssets = async (req: Request, res: Response) => {
 
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
 	
-	// Fetch purchase items for enrichment (enrich with unit_price)
+	// Apply category filter if specified (for chain filtering with type)
+	let filteredAssets = assets;
+	if (categoryId !== undefined) {
+		filteredAssets = assets.filter((asset: any) => asset.category_id === categoryId);
+	}
+	
+	// Update total count to reflect filtered results
+	const filteredTotal = filteredAssets.length;
+
 	const purchaseIds = Array.from(new Set(
-		assets
+		filteredAssets
 			.map((a: any) => a.purchase_id)
 			.filter((pid: any) => pid !== null && pid !== undefined && pid !== 0)
 	));
@@ -205,7 +219,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	const employeeMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
 
 	// Build asset data
-	const data = assets.map((asset: any) => {
+	const data = filteredAssets.map((asset: any) => {
 		const type = typeMap.get(asset.type_id);
 		// Enrich with unit_price from purchase items
 		const purchaseItem = asset.purchase_id ? purchaseItemMap.get(asset.purchase_id) : null;
@@ -276,10 +290,10 @@ export const getAssets = async (req: Request, res: Response) => {
 		};
 	});
 
-	const meta = { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / (pageSize || 1))) };
+	const meta = { page, pageSize, total: filteredTotal, totalPages: Math.max(1, Math.ceil(filteredTotal / (pageSize || 1))) };
 	res.json({
 		data,
-		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${total} total` : ''})`,
+		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${filteredTotal} total` : ''})`,
 		meta,
 		status: 'success'
 	});
@@ -692,6 +706,24 @@ export const getTypes = async (req: Request, res: Response) => {
 	// Enhance: fetch all employees for manager lookup
 	const employees = await assetModel.getEmployees();
 	const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
+	
+	// Fetch all categories once to avoid N+1 queries
+	const allCategories = await assetModel.getCategories();
+	const categoriesByTypeId = new Map<number, any[]>();
+	(Array.isArray(allCategories) ? allCategories : []).forEach((cat: any) => {
+		if (cat.type_id) {
+			if (!categoriesByTypeId.has(cat.type_id)) {
+				categoriesByTypeId.set(cat.type_id, []);
+			}
+			categoriesByTypeId.get(cat.type_id)!.push({
+				id: cat.id.toString(),
+				name: cat.name,
+				code: cat.code,
+				image: cat.image ? `https://${req.get('host')}/uploads/categories/${cat.image}` : null
+			});
+		}
+	});
+	
 	const data = (rows as any[]).map((type) => {
 		let manager = null;
 		if (type.manager && employeeMap.has(type.manager)) {
@@ -706,7 +738,8 @@ export const getTypes = async (req: Request, res: Response) => {
 		return {
 			...type,
 			image,
-			manager
+			manager,
+			categories: categoriesByTypeId.get(type.id) || []
 		};
 	});
 	res.json({
@@ -729,7 +762,19 @@ export const getTypeById = async (req: Request, res: Response) => {
 		const emp = employeeMap.get(row.ramco_id);
 		manager = { full_name: emp.full_name, ramco_id: emp.ramco_id };
 	}
-	const data = { ...row, manager };
+	
+	// Fetch categories for this type
+	const typeCategories = await assetModel.getCategories();
+	const categories = (Array.isArray(typeCategories) ? typeCategories : [])
+		.filter((cat: any) => cat.type_id === row.id)
+		.map((cat: any) => ({
+			id: cat.id.toString(),
+			name: cat.name,
+			code: cat.code,
+			image: cat.image ? `https://${req.get('host')}/uploads/categories/${cat.image}` : null
+		}));
+	
+	const data = { ...row, manager, categories };
 	res.json({
 		data,
 		message: 'Asset type retrieved successfully',
@@ -943,29 +988,52 @@ export const getBrands = async (req: Request, res: Response) => {
 		brands = filteredBrands;
 	}
 
-	// Map brands to include categories and models
+	// Build categories map by brand_id
+	const brandCategoriesMap = new Map<number, any[]>();
+	for (const brand of brands) {
+		const brandCategoriesRaw = await assetModel.getCategoriesByBrandId(brand.id);
+		const brandCategories = Array.isArray(brandCategoriesRaw) ? brandCategoriesRaw : [];
+		brandCategoriesMap.set(brand.id, brandCategories.map((cat: any) => ({
+			id: cat.id.toString(),
+			name: cat.name
+		})));
+	}
+
+	// Map brands to include models with nested categories
 	const data = [];
 	for (const brand of brands) {
-		let categoriesForBrand: any[] = [];
-		if (brand.id) {
-			// Use the proper method to get categories for this brand by brand_id
-			const brandCategoriesRaw = await assetModel.getCategoriesByBrandId(brand.id);
-			const brandCategories = Array.isArray(brandCategoriesRaw) ? brandCategoriesRaw : [];
-			categoriesForBrand = brandCategories.map((cat: any) => ({
-				id: cat.id.toString(),
-				name: cat.name
-			}));
-		}
-
 		// Get models for this brand
 		const modelsForBrand = modelsMap.get(brand.id) || [];
 
+		// Build categories map for each model (get category by model's category_id)
+		const modelsWithCategories = await Promise.all(
+			modelsForBrand.map(async (model: any) => {
+				// Get category for this model using its category_id
+				let modelCategory = null;
+				if (model.category_id) {
+					const cat = await assetModel.getCategoryById(Number(model.category_id));
+					if (cat) {
+						modelCategory = {
+							id: cat.id.toString(),
+							name: cat.name
+						};
+					}
+				}
+				
+				return {
+					id: model.id.toString(),
+					name: model.name,
+					category: modelCategory
+				};
+			})
+		);
+
 		data.push({
-			categories: categoriesForBrand,
 			id: brand.id.toString(),
-			models: modelsForBrand,
 			name: brand.name,
-			type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null
+			type: brand.type_id ? (typeMap.get(brand.type_id) || null) : null,
+			categories: brandCategoriesMap.get(brand.id) || [],
+			models: modelsWithCategories
 		});
 	}
 

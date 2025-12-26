@@ -11,16 +11,39 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
     statusCode: err?.status
   });
 
-  const statusCode = err?.status ? err.status : 500;
-
-  // In development, expose full error details; in production, hide internal details
   const isDevelopment = process.env.NODE_ENV === 'development';
   
-  // Expose message for expected client errors (status < 500) or in development
-  const exposeMessage = (statusCode < 500) || isDevelopment || (err?.isPublic);
+  // Handle specific database errors with meaningful messages
+  let statusCode = err?.status ? err.status : 500;
+  let userMessage = 'Internal Server Error';
+  
+  if (err?.code === 'ER_DUP_ENTRY') {
+    // Extract field name from error message (e.g., "Duplicate entry 'value' for key 'table.field'")
+    const match = err?.message?.match(/for key '([^']+)'/);
+    const fieldInfo = match ? match[1] : 'duplicate value';
+    userMessage = `A record with this ${fieldInfo.split('.')[1] || 'field'} already exists`;
+    statusCode = 409; // Conflict status code
+  } else if (err?.code === 'ER_NO_REFERENCED_ROW') {
+    userMessage = 'Referenced record does not exist';
+    statusCode = 400;
+  } else if (err?.code === 'ER_NO_REFERENCED_ROW_2') {
+    userMessage = 'Referenced record does not exist';
+    statusCode = 400;
+  } else if (err?.code === 'ER_BAD_NULL_ERROR') {
+    userMessage = 'Required field is missing';
+    statusCode = 400;
+  } else if (err?.code === 'ER_DATA_TOO_LONG') {
+    userMessage = 'Provided data is too long for one or more fields';
+    statusCode = 400;
+  } else if (statusCode >= 500) {
+    // For 500+ errors, only expose message in development
+    userMessage = isDevelopment ? (err?.message || 'Internal Server Error') : 'Internal Server Error';
+  } else {
+    userMessage = err?.message || userMessage;
+  }
 
   res.status(statusCode).json({
-    message: exposeMessage ? (err?.message) : 'Internal Server Error',
+    message: userMessage,
     status: false,
     ...(isDevelopment && { 
       code: err?.code,
