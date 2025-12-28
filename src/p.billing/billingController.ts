@@ -2681,6 +2681,10 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 
 		let bills = await billingModel.getUtilityBills();
 		const accounts = await billingModel.getBillingAccounts();
+		const costcentersRaw = await assetsModel.getCostcenters();
+		const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw : [];
+		const ccMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+
 		const printingBillIds = new Set(
 			(accounts || []).filter((a: any) => String(a.category || '').toLowerCase() === 'printing').map((a: any) => a.bill_id)
 		);
@@ -2719,9 +2723,13 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 			if (!billId) continue;
 			if (!accountsMap.has(billId)) {
 				const accRaw = accountMap.get(billId) || null;
+				const ccId = (bill as any).cc_id;
+				const ccData = ccId && ccMap.has(ccId) ? ccMap.get(ccId) : null;
 				accountsMap.set(billId, {
 					account: accRaw ? accRaw.account : null,
 					bill_id: billId,
+					cc_id: ccId || null,
+					costcenter: ccData ? ccData.name : null,
 					monthlyMap: new Map<number, { bw: number; color: number, month: string, rent: number, }>()
 				});
 			}
@@ -2763,6 +2771,8 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 					return {
 						account: acc.account,
 						bill_id: acc.bill_id,
+						cc_id: acc.cc_id,
+						costcenter: acc.costcenter,
 						monthly_expenses
 					};
 				});

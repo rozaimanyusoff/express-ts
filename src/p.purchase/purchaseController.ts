@@ -2,9 +2,11 @@ import dayjs from 'dayjs';
 import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
+import ExcelJS from 'exceljs';
 
 import * as assetModel from '../p.asset/assetModel';
 import * as userModel from '../p.user/userModel';
+import { pool, pool2 } from '../utils/db';
 import { renderPurchaseNotification } from '../utils/emailTemplates/purchaseNotification';
 import { renderPurchaseRegistryCompleted } from '../utils/emailTemplates/purchaseRegistryCompleted';
 import { sendMail } from '../utils/mailer';
@@ -124,10 +126,10 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
     const requestsArr = await Promise.all(requestIds.map(id => purchaseModel.getPurchaseRequestById(id)));
     const requestMap = new Map((requestsArr || []).filter(Boolean).map((r: any) => [r.id, r]));
 
-  // Batch fetch registry rows for purchases to determine asset_registry status
-  const purchaseIds = Array.from(new Set((purchases || []).map((p: any) => p.id).filter((v: any) => v !== undefined && v !== null).map((v: any) => Number(v))));
-  const registries = await purchaseModel.getRegistriesByPurchaseIds(purchaseIds);
-  const registrySet = new Set((registries || []).map(r => Number(r.purchase_id)));
+    // Batch fetch registry rows for purchases to determine asset_registry status
+    const purchaseIds = Array.from(new Set((purchases || []).map((p: any) => p.id).filter((v: any) => v !== undefined && v !== null).map((v: any) => Number(v))));
+    const registries = await purchaseModel.getRegistriesByPurchaseIds(purchaseIds);
+    const registrySet = new Set((registries || []).map(r => Number(r.purchase_id)));
 
     const enrichedPurchases = purchases.map((purchase: any) => {
       const reqRec = purchase.request_id && requestMap.has(Number(purchase.request_id)) ? requestMap.get(Number(purchase.request_id)) : null;
@@ -534,6 +536,126 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
   }
 };
 
+export const resendPurchaseNotification = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    // Fetch purchase details
+    const purchase = await purchaseModel.getPurchaseRequestItemById(id);
+    if (!purchase) {
+      return res.status(404).json({
+        data: null,
+        message: 'Purchase not found',
+        status: 'error'
+      });
+    }
+
+    // Fetch the parent request to get pr_date, pr_no, request_type, brand_id
+    let purchaseRequest = null;
+    if (purchase.request_id) {
+      purchaseRequest = await purchaseModel.getPurchaseRequestById(Number(purchase.request_id));
+    }
+
+    // Derive managerId from item_type (numeric) or type_id
+    const managerId = (() => {
+      const t = purchase.item_type;
+      const numeric = t !== undefined && t !== null && String(t).trim() !== '' ? Number(t) : undefined;
+      if (numeric !== undefined && !Number.isNaN(numeric)) return numeric;
+      return purchase.type_id !== undefined ? Number(purchase.type_id) : undefined;
+    })();
+
+    if (!managerId || Number.isNaN(managerId)) {
+      return res.status(400).json({
+        data: null,
+        message: 'Cannot determine manager for this purchase (missing item_type or type_id)',
+        status: 'error'
+      });
+    }
+
+    // Fetch required lookup data
+    const [managersRaw, employeesRaw, costcentersRaw, brandsRaw] = await Promise.all([
+      assetModel.getAssetManagers(),
+      assetModel.getEmployees(),
+      assetModel.getCostcenters(),
+      assetModel.getBrands(),
+    ]);
+
+    const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
+    const costcenters = Array.isArray(costcentersRaw) ? costcentersRaw as any[] : [];
+    const brands = Array.isArray(brandsRaw) ? brandsRaw as any[] : [];
+    const empMap = new Map(employees.map((e: any) => [e.ramco_id, e]));
+    const ccMap = new Map(costcenters.map((c: any) => [c.id, c]));
+    const brandMap = new Map(brands.map((b: any) => [b.id, b]));
+
+    // Filter managers by manager_id and active flag
+    const targetManagers = (Array.isArray(managersRaw) ? managersRaw as any[] : [])
+      .filter((m: any) => Number(m.manager_id) === Number(managerId))
+      .filter((m: any) => m.is_active === 1 || m.is_active === '1' || m.is_active === true);
+
+    // Resolve email recipients from employees by ramco_id
+    const recipients = targetManagers
+      .map((m: any) => empMap.get(m.ramco_id))
+      .filter(Boolean)
+      .map((e: any) => ({ email: e.email || null, name: e.full_name || e.name || null }))
+      .filter((x: any) => x.email);
+
+    if (recipients.length === 0) {
+      return res.status(400).json({
+        data: null,
+        message: 'No active managers found for this purchase type',
+        status: 'error'
+      });
+    }
+
+    // Send notification emails
+    const prDate = purchaseRequest?.pr_date || null;
+    const prNo = purchaseRequest?.pr_no || String(id);
+    const requestType = purchaseRequest?.request_type || null;
+    const costcenterName = purchase.costcenter || null;
+    const subject = `Purchase Notification Resend — PR ${prNo} (Handover Preparation Required)`;
+
+    const successfulRecipients: any[] = [];
+    const failedRecipients: any[] = [];
+
+    for (const r of recipients) {
+      try {
+        const html = renderPurchaseNotification({
+          brand: null,
+          costcenterName: costcenterName,
+          items: purchase.description || null,
+          itemType: purchase.item_type ? String(purchase.item_type) : (purchase.type_id ? String(purchase.type_id) : null),
+          prDate: prDate,
+          prNo: prNo,
+          recipientName: r.name,
+          requestType: requestType,
+        });
+        await sendMail(r.email, subject, html);
+        successfulRecipients.push({ email: r.email, name: r.name });
+      } catch (mailErr) {
+        console.error('resendNotification: mail send error to', r.email, mailErr);
+        failedRecipients.push({ email: r.email, name: r.name, error: mailErr instanceof Error ? mailErr.message : String(mailErr) });
+      }
+    }
+
+    res.json({
+      data: {
+        purchase_id: id,
+        successful_recipients: successfulRecipients,
+        failed_recipients: failedRecipients,
+        total_recipients: recipients.length,
+      },
+      message: `Notification resent to ${successfulRecipients.length}/${recipients.length} recipient(s)`,
+      status: 'success'
+    });
+  } catch (error) {
+    res.status(500).json({
+      data: null,
+      message: error instanceof Error ? error.message : 'Failed to resend notification',
+      status: 'error'
+    });
+  }
+};
+
 export const updatePurchaseRequestItem = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -636,14 +758,14 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
         // Get purchase to fetch its request_id
         const existingPurchase = await purchaseModel.getPurchaseRequestItemById(id);
         const reqId = existingPurchase?.request_id ? Number(existingPurchase.request_id) : (req.body.request_id ? Number(req.body.request_id) : undefined);
-        
+
         // Fetch existing deliveries for this purchase to avoid duplicates
         const existingDeliveries = await purchaseModel.getDeliveriesByPurchaseId(id);
-        
+
         // Use qty to determine delivery strategy
-        const purchaseQty = updateData.qty !== undefined ? Number(updateData.qty) : 
-                          (existingPurchase?.qty !== undefined ? Number(existingPurchase.qty) : 1);
-        
+        const purchaseQty = updateData.qty !== undefined ? Number(updateData.qty) :
+          (existingPurchase?.qty !== undefined ? Number(existingPurchase.qty) : 1);
+
         if (purchaseQty === 1) {
           // For qty = 1, only allow ONE delivery record - update existing or create single new one
           const d = deliveries[0]; // Only process first delivery for qty=1
@@ -658,14 +780,14 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
             request_id: reqId,
             upload_path: d.upload_path ?? null,
           } as any;
-          
+
           const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[0][upload_path]`);
-          
+
           if (existingDeliveries.length > 0) {
             // Update the first (and should be only) existing delivery
             const existingDelivery = existingDeliveries[0];
             await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
-            
+
             if (fileForThis?.path) {
               try {
                 const tempPath = fileForThis.path as string;
@@ -679,7 +801,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
                 // non-blocking
               }
             }
-            
+
             // Delete any extra deliveries beyond the first one for qty=1
             for (let i = 1; i < existingDeliveries.length; i++) {
               try {
@@ -709,7 +831,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
           // For qty > 1, use the original logic but simplified matching
           // Build a map of existing deliveries by purchase_id for simpler matching
           const existingDeliveryMap = new Map();
-          
+
           for (let idx = 0; idx < existingDeliveries.length; idx++) {
             const existing = existingDeliveries[idx];
             existingDeliveryMap.set(`INDEX:${idx}`, existing);
@@ -717,7 +839,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
               existingDeliveryMap.set(`ID:${existing.id}`, existing);
             }
           }
-          
+
           for (let i = 0; i < Math.min(deliveries.length, purchaseQty); i++) {
             const d = deliveries[i];
             const payload = {
@@ -731,22 +853,22 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
               request_id: reqId,
               upload_path: d.upload_path ?? null,
             } as any;
-            
+
             const fileForThis = filesArr.find((f: any) => f && f.fieldname === `deliveries[${i}][upload_path]`);
-            
+
             // Try to find existing delivery to update
             let existingDelivery = null;
-            
+
             // First, try to match by ID if provided
             if (d.id) {
               existingDelivery = existingDeliveryMap.get(`ID:${d.id}`);
             }
-            
+
             // Fallback: match by index position for multi-qty items
             if (!existingDelivery) {
               existingDelivery = existingDeliveryMap.get(`INDEX:${i}`);
             }
-            
+
             if (existingDelivery) {
               // Update existing delivery
               await purchaseModel.updateDelivery(Number(existingDelivery.id), payload);
@@ -903,6 +1025,26 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     if (!purchaseId || !Array.isArray(assets) || assets.length === 0) {
       return res.status(400).json({ data: null, message: 'Invalid payload: purchase_id and non-empty assets[] are required', status: 'error' });
     }
+
+    // Check for duplicate register_numbers in assets.assetdata
+    const duplicateRegisterNumbers: string[] = [];
+    for (const asset of assets) {
+      if (asset.register_number) {
+        const dupCheck = await purchaseModel.checkRegisterNumberExists(asset.register_number);
+        if (dupCheck.exists) {
+          duplicateRegisterNumbers.push(asset.register_number);
+        }
+      }
+    }
+
+    if (duplicateRegisterNumbers.length > 0) {
+      return res.status(409).json({
+        data: { duplicate_register_numbers: duplicateRegisterNumbers },
+        message: `Register numbers already exist in assets: ${duplicateRegisterNumbers.join(', ')}`,
+        status: 'error'
+      });
+    }
+
     const ids = await purchaseModel.createPurchaseAssetRegistryBatch(purchaseId, request_id, assets, created_by || null);
 
     // If the registry batch did not create/return ids for all provided assets, abort further processing.
@@ -920,6 +1062,19 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       console.error('registerPurchaseAssetsBatch: create master assets failed', e);
       // If creating master assets failed, we should not proceed to mark handover or send notifications.
       return res.status(500).json({ data: null, message: 'Failed to create master asset records', status: 'error' });
+    }
+
+    // Sync model_id from purchase_asset_registry to assets.assetdata for all created registry entries
+    try {
+      const registryEntries = await purchaseModel.getPurchaseAssetRegistryByPrId(purchaseId);
+      for (const entry of registryEntries) {
+        if (entry.model_id) {
+          await purchaseModel.updateAssetDataModelId(purchaseId, entry.model_id);
+        }
+      }
+    } catch (e) {
+      console.error('createPurchaseAssetsRegistry: sync model_id to assetdata failed', e);
+      // Non-blocking error: continue with notification
     }
 
     // Update purchase handover fields
@@ -1061,6 +1216,66 @@ export const getPurchaseAssetRegistryByPrId = async (req: Request, res: Response
     return res.json({ data: rows, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
     return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve registry', status: 'error' });
+  }
+};
+
+// PURCHASE ASSET REGISTRY — update
+export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) => {
+  try {
+    const registryId = Number(req.params.id);
+    if (!registryId) {
+      return res.status(400).json({ data: null, message: 'Registry ID is required', status: 'error' });
+    }
+
+    const { brand_id, category_id, classification, costcenter_id, description, item_condition, location_id, model, model_id, register_number, type_id, warranty_period } = req.body || {};
+
+    const updateData: any = {};
+    if (brand_id !== undefined) updateData.brand_id = brand_id ? Number(brand_id) : null;
+    if (category_id !== undefined) updateData.category_id = category_id ? Number(category_id) : null;
+    if (classification !== undefined) updateData.classification = classification;
+    if (costcenter_id !== undefined) updateData.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
+    if (description !== undefined) updateData.description = description;
+    if (item_condition !== undefined) updateData.item_condition = item_condition;
+    if (location_id !== undefined) updateData.location_id = location_id ? Number(location_id) : null;
+    if (model !== undefined) updateData.model = model;
+    if (register_number !== undefined) updateData.register_number = register_number;
+    if (type_id !== undefined) updateData.type_id = type_id ? Number(type_id) : null;
+    if (warranty_period !== undefined) updateData.warranty_period = warranty_period ? Number(warranty_period) : null;
+
+    // Handle model_id: direct value or lookup from model name
+    let resolvedModelId: number | null = null;
+    if (model_id !== undefined) {
+      // Direct model_id provided from frontend
+      resolvedModelId = model_id ? Number(model_id) : null;
+      updateData.model_id = resolvedModelId;
+    } else if (model !== undefined && model && model.trim() !== '') {
+      // Lookup model_id from model name using model layer
+      resolvedModelId = await purchaseModel.getModelIdByName(model);
+      updateData.model_id = resolvedModelId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ data: null, message: 'No fields to update', status: 'error' });
+    }
+
+    // Update the registry record with all fields including model_id
+    await purchaseModel.updatePurchaseAssetRegistry(registryId, updateData);
+
+    // Also update the corresponding assetdata record with new model_id
+    if (resolvedModelId !== null || model_id !== undefined) {
+      const registry = await purchaseModel.getPurchaseAssetRegistry();
+      const registryEntry = (registry || []).find((r: any) => r.id === registryId);
+
+      if (registryEntry && registryEntry.purchase_id) {
+        const purchaseId = registryEntry.purchase_id;
+        // Update assetdata using model layer
+        await purchaseModel.updateAssetDataModelId(purchaseId, resolvedModelId);
+      }
+    }
+
+    return res.json({ data: null, message: 'Purchase asset registry updated successfully', status: 'success' });
+  } catch (error) {
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update registry', status: 'error' });
   }
 };
 
@@ -1506,6 +1721,414 @@ export const deleteSupplier = async (req: Request, res: Response) => {
     res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to delete supplier',
+      status: 'error'
+    });
+  }
+};
+
+/* ======= MATCH MODELS - For Frontend Input ======= */
+export const matchModels = async (req: Request, res: Response) => {
+  try {
+    const { model_name } = req.body || {};
+
+    if (!model_name || typeof model_name !== 'string' || model_name.trim() === '') {
+      return res.status(400).json({
+        data: null,
+        message: 'model_name is required and must be a non-empty string',
+        status: 'error'
+      });
+    }
+
+    // Trim the input model name and split into words (limit to 3 words)
+    const trimmedModelName = model_name.trim();
+    const words = trimmedModelName.split(/\s+/).slice(0, 3).filter(w => w.length > 0);
+
+    if (words.length === 0) {
+      return res.status(400).json({
+        data: null,
+        message: 'model_name must contain at least one word',
+        status: 'error'
+      });
+    }
+
+    // Build LIKE queries for each word to find matching models
+    // Normalize by removing special characters (dashes, etc) from both search words and model names
+    const matchesMap = new Map<number, { id: number; name: string; matchedWords: string[] }>();
+
+    for (const word of words) {
+      const [modelRows] = await pool.query(
+        `SELECT id, name FROM assets.models 
+         WHERE name IS NOT NULL AND name != '' 
+         AND REPLACE(REPLACE(REPLACE(UPPER(name), '-', ''), ' ', ''), '_', '') LIKE CONCAT('%', REPLACE(REPLACE(REPLACE(UPPER(?), '-', ''), ' ', ''), '_', ''), '%')
+         ORDER BY name ASC`,
+        [word]
+      );
+      
+      const models = (modelRows as any[]) || [];
+      for (const model of models) {
+        if (!matchesMap.has(model.id)) {
+          matchesMap.set(model.id, {
+            id: model.id,
+            name: model.name,
+            matchedWords: [word]
+          });
+        } else {
+          // Add word to matched words if not already present
+          const existing = matchesMap.get(model.id)!;
+          if (!existing.matchedWords.includes(word)) {
+            existing.matchedWords.push(word);
+          }
+        }
+      }
+    }
+
+    // Convert to array and sort by:
+    // 1. Number of matched words (descending)
+    // 2. Model name (ascending)
+    const matches = Array.from(matchesMap.values()).sort((a, b) => {
+      if (b.matchedWords.length !== a.matchedWords.length) {
+        return b.matchedWords.length - a.matchedWords.length;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    // Limit to top 15 results
+    const topMatches = matches.slice(0, 15).map(m => ({
+      id: m.id,
+      name: m.name,
+      matched_words: m.matchedWords
+    }));
+
+    return res.json({
+      data: {
+        input_model: trimmedModelName,
+        search_words: words,
+        total_matches: topMatches.length,
+        matches: topMatches
+      },
+      message: topMatches.length > 0 ? `Found ${topMatches.length} matching models` : 'No matching models found',
+      status: 'success'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      message: error instanceof Error ? error.message : 'Failed to match models',
+      status: 'error'
+    });
+  }
+};
+
+/* ======= PURCHASE REGISTRY MODEL CHECKER ======= */
+/* ======= HELPER: Levenshtein Distance for String Similarity ======= */
+const levenshteinDistance = (str1: string, str2: string): number => {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const dp: number[][] = Array(len1 + 1).fill(null).map(() => Array(len2 + 1).fill(0));
+
+  for (let i = 0; i <= len1; i++) dp[i][0] = i;
+  for (let j = 0; j <= len2; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[len1][len2];
+};
+
+const calculateSimilarity = (str1: string, str2: string): number => {
+  const maxLen = Math.max(str1.length, str2.length);
+  if (maxLen === 0) return 100;
+  const distance = levenshteinDistance(str1.toUpperCase(), str2.toUpperCase());
+  return ((maxLen - distance) / maxLen) * 100;
+};
+
+/* ======= PURCHASE REGISTRY MODEL CHECKER ======= */
+export const checkRegistryModels = async (req: Request, res: Response) => {
+  try {
+    // Get all registry entries with purchase_id and model
+    const [registryRows] = await pool2.query(
+      `SELECT purchase_id, model FROM purchases2.purchase_asset_registry WHERE model IS NOT NULL AND model != '' ORDER BY purchase_id, model`
+    );
+    const registryEntries = (registryRows as any[]) || [];
+
+    // Get all available models with their IDs
+    const [modelRows] = await pool.query(
+      `SELECT id, name FROM assets.models WHERE name IS NOT NULL AND name != ''`
+    );
+    const availableModels = new Map((modelRows as any[]).map((m: any) => [m.name, m.id]));
+    const availableModelsList = Array.from(availableModels.keys());
+
+    // Get all registered assets in assetdata that have purchase_id and model_id
+    const [assetDataRows] = await pool.query(
+      `SELECT purchase_id, model_id FROM assets.assetdata WHERE purchase_id IS NOT NULL AND model_id IS NOT NULL`
+    );
+
+    // Build a set of registered (purchase_id, model_id) combinations
+    const registeredAssets = new Set<string>();
+    for (const asset of (assetDataRows as any[])) {
+      const key = `${asset.purchase_id}:${asset.model_id}`;
+      registeredAssets.add(key);
+    }
+
+    // Find unregistered models (registry entries without corresponding assetdata records)
+    const unregisteredModels: Array<{ purchase_id: number; model: string; model_id?: number | null; matches_90?: Array<{ id: number; name: string; similarity: number }> }> = [];
+    const registeredCount = registryEntries.filter((entry: any) => {
+      const purchaseId = entry.purchase_id;
+      const modelName = entry.model;
+      const modelId = availableModels.get(modelName) || null;
+
+      const registryKey = `${purchaseId}:${modelId}`;
+      const isRegistered = modelId && registeredAssets.has(registryKey);
+
+      if (!isRegistered) {
+        // Find 90%+ matches for this unregistered model
+        const highMatchesList: Array<{ id: number; name: string; similarity: number }> = [];
+        for (const availableModel of availableModelsList) {
+          const similarity = calculateSimilarity(modelName, availableModel);
+          if (similarity >= 90) {
+            const mid = availableModels.get(availableModel);
+            if (mid) {
+              highMatchesList.push({
+                id: mid,
+                name: availableModel,
+                similarity: Math.round(similarity)
+              });
+            }
+          }
+        }
+
+        // Sort by similarity (highest first) and limit to top 5
+        highMatchesList.sort((a, b) => b.similarity - a.similarity);
+
+        unregisteredModels.push({
+          purchase_id: purchaseId,
+          model: modelName,
+          model_id: modelId,
+          matches_90: highMatchesList.length > 0 ? highMatchesList.slice(0, 5) : undefined
+        });
+      }
+
+      return isRegistered;
+    }).length;
+
+    // Find similar models for unregistered ones
+    const almostMatches: Array<{
+      purchase_id: number;
+      model: string;
+      model_id?: number | null;
+      matches: Array<{ id: number; name: string; similarity: number }>
+    }> = [];
+    const SIMILARITY_THRESHOLD = 80; // 80% similarity threshold
+
+    for (const unreg of unregisteredModels) {
+      const similarMatches: Array<{ id: number; name: string; similarity: number }> = [];
+
+      for (const availableModel of availableModelsList) {
+        const similarity = calculateSimilarity(unreg.model, availableModel);
+        if (similarity >= SIMILARITY_THRESHOLD) {
+          const modelId = availableModels.get(availableModel);
+          if (modelId) {
+            similarMatches.push({
+              id: modelId,
+              name: availableModel,
+              similarity: Math.round(similarity)
+            });
+          }
+        }
+      }
+
+      // Sort by similarity (highest first)
+      similarMatches.sort((a, b) => b.similarity - a.similarity);
+
+      if (similarMatches.length > 0) {
+        almostMatches.push({
+          purchase_id: unreg.purchase_id,
+          model: unreg.model,
+          model_id: unreg.model_id,
+          matches: similarMatches.slice(0, 10) // Limit to top 10 matches
+        });
+      }
+    }
+
+    const report = {
+      checked_at: new Date().toISOString(),
+      total_registry_entries: registryEntries.length,
+      total_registered: registeredCount,
+      total_unregistered: unregisteredModels.length,
+      unregistered_models: unregisteredModels.length > 0
+        ? unregisteredModels.map(m => ({
+          purchase_id: m.purchase_id,
+          model: m.model,
+          model_id: m.model_id,
+          matches_90: m.matches_90 && m.matches_90.length > 0 ? m.matches_90 : undefined
+        }))
+        : [],
+      almost_matches: almostMatches.length > 0 ? almostMatches : null
+    };
+
+    // Write report to log file
+    const logDir = path.join(process.cwd(), 'src', 'p.purchase');
+    const logFilePath = path.join(logDir, 'purchase_registry_model_report.log');
+
+    const almostMatchesSection = almostMatches.length > 0
+      ? `\nAlmost Matches (Similar Models Found - ${SIMILARITY_THRESHOLD}% similarity threshold):\n${almostMatches.map((item, i) =>
+        `${i + 1}. Purchase ID: ${item.purchase_id}, Model: "${item.model}" (model_id: ${item.model_id || 'null'})\n   Suggestions: ${item.matches.map((m: any) => `${m.name} (ID: ${m.id}, ${m.similarity}%)`).join(', ')}`
+      ).join('\n')}\n`
+      : '\nAlmost Matches: None\n';
+
+    const unregisteredSection = unregisteredModels.length > 0
+      ? unregisteredModels.map((m, i) => {
+        const baseInfo = `${i + 1}. Purchase ID: ${m.purchase_id}, Model: "${m.model}" (model_id: ${m.model_id || 'null'})`;
+        const matchInfo = m.matches_90 && m.matches_90.length > 0
+          ? `\n   90%+ Matches: ${m.matches_90.map((match: any) => `${match.name} (ID: ${match.id}, ${match.similarity}%)`).join(', ')}`
+          : '';
+        return baseInfo + matchInfo;
+      }).join('\n')
+      : 'None';
+
+    const logContent = `
+=== Purchase Registry Model Check Report ===
+Checked At: ${report.checked_at}
+Total Registry Entries: ${report.total_registry_entries}
+Total Registered (in assetdata): ${report.total_registered}
+Total Unregistered: ${report.total_unregistered}
+
+Unregistered Models:
+${unregisteredSection}
+${almostMatchesSection}
+=====================================\n`;
+
+    await fsPromises.appendFile(logFilePath, logContent, 'utf-8');
+
+    // Generate Excel file
+    try {
+      const workbook = new ExcelJS.Workbook();
+
+      // Sheet 1: Summary Report
+      const summarySheet = workbook.addWorksheet('Summary Report');
+      summarySheet.columns = [
+        { header: 'Item', key: 'item', width: 30 },
+        { header: 'Value', key: 'value', width: 20 }
+      ];
+
+      const summaryData = [
+        { item: 'Check Date & Time', value: report.checked_at },
+        { item: 'Total Registry Entries', value: report.total_registry_entries },
+        { item: 'Total Registered', value: report.total_registered },
+        { item: 'Total Unregistered', value: report.total_unregistered },
+        { item: 'Registration Rate (%)', value: ((report.total_registered / report.total_registry_entries) * 100).toFixed(2) }
+      ];
+
+      summarySheet.addRows(summaryData);
+
+      // Style summary header
+      summarySheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4472C4' } };
+      summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFF' } };
+
+      // Sheet 2: Unregistered Models with 90%+ Matches
+      const unregSheet = workbook.addWorksheet('Unregistered Models');
+      unregSheet.columns = [
+        { header: '#', key: 'index', width: 5 },
+        { header: 'Purchase ID', key: 'purchase_id', width: 12 },
+        { header: 'Model Name', key: 'model', width: 40 },
+        { header: 'Model ID', key: 'model_id', width: 12 },
+        { header: '90%+ Match Name', key: 'match_name', width: 40 },
+        { header: 'Match ID', key: 'match_id', width: 12 },
+        { header: 'Match %', key: 'match_similarity', width: 10 }
+      ];
+
+      let rowIndex = 1;
+      for (const unreg of unregisteredModels) {
+        if (!unreg.matches_90 || unreg.matches_90.length === 0) {
+          unregSheet.addRow({
+            index: rowIndex,
+            purchase_id: unreg.purchase_id,
+            model: unreg.model,
+            model_id: unreg.model_id || '-',
+            match_name: '-',
+            match_id: '-',
+            match_similarity: '-'
+          });
+          rowIndex++;
+        } else {
+          // Add first match on same row as model
+          for (let i = 0; i < unreg.matches_90.length; i++) {
+            const match = unreg.matches_90[i];
+            unregSheet.addRow({
+              index: i === 0 ? rowIndex : '',
+              purchase_id: i === 0 ? unreg.purchase_id : '',
+              model: i === 0 ? unreg.model : '',
+              model_id: i === 0 ? (unreg.model_id || '-') : '',
+              match_name: match.name,
+              match_id: match.id,
+              match_similarity: match.similarity
+            });
+            if (i === 0) rowIndex++;
+          }
+        }
+      }
+
+      // Style unregistered header
+      unregSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6B6B' } };
+      unregSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFF' } };
+
+      // Sheet 3: Almost Matches (80%+)
+      const almostSheet = workbook.addWorksheet('Almost Matches 80%+');
+      almostSheet.columns = [
+        { header: '#', key: 'index', width: 5 },
+        { header: 'Purchase ID', key: 'purchase_id', width: 12 },
+        { header: 'Unregistered Model', key: 'model', width: 40 },
+        { header: 'Model ID', key: 'model_id', width: 12 },
+        { header: 'Similar Model Name', key: 'match_name', width: 40 },
+        { header: 'Match ID', key: 'match_id', width: 12 },
+        { header: 'Similarity %', key: 'match_similarity', width: 12 }
+      ];
+
+      rowIndex = 1;
+      for (const almost of almostMatches) {
+        for (let i = 0; i < almost.matches.length; i++) {
+          const match = almost.matches[i];
+          almostSheet.addRow({
+            index: i === 0 ? rowIndex : '',
+            purchase_id: i === 0 ? almost.purchase_id : '',
+            model: i === 0 ? almost.model : '',
+            model_id: i === 0 ? (almost.model_id || '-') : '',
+            match_name: match.name,
+            match_id: match.id,
+            match_similarity: match.similarity
+          });
+          if (i === 0) rowIndex++;
+        }
+      }
+
+      // Style almost matches header
+      almostSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC000' } };
+      almostSheet.getRow(1).font = { bold: true, color: { argb: '000000' } };
+
+      // Save Excel file
+      const excelDir = path.join(process.cwd(), 'src', 'p.purchase');
+      const excelFileName = `purchase_registry_model_report_${dayjs(report.checked_at).format('YYYY-MM-DD_HHmmss')}.xlsx`;
+      const excelFilePath = path.join(excelDir, excelFileName);
+
+      await workbook.xlsx.writeFile(excelFilePath);
+    } catch (excelErr) {
+      console.error('Failed to generate Excel report:', excelErr);
+    }
+
+    res.json({
+      data: report,
+      message: 'Registry model check completed successfully',
+      status: 'success'
+    });
+  } catch (error) {
+    res.status(500).json({
+      data: null,
+      message: error instanceof Error ? error.message : 'Failed to check registry models',
       status: 'error'
     });
   }

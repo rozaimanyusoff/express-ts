@@ -2,7 +2,7 @@ import e from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 import * as assetModel from '../p.asset/assetModel';
-import { pool } from '../utils/db';
+import { pool, pool2 } from '../utils/db';
 
 // Database table name
 const dbName = 'purchases2'; // Replace with your actual database name
@@ -394,12 +394,32 @@ export interface PurchaseAssetRegistryRecord {
   item_condition?: null | string;
   location_id?: null | number;
   model?: null | string;
+  model_id?: null | number;
   purchase_id?: null | number;
   register_number?: null | string;
   request_id?: null | number;
   type_id?: null | number;
   warranty_period?: null | number;
 }
+
+// Check if register_number already exists in assets.assetdata
+export const checkRegisterNumberExists = async (registerNumber: string): Promise<{ exists: boolean; assetId?: number }> => {
+  if (!registerNumber || registerNumber.trim() === '') {
+    return { exists: false };
+  }
+  
+  const [rows] = await pool.query(
+    `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
+    [registerNumber.trim()]
+  );
+  
+  const existingRow = Array.isArray(rows) ? (rows as any[])[0] : null;
+  if (existingRow?.id) {
+    return { exists: true, assetId: existingRow.id };
+  }
+  
+  return { exists: false };
+};
 
 export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryRecord): Promise<number> => {
   // Use a transaction to ensure both inserts (registry + join table) are atomic.
@@ -433,10 +453,26 @@ export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryReco
       return existingId;
     }
 
+    // Use provided model_id if available, otherwise lookup model_id from model name
+    let modelId: null | number = rec.model_id && rec.model_id !== null ? Number(rec.model_id) : null;
+    
+    if (!modelId && rec.model) {
+      // Only lookup if model_id not provided
+      const modelName = rec.model !== undefined && rec.model !== null ? String(rec.model).trim() : '';
+      if (modelName) {
+        const [modelRows] = await conn.query(
+          `SELECT id FROM assets.models WHERE name = ? LIMIT 1`,
+          [modelName]
+        );
+        const modelRow = Array.isArray(modelRows) ? (modelRows as any[])[0] : null;
+        modelId = modelRow?.id || null;
+      }
+    }
+
     const [result] = await conn.query(
       `INSERT INTO ${purchaseAssetRegistryTable}
-      (register_number, classification, type_id, category_id, brand_id, model, warranty_period, costcenter_id, location_id, item_condition, description, request_id, purchase_id, created_at, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      (register_number, classification, type_id, category_id, brand_id, model, model_id, warranty_period, costcenter_id, location_id, item_condition, description, request_id, purchase_id, created_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
       [
         rec.register_number ?? null,
         rec.classification ?? null,
@@ -444,6 +480,7 @@ export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryReco
         rec.category_id ?? null,
         rec.brand_id ?? null,
         rec.model ?? null,
+        modelId ?? null,
         rec.warranty_period ?? null,
         rec.costcenter_id ?? null,
         rec.location_id ?? null,
@@ -512,6 +549,7 @@ export const createPurchaseAssetRegistryBatch = async (
       item_condition: a.item_condition ?? null,
       location_id: a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,
       model: a.model ?? null,
+      model_id: a.model_id !== undefined && a.model_id !== null ? Number(a.model_id) : null,
       purchase_id: purchase_id ?? null,
       register_number: a.register_number ?? null,
       request_id: request_id ?? null,
@@ -647,9 +685,31 @@ export const createMasterAssetsFromRegistryBatch = async (
       if (a.costcenter_id !== undefined && a.costcenter_id !== null) pushCol('costcenter_id', Number(a.costcenter_id));
       if (a.location_id !== undefined && a.location_id !== null) pushCol('location_id', Number(a.location_id));
       if (a.type_id !== undefined && a.type_id !== null) pushCol('type_id', Number(a.type_id));
-  // also store manager_id with same value as type_id when provided
-  if (a.type_id !== undefined && a.type_id !== null) pushCol('manager_id', Number(a.type_id));
+      // also store manager_id with same value as type_id when provided
+      if (a.type_id !== undefined && a.type_id !== null) pushCol('manager_id', Number(a.type_id));
       if (entryCode) pushCol('entry_code', entryCode);
+
+      // Lookup model_id from model name if model provided, or use provided model_id
+      let modelId: null | number = null;
+      
+      // First check if model_id was provided directly
+      if (a.model_id !== undefined && a.model_id !== null) {
+        modelId = Number(a.model_id);
+      } else {
+        // Otherwise lookup from model name
+        const modelName = a.model !== undefined && a.model !== null ? String(a.model).trim() : '';
+        if (modelName) {
+          try {
+            const [modelRows] = await pool.query(
+              `SELECT id FROM assets.models WHERE name = ? LIMIT 1`,
+              [modelName]
+            );
+            const modelRow = Array.isArray(modelRows) ? (modelRows as any[])[0] : null;
+            modelId = modelRow?.id || null;
+          } catch { }
+        }
+      }
+      if (modelId !== null) pushCol('model_id', modelId);
 
       // Defaults: include record_status if schema supports it
       pushCol('record_status', 'active');
@@ -791,5 +851,39 @@ export const deleteDelivery = async (id: number): Promise<void> => {
   if (rr.affectedRows === 0) throw new Error('Delivery record not found');
 };
 
+// Update purchase asset registry record
+export const updatePurchaseAssetRegistry = async (id: number, data: Partial<Omit<PurchaseAssetRegistryRecord, 'created_at' | 'id' | 'purchase_id'>>): Promise<void> => {
+  const keys = Object.keys(data);
+  if (!keys.length) return;
+  const fields = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => (data as any)[k]);
+  await pool.query(`UPDATE ${purchaseAssetRegistryTable} SET ${fields} WHERE id = ?`, [...vals, id]);
+};
 
+// Lookup model ID by model name from assets.models table
+export const getModelIdByName = async (modelName: string): Promise<number | null> => {
+  const [rows] = await pool.query(
+    `SELECT id FROM assets.models WHERE name = ? LIMIT 1`,
+    [modelName]
+  );
+  const modelRows = Array.isArray(rows) ? (rows as any[]) : [];
+  return modelRows.length > 0 ? (modelRows[0] as any).id : null;
+};
+
+// Update assetdata record with new model_id
+export const updateAssetDataModelId = async (purchaseId: number, modelId: number | null): Promise<void> => {
+  if (modelId === null) {
+    // Explicitly set to null
+    await pool.query(
+      `UPDATE assets.assetdata SET model_id = NULL WHERE purchase_id = ?`,
+      [purchaseId]
+    );
+  } else {
+    // Update with new model_id
+    await pool.query(
+      `UPDATE assets.assetdata SET model_id = ? WHERE purchase_id = ? LIMIT 1`,
+      [modelId, purchaseId]
+    );
+  }
+};
 

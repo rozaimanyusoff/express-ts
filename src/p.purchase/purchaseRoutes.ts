@@ -22,12 +22,17 @@ router.post('/suppliers', asyncHandler(purchaseController.createSupplier));
 router.put('/suppliers/:id', asyncHandler(purchaseController.updateSupplier));
 router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier));
 
+// MATCH MODELS - Frontend input to find matching models
+router.post('/match-models', asyncHandler(purchaseController.matchModels));
+
 
 
 
 // PURCHASE ASSET REGISTRY
 router.post('/registry', asyncHandler(purchaseController.createPurchaseAssetsRegistry));
 router.get('/registry/all', asyncHandler(purchaseController.getPurchaseAssetRegistry)); // GET all assets
+router.get('/registry-model-checker', asyncHandler(purchaseController.checkRegistryModels)); // Check registry models against assets.models
+router.put('/registry/:id', asyncHandler(purchaseController.updatePurchaseAssetsRegistry)); // Update registry entry by ID
 router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistryByPrId)); // ?pr_id=123
 
 // GET all purchases with optional filtering
@@ -39,6 +44,7 @@ router.get('/registry', asyncHandler(purchaseController.getPurchaseAssetRegistry
 // - dateField: pr_date|po_date|do_date|inv_date|grn_date (default: pr_date)
 router.get('/:id', asyncHandler(purchaseController.getPurchaseRequestItemById));// GET purchase by ID
 router.get('/summary', asyncHandler(purchaseController.getPurchaseRequestItemSummary));// GET purchase summary
+router.post('/:id/resend-notification', asyncHandler(purchaseController.resendPurchaseNotification)); // POST resend notification for purchase
 router.get('/', asyncHandler(purchaseController.getPurchaseRequestItems));
 // Accept any file fields to support nested delivery uploads like deliveries[0][upload_path]
 router.post('/', purchaseUploader.any(), asyncHandler(purchaseController.createPurchaseRequestItem));
