@@ -490,6 +490,43 @@ export const updateUsersRole = async (userIds: number[], roleId: number): Promis
     }
 };
 
+// Delete a single user and related records
+export const deleteUser = async (userId: number): Promise<void> => {
+    try {
+        // Delete from related tables first (cascade)
+        await pool.query(`DELETE FROM ${userGroupsTable} WHERE user_id = ?`, [userId]);
+        await pool.query(`DELETE FROM ${userProfileTable} WHERE user_id = ?`, [userId]);
+        await pool.query(`DELETE FROM ${userTasksTable} WHERE user_id = ?`, [userId]);
+        
+        // Finally delete the user
+        await pool.query(`DELETE FROM ${usersTable} WHERE id = ?`, [userId]);
+        logger.info(`Deleted user ${userId} and related records`);
+    } catch (error) {
+        logger.error(`Database error in deleteUser: ${error}`);
+        throw error;
+    }
+};
+
+// Delete multiple users and related records
+export const deleteUsers = async (userIds: number[]): Promise<void> => {
+    if (!userIds.length) return;
+    try {
+        const placeholders = userIds.map(() => '?').join(',');
+        
+        // Delete from related tables first (cascade)
+        await pool.query(`DELETE FROM ${userGroupsTable} WHERE user_id IN (${placeholders})`, userIds);
+        await pool.query(`DELETE FROM ${userProfileTable} WHERE user_id IN (${placeholders})`, userIds);
+        await pool.query(`DELETE FROM ${userTasksTable} WHERE user_id IN (${placeholders})`, userIds);
+        
+        // Finally delete the users
+        await pool.query(`DELETE FROM ${usersTable} WHERE id IN (${placeholders})`, userIds);
+        logger.info(`Deleted ${userIds.length} users and their related records`);
+    } catch (error) {
+        logger.error(`Database error in deleteUsers: ${error}`);
+        throw error;
+    }
+};
+
 // Get admin user IDs
 export const getAdminUserIds = async (): Promise<number[]> => {
     const [rows]: any[] = await pool.query(`SELECT id FROM ${usersTable} WHERE role = 1`);

@@ -315,16 +315,33 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         // 4. Delete from pending_users
         await pendingUserModel.deletePendingUser(pendingUser.id!);
 
-        // 5. Assign group
-        await adminModel.assignGroupByUserId(newUserId, 5);
+        // 5. Assign group (non-blocking - don't fail activation if group assignment fails)
+        try {
+            await adminModel.assignGroupByUserId(newUserId, 5);
+        } catch (groupError: any) {
+            logger.warn('Warning: Could not assign group to user:', { newUserId, error: groupError.message });
+            // Continue with activation - group assignment is not critical
+        }
+
         // Fetch group names instead of just IDs
-        const groupIds = await adminModel.getGroupsByUserId(newUserId);
-        const groupNames = await Promise.all(
-            groupIds.map(async (groupId: number) => {
-                const group = await adminModel.getGroupById(groupId);
-                return group ? group.name : null;
-            })
-        );
+        let groupNames: string[] = [];
+        try {
+            const groupIds = await adminModel.getGroupsByUserId(newUserId);
+            groupNames = (await Promise.all(
+                groupIds.map(async (groupId: number) => {
+                    try {
+                        const group = await adminModel.getGroupById(groupId);
+                        return group ? group.name : null;
+                    } catch (err: any) {
+                        logger.warn(`Could not fetch group ${groupId}:`, err.message);
+                        return null;
+                    }
+                })
+            )).filter(Boolean) as string[];
+        } catch (groupFetchError: any) {
+            logger.warn('Warning: Could not fetch user groups:', groupFetchError.message);
+            // Continue with activation - group names not critical for email
+        }
 
         // 6. Send activation email
         const mailOptions = {
@@ -333,7 +350,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                 username,
                 email,
                 contact,
-                groupNames.filter(Boolean).join(', '),
+                groupNames.join(', '),
                 `${sanitizedFrontendUrl}/auth/login`
             ),
             subject: 'Account Activation',
@@ -343,22 +360,32 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
         } catch (mailError) {
             logger.error('Activation email send error:', mailError);
-            await logModel.logAuthActivity(newUserId, 'activate', 'fail', { contact, email, reason: 'email_failed' }, req);
-            return res.status(500).json({ code: 500, message: 'Failed to send activation email. Activation aborted.', status: 'error' });
+            // Don't fail activation if email fails - user is already created
+            logger.warn('Activation email could not be sent, but user account is activated');
         }
 
         // Notify all admins about the new user activation
-        await notificationModel.createAdminNotification({
-            message: `User ${username} (${email}) has activated their account.`,
-            type: 'activation'
-        });
+        try {
+            await notificationModel.createAdminNotification({
+                message: `User ${username} (${email}) has activated their account.`,
+                type: 'activation'
+            });
+        } catch (notifError: any) {
+            logger.warn('Failed to create admin notification:', notifError);
+            // Don't fail activation if notification fails
+        }
 
         await logModel.logAuthActivity(newUserId, 'activate', 'success', {}, req);
         return res.status(200).json({ message: 'Account activated successfully.', status: 'success' });
-    } catch (error) {
-        logger.error('Activation error:', error);
-        await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
-        return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
+    } catch (error: any) {
+        logger.error('Activation error:', { error: error.message, stack: error.stack });
+        await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error.message), reason: 'exception' }, req);
+        return res.status(500).json({ 
+            code: 500, 
+            message: 'Internal server error during activation',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            status: 'error' 
+        });
     }
 }
 

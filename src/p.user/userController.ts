@@ -216,6 +216,71 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
   }
 };
 
+// Delete a single user or multiple users (comma-separated IDs)
+export const deleteUser = async (req: Request, res: Response): Promise<Response> => {
+  const { id } = req.params;
+
+  try {
+    // Support both single and comma-separated IDs
+    const idArray = String(id).split(',').map(i => Number(i.trim())).filter(i => !isNaN(i));
+
+    if (idArray.length === 0) {
+      return res.status(400).json({ message: 'Invalid user ID(s)', status: 'error' });
+    }
+
+    // For single ID, check existence first
+    if (idArray.length === 1) {
+      const user = await userModel.getUserById(idArray[0]);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found', status: 'error' });
+      }
+      await userModel.deleteUser(idArray[0]);
+      return res.status(200).json({ message: 'User deleted successfully', status: 'success' });
+    }
+
+    // For multiple IDs, delete in bulk
+    await userModel.deleteUsers(idArray);
+    return res.status(200).json({
+      data: { deleted_count: idArray.length },
+      message: `${idArray.length} user(s) deleted successfully`,
+      status: 'success'
+    });
+  } catch (error: any) {
+    console.error('Error deleting user(s):', error);
+    return res.status(500).json({ error: error.message, message: 'Error deleting user(s)', status: 'error' });
+  }
+};
+
+// Delete multiple users
+export const deleteUsers = async (req: Request, res: Response): Promise<Response> => {
+  const { userIds } = req.body;
+
+  try {
+    // Validate input
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: 'userIds must be a non-empty array', status: 'error' });
+    }
+
+    // Validate all IDs are numbers
+    const validIds = userIds.map(id => Number(id)).filter(id => !isNaN(id));
+    if (validIds.length !== userIds.length) {
+      return res.status(400).json({ message: 'All userIds must be valid numbers', status: 'error' });
+    }
+
+    // Delete the users
+    await userModel.deleteUsers(validIds);
+
+    return res.status(200).json({
+      data: { deleted_count: validIds.length },
+      message: `${validIds.length} user(s) deleted successfully`,
+      status: 'success'
+    });
+  } catch (error: any) {
+    console.error('Error deleting users:', error);
+    return res.status(500).json({ error: error.message, message: 'Error deleting users', status: 'error' });
+  }
+};
+
 // Assign user to groups directly
 export const assignUserToGroups1 = async (
   req: AssignGroupsRequest,
