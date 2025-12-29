@@ -2007,7 +2007,12 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
-	const assetMap = new Map(assets.map((asset: any) => [asset.vehicle_id, asset]));
+	const assetMap = new Map();
+	for (const a of assets) { 
+		if (a.id) assetMap.set(a.id, a); 
+		if (a.asset_id) assetMap.set(a.asset_id, a); 
+		if (a.vehicle_id) assetMap.set(a.vehicle_id, a);
+	}
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
 	const fleetCards = await billingModel.getFleetCards();
 	const fuelVendors = await billingModel.getFuelVendor();
@@ -2053,6 +2058,63 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 		});
 
 	res.json({ data, message: 'Fleet cards by fuel vendor retrieved successfully', status: 'success' });
+};
+
+// Get fleet card by card number
+export const getFleetCardByCardNo = async (req: Request, res: Response) => {
+	const card_no = String(req.params.card_no).trim();
+	if (!card_no) {
+		return res.status(400).json({ message: 'card_no is required', status: 'error' });
+	}
+
+	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
+	const costcenters = await assetsModel.getCostcenters() as any[];
+	const assetMap = new Map();
+	for (const a of assets) { 
+		if (a.id) assetMap.set(a.id, a); 
+		if (a.asset_id) assetMap.set(a.asset_id, a); 
+		if (a.vehicle_id) assetMap.set(a.vehicle_id, a);
+	}
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
+	const fleetCards = await billingModel.getFleetCards();
+	const fuelVendors = await billingModel.getFuelVendor();
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+
+	const data = fleetCards
+		.filter((card: any) => card.card_no === card_no)
+		.map((card: any) => {
+			let asset = null;
+			if (card.asset_id && assetMap.has(card.asset_id)) {
+				const a = assetMap.get(card.asset_id);
+				asset = {
+					costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
+						? costcenterMap.get(a.costcenter_id)
+						: null,
+					fuel_type: a.fuel_type,
+					id: a.asset_id,
+					old_id: a.vehicle_id,
+					purpose: a.purpose || null,
+					register_number: a.register_number
+				};
+			}
+
+			let vendor = {};
+			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+				const fv = fuelVendorMap.get(card.fuel_id);
+				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
+			}
+
+			return {
+				asset,
+				card_no: card.card_no,
+				id: card.id,
+				status: card.status,
+				vendor
+			};
+		});
+
+	res.json({ data, message: 'Fleet card by card number retrieved successfully', status: 'success' });
 };
 
 // Return all assets populated with their assigned fleet cards (uses fleet_asset join table)
