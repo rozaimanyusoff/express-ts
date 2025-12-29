@@ -152,6 +152,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
                 email: normalizedEmail,
                 fname: name.trim(),
                 ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+                method: 'self-register',
                 status: 2, // auto-approved state
                 user_agent: req.headers['user-agent'] || null,
                 user_type: 1,
@@ -189,6 +190,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
                 email: normalizedEmail,
                 fname: name.trim(),
                 ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
+                method: 'self-register',
                 status: 1, // 1 = awaiting admin approval
                 user_agent: req.headers['user-agent'] || null,
                 user_type: Number(userType),
@@ -988,6 +990,7 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
                 email: normalizedEmail,
                 fname: name,
                 ip: null,
+                method: 'invitation',
                 status: 2, // approved
                 user_agent: null,
                 user_type: userType,

@@ -11,6 +11,7 @@ export interface PendingUser {
   fname: string;
   id?: number;
   ip?: null | string;
+  method?: 'invitation' | 'self-register';
   status: number;
   user_agent?: null | string;
   user_type: number;
@@ -36,7 +37,7 @@ export const getAllPendingUsers = async (): Promise<any[]> => {
 export const createPendingUser = async (user: PendingUser): Promise<ResultSetHeader> => {
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO ${PENDING_USERS_TABLE} (fname, username, email, contact, user_type, status, activation_code, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${PENDING_USERS_TABLE} (fname, username, email, contact, user_type, status, activation_code, ip, user_agent, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.fname,
         user.username ?? null,
@@ -46,7 +47,8 @@ export const createPendingUser = async (user: PendingUser): Promise<ResultSetHea
         user.status,
         user.activation_code ?? null,
         user.ip ?? null,
-        user.user_agent ?? null
+        user.user_agent ?? null,
+        user.method ?? null
       ]
     );
     return result;
