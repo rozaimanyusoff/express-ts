@@ -753,6 +753,48 @@ export const updateFleetCardFromBilling = async (data: any): Promise<void> => {
   );
 }
 
+// Get fleet card by card_id with asset_id and costcenter_id
+export const getFleetCardForAssetValidation = async (cardId: number): Promise<any | null> => {
+  const [rows] = await pool2.query(
+    `SELECT id, asset_id, costcenter_id FROM ${fleetCardTable} WHERE id = ?`,
+    [cardId]
+  );
+  const fleetCard = (rows as any[])[0];
+  return fleetCard || null;
+};
+
+// Log fleet card asset change to fleet_history
+export const logFleetCardAssetChange = async (data: {
+  card_id: number;
+  old_asset_id: number | null;
+  new_asset_id: number | null;
+  old_costcenter_id: number | null;
+  new_costcenter_id: number | null;
+  stmt_date: string;
+  stmt_id: number;
+}): Promise<void> => {
+  const { card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, stmt_date, stmt_id } = data;
+  
+  await pool2.query(
+    `INSERT INTO ${fleetCardHistoryTable} 
+    (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
+    VALUES (?, ?, ?, ?, ?, NOW())`,
+    [card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id]
+  );
+};
+
+// Update fleet card asset_id and costcenter_id
+export const updateFleetCardAssetForBilling = async (
+  cardId: number,
+  newAssetId: number | null,
+  newCostcenterId: number | null
+): Promise<void> => {
+  await pool2.query(
+    `UPDATE ${fleetCardTable} SET asset_id = ?, costcenter_id = ? WHERE id = ?`,
+    [newAssetId, newCostcenterId, cardId]
+  );
+};
+
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 export interface TempVehicleRecord {

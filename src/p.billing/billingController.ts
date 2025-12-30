@@ -1186,6 +1186,47 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 		// Insert child detail records using createFuelVehicleAmount
 		if (Array.isArray(payload.details)) {
 			for (const detail of payload.details) {
+				// Check fleet card asset_id and costcenter_id for sync
+				if (detail.card_id) {
+					try {
+						const fleetCard = await billingModel.getFleetCardForAssetValidation(detail.card_id);
+						if (fleetCard) {
+							// Convert to numbers for proper comparison (handle null/undefined)
+							const currentAssetId = fleetCard.asset_id ? Number(fleetCard.asset_id) : null;
+							const newAssetId = detail.asset_id ? Number(detail.asset_id) : null;
+							const currentCostcenterId = fleetCard.costcenter_id ? Number(fleetCard.costcenter_id) : null;
+							const newCostcenterId = detail.costcenter_id ? Number(detail.costcenter_id) : null;
+
+							const assetIdChanged = currentAssetId !== newAssetId;
+							const costcenterIdChanged = currentCostcenterId !== newCostcenterId;
+
+							// If either asset_id or costcenter_id differs, update and log
+							if (assetIdChanged || costcenterIdChanged) {
+								// Log the change to fleet_history
+								await billingModel.logFleetCardAssetChange({
+									card_id: detail.card_id,
+									old_asset_id: currentAssetId,
+									new_asset_id: newAssetId,
+									old_costcenter_id: currentCostcenterId,
+									new_costcenter_id: newCostcenterId,
+									stmt_date: detail.stmt_date,
+									stmt_id: insertId
+								});
+
+								// Update fleet2 table
+								await billingModel.updateFleetCardAssetForBilling(
+									detail.card_id,
+									newAssetId,
+									newCostcenterId
+								);
+							}
+						}
+					} catch (fleetError) {
+						// Log error but continue processing
+						logger.error(`Error updating fleet card ${detail.card_id} during fuel billing creation:`, fleetError);
+					}
+				}
+
 				await billingModel.createFuelVehicleAmount({
 					amount: detail.amount,
 					asset_id: detail.asset_id,
@@ -1236,6 +1277,47 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 			}
 			// Now update existing and insert new
 			for (const detail of details) {
+				// Check fleet card asset_id and costcenter_id for sync
+				if (detail.card_id) {
+					try {
+						const fleetCard = await billingModel.getFleetCardForAssetValidation(detail.card_id);
+						if (fleetCard) {
+							// Convert to numbers for proper comparison (handle null/undefined)
+							const currentAssetId = fleetCard.asset_id ? Number(fleetCard.asset_id) : null;
+							const newAssetId = detail.asset_id ? Number(detail.asset_id) : null;
+							const currentCostcenterId = fleetCard.costcenter_id ? Number(fleetCard.costcenter_id) : null;
+							const newCostcenterId = detail.costcenter_id ? Number(detail.costcenter_id) : null;
+
+							const assetIdChanged = currentAssetId !== newAssetId;
+							const costcenterIdChanged = currentCostcenterId !== newCostcenterId;
+
+							// If either asset_id or costcenter_id differs, update and log
+							if (assetIdChanged || costcenterIdChanged) {
+								// Log the change to fleet_history
+								await billingModel.logFleetCardAssetChange({
+									card_id: detail.card_id,
+									old_asset_id: currentAssetId,
+									new_asset_id: newAssetId,
+									old_costcenter_id: currentCostcenterId,
+									new_costcenter_id: newCostcenterId,
+									stmt_date: detail.stmt_date,
+									stmt_id: id
+								});
+
+								// Update fleet2 table
+								await billingModel.updateFleetCardAssetForBilling(
+									detail.card_id,
+									newAssetId,
+									newCostcenterId
+								);
+							}
+						}
+					} catch (fleetError) {
+						// Log error but continue processing
+						logger.error(`Error updating fleet card ${detail.card_id} during fuel billing update:`, fleetError);
+					}
+				}
+
 				if (detail.s_id) {
 					// Update existing row
 					await billingModel.updateFuelVehicleAmount(detail.s_id, {
