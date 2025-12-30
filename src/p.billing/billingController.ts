@@ -2007,13 +2007,13 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
+	const locations = await assetsModel.getLocations() as any[];
 	const assetMap = new Map();
 	for (const a of assets) { 
 		if (a.id) assetMap.set(a.id, a); 
 		if (a.asset_id) assetMap.set(a.asset_id, a); 
-		if (a.vehicle_id) assetMap.set(a.vehicle_id, a);
 	}
-	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const fleetCards = await billingModel.getFleetCards();
 	const fuelVendors = await billingModel.getFuelVendor();
 	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
@@ -2023,16 +2023,21 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 		.map((card: any) => {
 			let asset = null;
 			if (card.asset_id && assetMap.has(card.asset_id)) {
-				const a = assetMap.get(card.asset_id);
+				const assetObj = assetMap.get(card.asset_id);
 				asset = {
-					costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
-						? costcenterMap.get(a.costcenter_id)
+					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
+						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
-					fuel_type: a.fuel_type,
-					id: a.asset_id,
-					old_id: a.vehicle_id,
-					purpose: a.purpose || null,
-					register_number: a.register_number
+					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					id: card.asset_id,
+					locations: (() => {
+						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
+						if (!locId) return null;
+						const found = locations.find((loc: any) => loc.id === locId);
+						return found ? { code: found.code, id: locId } : null;
+					})(),
+					purpose: assetObj.purpose || null,
+					register_number: assetObj.register_number || assetObj.vehicle_regno,
 				};
 			}
 
@@ -2040,19 +2045,19 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
 				const fv = fuelVendorMap.get(card.fuel_id);
 				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
-				vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, name: name };
 			}
 
 			return {
-				//expiry: card.expiry_date,
 				asset,
 				card_no: card.card_no,
+				expiry: card.expiry_date,
 				id: card.id,
-				//reg_date: card.reg_date,
-				//category: card.category,
-				//remarks: card.remarks,
-				//pin_no: card.pin,
+				pin_no: card.pin,
+				reg_date: card.reg_date,
+				remarks: card.remarks,
 				status: card.status,
+				vehicle_id: card.vehicle_id,
 				vendor
 			};
 		});
@@ -2069,13 +2074,13 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
 	const costcenters = await assetsModel.getCostcenters() as any[];
+	const locations = await assetsModel.getLocations() as any[];
 	const assetMap = new Map();
 	for (const a of assets) { 
 		if (a.id) assetMap.set(a.id, a); 
 		if (a.asset_id) assetMap.set(a.asset_id, a); 
-		if (a.vehicle_id) assetMap.set(a.vehicle_id, a);
 	}
-	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, { id: cc.id, name: cc.name }]));
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const fleetCards = await billingModel.getFleetCards();
 	const fuelVendors = await billingModel.getFuelVendor();
 	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
@@ -2085,16 +2090,21 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 		.map((card: any) => {
 			let asset = null;
 			if (card.asset_id && assetMap.has(card.asset_id)) {
-				const a = assetMap.get(card.asset_id);
+				const assetObj = assetMap.get(card.asset_id);
 				asset = {
-					costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id)
-						? costcenterMap.get(a.costcenter_id)
+					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
+						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
-					fuel_type: a.fuel_type,
-					id: a.asset_id,
-					old_id: a.vehicle_id,
-					purpose: a.purpose || null,
-					register_number: a.register_number
+					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					id: card.asset_id,
+					locations: (() => {
+						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
+						if (!locId) return null;
+						const found = locations.find((loc: any) => loc.id === locId);
+						return found ? { code: found.code, id: locId } : null;
+					})(),
+					purpose: assetObj.purpose || null,
+					register_number: assetObj.register_number || assetObj.vehicle_regno,
 				};
 			}
 
@@ -2102,14 +2112,19 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
 				const fv = fuelVendorMap.get(card.fuel_id);
 				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
-				vendor = { fuel_id: fv.id ?? fv.fuel_id, fuel_issuer: name };
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, name: name };
 			}
 
 			return {
 				asset,
 				card_no: card.card_no,
+				expiry: card.expiry_date,
 				id: card.id,
+				pin_no: card.pin,
+				reg_date: card.reg_date,
+				remarks: card.remarks,
 				status: card.status,
+				vehicle_id: card.vehicle_id,
 				vendor
 			};
 		});

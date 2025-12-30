@@ -4,7 +4,7 @@ import { pool, pool2 } from '../utils/db';
 
 
 // Database and table declarations
-const dbBillings = 'billings';
+const dbBillings = 'billings_test';
 const dbAssets = 'assets';
 const dbApps = 'applications';
 
