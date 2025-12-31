@@ -472,7 +472,14 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
         // Fetch role details
         const userRole = await adminModel.getRoleById(result.user.role);
-        const roleObj = userRole ? { id: userRole.id, name: userRole.name } : null;
+        const roleObj = userRole ? {
+            create: !!userRole.creates,
+            delete: !!userRole.deletes,
+            id: userRole.id,
+            name: userRole.name,
+            update: !!userRole.updates,
+            view: !!userRole.views
+        } : null;
 
         // Fetch user groups as objects
         const groupIds = await adminModel.getGroupsByUserId(result.user.id);

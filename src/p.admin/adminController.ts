@@ -9,6 +9,7 @@ import {
   createNavigation,
   createRole,
   deleteNavigation,
+  deleteRoles,
   getAllGroups,
   getAllRoles,
   getGroupById,
@@ -17,6 +18,7 @@ import {
   getNavigationByUserId,
   getNavigationPermissions,
   getRoleById,
+  getUsersByRoleIds,
   removeNavigationPermissions,
   removeNavigationPermissionsNotIn,
   routeTracker,
@@ -513,6 +515,62 @@ export const updateRoleById = async (req: Request, res: Response): Promise<Respo
   } catch (error) {
     console.error('Error updating role:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const deleteRolesByIds = async (req: Request, res: Response): Promise<Response> => {
+  const { roleIds } = req.body;
+
+  if (!Array.isArray(roleIds) || roleIds.length === 0) {
+    return res.status(400).json({
+      data: null,
+      message: 'roleIds must be a non-empty array',
+      status: 'error',
+      success: false
+    });
+  }
+
+  try {
+    // Check if any users have these roles
+    const usersWithRoles = await getUsersByRoleIds(roleIds);
+
+    if (usersWithRoles.length > 0) {
+      return res.status(409).json({
+        data: {
+          affectedUsers: usersWithRoles.map((user) => ({
+            email: user.email,
+            id: user.id,
+            name: user.fname || user.username,
+            roleId: user.role
+          })),
+          roleIds
+        },
+        message: `Cannot delete ${roleIds.length} role(s). ${usersWithRoles.length} user(s) still have these roles assigned`,
+        status: 'error',
+        success: false
+      });
+    }
+
+    // Delete the roles if no users are assigned
+    const deletedCount = await deleteRoles(roleIds);
+
+    return res.status(200).json({
+      data: {
+        deletedCount,
+        roleIds
+      },
+      message: `Successfully deleted ${deletedCount} role(s)`,
+      status: 'success',
+      success: true
+    });
+  } catch (error) {
+    console.error('Error deleting roles:', error);
+    return res.status(500).json({
+      data: null,
+      error: (error as Error).message,
+      message: 'Internal server error',
+      success: false
+    });
   }
 };
 

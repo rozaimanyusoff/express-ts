@@ -332,6 +332,41 @@ export const updateRole = async (id: number, role: Omit<Role, 'create_at' | 'id'
   return result;
 };
 
+export const getUsersByRoleIds = async (roleIds: number[]): Promise<any[]> => {
+  try {
+    if (roleIds.length === 0) return [];
+    
+    const placeholders = roleIds.map(() => '?').join(', ');
+    const query = `
+      SELECT id, fname, email, username, role
+      FROM auth.users
+      WHERE role IN (${placeholders})
+      ORDER BY role, fname
+    `;
+    
+    const [rows]: any[] = await pool.query(query, roleIds);
+    return rows;
+  } catch (error) {
+    console.error('Error getting users by role IDs:', error);
+    throw error;
+  }
+};
+
+export const deleteRoles = async (roleIds: number[]): Promise<number> => {
+  try {
+    if (roleIds.length === 0) return 0;
+
+    const placeholders = roleIds.map(() => '?').join(', ');
+    const query = `DELETE FROM auth.roles WHERE id IN (${placeholders})`;
+    const [result]: any = await pool.query(query, roleIds);
+    
+    return result.affectedRows;
+  } catch (error) {
+    console.error('Error deleting roles:', error);
+    throw error;
+  }
+};
+
 // ==================== GROUP OPERATIONS ====================
 
 export const getAllGroups = async (): Promise<Group[]> => {

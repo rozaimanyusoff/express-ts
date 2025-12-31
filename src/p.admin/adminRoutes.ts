@@ -33,6 +33,8 @@ router.get('/roles', asyncHandler(adminController.getAllRole));
 router.get('/roles/:id', asyncHandler(adminController.getRole));
 router.post('/roles', asyncHandler(adminController.createNewRole));
 router.put('/roles/:id', asyncHandler(adminController.updateRoleById));
+router.delete('/roles', asyncHandler(adminController.deleteRolesByIds));
+
 
 // ==================== GROUP ROUTES ====================
 
