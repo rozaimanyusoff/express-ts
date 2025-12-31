@@ -372,68 +372,75 @@ export const getAssetById = async (req: Request, res: Response) => {
 	const type = typeMap.get(asset.type_id);
 	let specs: any = null;
 	if (type && Number.isFinite(type.id)) {
-		// fetch from dynamic per-type spec table
-		const specRows = await assetModel.getSpecsForAsset(type.id, asset.id);
-		if (Array.isArray(specRows) && specRows.length > 0) {
-			// use the first row as the spec data (tables store one row per asset)
-			const specData = specRows[0];
-			// Only include the per-type spec fields; categories/brands/models are already present above
-			specs = {
-				...specData
-			};
+		try {
+			// fetch from dynamic per-type spec table
+			const specRows = await assetModel.getSpecsForAsset(type.id, asset.id);
+			if (Array.isArray(specRows) && specRows.length > 0) {
+				// use the first row as the spec data (tables store one row per asset)
+				const specData = specRows[0];
+				// Only include the per-type spec fields; categories/brands/models are already present above
+				// Remove duplicate fields that are already at the top level
+				const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
+				specs = {
+					...filteredSpec
+				};
 
-			// For computers (type 1) include installed software
-			if (type.id === 1) {
-				const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
-				specs.installed_software = installedSoftware || [];
+				// For computers (type 1) include installed software
+				if (type.id === 1) {
+					const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
+					specs.installed_software = installedSoftware || [];
+				}
 			}
+		} catch (_err) {
+			// Log but don't fail if specs fetch fails
+			console.warn(`Failed to fetch specs for asset ${asset.id}:`, _err);
 		}
 	}
 
 	const assetWithNested = {
-		age: assetModel.calculateAge(asset.purchase_year),
-		brand: asset.brand_id && brandMap.has(asset.brand_id)
-			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
-			: null,
-		category: asset.category_id && categoryMap.has(asset.category_id)
-			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
-			: null,
-		classification: asset.classification,
-		condition: asset.condition_status,
-		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
-			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
-			: null,
-		department: asset.department_id && departmentMap.has(asset.department_id)
-			? { code: departmentMap.get(asset.department_id)?.code || null, id: asset.department_id }
-			: null,
-		depreciation_length: asset.depreciation_length,
-		depreciation_rate: asset.depreciation_rate,
-		disposed_date: asset.disposed_date,
-		entry_code: asset.entry_code,
 		id: asset.id,
-		location: asset.location_id && locationMap.has(asset.location_id)
-			? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
-			: null,
-		model: asset.model_id && modelMap.has(asset.model_id)
-			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
-			: null,
-		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
-		owner: ownershipsByAsset[asset.id] || [],
-		purchase_date: asset.purchase_date,
-		purchase_year: asset.purchase_year,
-		register_number: asset.register_number,
-		specs,
+		entry_code: asset.entry_code,
+		classification: asset.classification,
 		status: asset.record_status,
+		condition: asset.condition_status,
+		register_number: asset.register_number,
 		type: type ? {
 			id: type.id,
 			name: type.name
 		} : null,
+		category: asset.category_id && categoryMap.has(asset.category_id)
+			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+			: null,
+		brand: asset.brand_id && brandMap.has(asset.brand_id)
+			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+			: null,
+		model: asset.model_id && modelMap.has(asset.model_id)
+			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+			: null,
+		purchase_date: asset.purchase_date,
+		purchase_year: asset.purchase_year,
+		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
+			: null,
 		unit_price: asset.unit_price,
+		depreciation_length: asset.depreciation_length,
+		depreciation_rate: asset.depreciation_rate,
+		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
+		age: assetModel.calculateAge(asset.purchase_year),
+		disposed_date: asset.disposed_date,
+		specs,
+		department: asset.department_id && departmentMap.has(asset.department_id)
+			? { code: departmentMap.get(asset.department_id)?.code || null, id: asset.department_id }
+			: null,
+		location: asset.location_id && locationMap.has(asset.location_id)
+			? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
+			: null,
+		owner: ownershipsByAsset[asset.id] || [],
 	};
 
 	res.json({
 		data: assetWithNested,
-		message: 'Asset data by ID retrieved successfully',
+		message: `Asset data with id: ${asset.id} retrieved successfully`,
 		status: 'success'
 	});
 };
