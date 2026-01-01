@@ -633,6 +633,16 @@ export const createSpecProperty = async (req: Request, res: Response) => {
 		const payload = req.body;
 		// payload: { type_id, name, label, data_type, nullable, default_value, options }
 		const result: any = await assetModel.createSpecProperty(payload);
+		
+		// If apply failed, return error instead of success
+		if (!result.applied && result.applyError) {
+			return res.status(400).json({ 
+				data: result, 
+				message: `Spec property created but failed to apply: ${result.applyError}`, 
+				status: 'warning' 
+			});
+		}
+		
 		res.status(201).json({ data: result, message: 'Spec property created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
