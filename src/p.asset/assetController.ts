@@ -451,7 +451,13 @@ export const getAssetById = async (req: Request, res: Response) => {
 			item_condition: purchaseDetails.item_condition,
 			description: purchaseDetails.description,
 			created_at: purchaseDetails.created_at,
-			created_by: purchaseDetails.created_by
+			created_by: purchaseDetails.created_by,
+			supplier: purchaseDetails.supplier_id ? {
+				id: purchaseDetails.supplier_id,
+				name: purchaseDetails.supplier_name,
+				contact_no: purchaseDetails.supplier_contact,
+				contact_name: purchaseDetails.supplier_contact_name
+			} : null
 		} : null,
 	};
 

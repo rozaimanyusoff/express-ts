@@ -148,9 +148,17 @@ export const getPurchaseItemsByAssetIds = async (purchaseIds: number[]) => {
 export const getPurchaseDetailsByRegisterNumber = async (registerNumber: string) => {
   if (!registerNumber) return null;
   const [rows]: any[] = await pool.query(
-    `SELECT * FROM purchases2.purchase_asset_registry 
-     WHERE register_number = ? 
-     ORDER BY created_at DESC 
+    `SELECT 
+      par.*,
+      ps.id as supplier_id,
+      ps.name as supplier_name,
+      ps.contact_no as supplier_contact,
+      ps.contact_name as supplier_contact_name
+     FROM purchases2.purchase_asset_registry par
+     LEFT JOIN purchases2.purchase_items pi ON par.purchase_id = pi.id
+     LEFT JOIN purchases2.purchase_supplier ps ON pi.supplier_id = ps.id
+     WHERE par.register_number = ? 
+     ORDER BY par.created_at DESC 
      LIMIT 1`,
     [registerNumber]
   );
