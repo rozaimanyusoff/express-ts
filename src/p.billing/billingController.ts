@@ -8,6 +8,7 @@ import path from 'path';
 
 import * as assetsModel from '../p.asset/assetModel';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
+import * as userModel from '../p.user/userModel';
 import logger from '../utils/logger';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
 import { toPublicUrl } from '../utils/uploadUtil';
@@ -44,6 +45,21 @@ const calculateInvStat = (inv_no: any, inv_date: any, form_upload_date: any, inv
 	return 'draft'; // default when inv_no, inv_date, form_upload_date are null and inv_total = 0
 };
 
+/**
+ * Build enriched owner object from ramco_id with full_name from module members
+ */
+const buildOwnerObject = (ramcoId: string | null | undefined, ownerMap: Map<string, any>): null | { full_name: string | null; ramco_id: string } => {
+	if (!ramcoId) return null;
+	const ownerData = ownerMap.get(ramcoId);
+	if (!ownerData) {
+		return { ramco_id: ramcoId, full_name: null };
+	}
+	return {
+		ramco_id: ramcoId,
+		full_name: ownerData.fname || null
+	};
+};
+
 /* ============== VEHICLE MAINTENANCE =============== */
 
 export const getVehicleMtnBillings = async (req: Request, res: Response) => {
@@ -67,9 +83,19 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
 		// Build lookup maps for fast access (support id and asset_id)
 		const assetMap = new Map();
+		const ownerRamcoIds = new Set<string>();
 		for (const a of (assets || [])) {
 			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
 			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
+			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+		}
+		// Fetch owner data for all unique ramco_ids
+		const ownerMap = new Map();
+		for (const ramcoId of ownerRamcoIds) {
+			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			if (ownerData) {
+				ownerMap.set(ramcoId, ownerData);
+			}
 		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
@@ -83,12 +109,14 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			const mtnReq = mtnReqMap.get(Number(svc_order));
 			const form_upload_date = mtnReq?.form_upload_date ?? null;
 			const inv_stat = calculateInvStat((b).inv_no, (b).inv_date, form_upload_date, (b).inv_total);
+			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
 					fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
 					id: asset_id,
 					location: (loc_id && locationMap.has(loc_id)) ? { code: (locationMap.get(loc_id))?.code, id: (locationMap.get(loc_id))?.id } : null,
+					owner: buildOwnerObject(ramcoId, ownerMap),
 					register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null
 				} : null,
 				entry_date: (b).entry_date,
@@ -131,9 +159,19 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		const locations = await assetsModel.getLocations() as any[];
 		// Build lookup maps for fast access (support id and asset_id)
 		const assetMap = new Map();
+		const ownerRamcoIds = new Set<string>();
 		for (const a of (assets || [])) {
 			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
 			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
+			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+		}
+		// Fetch owner data for all unique ramco_ids
+		const ownerMap = new Map();
+		for (const ramcoId of ownerRamcoIds) {
+			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			if (ownerData) {
+				ownerMap.set(ramcoId, ownerData);
+			}
 		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
@@ -143,12 +181,14 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 			const asset_id = (b).asset_id ?? (b).vehicle_id;
 			const cc_id = (b).cc_id ?? (b).costcenter_id;
 			const loc_id = (b).location_id ?? (b).loc_id;
+			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
 					fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
 					id: asset_id,
 					location: (loc_id && locationMap.has(loc_id)) ? { code: (locationMap.get(loc_id))?.code, id: (locationMap.get(loc_id))?.id } : null,
+					owner: buildOwnerObject(ramcoId, ownerMap),
 					register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null
 				} : null,
 				entry_date: (b).entry_date,
@@ -186,6 +226,18 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 
 	// Build lookup maps for fast access
 	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+	const ownerRamcoIds = new Set<string>();
+	(assets || []).forEach((a: any) => {
+		if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+	});
+	// Fetch owner data for all unique ramco_ids
+	const ownerMap = new Map();
+	for (const ramcoId of ownerRamcoIds) {
+		const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+		if (ownerData) {
+			ownerMap.set(ramcoId, ownerData);
+		}
+	}
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -270,6 +322,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 			.join(', ');
 	}
 
+	const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 	const structuredBilling = {
 		asset: assetMap.has(asset_id) ? {
 			costcenter: ccMap.has(cc_id) ? {
@@ -281,6 +334,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				code: (locationMap.get(loc_id))?.code,
 				id: (locationMap.get(loc_id))?.id
 			} : null,
+			owner: buildOwnerObject(ramcoId, ownerMap),
 			register_number: (assetMap.get(asset_id))?.register_number
 		} : null,
 		inv_date: billing.inv_date,
@@ -342,6 +396,18 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 
 		// Build lookup maps for fast access
 		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+		const ownerRamcoIds = new Set<string>();
+		(assets || []).forEach((a: any) => {
+			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+		});
+		// Fetch owner data for all unique ramco_ids
+		const ownerMap = new Map();
+		for (const ramcoId of ownerRamcoIds) {
+			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			if (ownerData) {
+				ownerMap.set(ramcoId, ownerData);
+			}
+		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -361,6 +427,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 					.join(', ');
 			}
 
+			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? {
@@ -372,6 +439,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 						code: (locationMap.get(loc_id))?.code,
 						id: (locationMap.get(loc_id))?.id
 					} : null,
+					owner: buildOwnerObject(ramcoId, ownerMap),
 					register_number: (assetMap.get(asset_id))?.register_number
 				} : null,
 				inv_date: billing.inv_date,
@@ -426,6 +494,18 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
 
 			const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+			const ownerRamcoIds = new Set<string>();
+			(assets || []).forEach((a: any) => {
+				if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+			});
+			// Fetch owner data for all unique ramco_ids
+			const ownerMap = new Map();
+			for (const ramcoId of ownerRamcoIds) {
+				const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+				if (ownerData) {
+					ownerMap.set(ramcoId, ownerData);
+				}
+			}
 			const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 			const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 			const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -454,12 +534,14 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			const part_name = p.part_name || (ap ? ap.part_name : null) || (ap ? ap.part_name : null);
 			return { ...p, part_name };
 		});
+		const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 		return {
 			asset: assetMap.has(asset_id) ? {
 				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
 				fuel_type: (assetMap.get(asset_id))?.fuel_type,
 				id: asset_id,
 				location: locationMap.has(loc_id) ? { id: loc_id, name: (locationMap.get(loc_id))?.code } : null,
+				owner: buildOwnerObject(ramcoId, ownerMap),
 				register_number: (assetMap.get(asset_id))?.register_number
 			} : null,
 			inv_date: b.inv_date,
@@ -603,9 +685,19 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	// Build lookup maps for fast access
 	// Build asset map keyed by id and by asset_id if present to keep compatibility
 	const assetMap = new Map();
+	const ownerRamcoIds = new Set<string>();
 	for (const a of (assets || [])) {
 		if (a.id) assetMap.set(a.id, a);
 		if (a.asset_id) assetMap.set(a.asset_id, a);
+		if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+	}
+	// Fetch owner data for all unique ramco_ids
+	const ownerMap = new Map();
+	for (const ramcoId of ownerRamcoIds) {
+		const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+		if (ownerData) {
+			ownerMap.set(ramcoId, ownerData);
+		}
 	}
 	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
@@ -613,10 +705,12 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 	// Only return selected fields with nested structure
 	const filtered = vehicleMtn.map(b => {
 		const asset_id = (b as any).asset_id ?? b.vehicle_id;
+		const ramcoId = (assetMap.get(asset_id))?.ramco_id;
 		return {
 			asset: assetMap.has(asset_id) ? {
 				asset_id: asset_id,
 				fuel_type: (assetMap.get(asset_id))?.fuel_type || (assetMap.get(asset_id))?.vfuel_type || null,
+				owner: buildOwnerObject(ramcoId, ownerMap),
 				purchase_date: (assetMap.get(asset_id))?.purchase_date || (assetMap.get(asset_id))?.v_dop || null,
 				register_number: (assetMap.get(asset_id))?.register_number || (assetMap.get(asset_id))?.vehicle_regno || null,
 				transmission: (assetMap.get(asset_id))?.transmission || (assetMap.get(asset_id))?.vtrans_type || null

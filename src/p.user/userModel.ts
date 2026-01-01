@@ -134,6 +134,51 @@ export const getUserById = async (userId: number): Promise<null | Users> => {
     }
 };
 
+// Get module member and user data by ramco_id with fallback strategies
+export const getModuleMemberByRamcoId = async (ramcoId: string | null | undefined): Promise<any> => {
+    if (!ramcoId || typeof ramcoId !== 'string') return null;
+    try {
+        // Strategy 1: Try module_members with user join
+        const [rows]: any[] = await pool.query(
+            `SELECT mm.*, u.fname, u.username, u.email 
+             FROM ${moduleMembersTable} mm
+             LEFT JOIN ${usersTable} u ON mm.manager_id = u.id
+             WHERE mm.ramco_id = ? LIMIT 1`,
+            [ramcoId]
+        );
+        
+        // If found and has fname, return it
+        if (rows[0] && rows[0].fname) {
+            return rows[0];
+        }
+        
+        // Strategy 2: If no result or fname is null, try to find user directly
+        // Search for users by contact number matching ramco_id pattern or by email containing ramco_id
+        const [userRows]: any[] = await pool.query(
+            `SELECT id, fname, username, email FROM ${usersTable} 
+             WHERE contact LIKE ? OR username LIKE ? OR email LIKE ?
+             LIMIT 1`,
+            [`%${ramcoId}%`, `%${ramcoId}%`, `%${ramcoId}%`]
+        );
+        
+        if (userRows[0]) {
+            // Return with user data found
+            return {
+                ...rows[0],
+                fname: userRows[0].fname,
+                username: userRows[0].username,
+                email: userRows[0].email
+            };
+        }
+        
+        // If still no fname found, return the module_members record (fname will be null)
+        return rows[0] || null;
+    } catch (error) {
+        logger.error(`Database error in getModuleMemberByRamcoId for ${ramcoId}: ${error}`);
+        return null;
+    }
+};
+
 // Validate user by email or contact prior to registration
 export const findUserByEmailOrContact = async (email: string, contact: string): Promise<any[]> => {
     try {
