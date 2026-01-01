@@ -312,6 +312,11 @@ export const getAssetById = async (req: Request, res: Response) => {
 		(asset as any).unit_price = purchaseItem.unit_price;
 	}
 
+	// Fetch purchase details using register_number
+	const purchaseDetails = (asset as any).register_number
+		? await assetModel.getPurchaseDetailsByRegisterNumber((asset as any).register_number)
+		: null;
+
 	// Fetch all related data for mapping
 	const [ownershipsRaw, employeesRaw, typesRaw, categoriesRaw, brandsRaw, modelsRaw, departmentsRaw, costcentersRaw, districtsRaw, locationsRaw] = await Promise.all([
 		assetModel.getAssetOwnerships(),
@@ -436,6 +441,18 @@ export const getAssetById = async (req: Request, res: Response) => {
 			? { id: asset.location_id, name: locationMap.get(asset.location_id)?.name || null }
 			: null,
 		owner: ownershipsByAsset[asset.id] || [],
+		purchase_details: purchaseDetails ? {
+			id: purchaseDetails.id,
+			register_number: purchaseDetails.register_number,
+			classification: purchaseDetails.classification,
+			purchase_id: purchaseDetails.purchase_id,
+			request_id: purchaseDetails.request_id,
+			warranty_period: purchaseDetails.warranty_period,
+			item_condition: purchaseDetails.item_condition,
+			description: purchaseDetails.description,
+			created_at: purchaseDetails.created_at,
+			created_by: purchaseDetails.created_by
+		} : null,
 	};
 
 	res.json({

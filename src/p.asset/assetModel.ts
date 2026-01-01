@@ -129,7 +129,7 @@ export const getAssets = async (type_ids?: number | number[], classification?: s
     sql += ' WHERE ' + conditions.join(' AND ');
   }
   // Sort by type_id first, then by register_number within each type group
-  sql += ` ORDER BY ${assetTable}.type_id ASC, ${assetTable}.register_number ASC`;
+  sql += ` ORDER BY ${assetTable}.id DESC`;
   const [rows] = await pool.query(sql, params);
   // Ensure compatibility: some callers expect `asset_id` field (billing code).
   // Mirror `id` to `asset_id` when `asset_id` is not present.
@@ -142,6 +142,19 @@ export const getPurchaseItemsByAssetIds = async (purchaseIds: number[]) => {
   if (!purchaseIds || purchaseIds.length === 0) return [];
   const [rows] = await pool.query(`SELECT id, unit_price FROM purchases2.purchase_items WHERE id IN (?)`, [purchaseIds]);
   return rows;;
+};
+
+// Helper function to fetch purchase details by asset register_number
+export const getPurchaseDetailsByRegisterNumber = async (registerNumber: string) => {
+  if (!registerNumber) return null;
+  const [rows]: any[] = await pool.query(
+    `SELECT * FROM purchases2.purchase_asset_registry 
+     WHERE register_number = ? 
+     ORDER BY created_at DESC 
+     LIMIT 1`,
+    [registerNumber]
+  );
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 };
 
 // Server-side pagination + free-text search for assets
