@@ -2152,6 +2152,49 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
 
     const id = await complianceModel.createComputerAssessment(data);
 
+    // Handle attachment files if present
+    const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
+    const attachmentUpdates: any = {};
+    
+    if (files.length > 0) {
+      const filesByField = new Map<string, Express.Multer.File[]>();
+      for (const f of files) {
+        const fn = f.fieldname || '';
+        if (!filesByField.has(fn)) filesByField.set(fn, []);
+        filesByField.get(fn)!.push(f);
+      }
+
+      // Process attachments[0], attachments[1], attachments[2]
+      for (let i = 0; i < 3; i++) {
+        const fieldName = `attachments[${i}]`;
+        const fileArray = filesByField.get(fieldName);
+        
+        if (fileArray && fileArray.length > 0) {
+          const f = fileArray[0];
+          try {
+            const tempPath = f.path;
+            const ext = path.extname(f.originalname || tempPath) || '';
+            const filename = `assessment-${id}-attachment-${i}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+            const base = await getUploadBase();
+            const destDir = path.join(base, 'compliance', 'assessment', 'computer');
+            await fsPromises.mkdir(destDir, { recursive: true });
+            const destPath = path.join(destDir, filename);
+            await safeMove(tempPath, destPath);
+            const stored = path.posix.join('uploads', 'compliance', 'assessment', 'computer', filename);
+            const attachmentNum = i + 1;
+            attachmentUpdates[`attachment_${attachmentNum}`] = stored;
+          } catch (err) {
+            console.error(`Failed to process attachment ${i}:`, err);
+          }
+        }
+      }
+
+      // Update assessment with attachment paths if any were processed
+      if (Object.keys(attachmentUpdates).length > 0) {
+        await complianceModel.updateComputerAssessment(id, attachmentUpdates);
+      }
+    }
+
     // Send notification email to technician
     try {
       if (data.ramco_id) {
@@ -2210,6 +2253,44 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     if (!id) return res.status(400).json({ data: null, message: 'Invalid assessment ID', status: 'error' });
 
     const data = req.body;
+
+    // Handle attachment files if present
+    const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
+    
+    if (files.length > 0) {
+      const filesByField = new Map<string, Express.Multer.File[]>();
+      for (const f of files) {
+        const fn = f.fieldname || '';
+        if (!filesByField.has(fn)) filesByField.set(fn, []);
+        filesByField.get(fn)!.push(f);
+      }
+
+      // Process attachments[0], attachments[1], attachments[2]
+      for (let i = 0; i < 3; i++) {
+        const fieldName = `attachments[${i}]`;
+        const fileArray = filesByField.get(fieldName);
+        
+        if (fileArray && fileArray.length > 0) {
+          const f = fileArray[0];
+          try {
+            const tempPath = f.path;
+            const ext = path.extname(f.originalname || tempPath) || '';
+            const filename = `assessment-${id}-attachment-${i}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+            const base = await getUploadBase();
+            const destDir = path.join(base, 'compliance', 'assessment', 'computer');
+            await fsPromises.mkdir(destDir, { recursive: true });
+            const destPath = path.join(destDir, filename);
+            await safeMove(tempPath, destPath);
+            const stored = path.posix.join('uploads', 'compliance', 'assessment', 'computer', filename);
+            const attachmentNum = i + 1;
+            (data as any)[`attachment_${attachmentNum}`] = stored;
+          } catch (err) {
+            console.error(`Failed to process attachment ${i}:`, err);
+          }
+        }
+      }
+    }
+
     await complianceModel.updateComputerAssessment(id, data);
 
     const updated = await complianceModel.getComputerAssessmentById(id);

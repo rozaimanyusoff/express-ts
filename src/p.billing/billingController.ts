@@ -56,7 +56,7 @@ const buildOwnerObject = (ramcoId: string | null | undefined, ownerMap: Map<stri
 	}
 	return {
 		ramco_id: ramcoId,
-		full_name: ownerData.fname || null
+		full_name: ownerData.full_name || null
 	};
 };
 
@@ -78,24 +78,29 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		const assets = await assetsModel.getAssets();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
-		// Fetch maintenance requests to get form_upload_date
+		// Fetch maintenance requests to get owner (ramco_id) and form_upload_date
 		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-		// Build lookup maps for fast access (support id and asset_id)
-		const assetMap = new Map();
+		
+		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
-		for (const a of (assets || [])) {
-			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
-			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
-			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
-		}
-		// Fetch owner data for all unique ramco_ids
+		(mtnRequests || []).forEach((r: any) => {
+			if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
+		});
+		// Fetch employee data for all unique ramco_ids
 		const ownerMap = new Map();
 		for (const ramcoId of ownerRamcoIds) {
-			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
 			if (ownerData) {
 				ownerMap.set(ramcoId, ownerData);
 			}
+		}
+		
+		// Build lookup maps for fast access (support id and asset_id)
+		const assetMap = new Map();
+		for (const a of (assets || [])) {
+			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
+			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
 		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
@@ -109,7 +114,8 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			const mtnReq = mtnReqMap.get(Number(svc_order));
 			const form_upload_date = mtnReq?.form_upload_date ?? null;
 			const inv_stat = calculateInvStat((b).inv_no, (b).inv_date, form_upload_date, (b).inv_total);
-			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
+			// Get ramco_id from maintenance request, not from asset
+			const ramcoId = mtnReq?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
@@ -157,21 +163,28 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		const assets = await assetsModel.getAssets();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
-		// Build lookup maps for fast access (support id and asset_id)
-		const assetMap = new Map();
+		// Fetch maintenance requests to get owner (ramco_id)
+		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
+		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
+		
+		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
-		for (const a of (assets || [])) {
-			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
-			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
-			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
-		}
-		// Fetch owner data for all unique ramco_ids
+		(mtnRequests || []).forEach((r: any) => {
+			if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
+		});
+		// Fetch employee data for all unique ramco_ids
 		const ownerMap = new Map();
 		for (const ramcoId of ownerRamcoIds) {
-			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
 			if (ownerData) {
 				ownerMap.set(ramcoId, ownerData);
 			}
+		}
+		// Build lookup maps for fast access (support id and asset_id)
+		const assetMap = new Map();
+		for (const a of (assets || [])) {
+			if (a.id !== undefined && a.id !== null) assetMap.set(a.id, a);
+			if (a.asset_id !== undefined && a.asset_id !== null) assetMap.set(a.asset_id, a);
 		}
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
@@ -181,7 +194,10 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 			const asset_id = (b).asset_id ?? (b).vehicle_id;
 			const cc_id = (b).cc_id ?? (b).costcenter_id;
 			const loc_id = (b).location_id ?? (b).loc_id;
-			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
+			const svc_order = (b).svc_order;
+			const mtnReq = mtnReqMap.get(Number(svc_order));
+			// Get ramco_id from maintenance request, not from asset
+			const ramcoId = mtnReq?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,
@@ -226,14 +242,20 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 
 	// Build lookup maps for fast access
 	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+	
+	// Fetch maintenance requests to get owner (ramco_id)
+	const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
+	const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
+	
+	// Collect all unique ramco_ids from maintenance requests for employee lookup
 	const ownerRamcoIds = new Set<string>();
-	(assets || []).forEach((a: any) => {
-		if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+	(mtnRequests || []).forEach((r: any) => {
+		if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
 	});
-	// Fetch owner data for all unique ramco_ids
+	// Fetch employee data for all unique ramco_ids
 	const ownerMap = new Map();
 	for (const ramcoId of ownerRamcoIds) {
-		const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+		const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
 		if (ownerData) {
 			ownerMap.set(ramcoId, ownerData);
 		}
@@ -322,7 +344,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 			.join(', ');
 	}
 
-	const ramcoId = (assetMap.get(asset_id))?.ramco_id;
+	const ramcoId = mtnReqMap.get(Number((billing as any).svc_order))?.ramco_id;
 	const structuredBilling = {
 		asset: assetMap.has(asset_id) ? {
 			costcenter: ccMap.has(cc_id) ? {
@@ -394,20 +416,25 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 		const locations = await assetsModel.getLocations() as any[];
 		const workshops = await billingModel.getWorkshops();
 
-		// Build lookup maps for fast access
-		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+		// Fetch maintenance requests to get owner (ramco_id)
+		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
+		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
+		
+		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
-		(assets || []).forEach((a: any) => {
-			if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+		(mtnRequests || []).forEach((r: any) => {
+			if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
 		});
-		// Fetch owner data for all unique ramco_ids
+		// Fetch employee data for all unique ramco_ids
 		const ownerMap = new Map();
 		for (const ramcoId of ownerRamcoIds) {
-			const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+			const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
 			if (ownerData) {
 				ownerMap.set(ramcoId, ownerData);
 			}
 		}
+		// Build lookup maps for fast access
+		const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
 		const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 		const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 		const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -427,7 +454,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 					.join(', ');
 			}
 
-			const ramcoId = (assetMap.get(asset_id))?.ramco_id;
+			const ramcoId = mtnReqMap.get(Number((billing as any).svc_order))?.ramco_id;
 			return {
 				asset: assetMap.has(asset_id) ? {
 					costcenter: ccMap.has(cc_id) ? {
@@ -493,19 +520,25 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
 			const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
 
-			const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+			// Fetch maintenance requests to get owner (ramco_id)
+			const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
+			const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
+			
+			// Collect all unique ramco_ids from maintenance requests for employee lookup
 			const ownerRamcoIds = new Set<string>();
-			(assets || []).forEach((a: any) => {
-				if (a.ramco_id) ownerRamcoIds.add(a.ramco_id);
+			(mtnRequests || []).forEach((r: any) => {
+				if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
 			});
-			// Fetch owner data for all unique ramco_ids
+			// Fetch employee data for all unique ramco_ids
 			const ownerMap = new Map();
 			for (const ramcoId of ownerRamcoIds) {
-				const ownerData = await userModel.getModuleMemberByRamcoId(ramcoId);
+				const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
 				if (ownerData) {
 					ownerMap.set(ramcoId, ownerData);
 				}
 			}
+
+			const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
 			const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
 			const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
 			const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
@@ -534,7 +567,7 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			const part_name = p.part_name || (ap ? ap.part_name : null) || (ap ? ap.part_name : null);
 			return { ...p, part_name };
 		});
-		const ramcoId = (assetMap.get(asset_id))?.ramco_id;
+		const ramcoId = mtnReqMap.get(Number(b.svc_order))?.ramco_id;
 		return {
 			asset: assetMap.has(asset_id) ? {
 				costcenter: ccMap.has(cc_id) ? { id: cc_id, name: (ccMap.get(cc_id))?.name } : null,

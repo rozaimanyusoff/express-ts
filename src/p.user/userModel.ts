@@ -134,6 +134,22 @@ export const getUserById = async (userId: number): Promise<null | Users> => {
     }
 };
 
+// Get employee by ramco_id from employees table (the correct source for owner data in maintenance billings)
+export const getEmployeeByRamcoId = async (ramcoId: string | null | undefined): Promise<any> => {
+    if (!ramcoId || typeof ramcoId !== 'string') return null;
+    try {
+        const [rows]: any[] = await pool.query(
+            `SELECT id, ramco_id, full_name, email, contact FROM assets.employees 
+             WHERE ramco_id = ? LIMIT 1`,
+            [ramcoId]
+        );
+        return rows[0] || null;
+    } catch (error) {
+        logger.error(`Database error in getEmployeeByRamcoId for ${ramcoId}: ${error}`);
+        return null;
+    }
+};
+
 // Get module member and user data by ramco_id with fallback strategies
 export const getModuleMemberByRamcoId = async (ramcoId: string | null | undefined): Promise<any> => {
     if (!ramcoId || typeof ramcoId !== 'string') return null;

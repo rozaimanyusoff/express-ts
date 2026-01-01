@@ -919,6 +919,10 @@ export interface ComputerAssessment {
   assessment_year?: null | string;
   // Asset reference
   asset_id?: null | number;
+  // Attachments
+  attachment_1?: null | string;
+  attachment_2?: null | string;
+  attachment_3?: null | string;
   // Security & VPN
   av_installed?: null | string; // 'Installed', 'Not installed', etc.
 

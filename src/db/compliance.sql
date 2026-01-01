@@ -81,6 +81,9 @@ CREATE TABLE `computer_assessment` (
   `vpn_username` varchar(50) DEFAULT NULL,
   `installed_software` text,
   `office_account` varchar(200) DEFAULT NULL,
+  `attachment_1` varchar(255) DEFAULT NULL,
+  `attachment_2` varchar(255) DEFAULT NULL,
+  `attachment_3` varchar(255) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
