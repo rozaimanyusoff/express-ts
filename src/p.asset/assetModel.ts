@@ -150,6 +150,12 @@ export const getPurchaseDetailsByRegisterNumber = async (registerNumber: string)
   const [rows]: any[] = await pool.query(
     `SELECT 
       par.*,
+      pi.po_no,
+      pi.po_date,
+      pi.do_no,
+      pi.do_date,
+      pi.grn_no,
+      pi.grn_date,
       ps.id as supplier_id,
       ps.name as supplier_name,
       ps.contact_no as supplier_contact,

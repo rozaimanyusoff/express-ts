@@ -402,36 +402,41 @@ export const getAssetById = async (req: Request, res: Response) => {
 		}
 	}
 
-	const assetWithNested = {
-		id: asset.id,
-		entry_code: asset.entry_code,
-		classification: asset.classification,
-		status: asset.record_status,
-		condition: asset.condition_status,
-		register_number: asset.register_number,
-		type: type ? {
-			id: type.id,
-			name: type.name
-		} : null,
-		category: asset.category_id && categoryMap.has(asset.category_id)
-			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
-			: null,
-		brand: asset.brand_id && brandMap.has(asset.brand_id)
-			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
-			: null,
-		model: asset.model_id && modelMap.has(asset.model_id)
-			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
-			: null,
-		purchase_date: asset.purchase_date,
-		purchase_year: asset.purchase_year,
+		const effectivePurchaseDate = purchaseDetails?.do_date || asset.purchase_date;
+		const effectivePurchaseYear = effectivePurchaseDate 
+			? new Date(effectivePurchaseDate).getFullYear() 
+			: asset.purchase_year;
+
+		const assetWithNested = {
+			id: asset.id,
+			entry_code: asset.entry_code,
+			classification: asset.classification,
+			status: asset.record_status,
+			condition: asset.condition_status,
+			register_number: asset.register_number,
+			type: type ? {
+				id: type.id,
+				name: type.name
+			} : null,
+			category: asset.category_id && categoryMap.has(asset.category_id)
+				? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+				: null,
+			brand: asset.brand_id && brandMap.has(asset.brand_id)
+				? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+				: null,
+			model: asset.model_id && modelMap.has(asset.model_id)
+				? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+				: null,
+			purchase_date: effectivePurchaseDate,
+			purchase_year: effectivePurchaseYear,
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
 			: null,
 		unit_price: asset.unit_price,
 		depreciation_length: asset.depreciation_length,
 		depreciation_rate: asset.depreciation_rate,
-		nbv: assetModel.calculateNBV(asset.unit_price, asset.purchase_year),
-		age: assetModel.calculateAge(asset.purchase_year),
+		nbv: assetModel.calculateNBV(asset.unit_price, effectivePurchaseYear),
+		age: assetModel.calculateAge(effectivePurchaseYear),
 		disposed_date: asset.disposed_date,
 		specs,
 		department: asset.department_id && departmentMap.has(asset.department_id)
@@ -452,6 +457,18 @@ export const getAssetById = async (req: Request, res: Response) => {
 			description: purchaseDetails.description,
 			created_at: purchaseDetails.created_at,
 			created_by: purchaseDetails.created_by,
+			po: purchaseDetails.po_no ? {
+				number: purchaseDetails.po_no,
+				date: purchaseDetails.po_date
+			} : null,
+			do: purchaseDetails.do_no ? {
+				number: purchaseDetails.do_no,
+				date: purchaseDetails.do_date
+			} : null,
+			grn: purchaseDetails.grn_no ? {
+				number: purchaseDetails.grn_no,
+				date: purchaseDetails.grn_date
+			} : null,
 			supplier: purchaseDetails.supplier_id ? {
 				id: purchaseDetails.supplier_id,
 				name: purchaseDetails.supplier_name,
