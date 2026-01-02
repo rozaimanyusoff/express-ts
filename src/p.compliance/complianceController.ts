@@ -2589,7 +2589,6 @@ export const getITAssetWithAssessmentStatusById = async (req: Request, res: Resp
     };
 
     // Enrich assessments with lookup data (same as getComputerAssessmentById)
-    // Remove redundant fields that are already in the asset object (brand, category, model, purchase_date)
     const enrichedAssessments = result.assessments.map((a: any) => ({
       id: a.id,
       asset_id: a.asset_id,
@@ -2639,6 +2638,11 @@ export const getITAssetWithAssessmentStatusById = async (req: Request, res: Resp
       vpn_setup_type: a.vpn_setup_type,
       vpn_username: a.vpn_username,
       installed_software: parseCommaSeparatedArray(a.installed_software),
+      purchase_date: a.purchase_date,
+      attachment_1: a.attachment_1,
+      attachment_2: a.attachment_2,
+      attachment_3: a.attachment_3,
+      office_account: a.office_account,
       created_at: a.created_at,
       updated_at: a.updated_at,
       costcenter: a.costcenter_id ? { id: Number(a.costcenter_id), name: costcenterMap.get(Number(a.costcenter_id))?.name || null } : null,
