@@ -2304,7 +2304,7 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
-					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					fuel_type: card.fuel_type || assetObj.fuel_type || assetObj.vfuel_type || null,
 					id: card.asset_id,
 					locations: (() => {
 						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
@@ -2377,7 +2377,7 @@ export const getFleetCardByRegisterNumber = async (req: Request, res: Response) 
 				costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 					? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id).name }
 					: null,
-				fuel_type: asset.fuel_type || asset.vfuel_type,
+				fuel_type: card.fuel_type || asset.fuel_type || asset.vfuel_type || null,
 				id: asset_id,
 				locations: (() => {
 					const locId = asset.location_id ?? asset.location?.id ?? asset.locationId ?? null;
