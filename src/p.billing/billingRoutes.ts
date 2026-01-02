@@ -100,6 +100,7 @@ router.get('/fleet', asyncHandler(billingController.getFleetCards)); // /api/bil
 router.get('/fleet/:id', asyncHandler(billingController.getFleetCardById));
 router.get('/fleet/:id/issuer', asyncHandler(billingController.getFleetCardByIssuer)); // /api/bills/fleet/:id/issuer - obtain data by issuer [Petronas, Shell, etc.]
 router.get('/fleet/card/:card_no', asyncHandler(billingController.getFleetCardByCardNo)); // /api/bills/fleet/card/:card_no - obtain data by card number
+router.get('/fleet/register/:register_number', asyncHandler(billingController.getFleetCardByRegisterNumber)); // /api/bills/fleet/register/:register_number - obtain data by register number
 
 router.post('/fleet', asyncHandler(billingController.createFleetCard));
 router.put('/fleet/:id', asyncHandler(billingController.updateFleetCard));

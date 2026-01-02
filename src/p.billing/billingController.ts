@@ -2341,6 +2341,78 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 	res.json({ data, message: 'Fleet card by card number retrieved successfully', status: 'success' });
 };
 
+export const getFleetCardByRegisterNumber = async (req: Request, res: Response) => {
+	const register_number = String(req.params.register_number).trim();
+	if (!register_number) {
+		return res.status(400).json({ message: 'register_number is required', status: 'error' });
+	}
+
+	// Step 1: Find asset by register_number
+	const matchingAssets = await assetsModel.getAssets(undefined, undefined, undefined, undefined, register_number);
+	if (!matchingAssets || matchingAssets.length === 0) {
+		return res.json({ data: [], message: 'No asset found with this register number', status: 'success' });
+	}
+
+	// Get the first matching asset
+	const asset = matchingAssets[0] as any;
+	const asset_id = asset.id || asset.asset_id;
+
+	// Step 2: Get fleet cards for this asset_id
+	const fleetCards = await billingModel.getFleetCardsByAssetId(asset_id);
+	if (!fleetCards || fleetCards.length === 0) {
+		return res.json({ data: [], message: 'No fleet cards found for this register number', status: 'success' });
+	}
+
+	// Step 3: Enrich with related data
+	const costcenters = await assetsModel.getCostcenters() as any[];
+	const locations = await assetsModel.getLocations() as any[];
+	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
+	const fuelVendors = await billingModel.getFuelVendor();
+	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
+
+	const data = fleetCards
+		.map((card: any) => {
+			let assetData = null;
+			assetData = {
+				costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
+					? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id).name }
+					: null,
+				fuel_type: asset.fuel_type || asset.vfuel_type,
+				id: asset_id,
+				locations: (() => {
+					const locId = asset.location_id ?? asset.location?.id ?? asset.locationId ?? null;
+					if (!locId) return null;
+					const found = locations.find((loc: any) => loc.id === locId);
+					return found ? { code: found.code, id: locId } : null;
+				})(),
+				purpose: asset.purpose || null,
+				register_number: asset.register_number || asset.vehicle_regno,
+			};
+
+			let vendor = {};
+			if (card.fuel_id && fuelVendorMap.has(card.fuel_id)) {
+				const fv = fuelVendorMap.get(card.fuel_id);
+				const name = fv.name || fv.f_issuer || fv.fuel_issuer || fv.fuel_name || null;
+				vendor = { fuel_id: fv.id ?? fv.fuel_id, name: name };
+			}
+
+			return {
+				asset: assetData,
+				card_no: card.card_no,
+				expiry: card.expiry_date,
+				id: card.id,
+				pin_no: card.pin,
+				reg_date: card.reg_date,
+				remarks: card.remarks,
+				status: card.status,
+				vehicle_id: card.vehicle_id,
+				vendor
+			};
+		});
+
+	res.json({ data, message: 'Fleet card by register number retrieved successfully', status: 'success' });
+};
+
 // Return all assets populated with their assigned fleet cards (uses fleet_asset join table)
 export const getFleetCardsByAssets = async (req: Request, res: Response) => {
 	const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
