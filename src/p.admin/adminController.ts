@@ -599,11 +599,25 @@ export const getGroupById1 = async (req: Request, res: Response): Promise<Respon
 };
 
 export const createGroup1 = async (req: Request, res: Response): Promise<Response> => {
-  const newGroup = req.body;
+  const { desc, name, navIds, status, userIds } = req.body;
 
   try {
-    const result = await createGroup(newGroup);
-    return res.status(200).json(result);
+    const result = await createGroup({ desc, name, status });
+    const groupId = (result as any).insertId;
+
+    if (Array.isArray(userIds) && userIds.length > 0) {
+      await assignUserToGroups(groupId, userIds);
+    }
+
+    if (Array.isArray(navIds) && navIds.length > 0) {
+      await setNavigationPermissionsForGroup(groupId, navIds);
+    }
+
+    return res.status(200).json({ 
+      message: 'Group created successfully', 
+      success: true,
+      groupId
+    });
   } catch (error) {
     console.error('Error creating group:', error);
     return res.status(500).json({ error: 'Internal server error' });
