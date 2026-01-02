@@ -2099,6 +2099,9 @@ export const getComputerAssessmentById = async (req: Request, res: Response) => 
     // Parse and enrich data
     const enriched = {
       ...assessment,
+      attachment_1: assessment.attachment_1 || null,
+      attachment_2: assessment.attachment_2 || null,
+      attachment_3: assessment.attachment_3 || null,
       costcenter: assessment.costcenter_id ? { id: Number(assessment.costcenter_id), name: (ccMap.get(Number(assessment.costcenter_id)))?.name || null } : null,
       department: assessment.department_id ? { id: Number(assessment.department_id), name: (deptMap.get(Number(assessment.department_id)))?.code || null } : null,
       display_interfaces: parseCommaSeparatedArray(assessment.display_interfaces),
