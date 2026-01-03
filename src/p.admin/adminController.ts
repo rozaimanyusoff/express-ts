@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import buildNavigationTree from '../utils/navBuilder';
 import { getAllUsers } from '../p.user/userModel';
 import { updateUsersRole } from '../p.user/userModel';
+import { getSocketIOInstance } from '../utils/socketIoInstance';
 import {
   assignGroupByUserId,
   assignUserToGroups,
@@ -689,5 +693,148 @@ export const getAllGroupsStructured = async (_req: Request, res: Response): Prom
   } catch (error) {
     console.error('Error getting all groups:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ==================== MAINTENANCE STATUS ====================
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MAINTENANCE_FILE_PATH = path.join(__dirname, '../../..', 'maintenance.json');
+
+export interface MaintenanceStatus {
+  active: boolean;
+  message: string;
+  until: string;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+/**
+ * GET /api/admin/maintenance
+ * Returns current maintenance status (public endpoint)
+ */
+export const getMaintenanceStatus = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    if (!fs.existsSync(MAINTENANCE_FILE_PATH)) {
+      const defaultStatus: MaintenanceStatus = {
+        active: false,
+        message: '',
+        until: '',
+        updatedBy: 'System',
+        updatedAt: new Date().toISOString()
+      };
+      return res.json({ status: 'success', data: defaultStatus });
+    }
+
+    const fileContent = fs.readFileSync(MAINTENANCE_FILE_PATH, 'utf-8');
+    const maintenanceStatus: MaintenanceStatus = JSON.parse(fileContent);
+
+    return res.json({ status: 'success', data: maintenanceStatus });
+  } catch (error) {
+    console.error('Error reading maintenance status:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to read maintenance status',
+      data: null
+    });
+  }
+};
+
+/**
+ * PUT /api/admin/maintenance
+ * Update maintenance status (admin-only, requires tokenValidator middleware)
+ * Broadcasts new status to all connected Socket.IO clients
+ */
+export const updateMaintenanceStatus = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    // Fetch user from database to get current role
+    if (!userId) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'User ID not found in token',
+        data: null
+      });
+    }
+
+    const user = await getAllUsers();
+    const currentUser = user.find(u => u.id === userId);
+
+    if (!currentUser) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found',
+        data: null
+      });
+    }
+
+    // Verify admin role (role: 1)
+    if (currentUser.role !== 1) {
+      console.warn(`Unauthorized maintenance update attempt by user ${userId} with role ${currentUser.role}`);
+      return res.status(403).json({
+        status: 'error',
+        message: 'Admin access required',
+        data: null
+      });
+    }
+
+    const { active, message, until } = req.body || {};
+
+    // Validate input
+    if (typeof active !== 'boolean') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'active field must be a boolean',
+        data: null
+      });
+    }
+
+    if (typeof message !== 'string') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'message field must be a string',
+        data: null
+      });
+    }
+
+    // Build new maintenance status
+    const maintenanceStatus: MaintenanceStatus = {
+      active,
+      message,
+      until: until || '',
+      updatedBy: `User ${userId}`,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Write to file
+    fs.writeFileSync(MAINTENANCE_FILE_PATH, JSON.stringify(maintenanceStatus, null, 2), 'utf-8');
+
+    console.log(`Maintenance status updated by user ${userId}: active=${active}`);
+
+    // Broadcast to all connected Socket.IO clients
+    try {
+      const io = getSocketIOInstance();
+      if (io) {
+        io.emit('backend:maintenance', maintenanceStatus);
+        console.log('Maintenance status broadcasted via Socket.IO');
+      }
+    } catch (socketError) {
+      console.warn('Failed to broadcast maintenance status via Socket.IO:', socketError);
+      // Don't fail the request if Socket.IO broadcast fails
+    }
+
+    return res.json({
+      status: 'success',
+      message: 'Maintenance status updated successfully',
+      data: maintenanceStatus
+    });
+  } catch (error) {
+    console.error('Error updating maintenance status:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to update maintenance status',
+      data: null
+    });
   }
 };

@@ -442,16 +442,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             ip: userIp,
             os: userAgent || os.platform()
         });
-
         if (!process.env.JWT_SECRET) {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
     const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
-
-        const navigation = await adminModel.getNavigationByUserId(result.user.id); // Fetch navigation tree based on user ID
-
-        // Remove duplicate nav items by navId at the flat level
+        
+        // Fetch navigation based on user's ID and groups
+        const navigation = await adminModel.getNavigationByUserId(result.user.id) || [];
+        
         const uniqueFlatNavItems = Array.from(
             new Map(
                 navigation.map((nav: any) => [nav.navId ?? nav.id, { ...nav, navId: nav.navId ?? nav.id }])

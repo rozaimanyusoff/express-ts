@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import tokenValidator from '../middlewares/tokenValidator';
 import * as importerController from '../p.admin/importerController';
 import * as adminController from '../p.admin/adminController';
 import asyncHandler from '../utils/asyncHandler';
@@ -42,5 +43,12 @@ router.get('/groups', asyncHandler(adminController.getAllGroupsStructured));
 router.get('/groups/:id', asyncHandler(adminController.getGroupById1));
 router.post('/groups', asyncHandler(adminController.createGroup1));
 router.put('/groups/:id', asyncHandler(adminController.updateGroup1));
+
+// ==================== MAINTENANCE STATUS ====================
+
+// Public endpoint: Get current maintenance status
+router.get('/maintenance', asyncHandler(adminController.getMaintenanceStatus));
+// Admin-only endpoint: Update maintenance status and broadcast via Socket.IO
+router.put('/maintenance', tokenValidator, asyncHandler(adminController.updateMaintenanceStatus));
 
 export default router;
