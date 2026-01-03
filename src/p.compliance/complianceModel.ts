@@ -131,34 +131,34 @@ export interface SummonRecord {
 }
 
 export const getSummons = async (): Promise<SummonRecord[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTable} ORDER BY smn_id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTable} ORDER BY smn_id DESC`);
   return rows as SummonRecord[];
 };
 
 export const getSummonTypeAgencies = async (): Promise<SummonTypeAgency[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} ORDER BY id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeAgencyTable} ORDER BY id DESC`);
   return rows as SummonTypeAgency[];
 };
 
 export const getSummonTypeAgencyById = async (id: number): Promise<null | SummonTypeAgency> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
   const data = rows as SummonTypeAgency[];
   return data.length > 0 ? data[0] : null;
 };
 
 export const getSummonTypeAgencyByPair = async (type_id: number, agency_id: number): Promise<null | SummonTypeAgency> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? AND agency_id = ? LIMIT 1`, [type_id, agency_id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? AND agency_id = ? LIMIT 1`, [type_id, agency_id]);
   const data = rows as SummonTypeAgency[];
   return data.length > 0 ? data[0] : null;
 };
 
 export const getSummonTypeAgenciesByType = async (type_id: number): Promise<SummonTypeAgency[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? ORDER BY id DESC`, [type_id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeAgencyTable} WHERE type_id = ? ORDER BY id DESC`, [type_id]);
   return rows as SummonTypeAgency[];
 };
 
 export const getAgenciesByType = async (type_id: number): Promise<SummonAgency[]> => {
-  const [rows] = await pool2.query(
+  const [rows] = await pool.query(
     `SELECT a.* FROM ${summonAgencyTable} a JOIN ${summonTypeAgencyTable} ta ON ta.agency_id = a.id WHERE ta.type_id = ? ORDER BY a.name`,
     [type_id]
   );
@@ -193,7 +193,7 @@ export const createSummonTypeAgency = async (data: Partial<SummonTypeAgency>) =>
   const existing = await getSummonTypeAgencyByPair(type_id, agency_id);
   if (existing) return existing.id;
   const now = formatToMySQLDatetime(new Date());
-  const [result] = await pool2.query(`INSERT INTO ${summonTypeAgencyTable} (type_id, agency_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, [type_id, agency_id, now, now]);
+  const [result] = await pool.query(`INSERT INTO ${summonTypeAgencyTable} (type_id, agency_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, [type_id, agency_id, now, now]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -212,23 +212,23 @@ export const updateSummonTypeAgency = async (id: number, data: Partial<SummonTyp
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${summonTypeAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${summonTypeAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
   }
 };
 
 export const deleteSummonTypeAgency = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${summonTypeAgencyTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Summon type-agency mapping not found');
 };
 
 export const getSummonTypes = async (): Promise<SummonType[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeTable} ORDER BY id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeTable} ORDER BY id DESC`);
   return rows as SummonType[];
 };
 
 export const getSummonTypeById = async (id: number): Promise<null | SummonType> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTypeTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTypeTable} WHERE id = ?`, [id]);
   const data = rows as SummonType[];
   return data.length > 0 ? data[0] : null;
 };
@@ -236,7 +236,7 @@ export const getSummonTypeById = async (id: number): Promise<null | SummonType> 
 export const createSummonType = async (data: Partial<SummonType>) => {
   const now = formatToMySQLDatetime(new Date());
   const payload = { ...data, created_at: now, updated_at: now } as any;
-  const [result] = await pool2.query(`INSERT INTO ${summonTypeTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${summonTypeTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -246,29 +246,29 @@ export const updateSummonType = async (id: number, data: Partial<SummonType>): P
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${summonTypeTable} SET ${fields} WHERE id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${summonTypeTable} SET ${fields} WHERE id = ?`, [...values, id]);
   }
 };
 
 export const deleteSummonType = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${summonTypeTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${summonTypeTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Summon type not found');
 };
 
 export const getSummonById = async (id: number): Promise<null | SummonRecord> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonTable} WHERE smn_id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonTable} WHERE smn_id = ?`, [id]);
   const data = rows as SummonRecord[];
   return data.length > 0 ? data[0] : null;
 };
 
 export const getSummonAgencies = async (): Promise<SummonAgency[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonAgencyTable} ORDER BY id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${summonAgencyTable} ORDER BY id DESC`);
   return rows as SummonAgency[];
 };
 
 export const getSummonAgencyById = async (id: number): Promise<null | SummonAgency> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${summonAgencyTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${summonAgencyTable} WHERE id = ?`, [id]);
   const data = rows as SummonAgency[];
   return data.length > 0 ? data[0] : null;
 };
@@ -276,7 +276,7 @@ export const getSummonAgencyById = async (id: number): Promise<null | SummonAgen
 export const createSummonAgency = async (data: Partial<SummonAgency>) => {
   const now = formatToMySQLDatetime(new Date());
   const payload = { ...data, created_at: now, updated_at: now } as any;
-  const [result] = await pool2.query(`INSERT INTO ${summonAgencyTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${summonAgencyTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -286,19 +286,19 @@ export const updateSummonAgency = async (id: number, data: Partial<SummonAgency>
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${summonAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${summonAgencyTable} SET ${fields} WHERE id = ?`, [...values, id]);
   }
 };
 
 export const deleteSummonAgency = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${summonAgencyTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${summonAgencyTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Summon agency not found');
 };
 
 export const createSummon = async (data: SummonRecord) => {
 
-  const [result] = await pool2.query(`INSERT INTO ${summonTable} (asset_id, ramco_id, summon_no, summon_date, summon_time, summon_loc, myeg_date, type_of_summon, summon_agency, summon_amt, summon_upl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const [result] = await pool.query(`INSERT INTO ${summonTable} (asset_id, ramco_id, summon_no, summon_date, summon_time, summon_loc, myeg_date, type_of_summon, summon_agency, summon_amt, summon_upl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [data.asset_id, data.ramco_id, data.summon_no, data.summon_date, data.summon_time, data.summon_loc, data.myeg_date, data.type_of_summon, data.summon_agency, data.summon_amt, data.summon_upl]
   );
   return (result as ResultSetHeader).insertId;
@@ -325,12 +325,12 @@ export const updateSummon = async (id: number, data: Partial<Omit<SummonRecord, 
   const fields = Object.keys(data).map(k => `${k} = ?`).join(', ');
   const values = Object.values(data).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${summonTable} SET ${fields} WHERE smn_id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${summonTable} SET ${fields} WHERE smn_id = ?`, [...values, id]);
   }
 };
 
 export const deleteSummon = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${summonTable} WHERE smn_id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${summonTable} WHERE smn_id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Summon record not found');
 };
@@ -351,13 +351,13 @@ export interface AssessmentCriteria {
 }
 
 export const getAssessmentCriteria = async (): Promise<AssessmentCriteria[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} ORDER BY qset_order`);
+  const [rows] = await pool.query(`SELECT * FROM ${assessmentCriteriaTable} ORDER BY qset_order`);
   return rows as AssessmentCriteria[];
 };
 
 
 export const getAssessmentCriteriaById = async (id: number): Promise<AssessmentCriteria | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
   const data = rows as AssessmentCriteria[];
   return data.length > 0 ? data[0] : null;
 };
@@ -365,7 +365,7 @@ export const getAssessmentCriteriaById = async (id: number): Promise<AssessmentC
 export const createAssessmentCriteria = async (data: Partial<AssessmentCriteria>) => {
   const now = formatToMySQLDatetime(new Date());
   const payload: any = { ...data, created_at: now, updated_at: now };
-  const [result] = await pool2.query(`INSERT INTO ${assessmentCriteriaTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${assessmentCriteriaTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -375,19 +375,19 @@ export const updateAssessmentCriteria = async (id: number, data: Partial<Assessm
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${assessmentCriteriaTable} SET ${fields} WHERE qset_id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${assessmentCriteriaTable} SET ${fields} WHERE qset_id = ?`, [...values, id]);
   }
 };
 
 export const deleteAssessmentCriteria = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${assessmentCriteriaTable} WHERE qset_id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Assessment criteria not found');
 };
 
 // Reorder an assessment criteria item by changing its qset_order and shifting others
 export const reorderAssessmentCriteria = async (qset_id: number, newOrderInput: number) => {
-  const conn = await pool2.getConnection();
+  const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
@@ -449,12 +449,12 @@ export interface CriteriaOwnership {
 }
 
 export const getAssessmentCriteriaOwnerships = async (): Promise<CriteriaOwnership[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${criteriaOwnershipTable} ORDER BY id DESC`);
+  const [rows] = await pool.query(`SELECT * FROM ${criteriaOwnershipTable} ORDER BY id DESC`);
   return rows as CriteriaOwnership[];
 }
 
 export const getAssessmentCriteriaOwnershipById = async (id: number): Promise<CriteriaOwnership | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
   const data = rows as CriteriaOwnership[];
   return data.length > 0 ? data[0] : null;
 }
@@ -465,7 +465,7 @@ export const createAssessmentCriteriaOwnership = async (data: Partial<CriteriaOw
   const department_id = Number(data.department_id ?? 0);
   if (!ramco_id || !department_id) throw new Error('ramco_id and department_id are required');
   // Check for duplicate
-  const [dupRows] = await pool2.query(
+  const [dupRows] = await pool.query(
     `SELECT id FROM ${criteriaOwnershipTable} WHERE ramco_id = ? AND department_id = ? LIMIT 1`,
     [ramco_id, department_id]
   );
@@ -473,7 +473,7 @@ export const createAssessmentCriteriaOwnership = async (data: Partial<CriteriaOw
     throw new Error('Duplicate ownership record exists for this ramco_id and department_id');
   }
   const payload = { ...data, created_at: now, updated_at: now } as any;
-  const [result] = await pool2.query(`INSERT INTO ${criteriaOwnershipTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${criteriaOwnershipTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 }
 
@@ -483,12 +483,12 @@ export const updateAssessmentCriteriaOwnership = async (id: number, data: Partia
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${criteriaOwnershipTable} SET ${fields} WHERE id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${criteriaOwnershipTable} SET ${fields} WHERE id = ?`, [...values, id]);
   }
 }
 
 export const deleteAssessmentCriteriaOwnership = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${criteriaOwnershipTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Criteria ownership record not found');
 }
@@ -532,7 +532,7 @@ export const getAssessments = async (year?: number, asset?: number): Promise<Ass
   }
 
   query += ` ORDER BY assess_id DESC`;
-  const [rows] = await pool2.query(query, params);
+  const [rows] = await pool.query(query, params);
   return rows as AssessmentRecord[];
 };
 
@@ -554,7 +554,7 @@ export const getAssessmentsWithNCRDetails = async (
   // Batch fetch all NCR details for all assessments in a single query
   const assessmentIds = assessments.map(a => a.assess_id).filter(id => id !== undefined);
   const placeholders = assessmentIds.map(() => '?').join(',');
-  const [allNcrDetails] = await pool2.query(
+  const [allNcrDetails] = await pool.query(
     `SELECT * FROM ${assessmentDetailTable} WHERE assess_id IN (${placeholders}) AND adt_ncr = 2 ORDER BY assess_id, adt_id ASC`,
     assessmentIds
   );
@@ -579,7 +579,7 @@ export const getAssessmentsWithNCRDetails = async (
 };
 
 export const getAssessmentById = async (id: number): Promise<AssessmentRecord | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assessmentTable} WHERE assess_id = ?`, [id]);
   const data = rows as AssessmentRecord[];
   return data.length > 0 ? data[0] : null;
 };
@@ -587,7 +587,7 @@ export const getAssessmentById = async (id: number): Promise<AssessmentRecord | 
 export const createAssessment = async (data: Partial<AssessmentRecord>) => {
   const now = formatToMySQLDatetime(new Date());
   const payload: any = { ...data, created_at: now, updated_at: now };
-  const [result] = await pool2.query(`INSERT INTO ${assessmentTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${assessmentTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -597,12 +597,12 @@ export const updateAssessment = async (id: number, data: Partial<AssessmentRecor
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
   }
 };
 
 export const deleteAssessment = async (id: number) => {
-  const conn = await pool2.getConnection();
+  const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     // First delete child records
@@ -634,7 +634,7 @@ export const updateAssessmentAcceptance = async (id: number, acceptance_status: 
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${assessmentTable} SET ${fields} WHERE assess_id = ?`, [...values, id]);
   }
 };
 
@@ -657,12 +657,12 @@ export interface AssessmentDetailRecord {
 }
 
 export const getAssessmentDetails = async (assess_id: number): Promise<AssessmentDetailRecord[]> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? ORDER BY adt_id ASC`, [assess_id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? ORDER BY adt_id ASC`, [assess_id]);
   return rows as AssessmentDetailRecord[];
 };
 
 export const getAssessmentDetailById = async (id: number): Promise<AssessmentDetailRecord | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
   const data = rows as AssessmentDetailRecord[];
   return data.length > 0 ? data[0] : null;
 };
@@ -670,7 +670,7 @@ export const getAssessmentDetailById = async (id: number): Promise<AssessmentDet
 export const createAssessmentDetail = async (data: Partial<AssessmentDetailRecord>) => {
   const now = formatToMySQLDatetime(new Date());
   const payload: any = { ...data, created_at: now, updated_at: now };
-  const [result] = await pool2.query(`INSERT INTO ${assessmentDetailTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${assessmentDetailTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -680,12 +680,12 @@ export const updateAssessmentDetail = async (id: number, data: Partial<Assessmen
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload).map(v => v === undefined ? null : v);
   if (fields) {
-    await pool2.query(`UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`, [...values, id]);
   }
 };
 
 export const deleteAssessmentDetail = async (id: number) => {
-  const [result] = await pool2.query(`DELETE FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${assessmentDetailTable} WHERE adt_id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Assessment detail not found');
 };
@@ -711,7 +711,7 @@ export const closeNCRItem = async (adt_id: number, data: {
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload);
   
-  const [result] = await pool2.query(
+  const [result] = await pool.query(
     `UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`,
     [...values, adt_id]
   );
@@ -726,7 +726,7 @@ export const closeNCRItem = async (adt_id: number, data: {
 import type { PoolConnection } from 'mysql2/promise';
 
 export const withTransaction = async <T>(fn: (conn: PoolConnection) => Promise<T>): Promise<T> => {
-  const conn = await pool2.getConnection();
+  const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     const result = await fn(conn);
@@ -763,7 +763,7 @@ export const replaceAssessmentDetails = async (
 ): Promise<{ deleted: number; inserted: number }> => {
   if (!assess_id) throw new Error('assess_id is required');
 
-  const conn = await pool2.getConnection();
+  const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
@@ -866,7 +866,7 @@ export const getAssessmentDetailsByAssetAndYear = async (asset_id: number, year:
   }
 
   query += ` ORDER BY assess_id DESC`;
-  const [assessmentRows] = await pool2.query(query, params);
+  const [assessmentRows] = await pool.query(query, params);
   const assessments = assessmentRows as AssessmentRecord[];
 
   // Fetch details for each assessment
@@ -890,13 +890,13 @@ export const getAssessmentNCRDetailsByAsset = async (asset_id: number, year: num
   }
 
   query += ` ORDER BY assess_id DESC`;
-  const [assessmentRows] = await pool2.query(query, params);
+  const [assessmentRows] = await pool.query(query, params);
   const assessments = assessmentRows as AssessmentRecord[];
 
   // Fetch NCR details (adt_ncr = 1) for each assessment
   const result: (AssessmentRecord & { details: AssessmentDetailRecord[] })[] = [];
   for (const assessment of assessments) {
-    const [detailRows] = await pool2.query(
+    const [detailRows] = await pool.query(
       `SELECT * FROM ${assessmentDetailTable} WHERE assess_id = ? AND adt_ncr = 2 ORDER BY adt_id`,
       [assessment.assess_id]
     );
@@ -1036,7 +1036,7 @@ export const getComputerAssessments = async (filters?: {
   }
 
   query += ` ORDER BY id DESC`;
-  const [rows] = await pool2.query(query, params);
+  const [rows] = await pool.query(query, params);
   return rows as ComputerAssessment[];
 };
 
@@ -1050,7 +1050,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
   not_assessed_only?: boolean;
 }): Promise<any[]> => {
   // Get all IT assets (type_id = 1)
-  const [assetRows] = await pool2.query(
+  const [assetRows] = await pool.query(
     `SELECT * FROM assets.assetdata WHERE type_id = 1 ORDER BY register_number ASC`
   );
   const assets = assetRows as any[];
@@ -1064,7 +1064,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
     assessmentParams.push(filters.assessment_year);
   }
 
-  const [assessmentRows] = await pool2.query(assessmentQuery, assessmentParams);
+  const [assessmentRows] = await pool.query(assessmentQuery, assessmentParams);
   const assessments = assessmentRows as any[];
 
   // Create a map of asset_id -> assessment records for quick lookup
@@ -1112,7 +1112,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
  */
 export const getITAssetWithAssessmentStatusById = async (assetId: number): Promise<any | null> => {
   // Get the specific IT asset
-  const [assetRows] = await pool2.query(
+  const [assetRows] = await pool.query(
     `SELECT * FROM assets.assetdata WHERE id = ? AND type_id = 1`,
     [assetId]
   );
@@ -1125,7 +1125,7 @@ export const getITAssetWithAssessmentStatusById = async (assetId: number): Promi
   const asset = assets[0];
 
   // Get all computer assessments for this asset with full data
-  const [assessmentRows] = await pool2.query(
+  const [assessmentRows] = await pool.query(
     `SELECT * FROM ${computerAssessmentTable} WHERE asset_id = ? ORDER BY assessment_year DESC`,
     [assetId]
   );
@@ -1143,7 +1143,7 @@ export const getITAssetWithAssessmentStatusById = async (assetId: number): Promi
 };
 
 export const getComputerAssessmentById = async (id: number): Promise<ComputerAssessment | null> => {
-  const [rows] = await pool2.query(`SELECT * FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT * FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
   const data = rows as ComputerAssessment[];
   return data.length > 0 ? data[0] : null;
 };
@@ -1176,7 +1176,7 @@ export const createComputerAssessment = async (data: Partial<ComputerAssessment>
     updated_at: now,
   } as any;
 
-  const [result] = await pool2.query(`INSERT INTO ${computerAssessmentTable} SET ?`, [payload]);
+  const [result] = await pool.query(`INSERT INTO ${computerAssessmentTable} SET ?`, [payload]);
   return (result as ResultSetHeader).insertId;
 };
 
@@ -1207,12 +1207,12 @@ export const updateComputerAssessment = async (id: number, data: Partial<Compute
   const values = Object.values(payload).map(v => v === undefined ? null : v);
 
   if (fields) {
-    await pool2.query(`UPDATE ${computerAssessmentTable} SET ${fields} WHERE id = ?`, [...values, id]);
+    await pool.query(`UPDATE ${computerAssessmentTable} SET ${fields} WHERE id = ?`, [...values, id]);
   }
 };
 
 export const deleteComputerAssessment = async (id: number): Promise<void> => {
-  const [result] = await pool2.query(`DELETE FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
+  const [result] = await pool.query(`DELETE FROM ${computerAssessmentTable} WHERE id = ?`, [id]);
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('Computer assessment not found');
 };
@@ -1277,7 +1277,7 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
   
   query += ` ORDER BY req_date DESC`;
   
-  const [rows] = await pool2.query(query, params);
+  const [rows] = await pool.query(query, params);
   return Array.isArray(rows) ? rows : [];
 };
 
@@ -1300,6 +1300,6 @@ export const debugNCRRecords = async (): Promise<any[]> => {
     ORDER BY count DESC
   `;
   
-  const [rows] = await pool2.query(query);
+  const [rows] = await pool.query(query);
   return Array.isArray(rows) ? rows : [];
 };

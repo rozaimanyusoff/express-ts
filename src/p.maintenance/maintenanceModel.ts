@@ -9,8 +9,8 @@ const dbAssets = 'assets';
 // Example:
 const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
 const maintenanceTypesTable = `${dbMaintenance}.svctype`;
-const insuranceTable = `${dbAssets}.insurance`;
-const roadtaxTable = `${dbAssets}.vehicle_insurance`;
+const insuranceTable = `${dbMaintenance}.insurance`;
+const roadtaxTable = `${dbMaintenance}.vehicle_insurance`;
 // const maintenanceSchedulesTable = `${dbMaintenance}.maintenance_schedules`;
 // const techniciansTable = `${dbMaintenance}.technicians`;
 
@@ -19,8 +19,8 @@ const maintenanceBillingTable = `${dbBilling}.tbl_inv`;
 
 const poolCarTable = `${dbMaintenance}.poolcar`;
 
-const tngTable = `${dbAssets}.touchngo`;
-const tngDetailTable = `${dbAssets}.touchngo_det`;
+const tngTable = `${dbMaintenance}.touchngo`;
+const tngDetailTable = `${dbMaintenance}.touchngo_det`;
 
 /* =========== INTERFACES =========== */
 
@@ -123,7 +123,7 @@ export const getVehicleMtnRequests = async (status?: string, ramco?: string, yea
 
     query += ` ORDER BY req_id DESC`;
 
-    const [rows] = await pool2.query(query, params);
+    const [rows] = await pool.query(query, params);
     const records = rows as any[];
 
     // Add computed status field to each record
@@ -169,7 +169,7 @@ export const countVehicleMtnRequests = async (status?: string) => {
         query += ` WHERE ` + conditions.join(' AND ');
     }
 
-    const [rows] = await pool2.query(query, params);
+    const [rows] = await pool.query(query, params);
     const result = rows as any[];
     return result[0]?.count ?? 0;
 };
@@ -218,7 +218,7 @@ export const getApplicationStatus = (record: any): string => {
 };
 
 export const getVehicleMtnRequestById = async (id: number) => {
-	const [rows] = await pool2.query(`SELECT * FROM ${vehicleMaintenanceTable} WHERE req_id = ?`, [id]);
+	const [rows] = await pool.query(`SELECT * FROM ${vehicleMaintenanceTable} WHERE req_id = ?`, [id]);
 	const record = (rows as RowDataPacket[])[0];
 
     if (record) {
@@ -271,7 +271,7 @@ export const createVehicleMtnRequest = async (data: any) => {
     const late_notice_date = data.late_notice_date ?? (late_notice ? (req_date ?? null) : null);
     const req_upload = data.req_upload_path ?? null; // normalized DB path from controller (uploads/vehiclemtn2/<filename>)
 
-    const [result] = await pool2.query(
+    const [result] = await pool.query(
         `INSERT INTO ${vehicleMaintenanceTable}
          (req_date, ramco_id, costcenter_id, location_id, ctc_m, vehicle_id, register_number, entry_code, asset_id, odo_start, odo_end, req_comment, svc_opt, extra_mileage, late_notice, late_notice_date, req_upload)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -342,7 +342,7 @@ export const updateVehicleMtnRequest = async (id: number, data: any) => {
 
     const sql = `UPDATE ${vehicleMaintenanceTable} SET ${sets.join(', ')} WHERE req_id = ?`;
     params.push(id);
-    const [result] = await pool2.query(sql, params);
+    const [result] = await pool.query(sql, params);
     return result as ResultSetHeader;
 };
 
@@ -355,7 +355,7 @@ export const deleteVehicleMtnRequest = async (id: number) => {
 //Recommended
 export const recommendVehicleMtnRequest = async (id: number, ramco_id: number | string, stat: number) => {
 	// Placeholder - implement when database structure is provided
-	const [result] = await pool2.query(`
+	const [result] = await pool.query(`
 		UPDATE ${vehicleMaintenanceTable} SET recommendation = ?, recommendation_stat = ?, recommendation_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
 	return result;
 };
@@ -363,14 +363,14 @@ export const recommendVehicleMtnRequest = async (id: number, ramco_id: number | 
 //Approve
 export const approveVehicleMtnRequest = async (id: number, ramco_id: number | string, stat: number) => {
 	// Placeholder - implement when database structure is provided
-	const [result] = await pool2.query(`
+	const [result] = await pool.query(`
 		UPDATE ${vehicleMaintenanceTable} SET approval = ?, approval_stat = ?, approval_date = NOW() WHERE req_id = ?`, [ramco_id, stat, id]);
 	return result;
 };
 
 // Update uploaded request form path after we know the req_id and renamed file
 export const updateVehicleMtnUpload = async (req_id: number, dbPath: string) => {
-    const [result] = await pool2.query(
+    const [result] = await pool.query(
         `UPDATE ${vehicleMaintenanceTable} SET req_upload = ? WHERE req_id = ?`,
         [dbPath, req_id]
     );
@@ -381,7 +381,7 @@ export const updateVehicleMtnUpload = async (req_id: number, dbPath: string) => 
 export const pushVehicleMtnToBilling = async (reqId: number) => {
 	try {
 		// Check if invoice already exists
-		const [existing] = await pool2.query(
+		const [existing] = await pool.query(
 			`SELECT svc_order FROM ${maintenanceBillingTable} WHERE svc_order = ?`,
 			[reqId]
 		) as RowDataPacket[][];
@@ -391,7 +391,7 @@ export const pushVehicleMtnToBilling = async (reqId: number) => {
 		}
 
         // Insert invoice record (trust caller did the approval); tolerate nulls for optional fields
-        const [result] = await pool2.query(`
+        const [result] = await pool.query(`
             INSERT INTO ${maintenanceBillingTable}
             (svc_order, asset_id, register_number, entry_code, ws_id, entry_date, costcenter_id, location_id)
             SELECT req_id, asset_id, register_number, entry_code, ws_id, approval_date,costcenter_id, location_id FROM ${vehicleMaintenanceTable} WHERE req_id = ?
@@ -415,19 +415,19 @@ export const pushVehicleMtnToBilling = async (reqId: number) => {
 /* =========== MAINTENANCE TYPE =========== */
 export const getServiceTypes = async () => {
 	// Placeholder - implement when database structure is provided
-	const [rows] = await pool2.query(`SELECT * FROM ${maintenanceTypesTable}`);
+	const [rows] = await pool.query(`SELECT * FROM ${maintenanceTypesTable}`);
 	return rows;
 };
 
 export const getServiceTypeById = async (id: number) => {
 	// Placeholder - implement when database structure is provided
-	const [rows] = await pool2.query(`SELECT * FROM ${maintenanceTypesTable} WHERE id = ?`, [id]);
+	const [rows] = await pool.query(`SELECT * FROM ${maintenanceTypesTable} WHERE id = ?`, [id]);
 	return (rows as RowDataPacket[])[0];
 };
 
 export const createServiceType = async (typeData: any) => {
 	// Placeholder - implement when database structure is provided
-	const [result] = await pool2.query(`INSERT INTO ${maintenanceTypesTable} SET ?`, [typeData]);
+	const [result] = await pool.query(`INSERT INTO ${maintenanceTypesTable} SET ?`, [typeData]);
 	return result;
 };
 
@@ -471,7 +471,7 @@ export const getVehicleMtnRequestByAssetId = async (vehicleId: number, status?: 
 
 		query += ` ORDER BY req_id DESC`;
 
-		const [rows] = await pool2.query(query, params) as RowDataPacket[][];
+		const [rows] = await pool.query(query, params) as RowDataPacket[][];
 		return rows;
 	} catch (error) {
 		throw error;
@@ -483,31 +483,31 @@ export const getVehicleMtnRequestByAssetId = async (vehicleId: number, status?: 
 //insurance CRUD operations will be here when database structure is provided
 export const getInsurances = async () => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} ORDER BY id DESC`);
+    const [rows] = await pool.query(`SELECT * FROM ${insuranceTable} ORDER BY id DESC`);
     return rows;
 }
 
 export const getInsuranceById = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${insuranceTable} WHERE id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM ${insuranceTable} WHERE id = ?`, [id]);
     return (rows as RowDataPacket[])[0];
 };
 
 export const createInsurance = async (data: any) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`INSERT INTO ${insuranceTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${insuranceTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
 };
 
 export const updateInsurance = async (id: number, data: any) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`UPDATE ${insuranceTable} SET ? WHERE id = ?`, [data, id]);
+    const [result] = await pool.query(`UPDATE ${insuranceTable} SET ? WHERE id = ?`, [data, id]);
     return result;
 };
 
 export const deleteInsurance = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`DELETE FROM ${insuranceTable} WHERE id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${insuranceTable} WHERE id = ?`, [id]);
     return result;
 }
 
@@ -515,31 +515,31 @@ export const deleteInsurance = async (id: number) => {
 //roadtax CRUD operations will be here when database structure is provided
 export const getRoadTaxes = async () => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} ORDER BY rt_id DESC`);
+    const [rows] = await pool.query(`SELECT * FROM ${roadtaxTable} ORDER BY rt_id DESC`);
     return rows;
 };
 
 export const getRoadTaxById = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
     return (rows as RowDataPacket[])[0];
 };
 
 export const getRoadTaxByInsuranceId = async (insuranceId: number) => {
     // Placeholder - implement when database structure is provided
-    const [rows] = await pool2.query(`SELECT * FROM ${roadtaxTable} WHERE insurance_id = ? ORDER BY rt_id DESC`, [insuranceId]);
+    const [rows] = await pool.query(`SELECT * FROM ${roadtaxTable} WHERE insurance_id = ? ORDER BY rt_id DESC`, [insuranceId]);
     return rows;
 };
 
 export const createRoadTax = async (data: any) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`INSERT INTO ${roadtaxTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${roadtaxTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
 };
 
 export const updateRoadTax = async (id: number, data: any) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`UPDATE ${roadtaxTable} SET ? WHERE rt_id = ?`, [data, id]);
+    const [result] = await pool.query(`UPDATE ${roadtaxTable} SET ? WHERE rt_id = ?`, [data, id]);
     return result;
 };
 
@@ -554,7 +554,7 @@ export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: numbe
 
     // Check which asset_ids already exist in roadtax table
     const placeholders = ids.map(() => '?').join(',');
-    const [existingRows] = await pool2.query(
+    const [existingRows] = await pool.query(
         `SELECT DISTINCT asset_id FROM ${roadtaxTable} WHERE asset_id IN (${placeholders})`,
         ids
     ) as RowDataPacket[][];
@@ -571,7 +571,7 @@ export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: numbe
         const updatePlaceholders = toUpdate.map(() => '?').join(',');
         const updateSql = `UPDATE ${roadtaxTable} SET insurance_id = ? WHERE asset_id IN (${updatePlaceholders})`;
         const updateParams = [insuranceId, ...toUpdate];
-        const [updateResult] = await pool2.query(updateSql, updateParams) as ResultSetHeader[];
+        const [updateResult] = await pool.query(updateSql, updateParams) as ResultSetHeader[];
         updatedCount = updateResult.affectedRows || 0;
     }
 
@@ -579,7 +579,7 @@ export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: numbe
     if (toInsert.length > 0) {
         for (const assetId of toInsert) {
             try {
-                const [insertResult] = await pool2.query(
+                const [insertResult] = await pool.query(
                     `INSERT INTO ${roadtaxTable} (asset_id, insurance_id) VALUES (?, ?)`,
                     [assetId, insuranceId]
                 ) as ResultSetHeader[];
@@ -609,13 +609,13 @@ export const updateRoadTaxExpiryByAssets = async (rtExp: string, assetIds: numbe
     const placeholders = ids.map(() => '?').join(',');
     const sql = `UPDATE ${roadtaxTable} SET rt_exp = ?, updated_at = NOW() WHERE asset_id IN (${placeholders})`;
     const params = [rtExp, ...ids];
-    const [result] = await pool2.query(sql, params);
+    const [result] = await pool.query(sql, params);
     return result;
 };
 
 export const deleteRoadTax = async (id: number) => {
     // Placeholder - implement when database structure is provided
-    const [result] = await pool2.query(`DELETE FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${roadtaxTable} WHERE rt_id = ?`, [id]);
     return result;
 };
 
@@ -630,7 +630,7 @@ export const getPoolCars = async (opts?: { asset_id?: number }) => {
         params.push(Number(opts.asset_id));
     }
     const sql = `SELECT * FROM ${poolCarTable}` + (where.length ? ` WHERE ${where.join(' AND ')}` : '') + ` ORDER BY pcar_id DESC`;
-    const [rows] = await pool2.query(sql, params);
+    const [rows] = await pool.query(sql, params);
     const arr = rows as RowDataPacket[];
     // Attach computed status based on approval_stat and pcar_cancel
     return arr.map((r: any) => ({
@@ -639,21 +639,21 @@ export const getPoolCars = async (opts?: { asset_id?: number }) => {
     }));
 };
 export const getPoolCarById = async (id: number) => {
-    const [rows] = await pool2.query(`SELECT * FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
     const rec = (rows as RowDataPacket[])[0];
     if (!rec) return rec;
     return { ...(rec as any), status: getPoolCarStatus(rec as any) };
 };
 export const createPoolCar = async (data: any) => {
-    const [result] = await pool2.query(`INSERT INTO ${poolCarTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${poolCarTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
 };
 export const updatePoolCar = async (id: number, data: any) => {
-    const [result] = await pool2.query(`UPDATE ${poolCarTable} SET ? WHERE pcar_id = ?`, [data, id]);
+    const [result] = await pool.query(`UPDATE ${poolCarTable} SET ? WHERE pcar_id = ?`, [data, id]);
     return result;
 };
 export const deletePoolCar = async (id: number) => {
-    const [result] = await pool2.query(`DELETE FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${poolCarTable} WHERE pcar_id = ?`, [id]);
     return result;
 };
 
@@ -720,7 +720,7 @@ export const getAvailablePoolCars = async () => {
         -- Exclude 'pending' rows (awaiting approval with no return yet)
         WHERE NOT ((t.approval_stat IS NULL OR t.approval_stat = 0) AND t.pcar_retdate IS NULL)
         ORDER BY t.pcar_id DESC`;
-    const [rows] = await pool2.query(sql);
+    const [rows] = await pool.query(sql);
     return rows as RowDataPacket[];
 };
 
@@ -775,44 +775,44 @@ export const getPoolCarStatus = (input: any, pcar_cancelParam?: any): string => 
 /* ============= TOUCH & GO ================== */
 //CRUD model for touch n go data. has parent tngTable and child tngDetailTable that linked with tng_id
 export const getTngRecords = async () => {
-    const [rows] = await pool2.query(`SELECT * FROM ${tngTable} ORDER BY tng_id DESC`);
+    const [rows] = await pool.query(`SELECT * FROM ${tngTable} ORDER BY tng_id DESC`);
     return rows as RowDataPacket[];
 };
 export const getTngRecordById = async (id: number) => {
-    const [rows] = await pool2.query(`SELECT * FROM ${tngTable} WHERE tng_id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM ${tngTable} WHERE tng_id = ?`, [id]);
     return (rows as RowDataPacket[])};
 export const createTngRecord = async (data: any) => {
-    const [result] = await pool2.query(`INSERT INTO ${tngTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${tngTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
 };
 export const updateTngRecord = async (id: number, data: any) => {
-    const [result] = await pool2.query(`UPDATE ${tngTable} SET ? WHERE tng_id = ?`, [data, id]);
+    const [result] = await pool.query(`UPDATE ${tngTable} SET ? WHERE tng_id = ?`, [data, id]);
     return result;
 };
 export const deleteTngRecord = async (id: number) => {
-    const [result] = await pool2.query(`DELETE FROM ${tngTable} WHERE tng_id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${tngTable} WHERE tng_id = ?`, [id]);
     return result;
 };
 
 // CRUD for touch n go details
 export const getTngDetailsByTngId = async (tngId: number) => {
-    const [rows] = await pool2.query(`SELECT * FROM ${tngDetailTable} WHERE tng_id = ? ORDER BY tngd_id ASC`, [tngId]);
+    const [rows] = await pool.query(`SELECT * FROM ${tngDetailTable} WHERE tng_id = ? ORDER BY tngd_id ASC`, [tngId]);
     return rows as RowDataPacket[];
 };
 export const getTngDetailById = async (id: number) => {
-    const [rows] = await pool2.query(`SELECT * FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT * FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
     return (rows as RowDataPacket[])[0];
 };
 export const createTngDetail = async (data: any) => {
-    const [result] = await pool2.query(`INSERT INTO ${tngDetailTable} SET ?`, [data]);
+    const [result] = await pool.query(`INSERT INTO ${tngDetailTable} SET ?`, [data]);
     return (result as ResultSetHeader).insertId;
 };
 export const updateTngDetail = async (id: number, data: any) => {
-    const [result] = await pool2.query(`UPDATE ${tngDetailTable} SET ? WHERE tngd_id = ?`, [data, id]);
+    const [result] = await pool.query(`UPDATE ${tngDetailTable} SET ? WHERE tngd_id = ?`, [data, id]);
     return result;
 };
 export const deleteTngDetail = async (id: number) => {
-    const [result] = await pool2.query(`DELETE FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM ${tngDetailTable} WHERE tngd_id = ?`, [id]);
     return result;
 };
 
@@ -846,7 +846,7 @@ export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => 
             params.push(ramcoId);
         }
         
-        const [rows]: any = await pool2.query(query, params);
+        const [rows]: any = await pool.query(query, params);
         const result = rows?.[0];
         return result?.count ?? 0;
     } catch (error) {

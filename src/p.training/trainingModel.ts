@@ -84,54 +84,54 @@ export const getTrainings = async (year?: number) => {
       params.push(Math.floor(year!));
    }
    sql += ' ORDER BY training_id DESC';
-   const [rows] = await pool2.query(sql, params);
+   const [rows] = await pool.query(sql, params);
    return rows as any[];
 };
 
 export const getTrainingById = async (id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${trainingEventTable} WHERE training_id = ? LIMIT 1`, [id]);
+   const [rows] = await pool.query(`SELECT * FROM ${trainingEventTable} WHERE training_id = ? LIMIT 1`, [id]);
    const arr = rows as any[];
    return arr[0] || null;
 };
 
 export const createTraining = async (data: any) => {
-   const [result] = await pool2.query(`INSERT INTO ${trainingEventTable} SET ?`, [data]);
+   const [result] = await pool.query(`INSERT INTO ${trainingEventTable} SET ?`, [data]);
    return result as any;
 };
 
 export const updateTraining = async (id: number, data: any) => {
-   const [result] = await pool2.query(`UPDATE ${trainingEventTable} SET ? WHERE training_id = ?`, [data, id]);
+   const [result] = await pool.query(`UPDATE ${trainingEventTable} SET ? WHERE training_id = ?`, [data, id]);
    return result as any;
 };
 
 export const deleteTraining = async (id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${trainingEventTable} WHERE training_id = ?`, [id]);
+   const [result] = await pool.query(`DELETE FROM ${trainingEventTable} WHERE training_id = ?`, [id]);
    return result as any;
 };
 
 /* ========== TRAINERS =========== */
 export const getTrainers = async () => {
-   const [rows] = await pool2.query(`SELECT DISTINCT * FROM ${trainerTable} ORDER BY trainer_id DESC LIMIT 200`);
+   const [rows] = await pool.query(`SELECT DISTINCT * FROM ${trainerTable} ORDER BY trainer_id DESC LIMIT 200`);
    return rows as any[];
 };
 
 export const getTrainerById = async (id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${trainerTable} WHERE trainer_id = ? LIMIT 1`, [id]);
+   const [rows] = await pool.query(`SELECT * FROM ${trainerTable} WHERE trainer_id = ? LIMIT 1`, [id]);
    return (rows as any[])[0] || null;
 };
 
 export const createTrainer = async (data: any) => {
-   const [result] = await pool2.query(`INSERT INTO ${trainerTable} SET ?`, [data]);
+   const [result] = await pool.query(`INSERT INTO ${trainerTable} SET ?`, [data]);
    return result as any;
 };
 
 export const updateTrainer = async (id: number, data: any) => {
-   const [result] = await pool2.query(`UPDATE ${trainerTable} SET ? WHERE trainer_id = ?`, [data, id]);
+   const [result] = await pool.query(`UPDATE ${trainerTable} SET ? WHERE trainer_id = ?`, [data, id]);
    return result as any;
 };
 
 export const deleteTrainer = async (id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${trainerTable} WHERE trainer_id = ?`, [id]);
+   const [result] = await pool.query(`DELETE FROM ${trainerTable} WHERE trainer_id = ?`, [id]);
    return result as any;
 };
 
@@ -147,42 +147,42 @@ export const getCourses = async (searchTerm?: string) => {
    }
    
    query += ` ORDER BY course_id DESC LIMIT 200`;
-   const [rows] = await pool2.query(query, params);
+   const [rows] = await pool.query(query, params);
    const arr = rows as any[];
    return arr.map(decodeStringsShallow);
 };
 
 export const getCourseById = async (id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${courseTable} WHERE course_id = ? LIMIT 1`, [id]);
+   const [rows] = await pool.query(`SELECT * FROM ${courseTable} WHERE course_id = ? LIMIT 1`, [id]);
    const item = (rows as any[])[0] || null;
    return item ? decodeStringsShallow(item) : null;
 };
 
 export const createCourse = async (data: any) => {
-   const [result] = await pool2.query(`INSERT INTO ${courseTable} SET ?`, [data]);
+   const [result] = await pool.query(`INSERT INTO ${courseTable} SET ?`, [data]);
    return result as any;
 };
 
 export const updateCourse = async (id: number, data: any) => {
-   const [result] = await pool2.query(`UPDATE ${courseTable} SET ? WHERE course_id = ?`, [data, id]);
+   const [result] = await pool.query(`UPDATE ${courseTable} SET ? WHERE course_id = ?`, [data, id]);
    return result as any;
 };
 
 export const deleteCourse = async (id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${courseTable} WHERE course_id = ?`, [id]);
+   const [result] = await pool.query(`DELETE FROM ${courseTable} WHERE course_id = ?`, [id]);
    return result as any;
 };
 
 // Course Costings
 export const getCourseCostingsByCourseId = async (course_id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${courseCostingTable} WHERE course_id = ? ORDER BY costing_id`, [course_id]);
+   const [rows] = await pool.query(`SELECT * FROM ${courseCostingTable} WHERE course_id = ? ORDER BY costing_id`, [course_id]);
    return rows as any[];
 };
 
 export const createMultipleCourseCostings = async (costings: any[]) => {
    if (!Array.isArray(costings) || costings.length === 0) return { affectedRows: 0 };
    const values = costings.map(c => [c.course_id, c.cost_desc, c.cost]);
-   const [result] = await pool2.query(
+   const [result] = await pool.query(
       `INSERT INTO ${courseCostingTable} (course_id, cost_desc, cost) VALUES ?`,
       [values]
    );
@@ -190,44 +190,44 @@ export const createMultipleCourseCostings = async (costings: any[]) => {
 };
 
 export const deleteCourseCostingsByCourseId = async (course_id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${courseCostingTable} WHERE course_id = ?`, [course_id]);
+   const [result] = await pool.query(`DELETE FROM ${courseCostingTable} WHERE course_id = ?`, [course_id]);
    return result as any;
 };
 
 /* ========== PARTICIPANTS =========== */
 export const getParticipants = async () => {
-   const [rows] = await pool2.query(`SELECT * FROM ${participantTable} ORDER BY participant_id DESC`);
+   const [rows] = await pool.query(`SELECT * FROM ${participantTable} ORDER BY participant_id DESC`);
    return rows as any[];
 };
 
 export const getParticipantById = async (id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${participantTable} WHERE participant_id = ? LIMIT 1`, [id]);
+   const [rows] = await pool.query(`SELECT * FROM ${participantTable} WHERE participant_id = ? LIMIT 1`, [id]);
    return (rows as any[])[0] || null;
 };
 
 export const createParticipant = async (data: any) => {
-   const [result] = await pool2.query(`INSERT INTO ${participantTable} SET ?`, [data]);
+   const [result] = await pool.query(`INSERT INTO ${participantTable} SET ?`, [data]);
    return result as any;
 };
 
 export const updateParticipant = async (id: number, data: any) => {
-   const [result] = await pool2.query(`UPDATE ${participantTable} SET ? WHERE participant_id = ?`, [data, id]);
+   const [result] = await pool.query(`UPDATE ${participantTable} SET ? WHERE participant_id = ?`, [data, id]);
    return result as any;
 };
 
 export const deleteParticipant = async (id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${participantTable} WHERE participant_id = ?`, [id]);
+   const [result] = await pool.query(`DELETE FROM ${participantTable} WHERE participant_id = ?`, [id]);
    return result as any;
 };
 
 export const getParticipantsByTrainingId = async (training_id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${participantTable} WHERE training_id = ? ORDER BY participant_id DESC`, [training_id]);
+   const [rows] = await pool.query(`SELECT * FROM ${participantTable} WHERE training_id = ? ORDER BY participant_id DESC`, [training_id]);
    return rows as any[];
 };
 
 /* ========== COSTING =========== */
 export const createCosting = async (data: any) => {
-   const [result] = await pool2.query(`INSERT INTO ${costingTable} SET ?`, [data]);
+   const [result] = await pool.query(`INSERT INTO ${costingTable} SET ?`, [data]);
    return result as any;
 };
 
@@ -264,16 +264,16 @@ export const createMultipleParticipants = async (participants: any[]) => {
 };
 
 export const deleteCostingsByTrainingId = async (training_id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${costingTable} WHERE training_id = ?`, [training_id]);
+   const [result] = await pool.query(`DELETE FROM ${costingTable} WHERE training_id = ?`, [training_id]);
    return result as any;
 };
 
 export const deleteParticipantsByTrainingId = async (training_id: number) => {
-   const [result] = await pool2.query(`DELETE FROM ${participantTable} WHERE training_id = ?`, [training_id]);
+   const [result] = await pool.query(`DELETE FROM ${participantTable} WHERE training_id = ?`, [training_id]);
    return result as any;
 };
 
 export const getCostingsByTrainingId = async (training_id: number) => {
-   const [rows] = await pool2.query(`SELECT * FROM ${costingTable} WHERE training_id = ? ORDER BY costing_id DESC`, [training_id]);
+   const [rows] = await pool.query(`SELECT * FROM ${costingTable} WHERE training_id = ? ORDER BY costing_id DESC`, [training_id]);
    return rows as any[];
 };

@@ -1851,7 +1851,7 @@ const calculateSimilarity = (str1: string, str2: string): number => {
 export const checkRegistryModels = async (req: Request, res: Response) => {
   try {
     // Get all registry entries with purchase_id and model
-    const [registryRows] = await pool2.query(
+    const [registryRows] = await pool.query(
       `SELECT purchase_id, model FROM purchases2.purchase_asset_registry WHERE model IS NOT NULL AND model != '' ORDER BY purchase_id, model`
     );
     const registryEntries = (registryRows as any[]) || [];
