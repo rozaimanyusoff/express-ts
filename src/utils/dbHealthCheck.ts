@@ -1,3 +1,4 @@
+import { Server } from 'socket.io';
 import { pool, pool2 } from './db';
 
 interface HealthCheckResult {
@@ -11,6 +12,13 @@ interface HealthCheckResult {
     error?: string;
     latency?: number;
   };
+}
+
+interface HealthCheckResponse extends HealthCheckResult {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  timestamp: string;
+  uptime: number;
+  message?: string;
 }
 
 /**
@@ -55,14 +63,44 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
 };
 
 /**
- * Periodic health check that logs warnings when database is slow or disconnected
- * @param intervalMs - Interval in milliseconds (default: 30000 = 30 seconds)
+ * Determine overall health status
  */
-export const startPeriodicHealthCheck = (intervalMs = 30000): NodeJS.Timeout => {
+const determineHealthStatus = (health: HealthCheckResult): 'healthy' | 'degraded' | 'unhealthy' => {
+  const pool1Ok = health.pool1.connected && (!health.pool1.latency || health.pool1.latency <= 1000);
+  const pool2Ok = health.pool2.connected && (!health.pool2.latency || health.pool2.latency <= 1000);
+
+  if (pool1Ok && pool2Ok) return 'healthy';
+  if (health.pool1.connected || health.pool2.connected) return 'degraded';
+  return 'unhealthy';
+};
+
+/**
+ * Periodic health check that broadcasts status via Socket.IO and logs warnings
+ * @param intervalMs - Interval in milliseconds (default: 30000 = 30 seconds)
+ * @param io - Socket.IO server instance for broadcasting health status
+ */
+export const startPeriodicHealthCheck = (intervalMs = 30000, io?: Server): NodeJS.Timeout => {
   console.log(`Starting database health monitoring (interval: ${intervalMs}ms)`);
   
   return setInterval(async () => {
     const health = await checkDatabaseHealth();
+    const status = determineHealthStatus(health);
+    
+    // Build response for both logging and Socket.IO broadcast
+    const healthResponse: HealthCheckResponse = {
+      ...health,
+      status,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      message: status === 'healthy' ? 'All systems operational' : 
+               status === 'degraded' ? 'One or more systems degraded' : 
+               'Critical system issues'
+    };
+
+    // Broadcast to all connected clients via Socket.IO
+    if (io) {
+      io.emit('backend:health', healthResponse);
+    }
     
     // Log warnings for any issues
     if (!health.pool1.connected) {
@@ -109,5 +147,6 @@ export const testConnection = async (timeoutMs = 5000): Promise<boolean> => {
 export default {
   checkDatabaseHealth,
   startPeriodicHealthCheck,
-  testConnection
+  testConnection,
+  determineHealthStatus
 };

@@ -54,8 +54,8 @@ export { io }; // Export the WebSocket instance
 testConnection().then((isConnected) => {
   if (isConnected) {
     logger.info('✅ Database connection test successful');
-    // Start periodic health monitoring (every 30 seconds)
-    startPeriodicHealthCheck(30000);
+    // Start periodic health monitoring (every 30 seconds) and broadcast via Socket.IO
+    startPeriodicHealthCheck(30000, io);
   } else {
     logger.error('⚠️ Database connection test failed - server starting anyway');
   }

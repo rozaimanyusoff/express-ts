@@ -83,13 +83,19 @@ app.use('/api/auth', authRoutes);
 app.get('/api/health', async (req, res) => {
   try {
     const dbHealth = await checkDatabaseHealth();
-    const isHealthy = dbHealth.pool1.connected && dbHealth.pool2.connected;
+    const pool1Ok = dbHealth.pool1.connected && (!dbHealth.pool1.latency || dbHealth.pool1.latency <= 1000);
+    const pool2Ok = dbHealth.pool2.connected && (!dbHealth.pool2.latency || dbHealth.pool2.latency <= 1000);
+    const status = (pool1Ok && pool2Ok) ? 'healthy' : (dbHealth.pool1.connected || dbHealth.pool2.connected) ? 'degraded' : 'unhealthy';
+    const isHealthy = status === 'healthy';
     
     res.status(isHealthy ? 200 : 503).json({
-      database: dbHealth,
-      status: isHealthy ? 'healthy' : 'unhealthy',
+      ...dbHealth,
+      status,
       timestamp: new Date().toISOString(),
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      message: status === 'healthy' ? 'All systems operational' : 
+               status === 'degraded' ? 'One or more systems degraded' : 
+               'Critical system issues'
     });
   } catch (error) {
     res.status(503).json({

@@ -16,6 +16,7 @@ import * as userModel from '../../p.user/userModel';
 import {pool} from '../../utils/db';
 import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
 import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
+import { adminPincodeTemplate } from '../../utils/emailTemplates/adminPincode';
 import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
 import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
 import logger from '../../utils/logger';
@@ -1062,4 +1063,91 @@ export const deletePendingUser = async (req: Request, res: Response): Promise<Re
     }
 
     return res.status(200).json({ message: 'Pending users processed', results, status: 'success' });
+}
+
+/**
+ * Send 6-digit pincode to admin for special maintenance mode access
+ * Requires: emailOrUsername and role must be 1 (admin)
+ */
+export const sendAdminPincode = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { emailOrUsername } = req.body || {};
+
+        // Validate input
+        if (!emailOrUsername || typeof emailOrUsername !== 'string') {
+            return res.status(400).json({
+                status: 'error',
+                message: 'emailOrUsername is required',
+                data: null
+            });
+        }
+
+        // Find user by username or email
+        const user = await userModel.getUserByUsernameOrEmail(emailOrUsername.trim());
+
+        if (!user) {
+            logger.warn(`Admin pincode request failed: user not found - ${emailOrUsername}`);
+            return res.status(404).json({
+                status: 'error',
+                message: 'User not found',
+                data: null
+            });
+        }
+
+        // Verify user has admin role (role: 1)
+        if (user.role !== 1) {
+            logger.warn(`Admin pincode request failed: user ${user.id} does not have admin role (role: ${user.role})`);
+            await logModel.logAuthActivity(user.id, 'other', 'fail', { 
+                action: 'send_admin_pincode', 
+                reason: 'insufficient_role',
+                userRole: user.role
+            }, req);
+            return res.status(403).json({
+                status: 'error',
+                message: 'You do not have admin access',
+                data: null
+            });
+        }
+
+        // Generate 6-digit pincode
+        const pincode = String(Math.floor(100000 + Math.random() * 900000));
+
+        // Store pincode (hashed, 15-minute expiry)
+        await userModel.storeAdminPincode(user.id, pincode, 15);
+
+        // Send email with pincode
+        const brandName = process.env.BRAND_NAME || 'System Administration';
+        const emailContent = adminPincodeTemplate(user.fname || user.username || user.email, pincode, brandName);
+        await sendMail(
+            user.email,
+            '🔐 Admin Access Code - ' + new Date().toLocaleString(),
+            emailContent
+        );
+
+        logger.info(`Admin pincode sent to user ${user.id} (${user.email})`);
+        await logModel.logAuthActivity(user.id, 'other', 'success', { 
+            action: 'send_admin_pincode' 
+        }, req);
+
+        return res.status(200).json({
+            status: 'success',
+            message: 'Pincode has been sent to your email',
+            data: {
+                email: user.email,
+                expiresIn: '15 minutes'
+            }
+        });
+    } catch (error) {
+        logger.error('Send admin pincode error:', error);
+        await logModel.logAuthActivity(0, 'other', 'fail', { 
+            action: 'send_admin_pincode', 
+            error: String(error instanceof Error ? error.message : error)
+        }, req);
+
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to send pincode',
+            data: null
+        });
+    }
 }

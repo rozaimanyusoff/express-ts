@@ -5,7 +5,7 @@ import rateLimiter, { clearClientBlockByKey, clearClientBlockByParams, getAttemp
 //import { rsaDecryptMiddleware } from '../middlewares/rsaDecrypt.js';
 import tokenValidator from '../../middlewares/tokenValidator.js';
 import asyncHandler from '../../utils/asyncHandler.js';
-import { activateAccount, approvePendingUser, deletePendingUser, inviteUsers, login, logout, refreshToken, register, resetPassword, resetPasswordMulti, updatePassword, validateActivationDetails, verifyRegisterUser, verifyResetToken } from './authController.js';
+import { activateAccount, approvePendingUser, deletePendingUser, inviteUsers, login, logout, refreshToken, register, resetPassword, resetPasswordMulti, sendAdminPincode, updatePassword, validateActivationDetails, verifyRegisterUser, verifyResetToken } from './authController.js';
 
 const router = Router();
 router.post('/register/verifyme', asyncHandler(verifyRegisterUser));
@@ -23,6 +23,9 @@ router.post('/refresh-token', asyncHandler(refreshToken)); // not apply tokenVal
 router.post('/approve-pending-user', asyncHandler(approvePendingUser));
 router.post('/invite-users', asyncHandler(inviteUsers));
 router.post('/delete-pending-user', asyncHandler(deletePendingUser));
+
+// Admin: send 6-digit pincode for special admin access during maintenance mode
+router.post('/admin/pincode', rateLimiter[0], rateLimiter[1], asyncHandler(sendAdminPincode));
 
 // Read-only status endpoint to help frontend show countdown timers
 // Query param `route` allows checking a specific route's block status (default: /api/auth/login)

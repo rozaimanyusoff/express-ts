@@ -951,3 +951,88 @@ export const deletePermission = async (id: number) => {
     return result;
 };
 
+// Get user by username or email
+export const getUserByUsernameOrEmail = async (emailOrUsername: string): Promise<null | Users> => {
+    try {
+        const [rows]: any[] = await pool.query(
+            `SELECT id, username, email, contact, user_type, role, status, fname, last_login, last_nav, activated_at, activation_code, avatar FROM ${usersTable} WHERE username = ? OR email = ? LIMIT 1`,
+            [emailOrUsername, emailOrUsername]
+        );
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+        const u = rows[0];
+        return {
+            activated_at: u.activated_at ? new Date(u.activated_at) : null,
+            activation_code: u.activation_code,
+            avatar: u.avatar,
+            contact: u.contact,
+            created_at: new Date(),
+            email: u.email,
+            fname: u.fname,
+            id: u.id,
+            last_host: null,
+            last_ip: null,
+            last_login: u.last_login ? new Date(u.last_login) : null,
+            last_nav: u.last_nav,
+            last_os: null,
+            password: '',
+            reset_token: null,
+            role: u.role,
+            status: u.status,
+            user_type: u.user_type,
+            usergroups: null,
+            username: u.username,
+        } as Users;
+    } catch (error) {
+        logger.error(`Database error in getUserByUsernameOrEmail: ${error}`);
+        throw error;
+    }
+};
+
+// Store admin pincode with expiration (15 minutes)
+export const storeAdminPincode = async (userId: number, pincode: string, expiryMinutes: number = 15): Promise<void> => {
+    try {
+        const expiryTime = new Date(Date.now() + expiryMinutes * 60 * 1000);
+        // Use reset_token field to temporarily store pincode with hash
+        const hashedPincode = await hash(pincode, 10);
+        await pool.query(
+            `UPDATE ${usersTable} SET reset_token = ? WHERE id = ?`,
+            [hashedPincode, userId]
+        );
+        // You may want to add a log or tracking for this
+        logger.info(`Admin pincode generated for user ${userId}, expires at ${expiryTime.toISOString()}`);
+    } catch (error) {
+        logger.error(`Database error in storeAdminPincode: ${error}`);
+        throw error;
+    }
+};
+
+// Verify admin pincode
+export const verifyAdminPincode = async (userId: number, pincode: string): Promise<boolean> => {
+    try {
+        const [rows]: any[] = await pool.query(
+            `SELECT reset_token FROM ${usersTable} WHERE id = ? LIMIT 1`,
+            [userId]
+        );
+        if (!Array.isArray(rows) || rows.length === 0) return false;
+        const storedHash = rows[0].reset_token;
+        if (!storedHash) return false;
+        return await compare(pincode, storedHash);
+    } catch (error) {
+        logger.error(`Database error in verifyAdminPincode: ${error}`);
+        throw error;
+    }
+};
+
+// Clear admin pincode after verification
+export const clearAdminPincode = async (userId: number): Promise<void> => {
+    try {
+        await pool.query(
+            `UPDATE ${usersTable} SET reset_token = NULL WHERE id = ?`,
+            [userId]
+        );
+    } catch (error) {
+        logger.error(`Database error in clearAdminPincode: ${error}`);
+        throw error;
+    }
+};
+
