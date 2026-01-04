@@ -1,6 +1,6 @@
 import {pool} from '../utils/db';
 import logger from '../utils/logger';
-import { logAuthActivityToFile } from '../utils/fileAuthLogger';
+import { logAuthActivityToFile, getTodayAuthLogs, getUserTodayAuthLogs } from '../utils/fileAuthLogger';
 
 export type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
 
@@ -37,39 +37,35 @@ export const logAuthActivity = async (
     
     await logAuthActivityToFile(entry);
     
-    // Keep database logging for backward compatibility - can be disabled later
-    await pool.query(
-      `INSERT INTO logs_auth (user_id, action, status, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, action, status, ip, userAgent, details]
-    );
+    // File-based logging is now the primary mechanism
+    // logs_auth table is deprecated and no longer used
   } catch (error) {
     logger.error('Error logging auth activity:', error);
   }
 };
 
 // Get authentication logs for all users (for admin view)
+// Now uses file-based logging instead of database
 export const getAuthLogs = async (): Promise<any[]> => {
     try {
-        const [rows]: any[] = await pool.query(
-            'SELECT * FROM logs_auth ORDER BY created_at DESC'
-        );
-        return rows;
+        const logs = await getTodayAuthLogs();
+        // Return sorted by created_at descending
+        return logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     } catch (error) {
-        logger.error('Database error in getAuthLogs:', error);
+        logger.error('Error retrieving auth logs from file:', error);
         throw error;
     }
 };
 
 // Get authentication logs for a user (for admin view)
+// Now uses file-based logging instead of database
 export const getUserAuthLogs = async (userId: number): Promise<any[]> => {
     try {
-        const [rows]: any[] = await pool.query(
-            'SELECT id, user_id, action, status, ip, user_agent, details, created_at FROM logs_auth WHERE user_id = ? ORDER BY created_at DESC',
-            [userId]
-        );
-        return rows;
+        const logs = await getUserTodayAuthLogs(userId);
+        // Return sorted by created_at descending
+        return logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     } catch (error) {
-        logger.error('Database error in getUserAuthLogs:', error);
+        logger.error('Error retrieving user auth logs from file:', error);
         throw error;
     }
 };

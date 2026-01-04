@@ -6,6 +6,7 @@ import { pool, pool2 } from "../utils/db";
 // Database and table declarations for easy swapping/testing
 const db = 'assets';
 const companyDb = 'companies';
+const applicationsDb = 'applications';
 const assetTable = `${db}.assetdata`;
 const assetSpecsTable = `${db}.spec_properties`;
 const assetManagerTable = `${db}.asset_managers`;
@@ -506,7 +507,8 @@ const SPEC_SCHEMA = process.env.ASSET_SPEC_SCHEMA || 'assetdata';
 
 function getPrimarySpecTableName(type_id: number): null | string {
   if (!Number.isFinite(type_id) || type_id <= 0) return null;
-  return `${SPEC_SCHEMA}.${type_id}_specs`;
+  // Use the main db for spec tables (assets.{type_id}_specs)
+  return `${db}.${type_id}_specs`;
 }
 
 function mapTypeIdToSpecTables(type_id: number): string[] {
@@ -579,6 +581,140 @@ export const getSpecsForAsset = async (type_id: number, asset_id: number) => {
 
   // Not found
   return [] as any[];
+};
+
+/**
+ * Update asset specs (comprehensive: type_id, brand_id, model_id, category_id, cubic_meter, fuel_type, etc.)
+ * This creates or updates a record in the {type_id}_specs table with all provided fields
+ * Supported fields: type_id, brand_id, model_id, category_id, cubic_meter, fuel_type, transmission,
+ *                   color, chassis_no, engine_no, seating_capacity, mileage, avls_availability,
+ *                   avls_install_date, avls_removal_date, avls_transfer_date, and any other custom fields
+ */
+export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => {
+  const { type_id, ...otherFields } = specData;
+  
+  if (!type_id || !Number.isFinite(type_id)) {
+    throw new Error('type_id is required and must be a valid number');
+  }
+  
+  const tableName = getPrimarySpecTableName(type_id);
+  if (!tableName) {
+    throw new Error(`No spec table mapped for type_id ${type_id}`);
+  }
+  
+  // Ensure the spec table exists
+  await ensureSpecTableExists(tableName);
+  
+  const qTable = quoteFullTableName(tableName);
+  
+  // Check if record exists for this asset_id
+  const [existingRows] = await pool.query(
+    `SELECT id FROM ${qTable} WHERE asset_id = ? LIMIT 1`,
+    [asset_id]
+  );
+  
+  const exists = Array.isArray(existingRows) && (existingRows as any[]).length > 0;
+  
+  // Allowed columns to update (exclude type_id from updates)
+  const allowedColumns = [
+    'brand_id', 'model_id', 'category_id', 'cubic_meter', 'fuel_type', 'transmission',
+    'color', 'chassis_no', 'engine_no', 'seating_capacity', 'mileage', 'avls_availability',
+    'avls_install_date', 'avls_removal_date', 'avls_transfer_date'
+  ];
+  
+  if (exists) {
+    // Update existing record
+    const updates: string[] = [];
+    const params: any[] = [];
+    
+    // Build dynamic UPDATE statement with only provided fields
+    for (const [key, value] of Object.entries(otherFields)) {
+      if (allowedColumns.includes(key) && value !== undefined) {
+        updates.push(`\`${key}\` = ?`);
+        params.push(value);
+      }
+    }
+    
+    if (updates.length === 0) {
+      return { message: 'No fields to update', asset_id, type_id };
+    }
+    
+    updates.push('updated_at = NOW()');
+    params.push(asset_id);
+    
+    const sql = `UPDATE ${qTable} SET ${updates.join(', ')} WHERE asset_id = ?`;
+    const [result] = await pool.query(sql, params);
+    
+    return { 
+      message: 'Asset specs updated', 
+      asset_id, 
+      type_id, 
+      affectedRows: (result as any).affectedRows,
+      updatedFields: Object.keys(otherFields).filter(k => allowedColumns.includes(k))
+    };
+  } else {
+    // Insert new record - build columns and values dynamically
+    const columns = ['asset_id', 'created_at', 'updated_at'];
+    const values = [asset_id, 'NOW()', 'NOW()'];
+    const params = [];
+    
+    // Add provided fields to INSERT
+    for (const [key, value] of Object.entries(otherFields)) {
+      if (allowedColumns.includes(key) && value !== undefined) {
+        columns.push(`\`${key}\``);
+        values.push('?');
+        params.push(value);
+      }
+    }
+    
+    const insertSql = `INSERT INTO ${qTable} (${columns.join(', ')}) VALUES (${values.join(', ')})`;
+    const [result] = await pool.query(insertSql, params);
+    
+    return { 
+      message: 'Asset specs created', 
+      asset_id, 
+      type_id, 
+      insertId: (result as any).insertId,
+      createdFields: Object.keys(otherFields).filter(k => allowedColumns.includes(k))
+    };
+  }
+};
+
+/**
+ * Get roadtax and insurance expiry dates for a vehicle asset
+ * Only applicable for type_id = 2 (vehicles)
+ * roadtax_expiry comes from applications.vehicle_insurance.rt_exp
+ * insurance_expiry comes from applications.insurance.expiry (via applications.vehicle_insurance.insurance_id)
+ */
+export const getVehicleRoadtaxAndInsuranceExpiry = async (asset_id: number) => {
+  try {
+    // Query roadtax expiry and insurance expiry
+    // Join vehicle_insurance to insurance table to get expiry dates
+    const [rows] = await pool.query(`
+      SELECT 
+        vi.rt_exp as roadtax_expiry,
+        ins.expiry as insurance_expiry
+      FROM ${applicationsDb}.vehicle_insurance vi
+      LEFT JOIN ${applicationsDb}.insurance ins ON vi.insurance_id = ins.id
+      WHERE vi.vehicle_id = (
+        SELECT register_number FROM ${assetTable} WHERE id = ? LIMIT 1
+      )
+      LIMIT 1
+    `, [asset_id]);
+    
+    const result = (rows as any[])?.[0];
+    if (result) {
+      return {
+        roadtax_expiry: result.roadtax_expiry || null,
+        insurance_expiry: result.insurance_expiry || null
+      };
+    }
+    return { roadtax_expiry: null, insurance_expiry: null };
+  } catch (err) {
+    // If query fails (table may not exist or wrong vehicle_id), return nulls
+    console.warn(`Failed to fetch roadtax/insurance expiry for asset ${asset_id}:`, err);
+    return { roadtax_expiry: null, insurance_expiry: null };
+  }
 };
 
 export const getSpecPropertiesByType = async (type_id: number) => {
@@ -711,9 +847,14 @@ export const updateSpecProperty = async (id: number, data: any) => {
 
   // Fetch updated row
   const updated = await getSpecPropertyById(id);
+  const alterResult = { success: true, errors: [] as string[] };
+  
   try {
     const tableName = getPrimarySpecTableName(Number(updated.type_id));
     if (tableName) {
+      // Ensure the spec table exists first
+      await ensureSpecTableExists(tableName);
+      
       const qTable = quoteFullTableName(tableName);
       // If column name changed and the column existed before, rename it
       const oldCol = existing.column_name;
@@ -729,27 +870,53 @@ export const updateSpecProperty = async (id: number, data: any) => {
         // Only attempt rename if old column exists
         const existsOld = await columnExistsInTable(tableName, oldCol);
         if (existsOld) {
-          await pool.query(`ALTER TABLE ${qTable} CHANGE \`${oldCol}\` \`${newCol}\` ${columnDef}`);
+          try {
+            await pool.query(`ALTER TABLE ${qTable} CHANGE \`${oldCol}\` \`${newCol}\` ${columnDef}`);
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            alterResult.errors.push(`Failed to rename column from ${oldCol} to ${newCol}: ${errMsg}`);
+            alterResult.success = false;
+          }
         } else {
           // Old column missing: try adding the new column
-          await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          try {
+            await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            alterResult.errors.push(`Failed to add column ${newCol}: ${errMsg}`);
+            alterResult.success = false;
+          }
         }
       } else {
         // Column name unchanged: modify type/null/default if column exists
         const exists = await columnExistsInTable(tableName, newCol);
         if (exists) {
-          await pool.query(`ALTER TABLE ${qTable} MODIFY COLUMN \`${newCol}\` ${columnDef}`);
+          try {
+            await pool.query(`ALTER TABLE ${qTable} MODIFY COLUMN \`${newCol}\` ${columnDef}`);
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            alterResult.errors.push(`Failed to modify column ${newCol}: ${errMsg}`);
+            alterResult.success = false;
+          }
         } else if (updated.is_active) {
           // column missing but metadata indicates active => try to create
-          await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          try {
+            await pool.query(`ALTER TABLE ${qTable} ADD COLUMN \`${newCol}\` ${columnDef}`);
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            alterResult.errors.push(`Failed to add column ${newCol}: ${errMsg}`);
+            alterResult.success = false;
+          }
         }
       }
     }
   } catch (err) {
-    // ignore DB errors here; caller can inspect returned result if needed
+    const errMsg = err instanceof Error ? err.message : String(err);
+    alterResult.errors.push(`Unexpected error during ALTER TABLE: ${errMsg}`);
+    alterResult.success = false;
   }
 
-  return result;
+  return { ...result, alterResult };
 };
 
 export const deleteSpecProperty = async (id: number, dropColumn = false) => {

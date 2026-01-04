@@ -62,35 +62,6 @@ interface Users {
 }
 
 // Get all users
-async function getUserTimeSpent(userId: number): Promise<number> {
-  // Sum all (logout - login) pairs for the user
-  const [rows]: any[] = await pool.query(`
-    SELECT action, created_at
-    FROM logs_auth
-    WHERE user_id = ? AND (action = 'login' OR action = 'logout')
-    ORDER BY created_at ASC
-  `, [userId]);
-  let total = 0;
-  let lastLogin: Date | null = null;
-  for (const row of rows) {
-    if (row.action === 'login') {
-      // Only set lastLogin if not already set (ignore consecutive logins)
-      if (!lastLogin) {
-        lastLogin = new Date(row.created_at);
-      }
-    } else if (row.action === 'logout' && lastLogin) {
-      const logoutTime = new Date(row.created_at);
-      total += (logoutTime.getTime() - lastLogin.getTime()) / 1000; // seconds
-      lastLogin = null;
-    }
-  }
-  // If still logged in, add time from last login to now
-  if (lastLogin) {
-    total += (Date.now() - lastLogin.getTime()) / 1000;
-  }
-  return Math.round(total);
-}
-
 export const getAllUser = async (_req: Request, res: Response): Promise<Response> => {
   try {
     const users = await userModel.getAllUsers();

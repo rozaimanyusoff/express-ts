@@ -2155,6 +2155,67 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
 
     const id = await complianceModel.createComputerAssessment(data);
 
+    // Update the computer specs (type_id = 1) in assets.1_specs table
+    try {
+      if (data.asset_id) {
+        const specsUpdateData: any = {
+          type_id: 1,
+          os_name: data.os_name || null,
+          os_version: data.os_version || null,
+          cpu_manufacturer: data.cpu_manufacturer || null,
+          cpu_model: data.cpu_model || null,
+          cpu_generation: data.cpu_generation || null,
+          memory_manufacturer: data.memory_manufacturer || null,
+          memory_type: data.memory_type || null,
+          memory_size_gb: data.memory_size_gb || null,
+          storage_manufacturer: data.storage_manufacturer || null,
+          storage_type: data.storage_type || null,
+          storage_size_gb: data.storage_size_gb || null,
+          graphics_type: data.graphics_type || null,
+          graphics_manufacturer: data.graphics_manufacturer || null,
+          graphics_specs: data.graphics_specs || null,
+          display_manufacturer: data.display_manufacturer || null,
+          display_size: data.display_size || null,
+          display_resolution: data.display_resolution || null,
+          display_form_factor: data.display_form_factor || null,
+          display_interfaces: data.display_interfaces || null,
+          ports_usb_a: data.ports_usb_a || 0,
+          ports_usb_c: data.ports_usb_c || 0,
+          ports_thunderbolt: data.ports_thunderbolt || 0,
+          ports_ethernet: data.ports_ethernet || 0,
+          ports_hdmi: data.ports_hdmi || 0,
+          ports_displayport: data.ports_displayport || 0,
+          ports_vga: data.ports_vga || 0,
+          ports_sdcard: data.ports_sdcard || 0,
+          ports_audiojack: data.ports_audiojack || 0,
+          battery_equipped: data.battery_equipped || null,
+          battery_capacity: data.battery_capacity || null,
+          adapter_equipped: data.adapter_equipped || null,
+          adapter_output: data.adapter_output || null,
+          av_installed: data.av_installed || null,
+          av_vendor: data.av_vendor || null,
+          av_status: data.av_status || null,
+          av_license: data.av_license || null,
+          vpn_installed: data.vpn_installed || null,
+          vpn_setup_type: data.vpn_setup_type || null,
+          vpn_username: data.vpn_username || null,
+          installed_software: data.installed_software || null,
+          office_account: data.office_account || null,
+          attachment_1: data.attachment_1 || null,
+          attachment_2: data.attachment_2 || null,
+          attachment_3: data.attachment_3 || null,
+          assess_id: id,
+          upgraded_at: data.upgraded_at || null,
+          updated_by: data.ramco_id || null
+        };
+        
+        await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
+      }
+    } catch (specsErr) {
+      // Log error but don't fail the assessment creation
+      console.error('Error updating computer specs:', specsErr);
+    }
+
     // Handle attachment files if present
     const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
     const attachmentUpdates: any = {};
@@ -2295,6 +2356,67 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     }
 
     await complianceModel.updateComputerAssessment(id, data);
+
+    // Update the computer specs (type_id = 1) in assets.1_specs table
+    try {
+      if (data.asset_id) {
+        const specsUpdateData: any = {
+          type_id: 1,
+          os_name: data.os_name || null,
+          os_version: data.os_version || null,
+          cpu_manufacturer: data.cpu_manufacturer || null,
+          cpu_model: data.cpu_model || null,
+          cpu_generation: data.cpu_generation || null,
+          memory_manufacturer: data.memory_manufacturer || null,
+          memory_type: data.memory_type || null,
+          memory_size_gb: data.memory_size_gb || null,
+          storage_manufacturer: data.storage_manufacturer || null,
+          storage_type: data.storage_type || null,
+          storage_size_gb: data.storage_size_gb || null,
+          graphics_type: data.graphics_type || null,
+          graphics_manufacturer: data.graphics_manufacturer || null,
+          graphics_specs: data.graphics_specs || null,
+          display_manufacturer: data.display_manufacturer || null,
+          display_size: data.display_size || null,
+          display_resolution: data.display_resolution || null,
+          display_form_factor: data.display_form_factor || null,
+          display_interfaces: data.display_interfaces || null,
+          ports_usb_a: data.ports_usb_a || 0,
+          ports_usb_c: data.ports_usb_c || 0,
+          ports_thunderbolt: data.ports_thunderbolt || 0,
+          ports_ethernet: data.ports_ethernet || 0,
+          ports_hdmi: data.ports_hdmi || 0,
+          ports_displayport: data.ports_displayport || 0,
+          ports_vga: data.ports_vga || 0,
+          ports_sdcard: data.ports_sdcard || 0,
+          ports_audiojack: data.ports_audiojack || 0,
+          battery_equipped: data.battery_equipped || null,
+          battery_capacity: data.battery_capacity || null,
+          adapter_equipped: data.adapter_equipped || null,
+          adapter_output: data.adapter_output || null,
+          av_installed: data.av_installed || null,
+          av_vendor: data.av_vendor || null,
+          av_status: data.av_status || null,
+          av_license: data.av_license || null,
+          vpn_installed: data.vpn_installed || null,
+          vpn_setup_type: data.vpn_setup_type || null,
+          vpn_username: data.vpn_username || null,
+          installed_software: data.installed_software || null,
+          office_account: data.office_account || null,
+          attachment_1: data.attachment_1 || null,
+          attachment_2: data.attachment_2 || null,
+          attachment_3: data.attachment_3 || null,
+          assess_id: id,
+          upgraded_at: data.upgraded_at || null,
+          updated_by: data.ramco_id || null
+        };
+        
+        await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
+      }
+    } catch (specsErr) {
+      // Log error but don't fail the assessment update
+      console.error('Error updating computer specs:', specsErr);
+    }
 
     const updated = await complianceModel.getComputerAssessmentById(id);
     

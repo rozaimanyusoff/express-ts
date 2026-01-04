@@ -44,6 +44,9 @@ router.post('/spec-properties/apply-pending', asyncHandler(assetController.apply
 router.put('/spec-properties/:id', asyncHandler(assetController.updateSpecProperty));
 router.delete('/spec-properties/:id', asyncHandler(assetController.deleteSpecProperty));
 
+// ASSET SPECS (per-asset type-specific specs)
+router.put('/specs/:asset_id', asyncHandler(assetController.updateAssetBasicSpecs));
+
 
 // DEPARTMENTS
 router.get('/departments', asyncHandler(assetController.getDepartments));

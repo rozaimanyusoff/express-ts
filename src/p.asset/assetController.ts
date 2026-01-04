@@ -13,6 +13,27 @@ import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferS
 import { sendMail } from '../utils/mailer';
 import * as assetModel from './assetModel';
 
+/* ========== HELPER FUNCTIONS ========== */
+/**
+ * Format date fields in an object from ISO string to YYYY-MM-DD format
+ * Useful for converting MySQL DATE columns that come as ISO timestamps
+ */
+function formatDateFields(obj: any, dateFieldNames: string[]): any {
+	if (!obj) return obj;
+	const formatted = { ...obj };
+	for (const field of dateFieldNames) {
+		if (formatted[field] && formatted[field] !== null) {
+			// Convert to Date if it's a string, then extract just the date part
+			const date = typeof formatted[field] === 'string' 
+				? new Date(formatted[field]) 
+				: formatted[field];
+			if (date instanceof Date && !isNaN(date.getTime())) {
+				formatted[field] = date.toISOString().split('T')[0]; // YYYY-MM-DD
+			}
+		}
+	}
+	return formatted;
+}
 
 /* ========== ASSETS ========== */
 export const getAssets = async (req: Request, res: Response) => {
@@ -386,14 +407,24 @@ export const getAssetById = async (req: Request, res: Response) => {
 				// Only include the per-type spec fields; categories/brands/models are already present above
 				// Remove duplicate fields that are already at the top level
 				const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
-				specs = {
-					...filteredSpec
-				};
+				
+				// Format date fields from ISO timestamps to YYYY-MM-DD
+				const dateFields = ['avls_install_date', 'avls_removal_date', 'avls_transfer_date'];
+				specs = formatDateFields(filteredSpec, dateFields);
 
 				// For computers (type 1) include installed software
 				if (type.id === 1) {
 					const installedSoftware = await assetModel.getInstalledSoftwareForAsset(asset.id);
 					specs.installed_software = installedSoftware || [];
+				}
+
+				// For vehicles (type 2) include roadtax and insurance expiry
+				if (type.id === 2) {
+					const vehicleExpiry = await assetModel.getVehicleRoadtaxAndInsuranceExpiry(asset.id);
+					specs.roadtax_expiry = vehicleExpiry.roadtax_expiry;
+					specs.insurance_expiry = vehicleExpiry.insurance_expiry;
+					// Format these newly added date fields
+					specs = formatDateFields(specs, ['roadtax_expiry', 'insurance_expiry']);
 				}
 			}
 		} catch (_err) {
@@ -504,6 +535,30 @@ export const updateAsset = async (req: Request, res: Response) => {
 		result,
 		status: 'success'
 	});
+};
+
+/**
+ * Update basic specs for an asset (type_id, brand_id, model_id, category_id)
+ * PUT /api/assets/specs/basic/:asset_id
+ */
+export const updateAssetBasicSpecs = async (req: Request, res: Response) => {
+	try {
+		const asset_id = Number(req.params.asset_id);
+		if (!asset_id) return res.status(400).json({ message: 'asset_id is required', status: 'error' });
+		
+		const result = await assetModel.updateAssetBasicSpecs(asset_id, req.body);
+		
+		res.json({
+			message: result.message,
+			data: result,
+			status: 'success'
+		});
+	} catch (error) {
+		res.status(400).json({
+			message: error instanceof Error ? error.message : 'Failed to update asset specs',
+			status: 'error'
+		});
+	}
 };
 
 export const deleteAsset = async (req: Request, res: Response) => {
@@ -707,7 +762,12 @@ export const updateSpecProperty = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const result = await assetModel.updateSpecProperty(id, req.body);
-	res.json({ data: result, message: 'Spec property updated', status: 'success' });
+	const hasErrors = result.alterResult && !result.alterResult.success;
+	res.status(hasErrors ? 207 : 200).json({ 
+		data: result, 
+		message: hasErrors ? 'Spec property updated but table alteration failed' : 'Spec property updated', 
+		status: hasErrors ? 'partial' : 'success' 
+	});
 };
 
 export const deleteSpecProperty = async (req: Request, res: Response) => {
