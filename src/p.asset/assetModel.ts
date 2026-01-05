@@ -621,10 +621,11 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
   if (type_id === 1) {
     // Computer (1_specs) fields
     allowedColumns = [
-      'serial_number', 'os_name', 'os_version', 'cpu_manufacturer', 'cpu_model', 'cpu_generation',
+      'register_number', 'serial_number', 'os_name', 'os_version', 'cpu_manufacturer', 'cpu_model', 'cpu_generation',
       'memory_manufacturer', 'memory_type', 'memory_size_gb', 'storage_manufacturer', 'storage_type',
       'storage_size_gb', 'graphics_type', 'graphics_manufacturer', 'graphics_specs', 'display_manufacturer',
       'display_size', 'display_resolution', 'display_form_factor', 'display_interfaces',
+      'second_display', 'second_display_sn', 'second_display_size',
       'ports_usb_a', 'ports_usb_c', 'ports_thunderbolt', 'ports_ethernet', 'ports_hdmi',
       'ports_displayport', 'ports_vga', 'ports_sdcard', 'ports_audiojack',
       'battery_equipped', 'battery_capacity', 'adapter_equipped', 'adapter_output',
@@ -687,8 +688,8 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     };
   } else {
     // INSERT new record in 1_specs or 2_specs table (not found by asset_id)
-    const columns = ['asset_id', 'type_id', 'created_at', 'updated_at'];
-    const values = [asset_id, type_id, 'NOW()', 'NOW()'];
+    const columns = ['asset_id', 'type_id'];
+    const values = ['?', '?'];
     const params = [asset_id, type_id];
     
     // Add provided fields to INSERT (only allowed columns)
@@ -701,6 +702,11 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
         insertedFields.push(key);
       }
     }
+    
+    // Add updated_at with NOW() function (NOT parameterized since it's a function call)
+    // This must come AFTER all field values to maintain correct parameter binding order
+    columns.push('updated_at');
+    values.push('NOW()');
     
     const insertSql = `INSERT INTO ${qTable} (${columns.join(', ')}) VALUES (${values.join(', ')})`;
     const [result] = await pool.query(insertSql, params);
@@ -2266,6 +2272,60 @@ export const setAssetTransferAcceptance = async (id: number, data: {
   return result;
 };
 
+// Check if asset_history needs update (values changed) before inserting new record
+export const hasAssetHistoryChanged = async (data: {
+  asset_id: number;
+  costcenter_id?: null | number;
+  department_id?: null | number;
+  location_id?: null | number;
+  ramco_id?: null | string;
+  register_number?: null | string;
+  type_id?: null | number;
+}) => {
+  try {
+    // Get the latest asset_history record for this asset
+    const [rows] = await pool.query(
+      `SELECT costcenter_id, department_id, location_id, ramco_id 
+       FROM ${assetHistoryTable} 
+       WHERE asset_id = ? 
+       ORDER BY timestamp DESC 
+       LIMIT 1`,
+      [data.asset_id]
+    );
+
+    // If no previous record exists, this is a new entry → changed
+    if (!Array.isArray(rows) || (rows as any[]).length === 0) {
+      return true;
+    }
+
+    const latestRecord = (rows as any[])[0];
+
+    // Compare current payload values with latest record
+    const costcenterChanged = (data.costcenter_id ?? null) !== (latestRecord.costcenter_id ?? null);
+    const departmentChanged = (data.department_id ?? null) !== (latestRecord.department_id ?? null);
+    const locationChanged = (data.location_id ?? null) !== (latestRecord.location_id ?? null);
+    const ramcoChanged = (data.ramco_id ?? null) !== (latestRecord.ramco_id ?? null);
+
+    // Return true if ANY value changed, false if all are the same
+    const hasChanged = costcenterChanged || departmentChanged || locationChanged || ramcoChanged;
+    
+    return {
+      hasChanged,
+      latestRecord,
+      changes: {
+        costcenterChanged,
+        departmentChanged,
+        locationChanged,
+        ramcoChanged
+      }
+    };
+  } catch (err) {
+    console.error('Error checking asset_history changes:', err);
+    // If check fails, default to inserting (safe assumption: unknown state = likely changed)
+    return { hasChanged: true, latestRecord: null, changes: {} };
+  }
+};
+
 // Insert asset movement record into asset_history
 export const insertAssetHistory = async (data: {
   asset_id: number;
@@ -2316,6 +2376,189 @@ export const updateAssetCurrentOwner = async (asset_id: number, data: {
   
   const [result] = await pool.query(sql, params);
   return result;
+};
+
+// Check asset_history against payload and insert new record if data changed
+// Used during computer assessment to track asset movement and reassignment
+export const checkAndInsertAssetHistory = async (payload: {
+  asset_id: number;
+  register_number?: string | null;
+  type_id?: number | null;
+  costcenter_id?: number | null;
+  department_id?: number | null;
+  location_id?: number | null;
+  ramco_id?: string | null;
+}) => {
+  try {
+    // Get the latest asset_history record for this asset
+    const [rows] = await pool.query(
+      `SELECT id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id 
+       FROM ${assetHistoryTable} 
+       WHERE asset_id = ? 
+       ORDER BY timestamp DESC 
+       LIMIT 1`,
+      [payload.asset_id]
+    );
+
+    const latestRecord = (Array.isArray(rows) && rows.length > 0) ? (rows as any[])[0] : null;
+
+    // Compare payload values with latest record
+    const registerChanged = (payload.register_number ?? null) !== (latestRecord?.register_number ?? null);
+    const typeChanged = (payload.type_id ?? null) !== (latestRecord?.type_id ?? null);
+    const costcenterChanged = (payload.costcenter_id ?? null) !== (latestRecord?.costcenter_id ?? null);
+    const departmentChanged = (payload.department_id ?? null) !== (latestRecord?.department_id ?? null);
+    const locationChanged = (payload.location_id ?? null) !== (latestRecord?.location_id ?? null);
+    const ramcoChanged = (payload.ramco_id ?? null) !== (latestRecord?.ramco_id ?? null);
+
+    // If any value changed or no previous record exists, insert new history record
+    const hasChanged = registerChanged || typeChanged || costcenterChanged || departmentChanged || locationChanged || ramcoChanged || !latestRecord;
+
+    if (hasChanged) {
+      const [result] = await pool.query(
+        `INSERT INTO ${assetHistoryTable} 
+         (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          payload.asset_id,
+          payload.register_number ?? null,
+          payload.type_id ?? null,
+          payload.costcenter_id ?? null,
+          payload.department_id ?? null,
+          payload.location_id ?? null,
+          payload.ramco_id ?? null,
+          new Date()
+        ]
+      );
+
+      return {
+        inserted: true,
+        recordId: (result as any).insertId,
+        changes: {
+          registerChanged,
+          typeChanged,
+          costcenterChanged,
+          departmentChanged,
+          locationChanged,
+          ramcoChanged
+        },
+        message: 'Asset history record created due to detected changes'
+      };
+    }
+
+    return {
+      inserted: false,
+      changes: {
+        registerChanged,
+        typeChanged,
+        costcenterChanged,
+        departmentChanged,
+        locationChanged,
+        ramcoChanged
+      },
+      message: 'No changes detected - asset history not updated'
+    };
+  } catch (err) {
+    console.error('Error checking/inserting asset_history:', err);
+    // On error, return false to allow assessment to continue
+    return {
+      inserted: false,
+      error: true,
+      changes: {},
+      message: 'Error during asset history check'
+    };
+  }
+};
+
+// Update assetdata table with changes from computer assessment
+// Only updates existing fields: category_id, brand_id, model_id, purchase_date, costcenter_id, department_id, location_id, ramco_id
+// Does not insert new records
+export const updateAssetDataFromAssessment = async (asset_id: number, data: {
+  category_id?: number | null;
+  brand_id?: number | null;
+  model_id?: number | null;
+  purchase_date?: string | Date | null;
+  costcenter_id?: number | null;
+  department_id?: number | null;
+  location_id?: number | null;
+  ramco_id?: string | null;
+}) => {
+  try {
+    // Build dynamic SET clause only for provided fields
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.category_id !== undefined) {
+      updates.push('category_id = ?');
+      values.push(data.category_id ?? null);
+    }
+    if (data.brand_id !== undefined) {
+      updates.push('brand_id = ?');
+      values.push(data.brand_id ?? null);
+    }
+    if (data.model_id !== undefined) {
+      updates.push('model_id = ?');
+      values.push(data.model_id ?? null);
+    }
+    if (data.purchase_date !== undefined) {
+      updates.push('purchase_date = ?');
+      values.push(data.purchase_date ?? null);
+    }
+    if (data.costcenter_id !== undefined) {
+      updates.push('costcenter_id = ?');
+      values.push(data.costcenter_id ?? null);
+    }
+    if (data.department_id !== undefined) {
+      updates.push('department_id = ?');
+      values.push(data.department_id ?? null);
+    }
+    if (data.location_id !== undefined) {
+      updates.push('location_id = ?');
+      values.push(data.location_id ?? null);
+    }
+    if (data.ramco_id !== undefined) {
+      updates.push('ramco_id = ?');
+      values.push(data.ramco_id ?? null);
+    }
+
+    // If no updates, return early
+    if (updates.length === 0) {
+      return {
+        updated: false,
+        affectedRows: 0,
+        message: 'No fields to update'
+      };
+    }
+
+    // Add asset_id to params for WHERE clause
+    values.push(asset_id);
+
+    const sql = `UPDATE ${assetTable} SET ${updates.join(', ')} WHERE id = ?`;
+    const [result] = await pool.query(sql, values);
+
+    const affectedRows = (result as any).affectedRows || 0;
+
+    if (affectedRows > 0) {
+      return {
+        updated: true,
+        affectedRows,
+        fieldsUpdated: updates.length,
+        message: `assetdata updated: ${updates.length} field(s) modified for asset_id=${asset_id}`
+      };
+    }
+
+    return {
+      updated: false,
+      affectedRows: 0,
+      message: `No records found to update for asset_id=${asset_id}`
+    };
+  } catch (err) {
+    console.error('Error updating assetdata from assessment:', err);
+    return {
+      updated: false,
+      error: true,
+      message: 'Error during assetdata update'
+    };
+  }
 };
 
 

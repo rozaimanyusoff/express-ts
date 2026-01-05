@@ -2159,8 +2159,54 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
     // Update the computer specs (type_id = 1) in assets.1_specs table
     try {
       if (data.asset_id) {
+        // Map category, brand, model, register_number to 1_specs fields
+        // Use direct numeric values if provided, otherwise null
+        let brand_id = null;
+        let model_id = null;
+        let category_id = null;
+
+        // If brand is a number, use it directly; otherwise it's a string to look up
+        if (data.brand) {
+          if (Number.isFinite(Number(data.brand))) {
+            brand_id = Number(data.brand);
+          } else {
+            // Fallback: try to look up by name
+            const brands = await assetModel.getBrands();
+            const brandRecord = (brands as any[]).find((b: any) => b.name === data.brand || b.name?.toLowerCase() === String(data.brand).toLowerCase());
+            brand_id = brandRecord?.id || null;
+          }
+        }
+
+        // If model is a number, use it directly; otherwise it's a string to look up
+        if (data.model) {
+          if (Number.isFinite(Number(data.model))) {
+            model_id = Number(data.model);
+          } else {
+            // Fallback: try to look up by name
+            const models = await assetModel.getModels();
+            const modelRecord = (models as any[]).find((m: any) => m.name === data.model || m.name?.toLowerCase() === String(data.model).toLowerCase());
+            model_id = modelRecord?.id || null;
+          }
+        }
+
+        // If category is a number, use it directly; otherwise it's a string to look up
+        if (data.category) {
+          if (Number.isFinite(Number(data.category))) {
+            category_id = Number(data.category);
+          } else {
+            // Fallback: try to look up by name
+            const categories = await assetModel.getCategories();
+            const categoryRecord = (categories as any[]).find((c: any) => c.name === data.category || c.name?.toLowerCase() === String(data.category).toLowerCase());
+            category_id = categoryRecord?.id || null;
+          }
+        }
+
         const specsUpdateData: any = {
           type_id: 1,
+          register_number: data.register_number || null,
+          brand_id: brand_id,
+          model_id: model_id,
+          category_id: category_id,
           os_name: data.os_name || null,
           os_version: data.os_version || null,
           cpu_manufacturer: data.cpu_manufacturer || null,
@@ -2180,6 +2226,9 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           display_resolution: data.display_resolution || null,
           display_form_factor: data.display_form_factor || null,
           display_interfaces: data.display_interfaces || null,
+          second_display: data.second_display || null,
+          second_display_sn: data.second_display_sn || null,
+          second_display_size: data.second_display_size || null,
           ports_usb_a: data.ports_usb_a || 0,
           ports_usb_c: data.ports_usb_c || 0,
           ports_thunderbolt: data.ports_thunderbolt || 0,
@@ -2222,6 +2271,68 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
     } catch (specsErr) {
       // Log error but don't fail the assessment creation
       console.error('Error updating computer specs:', specsErr);
+    }
+
+    // Step 4: Check Asset History and insert record only if data changed
+    try {
+      if (data.asset_id) {
+        const historyResult = await assetModel.checkAndInsertAssetHistory({
+          asset_id: data.asset_id,
+          register_number: data.register_number || null,
+          type_id: 1, // Computer
+          costcenter_id: data.costcenter_id || null,
+          department_id: data.department_id || null,
+          location_id: data.location_id || null,
+          ramco_id: data.ramco_id || null
+        });
+        
+        if (historyResult.inserted) {
+          const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
+          console.log(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
+        } else if (!historyResult.error) {
+          console.log(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
+        } else {
+          console.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
+        }
+      }
+    } catch (historyErr) {
+      // Log error but don't fail the assessment creation
+      console.error('Error checking/updating asset history:', historyErr);
+    }
+
+    // Step 5: Update assetdata with category, brand, model, and ownership details
+    try {
+      if (data.asset_id) {
+        // Get the specs that were just updated to extract category_id, brand_id, model_id
+        const specs = await assetModel.getComputerSpecsForAsset(data.asset_id);
+        
+        const assetDataUpdates: any = {
+          // Ownership and location fields (from payload)
+          costcenter_id: data.costcenter_id !== undefined ? data.costcenter_id : undefined,
+          department_id: data.department_id !== undefined ? data.department_id : undefined,
+          location_id: data.location_id !== undefined ? data.location_id : undefined,
+          ramco_id: data.ramco_id !== undefined ? data.ramco_id : undefined,
+          // Purchase date (if provided)
+          purchase_date: data.purchase_date !== undefined ? data.purchase_date : undefined,
+          // Category, brand, model (from specs if they exist)
+          category_id: specs && (specs as any).category_id ? (specs as any).category_id : undefined,
+          brand_id: specs && (specs as any).brand_id ? (specs as any).brand_id : undefined,
+          model_id: specs && (specs as any).model_id ? (specs as any).model_id : undefined,
+        };
+
+        const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
+        
+        if (assetDataResult.updated) {
+          console.log(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
+        } else if (!assetDataResult.error) {
+          console.log(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
+        } else {
+          console.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
+        }
+      }
+    } catch (assetDataErr) {
+      // Log error but don't fail the assessment creation
+      console.error('Error updating assetdata:', assetDataErr);
     }
 
     // Handle attachment files if present
@@ -2267,7 +2378,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
       }
     }
 
-    // Send notification email to technician
+    // Step 8: Send notification email to technician with full assessment details
     try {
       if (data.ramco_id) {
         const employeesRaw = await assetModel.getEmployees();
@@ -2275,6 +2386,21 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         const technician = employees.find((e: any) => e.ramco_id === data.ramco_id) as any;
         
         if (technician && technician.email) {
+          // Fetch owner details (same as technician if ramco_id refers to owner)
+          let assessedOwner = { name: '', email: '', ramco_id: data.ramco_id };
+          if (technician) {
+            assessedOwner = {
+              name: technician.full_name || technician.name || '',
+              email: technician.email || '',
+              ramco_id: data.ramco_id,
+            };
+          }
+          
+          // Fetch costcenter, department, location details (placeholder structure for now)
+          const costcenter = data.costcenter_id ? { id: data.costcenter_id, name: `CC-${data.costcenter_id}` } : undefined;
+          const department = data.department_id ? { id: data.department_id, name: `Dept-${data.department_id}` } : undefined;
+          const location = data.location_id ? { id: data.location_id, name: `Location-${data.location_id}` } : undefined;
+          
           const { html, subject } = renderITAssessmentNotification({
             assessment: {
               date: data.assessment_date ? new Date(data.assessment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -2295,9 +2421,14 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
               full_name: technician.full_name || technician.name || 'Technician',
               ramco_id: data.ramco_id,
             },
+            assessedOwner,
+            costcenter,
+            department,
+            location,
           });
           
           await sendMail(technician.email, subject, html);
+          console.log(`✓ Email notification sent to ${technician.email} for assessment ID: ${id}`);
         }
       }
     } catch (emailErr) {
@@ -2368,8 +2499,47 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     // Update the computer specs (type_id = 1) in assets.1_specs table
     try {
       if (data.asset_id) {
+        // Map category, brand, model, register_number to 1_specs fields
+        let brand_id = null;
+        let model_id = null;
+        let category_id = null;
+
+        if (data.brand) {
+          if (Number.isFinite(Number(data.brand))) {
+            brand_id = Number(data.brand);
+          } else {
+            const brands = await assetModel.getBrands();
+            const brandRecord = (brands as any[]).find((b: any) => b.name === data.brand || b.name?.toLowerCase() === String(data.brand).toLowerCase());
+            brand_id = brandRecord?.id || null;
+          }
+        }
+
+        if (data.model) {
+          if (Number.isFinite(Number(data.model))) {
+            model_id = Number(data.model);
+          } else {
+            const models = await assetModel.getModels();
+            const modelRecord = (models as any[]).find((m: any) => m.name === data.model || m.name?.toLowerCase() === String(data.model).toLowerCase());
+            model_id = modelRecord?.id || null;
+          }
+        }
+
+        if (data.category) {
+          if (Number.isFinite(Number(data.category))) {
+            category_id = Number(data.category);
+          } else {
+            const categories = await assetModel.getCategories();
+            const categoryRecord = (categories as any[]).find((c: any) => c.name === data.category || c.name?.toLowerCase() === String(data.category).toLowerCase());
+            category_id = categoryRecord?.id || null;
+          }
+        }
+
         const specsUpdateData: any = {
           type_id: 1,
+          register_number: data.register_number || null,
+          brand_id: brand_id,
+          model_id: model_id,
+          category_id: category_id,
           os_name: data.os_name || null,
           os_version: data.os_version || null,
           cpu_manufacturer: data.cpu_manufacturer || null,
@@ -2389,6 +2559,9 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
           display_resolution: data.display_resolution || null,
           display_form_factor: data.display_form_factor || null,
           display_interfaces: data.display_interfaces || null,
+          second_display: data.second_display || null,
+          second_display_sn: data.second_display_sn || null,
+          second_display_size: data.second_display_size || null,
           ports_usb_a: data.ports_usb_a || 0,
           ports_usb_c: data.ports_usb_c || 0,
           ports_thunderbolt: data.ports_thunderbolt || 0,
@@ -2424,6 +2597,68 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     } catch (specsErr) {
       // Log error but don't fail the assessment update
       console.error('Error updating computer specs:', specsErr);
+    }
+
+    // Step 4: Check Asset History and insert record only if data changed
+    try {
+      if (data.asset_id) {
+        const historyResult = await assetModel.checkAndInsertAssetHistory({
+          asset_id: data.asset_id,
+          register_number: data.register_number || null,
+          type_id: 1, // Computer
+          costcenter_id: data.costcenter_id || null,
+          department_id: data.department_id || null,
+          location_id: data.location_id || null,
+          ramco_id: data.ramco_id || null
+        });
+        
+        if (historyResult.inserted) {
+          const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
+          console.log(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
+        } else if (!historyResult.error) {
+          console.log(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
+        } else {
+          console.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
+        }
+      }
+    } catch (historyErr) {
+      // Log error but don't fail the assessment update
+      console.error('Error checking/updating asset history:', historyErr);
+    }
+
+    // Step 5: Update assetdata with category, brand, model, and ownership details
+    try {
+      if (data.asset_id) {
+        // Get the specs to extract category_id, brand_id, model_id
+        const specs = await assetModel.getComputerSpecsForAsset(data.asset_id);
+        
+        const assetDataUpdates: any = {
+          // Ownership and location fields (from payload)
+          costcenter_id: data.costcenter_id !== undefined ? data.costcenter_id : undefined,
+          department_id: data.department_id !== undefined ? data.department_id : undefined,
+          location_id: data.location_id !== undefined ? data.location_id : undefined,
+          ramco_id: data.ramco_id !== undefined ? data.ramco_id : undefined,
+          // Purchase date (if provided)
+          purchase_date: data.purchase_date !== undefined ? data.purchase_date : undefined,
+          // Category, brand, model (from specs if they exist)
+          category_id: specs && (specs as any).category_id ? (specs as any).category_id : undefined,
+          brand_id: specs && (specs as any).brand_id ? (specs as any).brand_id : undefined,
+          model_id: specs && (specs as any).model_id ? (specs as any).model_id : undefined,
+        };
+
+        const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
+        
+        if (assetDataResult.updated) {
+          console.log(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
+        } else if (!assetDataResult.error) {
+          console.log(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
+        } else {
+          console.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
+        }
+      }
+    } catch (assetDataErr) {
+      // Log error but don't fail the assessment update
+      console.error('Error updating assetdata:', assetDataErr);
     }
 
     const updated = await complianceModel.getComputerAssessmentById(id);

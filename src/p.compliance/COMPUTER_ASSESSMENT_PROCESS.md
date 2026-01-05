@@ -18,41 +18,42 @@ POST /api/compliance/it-assess
     ├─ INSERT into compliance.computer_assessment
     └─ Return assessment ID
     ↓
-[4] Update Computer Hardware Specs (NEW - NOW WORKING)
+[4] Update Computer Hardware Specs (NOW WORKING)
     ├─ type_id = 1 (computer)
-    ├─ Extract all 40+ hardware fields from request:
-    │   ├─ OS: os_name, os_version
-    │   ├─ CPU: cpu_manufacturer, cpu_model, cpu_generation
-    │   ├─ Memory: memory_manufacturer, memory_type, memory_size_gb
-    │   ├─ Storage: storage_manufacturer, storage_type, storage_size_gb
-    │   ├─ Graphics: graphics_type, graphics_manufacturer, graphics_specs
-    │   ├─ Display: display_manufacturer, display_size, display_resolution, display_form_factor, display_interfaces
-    │   ├─ Ports: ports_usb_a, ports_usb_c, ports_thunderbolt, ports_ethernet, ports_hdmi, ports_displayport, ports_vga, ports_sdcard, ports_audiojack
-    │   ├─ Battery/Power: battery_equipped, battery_capacity, adapter_equipped, adapter_output
-    │   ├─ Security: av_installed, av_vendor, av_status, av_license, vpn_installed, vpn_setup_type, vpn_username
-    │   ├─ Software: installed_software, office_account
-    │   ├─ Metadata: assess_id, upgraded_at, updated_by (ramco_id)
-    │   └─ Attachments: attachment_1, attachment_2, attachment_3
+    ├─ Extract all 40+ hardware fields from request
     ├─ Call updateAssetBasicSpecs(asset_id, specsUpdateData)
-    │   ├─ BEFORE FIX: Fields filtered against hardcoded vehicle-only allowedColumns → ALL DATA LOST
-    │   └─ AFTER FIX: Fields filtered against computer-specific allowedColumns → ALL DATA SAVED ✅
     ├─ INSERT or UPDATE assets.1_specs table
     └─ Log errors but don't fail assessment
     ↓
-[5] Process File Attachments (if present)
+[5] Check Asset History & Insert Audit Trail (NEW)
+    ├─ Compare payload values with latest asset_history record
+    ├─ Fields checked: costcenter_id, department_id, location_id, ramco_id
+    ├─ If ANY value changed → INSERT new asset_history record
+    ├─ If ALL values same → SKIP insertion (optimization)
+    └─ Log changes but don't fail assessment
+    ↓
+[6] Update assetdata Table (NEW)
+    ├─ Sync ownership fields: costcenter_id, department_id, location_id, ramco_id
+    ├─ Sync specs fields: category_id, brand_id, model_id (from 1_specs)
+    ├─ Sync purchase info: purchase_date (if provided)
+    ├─ UPDATE assets.assetdata table
+    ├─ Only update fields that changed (no new records)
+    └─ Log changes but don't fail assessment
+    ↓
+[7] Process File Attachments (if present)
     ├─ Handle attachments[0], attachments[1], attachments[2]
     ├─ Generate unique filenames
     ├─ Store in /uploads/compliance/assessment/computer/
     ├─ Update computer_assessment record with attachment paths
     └─ attachment_1, attachment_2, attachment_3 columns
     ↓
-[6] Send Notification Email
+[8] Send Notification Email
     ├─ Query technician by ramco_id
     ├─ Render IT Assessment email template
     ├─ Send to technician email
     └─ Log errors but don't fail
     ↓
-[7] Return Success Response
+[9] Return Success Response
     └─ status: 'success', data: { id }
 ```
 
@@ -227,7 +228,155 @@ await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
 - Logs errors but doesn't fail assessment creation
 - Assessment record already exists in database
 
-### Step 4: Handle File Attachments
+### Step 4: Update Asset History with Change Detection (NEW)
+
+The asset_history table maintains an audit trail of asset movement and reassignment. To prevent duplicate records, the system now **compares new values with the latest history record** and only inserts if data has changed.
+
+```typescript
+// Check if values changed, only insert if different
+const historyResult = await assetModel.checkAndInsertAssetHistory({
+  asset_id: data.asset_id,
+  register_number: data.register_number || null,
+  type_id: 1,  // Computer
+  costcenter_id: data.costcenter_id || null,
+  department_id: data.department_id || null,
+  location_id: data.location_id || null,
+  ramco_id: data.ramco_id || null
+});
+
+if (historyResult.inserted) {
+  console.log(`✓ Asset history record INSERTED: Changes detected - ${changedFields}`);
+} else {
+  console.log(`✓ Asset history check completed: No changes detected`);
+}
+```
+
+**Change Detection Logic:**
+1. Retrieve latest asset_history record for the asset
+2. Compare payload values (costcenter_id, department_id, location_id, ramco_id) with latest record
+3. **If ANY value differs** → INSERT new audit trail record
+4. **If ALL values are identical** → SKIP insertion (optimization to prevent duplicates)
+5. Log which fields changed for audit purposes
+
+**Tracked Fields:**
+| Field | Type | Purpose |
+|-------|------|---------|
+| costcenter_id | int | Finance cost center for asset |
+| department_id | int | Organizational department |
+| location_id | int | Physical location/office |
+| ramco_id | varchar(10) | Current employee owner/assignee |
+
+**Example Scenario:**
+
+*Previous State (asset_history):*
+```
+id=5267 | asset_id=1294 | costcenter_id=NULL | department_id=NULL | location_id=NULL | ramco_id=NULL
+```
+
+*Assessment 1: costcenter=10, department=5, location=3, ramco='000277'*
+- Compared with previous: ALL 4 fields changed
+- ✅ NEW record inserted (ID: 5718)
+
+*Assessment 2: costcenter=10, department=5, location=3, ramco='000277'* (same values)
+- Compared with latest (5718): ALL 4 fields IDENTICAL
+- ⏭️ SKIPPED - no new record (prevents duplicate)
+
+*Assessment 3: costcenter=15, department=8, location=5, ramco='000277'* (different values)
+- Compared with latest (5718): costcenter, department, location all changed
+- ✅ NEW record inserted (ID: 5719)
+
+**Error Handling:**
+- Try/catch block around history check
+- Logs errors but doesn't fail assessment creation
+- Appends to history (append-only audit trail pattern)
+
+### Step 5: Update assetdata Table (NEW)
+
+The assetdata table is the central asset registry. It needs to be synchronized with the assessment updates to keep track of current:
+- Equipment specifications (category, brand, model)
+- Ownership/assignment (costcenter, department, location, owner)
+- Purchase information (purchase_date)
+
+```typescript
+// Get latest specs from 1_specs table
+const specs = await assetModel.getComputerSpecsForAsset(data.asset_id);
+
+// Update assetdata with assessment data
+const assetDataUpdates: any = {
+  // Ownership/location from assessment
+  costcenter_id: data.costcenter_id !== undefined ? data.costcenter_id : undefined,
+  department_id: data.department_id !== undefined ? data.department_id : undefined,
+  location_id: data.location_id !== undefined ? data.location_id : undefined,
+  ramco_id: data.ramco_id !== undefined ? data.ramco_id : undefined,
+  // Purchase info from assessment
+  purchase_date: data.purchase_date !== undefined ? data.purchase_date : undefined,
+  // Equipment specs from 1_specs (just synced)
+  category_id: specs?.category_id || undefined,
+  brand_id: specs?.brand_id || undefined,
+  model_id: specs?.model_id || undefined,
+};
+
+const assetDataResult = await assetModel.updateAssetDataFromAssessment(
+  data.asset_id, 
+  assetDataUpdates
+);
+
+if (assetDataResult.updated) {
+  console.log(`✓ assetdata UPDATED: ${assetDataResult.fieldsUpdated} field(s) modified`);
+}
+```
+
+**Fields Updated:**
+| Field | Source | Type | Notes |
+|-------|--------|------|-------|
+| category_id | 1_specs table | int | Equipment category |
+| brand_id | 1_specs table | int | Equipment brand/manufacturer |
+| model_id | 1_specs table | int | Equipment model |
+| purchase_date | Assessment payload | date | When equipment was purchased |
+| costcenter_id | Assessment payload | int | Cost allocation center |
+| department_id | Assessment payload | int | Owning department |
+| location_id | Assessment payload | int | Current location |
+| ramco_id | Assessment payload | varchar(10) | Employee owner |
+
+**Key Characteristics:**
+- **No insertions**: Only updates existing assetdata records
+- **Field-level granularity**: Only specified fields are updated
+- **Safe operations**: Errors logged but don't fail assessment
+- **Data synchronization**: Keeps assetdata in sync with specs and assessment
+
+**Example Update:**
+
+*Before Assessment:*
+```
+assetdata id=1294
+├─ category_id = 3
+├─ brand_id = 7
+├─ model_id = 104
+├─ costcenter_id = NULL
+├─ department_id = NULL
+├─ location_id = NULL
+└─ ramco_id = NULL
+```
+
+*After Assessment with costcenter=15, department=8, location=5, ramco='000277':*
+```
+assetdata id=1294  (UPDATED)
+├─ category_id = 1      ← From specs (Laptop)
+├─ brand_id = 2         ← From specs (HP)
+├─ model_id = NULL      ← From specs (Pavilion - no ID yet)
+├─ costcenter_id = 15   ← From assessment
+├─ department_id = 8    ← From assessment
+├─ location_id = 5      ← From assessment
+└─ ramco_id = '000277'  ← From assessment
+```
+
+**Error Handling:**
+- Try/catch block around assetdata update
+- Logs errors but doesn't fail assessment creation
+- Non-breaking: assessment succeeds even if assetdata update fails
+
+### Step 6: Handle File Attachments
+
 ```typescript
 const files: Express.Multer.File[] = Array.isArray((req as any).files) 
   ? (req as any).files 
@@ -253,6 +402,160 @@ if (Object.keys(attachmentUpdates).length > 0) {
   await complianceModel.updateComputerAssessment(id, attachmentUpdates);
 }
 ```
+
+**Upload Directory:**
+- Base path: `/uploads/compliance/assessment/computer/`
+- Filename format: `assessment-{assessmentId}-attachment-{number}-{timestamp}-{random}.{ext}`
+- Supports up to 3 attachments
+
+### Step 7: Send Notification Email
+
+```typescript
+// Query technician email by ramco_id
+const technicians = await assetModel.getEmployees();
+const technician = (technicians as any[]).find((e: any) => e.ramco_id === data.ramco_id);
+
+if (technician) {
+  // Send IT Assessment email to technician
+  await sendComputerAssessmentEmail(technician.email, assessmentData);
+}
+```
+
+**Error Handling:**
+- Logs errors but doesn't fail assessment creation
+- Email sending is non-critical to assessment success
+
+### Step 8: Return Success Response
+
+```typescript
+return res.json({
+  status: 'success',
+  message: 'Computer assessment created successfully',
+  data: { id }
+});
+```
+
+---
+
+## Complete Data Flow Example
+
+**Scenario:** Create computer assessment for asset_id=1294 with new owner assignment
+
+```
+REQUEST:
+POST /api/compliance/it-assess
+{
+  "asset_id": 1294,
+  "assessment_year": 2026,
+  "register_number": "220222812102000235",
+  "technician": "000277",
+  "brand": "HP",
+  "model": "Pavilion",
+  "category": "Laptop",
+  "os_name": "Windows 11",
+  "memory_size_gb": 8,
+  "costcenter_id": 15,         ← NEW (was NULL)
+  "department_id": 8,          ← NEW (was NULL)
+  "location_id": 5,            ← NEW (was NULL)
+  "ramco_id": "000277"         ← NEW (was NULL)
+}
+
+PROCESSING:
+
+[Step 3] Specs Updated in 1_specs:
+  ├─ os_name = "Windows 11"
+  ├─ memory_size_gb = 8
+  ├─ brand_id = 2 (HP)
+  ├─ model_id = NULL (Pavilion lookup)
+  └─ category_id = 1 (Laptop)
+
+[Step 4] Asset History Change Detection:
+  ├─ Latest record: costcenter=NULL, department=NULL, location=NULL, ramco=NULL
+  ├─ New values:   costcenter=15,    department=8,    location=5,    ramco='000277'
+  ├─ Result: ALL 4 fields changed → INSERT new record
+  └─ asset_history ID 5719 created ✓
+
+[Step 5] assetdata Synchronized:
+  ├─ costcenter_id: NULL → 15 ✓
+  ├─ department_id: NULL → 8 ✓
+  ├─ location_id: NULL → 5 ✓
+  ├─ ramco_id: NULL → '000277' ✓
+  ├─ brand_id: 7 → 2 (from specs) ✓
+  ├─ model_id: 104 → NULL (from specs) ✓
+  └─ 6 fields updated ✓
+
+DATABASE RESULT:
+  assessments:       1 new record (ID: 5719)
+  1_specs:           1 record updated (51 fields)
+  asset_history:     1 new record (ID: 5719)
+  assetdata:         1 record updated (6 fields)
+
+RESPONSE:
+{
+  "status": "success",
+  "message": "Computer assessment created successfully",
+  "data": { "id": 5719 }
+}
+```
+
+---
+
+## Testing the Complete Workflow
+
+### Test Case 1: Same Values (No History Insertion)
+```bash
+# First assessment
+curl -X POST http://localhost:3030/api/compliance/it-assess \
+  -H "Content-Type: application/json" \
+  -d '{ "asset_id": 1294, ..., "costcenter_id": null, "department_id": null, ... }'
+# Result: asset_history NOT created (values same as latest)
+
+# Second assessment (same values)
+curl -X POST http://localhost:3030/api/compliance/it-assess \
+  -H "Content-Type: application/json" \
+  -d '{ "asset_id": 1294, ..., "costcenter_id": null, "department_id": null, ... }'
+# Result: asset_history NOT created (values unchanged - optimization)
+```
+
+### Test Case 2: Different Values (History & assetdata Updated)
+```bash
+# Third assessment (different values)
+curl -X POST http://localhost:3030/api/compliance/it-assess \
+  -H "Content-Type: application/json" \
+  -d '{ "asset_id": 1294, ..., "costcenter_id": 15, "department_id": 8, "location_id": 5, "ramco_id": "000277" }'
+# Result: 
+#   ✓ asset_history record created (ID: 5719)
+#   ✓ assetdata updated (4 fields modified)
+#   ✓ 1_specs updated (51 fields modified)
+```
+
+---
+
+## Key Improvements Made
+
+✅ **Asset History with Change Detection**
+- Only creates new records when data actually changes
+- Prevents duplicate audit trail entries
+- Maintains complete movement/assignment history
+
+✅ **assetdata Synchronization**
+- Keeps central asset registry in sync with assessments
+- Updates ownership (costcenter, department, location, owner)
+- Updates specifications from 1_specs table
+- No record insertions, only updates
+
+✅ **Complete Data Synchronization**
+- Assessment data → 1_specs (hardware specifications)
+- Assessment data → asset_history (audit trail)
+- Assessment data → assetdata (central registry)
+- All synchronized in single assessment operation
+
+✅ **Non-Breaking Error Handling**
+- Each step has try/catch blocks
+- Errors logged to console for audit
+- Failures don't prevent assessment creation
+- Assessment always succeeds if core steps complete
+
 
 **Upload Directory:**
 - Base path: `/uploads/compliance/assessment/computer/`
@@ -293,6 +596,10 @@ if (data.ramco_id) {
   "brand": "Dell",
   "model": "OptiPlex 7090",
   "ramco_id": "EMP001",
+  
+  "costcenter_id": 26,
+  "department_id": 16,
+  "location_id": 2,
   
   "os_name": "Windows 11 Pro",
   "os_version": "23H2",
@@ -393,6 +700,7 @@ if (data.ramco_id) {
 | Field | Stored In | Table | Notes |
 |-------|-----------|-------|-------|
 | assessment_date, assessment_year | compliance.computer_assessment | computer_assessment | Main assessment record |
+| asset_id, register_number | compliance.computer_assessment + assets.asset_history | Both tables | Asset references in multiple tables |
 | os_name, os_version | assets.1_specs | 1_specs | **NOW WORKING** ✓ |
 | cpu_manufacturer, cpu_model, cpu_generation | assets.1_specs | 1_specs | **NOW WORKING** ✓ |
 | memory_type, memory_size_gb | assets.1_specs | 1_specs | **NOW WORKING** ✓ |
@@ -402,6 +710,7 @@ if (data.ramco_id) {
 | battery_equipped, adapter_output | assets.1_specs | 1_specs | **NOW WORKING** ✓ |
 | av_installed, vpn_installed | assets.1_specs | 1_specs | **NOW WORKING** ✓ |
 | attachment_1, attachment_2, attachment_3 | assets.1_specs + filesystem | 1_specs + /uploads/ | **NOW WORKING** ✓ |
+| costcenter_id, department_id, location_id, ramco_id | assets.asset_history | asset_history | **NEW IN STEP 4** ✓ |
 | os_name, overall_score, remarks | compliance.computer_assessment | computer_assessment | Summary fields |
 
 ## Related Tables
@@ -418,6 +727,14 @@ if (data.ramco_id) {
 - **Key:** asset_id, assess_id (back-reference to computer_assessment)
 - **Updated:** By createComputerAssessment() via updateAssetBasicSpecs()
 
+### assets.asset_history (NEW)
+- **Purpose:** Audit trail for asset location and ownership changes
+- **Columns:** id, asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date, timestamp
+- **Type:** Append-only log (multiple records per asset)
+- **Populated:** During Step 4 by createComputerAssessment() via insertAssetHistory()
+- **Usage:** Track asset movements, department transfers, ownership changes, cost center reassignments
+- **Effective Date:** Assessment date when change was recorded
+
 ### assets.assetdata
 - **Purpose:** Master asset record
 - **References:** Computer assets (type_id=1)
@@ -431,9 +748,10 @@ if (data.ramco_id) {
 3. System:
    - Creates computer_assessment record
    - **Saves all 40+ hardware specs to 1_specs** ✓
+   - **Records asset location/ownership in asset_history** ✓ (NEW)
    - Processes file attachments (receipts, photos)
    - Sends confirmation email
-4. Asset is now fully documented with hardware details
+4. Asset is now fully documented with hardware details and ownership trail
 
 ### Create Computer Assessment with File Attachments
 1. Include attachments in multipart/form-data request

@@ -1173,6 +1173,7 @@ export const createComputerAssessment = async (data: Partial<ComputerAssessment>
     created_at: now,
     display_interfaces: displayInterfaces,
     purchase_date: purchaseDate,
+    technician: data.technician || data.ramco_id || 'Unknown',  // Use ramco_id as fallback, or 'Unknown'
     updated_at: now,
   } as any;
 

@@ -442,49 +442,109 @@ curl -X GET 'http://localhost:3030/api/compliance/computer-assessments?assessmen
 
 ### 15. Create Computer Assessment
 
-**Endpoint**: `POST /api/compliance/computer-assessments`
+**Endpoint**: `POST /api/compliance/it-assess`
+
+**Authentication**: Optional (but recommended)
 
 **Request Body**:
 ```json
 {
-  "asset_id": 234,
-  "assessment_year": "2024",
-  "assessment_date": "2024-06-15",
-  "technician": "jdoe",
-  "overall_score": 4,
-  "os_name": "Windows",
-  "os_version": "11 Pro",
-  "cpu_model": "Intel i5",
+  "asset_id": 1294,
+  "assessment_year": 2026,
+  "assessment_date": "2026-01-06",
+  "register_number": "220222812102000235",
+  "technician": "000277",
+  "overall_score": 85,
+  "brand": "HP",
+  "model": "Pavilion",
+  "category": "Laptop",
+  "os_name": "Windows 11",
+  "os_version": "22H2",
+  "cpu_manufacturer": "Intel",
+  "cpu_model": "Core i7",
   "memory_size_gb": 16,
+  "storage_type": "SSD",
   "storage_size_gb": 512,
-  "antivirus_installed": 1,
-  "antivirus_vendor": "Norton",
-  "antivirus_status": "Active",
-  "vpn_installed": 1,
-  "remarks": "Hardware in good condition"
+  "costcenter_id": 15,
+  "department_id": 8,
+  "location_id": 5,
+  "ramco_id": "000277",
+  "purchase_date": "2022-07-01",
+  "remarks": "Hardware in excellent condition"
 }
 ```
 
-**Success Response** (201):
+**Processing Steps**:
+1. Validate duplicate (same asset + year + register_number)
+2. Create assessment record
+3. Update computer specs in `1_specs` table (51 fields)
+4. Check asset_history for changes:
+   - Compare costcenter_id, department_id, location_id, ramco_id
+   - Insert new record if ANY field changed
+   - Skip insertion if all fields identical (optimization)
+5. Update `assetdata` table:
+   - Sync ownership fields (costcenter, department, location, owner)
+   - Sync specs fields (category, brand, model)
+   - Only updates existing records, no insertions
+6. Process attachments (if provided)
+7. Send notification email to technician
+
+**Success Response** (200):
 ```json
 {
   "status": "success",
   "message": "Computer assessment created successfully",
   "data": {
-    "id": 1,
-    "asset_id": 234,
-    "assessment_year": "2024"
+    "id": 5719
   }
 }
 ```
+
+**Console Logs** (operation tracking):
+```
+✓ Computer specs UPDATED for asset_id=1294: 51 fields modified
+✓ Asset history record INSERTED for asset_id=1294 (ID: 5719): Changes detected - costcenterChanged, departmentChanged, locationChanged
+✓ assetdata UPDATED for asset_id=1294: 4 field(s) modified
+Message sent: <email-id>
+```
+
+**Error Response** (400 - Duplicate):
+```json
+{
+  "status": "error",
+  "message": "Assessment already exists for asset 220222812102000235 in year 2026",
+  "data": null
+}
+```
+
+**Fields Involved**:
+
+| Category | Fields | Purpose |
+|----------|--------|---------|
+| **Assessment** | assessment_year, assessment_date, overall_score | Assessment metadata |
+| **Asset Ref** | asset_id, register_number | Asset identification |
+| **Equipment** | brand, model, category | Equipment classification |
+| **Hardware** | os_name, os_version, cpu_manufacturer, cpu_model, memory_size_gb, storage_type, storage_size_gb, battery_equipped, ports_*, av_installed, vpn_installed | Complete hardware inventory |
+| **Ownership** | costcenter_id, department_id, location_id, ramco_id | Asset ownership/allocation |
+| **Purchase** | purchase_date | Purchase tracking |
+| **Files** | attachments[0], attachments[1], attachments[2] | Supporting documents |
+| **Tech Info** | technician, remarks | Assessment details |
+
+**Database Updates**:
+- `computer_assessment` (it_assessment): 1 record created
+- `1_specs`: 1 record created/updated (51 fields)
+- `asset_history`: 1 record created (if values changed)
+- `assetdata`: 1 record updated (if fields changed)
 
 ---
 
 ### 16. Update Computer Assessment
 
-**Endpoint**: `PUT /api/compliance/computer-assessments/:id`
+**Endpoint**: `PUT /api/compliance/it-assess/:id`
 
 **Request Body** (same as Create, all optional)
+
+**Processing**: Same as Create (including asset_history & assetdata checks)
 
 ---
 
