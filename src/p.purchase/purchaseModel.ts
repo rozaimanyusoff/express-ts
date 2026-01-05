@@ -11,6 +11,7 @@ const purchaseRequestItemTable = `${dbName}.purchase_items`;
 const purchaseDeliveryTable = `${dbName}.purchase_delivery`;
 const supplierTable = `${dbName}.purchase_supplier`;
 const purchaseAssetRegistryTable = `${dbName}.purchase_asset_registry`;
+const purchaseAssetRegistryAuditTable = `${dbName}.purchase_asset_registry_audit`;
 const purchaseRequestItemsTable = `${dbName}.purchase_request_items`;
 // Join table linking purchase_data (pr_id) and purchase_asset_registry (registry_id)
 const purchaseRegistryTable = `${dbName}.purchase_registry`;
@@ -886,4 +887,109 @@ export const updateAssetDataModelId = async (purchaseId: number, modelId: number
     );
   }
 };
+
+// Update assetdata record with multiple fields from purchase_asset_registry
+// This ensures asset data stays in sync when purchaser updates registry
+export const updateAssetDataFromRegistry = async (
+  purchaseId: number,
+  data: {
+    register_number?: string | null;
+    brand_id?: number | null;
+    category_id?: number | null;
+    classification?: string | null;
+    costcenter_id?: number | null;
+    location_id?: number | null;
+    model_id?: number | null;
+  }
+): Promise<void> => {
+  const keys = Object.keys(data);
+  if (!keys.length) return;
+  
+  const fields = keys.map(k => `${k} = ?`).join(', ');
+  const vals = keys.map(k => (data as any)[k]);
+  
+  await pool.query(
+    `UPDATE assets.assetdata SET ${fields} WHERE purchase_id = ? LIMIT 1`,
+    [...vals, purchaseId]
+  );
+};
+
+// Audit logging for purchase_asset_registry updates
+// Records what changed, old/new values, who changed it, when and from where
+export const logRegistryAudit = async (
+  registryId: number,
+  purchaseId: number | null,
+  fieldName: string,
+  oldValue: any,
+  newValue: any,
+  changedBy: string | null,
+  ipAddress: string | null,
+  notes?: string | null
+): Promise<void> => {
+  try {
+    await pool.query(
+      `INSERT INTO ${purchaseAssetRegistryAuditTable} 
+       (registry_id, purchase_id, field_name, old_value, new_value, changed_by, ip_address, notes) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        registryId,
+        purchaseId,
+        fieldName,
+        oldValue === null ? null : JSON.stringify(oldValue),
+        newValue === null ? null : JSON.stringify(newValue),
+        changedBy,
+        ipAddress,
+        notes || null
+      ]
+    );
+  } catch (err) {
+    // Log audit failures but don't fail the main operation
+    console.warn(`Failed to log audit for registry ${registryId}:`, err);
+  }
+};
+
+// Batch log multiple field changes at once
+export const logRegistryAuditBatch = async (
+  registryId: number,
+  purchaseId: number | null,
+  changes: Array<{
+    fieldName: string;
+    oldValue: any;
+    newValue: any;
+  }>,
+  changedBy: string | null,
+  ipAddress: string | null,
+  notes?: string | null
+): Promise<void> => {
+  try {
+    if (changes.length === 0) return;
+    
+    const placeholders = changes.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(',');
+    const values: any[] = [];
+    
+    for (const change of changes) {
+      values.push(
+        registryId,
+        purchaseId,
+        change.fieldName,
+        change.oldValue === null ? null : JSON.stringify(change.oldValue),
+        change.newValue === null ? null : JSON.stringify(change.newValue),
+        changedBy,
+        ipAddress,
+        notes || null
+      );
+    }
+    
+    await pool.query(
+      `INSERT INTO ${purchaseAssetRegistryAuditTable} 
+       (registry_id, purchase_id, field_name, old_value, new_value, changed_by, ip_address, notes) 
+       VALUES ${placeholders}`,
+      values
+    );
+  } catch (err) {
+    // Log audit failures but don't fail the main operation
+    console.warn(`Failed to log audit batch for registry ${registryId}:`, err);
+  }
+};
+
 

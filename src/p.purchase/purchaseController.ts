@@ -1229,18 +1229,61 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
 
     const { brand_id, category_id, classification, costcenter_id, description, item_condition, location_id, model, model_id, register_number, type_id, warranty_period } = req.body || {};
 
+    // Get current registry entry to track old values for audit
+    const registry = await purchaseModel.getPurchaseAssetRegistry();
+    const registryEntry = (registry || []).find((r: any) => r.id === registryId);
+    if (!registryEntry) {
+      return res.status(404).json({ data: null, message: 'Registry entry not found', status: 'error' });
+    }
+
     const updateData: any = {};
-    if (brand_id !== undefined) updateData.brand_id = brand_id ? Number(brand_id) : null;
-    if (category_id !== undefined) updateData.category_id = category_id ? Number(category_id) : null;
-    if (classification !== undefined) updateData.classification = classification;
-    if (costcenter_id !== undefined) updateData.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
-    if (description !== undefined) updateData.description = description;
-    if (item_condition !== undefined) updateData.item_condition = item_condition;
-    if (location_id !== undefined) updateData.location_id = location_id ? Number(location_id) : null;
-    if (model !== undefined) updateData.model = model;
-    if (register_number !== undefined) updateData.register_number = register_number;
-    if (type_id !== undefined) updateData.type_id = type_id ? Number(type_id) : null;
-    if (warranty_period !== undefined) updateData.warranty_period = warranty_period ? Number(warranty_period) : null;
+    const auditChanges: Array<{ fieldName: string; oldValue: any; newValue: any }> = [];
+
+    // Track all changes for audit trail
+    if (brand_id !== undefined) {
+      updateData.brand_id = brand_id ? Number(brand_id) : null;
+      auditChanges.push({ fieldName: 'brand_id', oldValue: registryEntry.brand_id, newValue: updateData.brand_id });
+    }
+    if (category_id !== undefined) {
+      updateData.category_id = category_id ? Number(category_id) : null;
+      auditChanges.push({ fieldName: 'category_id', oldValue: registryEntry.category_id, newValue: updateData.category_id });
+    }
+    if (classification !== undefined) {
+      updateData.classification = classification;
+      auditChanges.push({ fieldName: 'classification', oldValue: registryEntry.classification, newValue: classification });
+    }
+    if (costcenter_id !== undefined) {
+      updateData.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
+      auditChanges.push({ fieldName: 'costcenter_id', oldValue: registryEntry.costcenter_id, newValue: updateData.costcenter_id });
+    }
+    if (description !== undefined) {
+      updateData.description = description;
+      auditChanges.push({ fieldName: 'description', oldValue: registryEntry.description, newValue: description });
+    }
+    if (item_condition !== undefined) {
+      updateData.item_condition = item_condition;
+      auditChanges.push({ fieldName: 'item_condition', oldValue: registryEntry.item_condition, newValue: item_condition });
+    }
+    if (location_id !== undefined) {
+      updateData.location_id = location_id ? Number(location_id) : null;
+      auditChanges.push({ fieldName: 'location_id', oldValue: registryEntry.location_id, newValue: updateData.location_id });
+    }
+    if (model !== undefined) {
+      updateData.model = model;
+      auditChanges.push({ fieldName: 'model', oldValue: registryEntry.model, newValue: model });
+    }
+    if (register_number !== undefined) {
+      updateData.register_number = register_number;
+      auditChanges.push({ fieldName: 'register_number', oldValue: registryEntry.register_number, newValue: register_number });
+    }
+    if (type_id !== undefined) {
+      updateData.type_id = type_id ? Number(type_id) : null;
+      auditChanges.push({ fieldName: 'type_id', oldValue: registryEntry.type_id, newValue: updateData.type_id });
+    }
+    if (warranty_period !== undefined) {
+      updateData.warranty_period = warranty_period ? Number(warranty_period) : null;
+      auditChanges.push({ fieldName: 'warranty_period', oldValue: registryEntry.warranty_period, newValue: updateData.warranty_period });
+    }
 
     // Handle model_id: direct value or lookup from model name
     let resolvedModelId: number | null = null;
@@ -1248,28 +1291,55 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
       // Direct model_id provided from frontend
       resolvedModelId = model_id ? Number(model_id) : null;
       updateData.model_id = resolvedModelId;
+      auditChanges.push({ fieldName: 'model_id', oldValue: registryEntry.model_id, newValue: resolvedModelId });
     } else if (model !== undefined && model && model.trim() !== '') {
       // Lookup model_id from model name using model layer
       resolvedModelId = await purchaseModel.getModelIdByName(model);
       updateData.model_id = resolvedModelId;
+      auditChanges.push({ fieldName: 'model_id', oldValue: registryEntry.model_id, newValue: resolvedModelId });
     }
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ data: null, message: 'No fields to update', status: 'error' });
     }
 
+    // Get user and IP for audit trail
+    const changedBy = (req as any).user?.ramco_id || (req as any).user?.id || 'unknown';
+    const ipAddress = req.ip || req.connection.remoteAddress || null;
+
     // Update the registry record with all fields including model_id
     await purchaseModel.updatePurchaseAssetRegistry(registryId, updateData);
 
-    // Also update the corresponding assetdata record with new model_id
-    if (resolvedModelId !== null || model_id !== undefined) {
-      const registry = await purchaseModel.getPurchaseAssetRegistry();
-      const registryEntry = (registry || []).find((r: any) => r.id === registryId);
+    // Log all changes to audit trail
+    if (auditChanges.length > 0) {
+      await purchaseModel.logRegistryAuditBatch(
+        registryId,
+        registryEntry.purchase_id || null,
+        auditChanges,
+        changedBy,
+        ipAddress,
+        'Registry correction by purchaser - synced to assets.assetdata'
+      );
+    }
 
-      if (registryEntry && registryEntry.purchase_id) {
-        const purchaseId = registryEntry.purchase_id;
-        // Update assetdata using model layer
-        await purchaseModel.updateAssetDataModelId(purchaseId, resolvedModelId);
+    // Sync changes to assetdata table to keep asset info in sync
+    // Fields to sync: register_number, brand_id, category_id, classification, costcenter_id, location_id, model_id
+    if (registryEntry && registryEntry.purchase_id) {
+      const purchaseId = registryEntry.purchase_id;
+      
+      // Build assetdata update payload with fields that were changed
+      const assetDataUpdate: any = {};
+      if (register_number !== undefined) assetDataUpdate.register_number = register_number;
+      if (brand_id !== undefined) assetDataUpdate.brand_id = brand_id ? Number(brand_id) : null;
+      if (category_id !== undefined) assetDataUpdate.category_id = category_id ? Number(category_id) : null;
+      if (classification !== undefined) assetDataUpdate.classification = classification;
+      if (costcenter_id !== undefined) assetDataUpdate.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
+      if (location_id !== undefined) assetDataUpdate.location_id = location_id ? Number(location_id) : null;
+      if (model_id !== undefined) assetDataUpdate.model_id = resolvedModelId;
+      
+      // Update assetdata with the sync fields
+      if (Object.keys(assetDataUpdate).length > 0) {
+        await purchaseModel.updateAssetDataFromRegistry(purchaseId, assetDataUpdate);
       }
     }
 

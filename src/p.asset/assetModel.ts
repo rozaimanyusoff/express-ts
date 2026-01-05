@@ -615,19 +615,43 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
   
   const exists = Array.isArray(existingRows) && (existingRows as any[]).length > 0;
   
-  // Allowed columns to update (exclude type_id from updates)
-  const allowedColumns = [
-    'brand_id', 'model_id', 'category_id', 'cubic_meter', 'fuel_type', 'transmission',
-    'color', 'chassis_no', 'engine_no', 'seating_capacity', 'mileage', 'avls_availability',
-    'avls_install_date', 'avls_removal_date', 'avls_transfer_date'
-  ];
+  // Type-specific allowed columns
+  let allowedColumns: string[] = [];
+  
+  if (type_id === 1) {
+    // Computer (1_specs) fields
+    allowedColumns = [
+      'serial_number', 'os_name', 'os_version', 'cpu_manufacturer', 'cpu_model', 'cpu_generation',
+      'memory_manufacturer', 'memory_type', 'memory_size_gb', 'storage_manufacturer', 'storage_type',
+      'storage_size_gb', 'graphics_type', 'graphics_manufacturer', 'graphics_specs', 'display_manufacturer',
+      'display_size', 'display_resolution', 'display_form_factor', 'display_interfaces',
+      'ports_usb_a', 'ports_usb_c', 'ports_thunderbolt', 'ports_ethernet', 'ports_hdmi',
+      'ports_displayport', 'ports_vga', 'ports_sdcard', 'ports_audiojack',
+      'battery_equipped', 'battery_capacity', 'adapter_equipped', 'adapter_output',
+      'av_installed', 'av_vendor', 'av_status', 'av_license',
+      'vpn_installed', 'vpn_setup_type', 'vpn_username', 'installed_software', 'office_account',
+      'attachment_1', 'attachment_2', 'attachment_3',
+      'brand_id', 'model_id', 'category_id', 'entry_code', 'asset_code'
+    ];
+  } else if (type_id === 2) {
+    // Vehicle (2_specs) fields
+    allowedColumns = [
+      'register_number', 'chassis_no', 'engine_no', 'transmission', 'fuel_type', 'card_id',
+      'cubic_meter', 'color', 'seating_capacity', 'avls_availability', 'avls_install_date',
+      'avls_removal_date', 'avls_transfer_date', 'brand_id', 'model_id', 'category_id',
+      'entry_code', 'asset_code'
+    ];
+  } else {
+    // For other types, allow common fields only
+    allowedColumns = ['brand_id', 'model_id', 'category_id', 'entry_code', 'asset_code'];
+  }
   
   if (exists) {
-    // Update existing record
+    // UPDATE existing record matching asset_id in 1_specs or 2_specs table
     const updates: string[] = [];
     const params: any[] = [];
     
-    // Build dynamic UPDATE statement with only provided fields
+    // Build dynamic UPDATE statement with only allowed fields
     for (const [key, value] of Object.entries(otherFields)) {
       if (allowedColumns.includes(key) && value !== undefined) {
         updates.push(`\`${key}\` = ?`);
@@ -636,7 +660,12 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     }
     
     if (updates.length === 0) {
-      return { message: 'No fields to update', asset_id, type_id };
+      return { 
+        message: 'No fields to update (all fields filtered)',
+        asset_id, 
+        type_id,
+        operation: 'update-skip'
+      };
     }
     
     updates.push('updated_at = NOW()');
@@ -645,25 +674,31 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     const sql = `UPDATE ${qTable} SET ${updates.join(', ')} WHERE asset_id = ?`;
     const [result] = await pool.query(sql, params);
     
+    const updatedFields = Object.keys(otherFields).filter(k => allowedColumns.includes(k));
+    
     return { 
-      message: 'Asset specs updated', 
+      message: 'Asset specs updated successfully',
       asset_id, 
       type_id, 
+      operation: 'update-success',
       affectedRows: (result as any).affectedRows,
-      updatedFields: Object.keys(otherFields).filter(k => allowedColumns.includes(k))
+      updatedFieldCount: updatedFields.length,
+      updatedFields: updatedFields
     };
   } else {
-    // Insert new record - build columns and values dynamically
-    const columns = ['asset_id', 'created_at', 'updated_at'];
-    const values = [asset_id, 'NOW()', 'NOW()'];
-    const params = [];
+    // INSERT new record in 1_specs or 2_specs table (not found by asset_id)
+    const columns = ['asset_id', 'type_id', 'created_at', 'updated_at'];
+    const values = [asset_id, type_id, 'NOW()', 'NOW()'];
+    const params = [asset_id, type_id];
     
-    // Add provided fields to INSERT
+    // Add provided fields to INSERT (only allowed columns)
+    const insertedFields: string[] = [];
     for (const [key, value] of Object.entries(otherFields)) {
       if (allowedColumns.includes(key) && value !== undefined) {
         columns.push(`\`${key}\``);
         values.push('?');
         params.push(value);
+        insertedFields.push(key);
       }
     }
     
@@ -671,11 +706,13 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     const [result] = await pool.query(insertSql, params);
     
     return { 
-      message: 'Asset specs created', 
+      message: 'Asset specs created successfully',
       asset_id, 
-      type_id, 
+      type_id,
+      operation: 'insert-success', 
       insertId: (result as any).insertId,
-      createdFields: Object.keys(otherFields).filter(k => allowedColumns.includes(k))
+      createdFieldCount: insertedFields.length,
+      createdFields: insertedFields
     };
   }
 };

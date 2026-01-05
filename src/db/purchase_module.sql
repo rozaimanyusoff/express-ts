@@ -44,6 +44,32 @@ CREATE TABLE `purchase_asset_registry` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `purchase_asset_registry_audit`
+--
+
+DROP TABLE IF EXISTS `purchase_asset_registry_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `purchase_asset_registry_audit` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `registry_id` int NOT NULL,
+  `purchase_id` int DEFAULT NULL,
+  `field_name` varchar(100) NOT NULL,
+  `old_value` text,
+  `new_value` text,
+  `changed_by` varchar(100) DEFAULT NULL,
+  `changed_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `notes` text,
+  PRIMARY KEY (`id`),
+  KEY `idx_registry_id` (`registry_id`),
+  KEY `idx_purchase_id` (`purchase_id`),
+  KEY `idx_changed_at` (`changed_at`),
+  KEY `idx_changed_by` (`changed_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Audit trail for purchase_asset_registry updates - tracks corrections made by purchasers';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `purchase_data2_2024`
 --
 

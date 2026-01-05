@@ -2210,7 +2210,14 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           updated_by: data.ramco_id || null
         };
         
-        await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
+        const specsResult = await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
+        
+        // Log the operation (update vs insert) for monitoring
+        if (specsResult.operation === 'update-success') {
+          console.log(`✓ Computer specs UPDATED for asset_id=${data.asset_id}: ${specsResult.updatedFieldCount} fields modified`);
+        } else if (specsResult.operation === 'insert-success') {
+          console.log(`✓ Computer specs INSERTED for asset_id=${data.asset_id}: ${specsResult.createdFieldCount} fields created (1_specs id: ${specsResult.insertId})`);
+        }
       }
     } catch (specsErr) {
       // Log error but don't fail the assessment creation
