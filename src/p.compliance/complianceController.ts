@@ -1027,8 +1027,9 @@ export const deleteAssessmentCriteriaOwnership = async (req: Request, res: Respo
 export const getAssessments = async (req: Request, res: Response) => {
   try {
     // Parse optional year, asset, and owner filter from query params
+    // Support both 'asset' and 'asset_id' query parameter names
     const yearParam = req.query.year as string;
-    const assetParam = req.query.asset as string;
+    const assetParam = (req.query.asset || req.query.asset_id) as string;
     const ownerParam = req.query.owner as string;
     const year = yearParam ? parseInt(yearParam, 10) : undefined;
     const asset = assetParam ? parseInt(assetParam, 10) : undefined;

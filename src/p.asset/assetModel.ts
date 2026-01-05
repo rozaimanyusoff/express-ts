@@ -688,19 +688,33 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
  */
 export const getVehicleRoadtaxAndInsuranceExpiry = async (asset_id: number) => {
   try {
-    // Query roadtax expiry and insurance expiry
-    // Join vehicle_insurance to insurance table to get expiry dates
-    const [rows] = await pool.query(`
+    // Query roadtax expiry and insurance expiry from vehicle_insurance table
+    // Try first with asset_id, then fallback to register_number
+    let [rows] = await pool.query(`
       SELECT 
         vi.rt_exp as roadtax_expiry,
         ins.expiry as insurance_expiry
       FROM ${applicationsDb}.vehicle_insurance vi
       LEFT JOIN ${applicationsDb}.insurance ins ON vi.insurance_id = ins.id
-      WHERE vi.vehicle_id = (
-        SELECT register_number FROM ${assetTable} WHERE id = ? LIMIT 1
-      )
+      WHERE vi.asset_id = ?
       LIMIT 1
     `, [asset_id]);
+    
+    // Fallback: try by register_number if no result found
+    if ((!rows || (rows as any[]).length === 0)) {
+      const [rows2] = await pool.query(`
+        SELECT 
+          vi.rt_exp as roadtax_expiry,
+          ins.expiry as insurance_expiry
+        FROM ${applicationsDb}.vehicle_insurance vi
+        LEFT JOIN ${applicationsDb}.insurance ins ON vi.insurance_id = ins.id
+        WHERE vi.vehicle_id = (
+          SELECT register_number FROM ${assetTable} WHERE id = ? LIMIT 1
+        )
+        LIMIT 1
+      `, [asset_id]);
+      rows = rows2;
+    }
     
     const result = (rows as any[])?.[0];
     if (result) {
