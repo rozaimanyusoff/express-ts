@@ -217,6 +217,41 @@ export const getAssets = async (req: Request, res: Response) => {
 	));
 	const purchaseItemsRaw = purchaseIds.length > 0 ? (await assetModel.getPurchaseItemsByAssetIds(purchaseIds) as any[]) : [];
 	const purchaseItemMap = new Map(purchaseItemsRaw.map((pi: any) => [pi.id, pi]));
+
+	// Fetch specs for each asset
+	const specsMap = new Map();
+	for (const asset of filteredAssets) {
+		if (asset.type_id && asset.id) {
+			try {
+				const specs = await assetModel.getSpecsForAsset(asset.type_id, asset.id);
+				let specsArray = Array.isArray(specs) ? specs : [];
+				
+				// For vehicles (type_id = 2), add insurance and roadtax expiry
+				if (asset.type_id === 2) {
+					try {
+						const expiryData = await assetModel.getVehicleRoadtaxAndInsuranceExpiry(asset.id);
+						specsArray = [
+							...specsArray,
+							{
+								field: 'insurance_expiry',
+								value: expiryData.insurance_expiry || null
+							},
+							{
+								field: 'roadtax_expiry',
+								value: expiryData.roadtax_expiry || null
+							}
+						];
+					} catch (err) {
+						// Silently fail if expiry data can't be fetched
+					}
+				}
+				
+				specsMap.set(asset.id, specsArray);
+			} catch (err) {
+				specsMap.set(asset.id, []);
+			}
+		}
+	}
 	
 	const types = Array.isArray(typesRaw) ? typesRaw : [];
 	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
@@ -301,6 +336,7 @@ export const getAssets = async (req: Request, res: Response) => {
 			purpose: asset.purpose,
 			record_status: asset.record_status,
 			register_number: asset.register_number,
+			specs: specsMap.get(asset.id) || [],
 			status: asset.status,
 			transmission: asset.transmission,
 			type: type ? {
