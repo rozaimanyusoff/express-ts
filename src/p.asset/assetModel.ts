@@ -41,6 +41,7 @@ const assetPurchaseTable = `${db}.asset_purchase`;
 const assetTransferRequestTable = `${db}.transfer_request`;
 const assetTransferItemTable = `${db}.transfer_items`;
 const transferChecklistTable = `${db}.transfer_checklists`;
+const statusHistoryTable = `${db}.status_history`;
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd(), 'uploads');
 
@@ -2558,6 +2559,125 @@ export const updateAssetDataFromAssessment = async (asset_id: number, data: {
       error: true,
       message: 'Error during assetdata update'
     };
+  }
+};
+
+
+
+/* ============ ASSET STATUS UPDATE & AUDIT TRAIL ============ */
+
+/**
+ * Update asset status fields (classification, record_status, condition_status)
+ * @param asset_id Asset ID to update
+ * @param data Object containing classification, record_status, condition_status, updated_by
+ * @returns Result object with success/error status
+ */
+export const updateAssetStatus = async (
+  asset_id: number,
+  data: {
+    classification?: string;
+    record_status?: string;
+    condition_status?: string;
+    updated_by: string;
+  }
+) => {
+  try {
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    if (data.classification !== undefined) {
+      updates.push('classification = ?');
+      values.push(data.classification ?? null);
+    }
+    if (data.record_status !== undefined) {
+      updates.push('record_status = ?');
+      values.push(data.record_status ?? null);
+    }
+    if (data.condition_status !== undefined) {
+      updates.push('condition_status = ?');
+      values.push(data.condition_status ?? null);
+    }
+
+    if (updates.length === 0) {
+      return {
+        updated: false,
+        message: 'No status fields to update'
+      };
+    }
+
+    values.push(asset_id);
+
+    const sql = `UPDATE ${assetTable} SET ${updates.join(', ')} WHERE id = ?`;
+    const [result] = await pool.query(sql, values);
+
+    const affectedRows = (result as any).affectedRows || 0;
+
+    return {
+      updated: affectedRows > 0,
+      affectedRows,
+      message: affectedRows > 0 ? 'Asset status updated successfully' : 'No records updated'
+    };
+  } catch (err) {
+    console.error('Error updating asset status:', err);
+    throw err;
+  }
+};
+
+/**
+ * Create audit trail entry for status change
+ * @param asset_id Asset ID
+ * @param beforeData Object with classification, record_status, condition_status (before update)
+ * @param afterData Object with classification, record_status, condition_status (after update)
+ * @param updated_by User ID performing the update
+ * @returns Result object with success/error status
+ */
+export const createStatusHistory = async (
+  asset_id: number,
+  beforeData: {
+    classification?: string | null;
+    record_status?: string | null;
+    condition_status?: string | null;
+  },
+  afterData: {
+    classification?: string | null;
+    record_status?: string | null;
+    condition_status?: string | null;
+  },
+  updated_by: string
+) => {
+  try {
+    const sql = `
+      INSERT INTO ${statusHistoryTable} 
+      (asset_id, classification_before, classification_after, 
+       record_status_before, record_status_after, 
+       condition_status_before, condition_status_after, 
+       updated_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    const values = [
+      asset_id,
+      beforeData.classification ?? null,
+      afterData.classification ?? null,
+      beforeData.record_status ?? null,
+      afterData.record_status ?? null,
+      beforeData.condition_status ?? null,
+      afterData.condition_status ?? null,
+      updated_by
+    ];
+
+    const [result] = await pool.query(sql, values);
+
+    const insertId = (result as any).insertId;
+
+    return {
+      created: insertId > 0,
+      insertId,
+      message: insertId > 0 ? 'Status history record created' : 'Failed to create history record'
+    };
+  } catch (err) {
+    console.error('Error creating status history:', err);
+    throw err;
   }
 };
 

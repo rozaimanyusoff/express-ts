@@ -192,6 +192,8 @@ router.post('/', asyncHandler(assetController.createAsset));
 // Batch register purchased assets into registry table (purchases.purchase_asset_registry)
 router.post('/register-batch', asyncHandler(assetController.registerAssetsBatch));
 router.put('/:id', asyncHandler(assetController.updateAsset));
+// Update asset status (classification, record_status, condition_status) with audit trail
+router.put('/:id/update-status', asyncHandler(assetController.updateAssetStatus));
 router.delete('/:id', asyncHandler(assetController.deleteAsset));
 
 

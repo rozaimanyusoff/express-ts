@@ -4081,5 +4081,101 @@ export const deleteTransferChecklist = async (req: Request, res: Response) => {
 	res.json({ message: 'Transfer checklist item deleted successfully', status: 'success' });
 }
 
+/* ========== ASSET STATUS UPDATE ========== */
+/**
+ * Update asset status (classification, record_status, condition_status) with audit trail
+ * PUT /api/assets/:asset_id/update-status
+ */
+export const updateAssetStatus = async (req: Request, res: Response) => {
+	const assetId = Number(req.params.id);
+	const { classification, record_status, condition_status, updated_by } = req.body;
 
+	// Validation
+	if (!assetId || isNaN(assetId)) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'Invalid asset ID',
+			data: null
+		});
+	}
 
+	if (!updated_by) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'updated_by (ramco_id) is required',
+			data: null
+		});
+	}
+
+	// At least one status field must be provided
+	if (!classification && !record_status && !condition_status) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'At least one status field (classification, record_status, or condition_status) is required',
+			data: null
+		});
+	}
+
+	try {
+		// Get current asset data to capture before state
+		const currentAsset = await assetModel.getAssetById(assetId);
+		if (!currentAsset) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Asset not found',
+				data: null
+			});
+		}
+
+		// Prepare before/after data for audit trail
+		const beforeData = {
+			classification: currentAsset.classification,
+			record_status: currentAsset.record_status,
+			condition_status: currentAsset.condition_status
+		};
+
+		const afterData = {
+			classification: classification !== undefined ? classification : currentAsset.classification,
+			record_status: record_status !== undefined ? record_status : currentAsset.record_status,
+			condition_status: condition_status !== undefined ? condition_status : currentAsset.condition_status
+		};
+
+		// Update asset status
+		const updateResult = await assetModel.updateAssetStatus(assetId, {
+			classification,
+			record_status,
+			condition_status,
+			updated_by
+		});
+
+		if (!updateResult.updated) {
+			return res.status(500).json({
+				status: 'error',
+				message: 'Failed to update asset status',
+				data: null
+			});
+		}
+
+		// Create audit trail entry
+		await assetModel.createStatusHistory(assetId, beforeData, afterData, updated_by);
+
+		return res.json({
+			status: 'success',
+			message: 'Asset status updated successfully',
+			data: {
+				asset_id: assetId,
+				before: beforeData,
+				after: afterData,
+				updated_by,
+				updated_at: new Date().toISOString()
+			}
+		});
+	} catch (error) {
+		console.error('Error updating asset status:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: 'Error updating asset status',
+			data: null
+		});
+	}
+}
