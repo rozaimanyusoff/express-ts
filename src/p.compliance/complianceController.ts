@@ -2401,6 +2401,32 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           const department = data.department_id ? { id: data.department_id, name: `Dept-${data.department_id}` } : undefined;
           const location = data.location_id ? { id: data.location_id, name: `Location-${data.location_id}` } : undefined;
           
+          // Resolve category, brand, and model names from IDs
+          let categoryName = data.category;
+          let brandName = data.brand;
+          let modelName = data.model;
+          
+          // If category is numeric, look up the name
+          if (Number.isFinite(Number(data.category))) {
+            const categories = await assetModel.getCategories();
+            const categoryRecord = (categories as any[]).find((c: any) => c.id === Number(data.category));
+            categoryName = categoryRecord?.name || categoryName;
+          }
+          
+          // If brand is numeric, look up the name
+          if (Number.isFinite(Number(data.brand))) {
+            const brands = await assetModel.getBrands();
+            const brandRecord = (brands as any[]).find((b: any) => b.id === Number(data.brand));
+            brandName = brandRecord?.name || brandName;
+          }
+          
+          // If model is numeric, look up the name
+          if (Number.isFinite(Number(data.model))) {
+            const models = await assetModel.getModels();
+            const modelRecord = (models as any[]).find((m: any) => m.id === Number(data.model));
+            modelName = modelRecord?.name || modelName;
+          }
+          
           const { html, subject } = renderITAssessmentNotification({
             assessment: {
               date: data.assessment_date ? new Date(data.assessment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -2410,10 +2436,10 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
               year: data.assessment_year,
             },
             asset: {
-              brand: data.brand,
-              category: data.category,
+              brand: brandName,
+              category: categoryName,
               id: data.asset_id,
-              model: data.model,
+              model: modelName,
               register_number: data.register_number,
             },
             technician: {
