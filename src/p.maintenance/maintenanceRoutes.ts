@@ -41,19 +41,19 @@ router.put('/request/:id/authorize', asyncHandler(maintenanceController.authoriz
 // Authorize via secure email link (GET)
 router.get('/request/:id/authorize-link', asyncHandler(maintenanceController.authorizeViaEmailLink));
 // Force invoice creation for approved maintenance record
-router.post('/request/:requestId/forceinvoice', asyncHandler(maintenanceController.pushVehicleMtnToBilling));
+router.post('/request/:id/forceinvoice', asyncHandler(maintenanceController.pushVehicleMtnToBilling));
 
 // Resend portal link to requester
-router.post('/request/:requestId/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
+router.post('/request/:id/resendmail', asyncHandler(maintenanceController.resendMaintenancePortalLink));
 // Resend to recommender/approver (use ?level=recommend|approval)
-router.post('/request/:requestId/resendWorkflowMail', asyncHandler(maintenanceController.resendWorkflowMail));
+router.post('/request/:id/resendWorkflowMail', asyncHandler(maintenanceController.resendWorkflowMail));
 // Convenience routes for frontend: explicit resend endpoints
-router.post('/request/:requestId/resend/recommend', (req, res, next) => {
+router.post('/request/:id/resend/recommend', (req, res, next) => {
 	// inject level=recommend and delegate
 	(req.query as any).level = 'recommend';
 	return (asyncHandler(maintenanceController.resendWorkflowMail) as any)(req, res, next);
 });
-router.post('/request/:requestId/resend/approval', (req, res, next) => {
+router.post('/request/:id/resend/approval', (req, res, next) => {
 	// inject level=approval and delegate
 	(req.query as any).level = 'approval';
 	return (asyncHandler(maintenanceController.resendWorkflowMail) as any)(req, res, next);

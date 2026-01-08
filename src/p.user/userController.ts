@@ -875,13 +875,16 @@ export const reorderWorkflows = async (req: Request, res: Response) => {
 };
 
 export const deleteWorkflow = async (req: Request, res: Response) => {
-  const workflowId = Number(req.params.id);
-  if (!workflowId) {
-    return res.status(400).json({ message: 'Missing or invalid workflowId', status: 'error' });
+  const moduleName = String(req.params.module_name || '').trim();
+  if (!moduleName) {
+    return res.status(400).json({ message: 'Missing or invalid module_name', status: 'error' });
   }
   try {
-    await userModel.deleteWorkflow(workflowId);
-    return res.status(200).json({ message: 'Workflow deleted successfully', status: 'success' });
+    const deletedCount = await userModel.deleteWorkflowByModule(moduleName);
+    if (deletedCount === 0) {
+      return res.status(404).json({ message: `No workflows found for module: ${moduleName}`, status: 'error' });
+    }
+    return res.status(200).json({ data: { deleted_levels: deletedCount }, message: `Workflow deleted successfully (${deletedCount} level${deletedCount === 1 ? '' : 's'})`, status: 'success' });
   } catch (error) {
     console.error('Error deleting workflow:', error);
     return res.status(500).json({ error: (error as any).message, message: 'Error deleting workflow', status: 'error' });

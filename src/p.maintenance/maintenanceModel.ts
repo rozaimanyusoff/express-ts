@@ -312,8 +312,6 @@ export const updateVehicleMtnRequest = async (id: number, data: any) => {
         'verification_comment','verification_stat','verification_date','rejection_comment','ws_id','major_opt','major_svc_comment',
         // driver cancellation
         'drv_stat','drv_cancel_comment','drv_date',
-        // recommendation workflow
-        'recommendation','recommendation_stat','recommendation_date',
         // approval workflow
         'approval','approval_stat','approval_date',
         // maintenance form upload

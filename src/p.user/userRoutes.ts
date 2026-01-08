@@ -32,7 +32,7 @@ router.get("/workflows", asyncHandler(userController.getWorkflows));
 router.post("/workflows", asyncHandler(userController.createWorkflow));
 router.post("/workflows/reorder", asyncHandler(userController.reorderWorkflows));
 router.put("/workflows/:id", asyncHandler(userController.updateWorkflow));
-router.delete("/workflows/:id", asyncHandler(userController.deleteWorkflow));
+router.delete("/workflows/:module_name", asyncHandler(userController.deleteWorkflow));
 
 // MODULES
 router.get('/modules', asyncHandler(userController.getModules));

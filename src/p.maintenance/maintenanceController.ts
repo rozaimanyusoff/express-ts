@@ -1574,26 +1574,25 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 
 		const result = await maintenanceModel.updateVehicleMtnRequest(reqId, payload);
 
-		// If proceeding (verification_stat=1), notify next PIC for recommendation using workflow service
-		try {
-			if (verification_stat === 1) {
-				await sendRecommendationEmail(reqId);
-			}
-		} catch (mailErr) {
-			console.error('Failed to send recommendation notification (service)', mailErr);
+		// If proceeding (verification_stat=1), send recommendation email in background (non-blocking)
+		if (verification_stat === 1) {
+			// Fire-and-forget: Send email in background without blocking response
+			sendRecommendationEmail(reqId).catch(mailErr => {
+				console.error('Failed to send recommendation notification (background)', mailErr);
+			});
 		}
 
-		// Notify admins via Socket.IO about request update and badge count change
-		try {
-			if (verification_stat === 1) {
-				// Admin verified - this counts as a response, so badge count decreases
-				await notificationService.notifyMtnRequestUpdate(reqId, 'verified', (req as any).user?.ramco_id);
-			} else if (verification_stat === 2) {
-				// Admin rejected
-				await notificationService.notifyMtnRequestUpdate(reqId, 'rejected', (req as any).user?.ramco_id);
-			}
-		} catch (notifErr) {
-			console.error('Failed to emit notification for maintenance request update', notifErr);
+		// Notify admins via Socket.IO about request update and badge count change (non-blocking)
+		if (verification_stat === 1) {
+			// Admin verified - this counts as a response, so badge count decreases
+			notificationService.notifyMtnRequestUpdate(reqId, 'verified', (req as any).user?.ramco_id).catch(notifErr => {
+				console.error('Failed to emit notification for maintenance request update', notifErr);
+			});
+		} else if (verification_stat === 2) {
+			// Admin rejected
+			notificationService.notifyMtnRequestUpdate(reqId, 'rejected', (req as any).user?.ramco_id).catch(notifErr => {
+				console.error('Failed to emit notification for maintenance request update', notifErr);
+			});
 		}
 
 		return res.json({ data: result, message: 'Maintenance record updated successfully', status: 'success' });
@@ -1604,9 +1603,10 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 
 export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 	try {
-		const { requestId } = req.params;
+		const { id } = req.params;
+		const requestId = Number(id);
 
-		const result = await maintenanceModel.pushVehicleMtnToBilling(Number(requestId));
+		const result = await maintenanceModel.pushVehicleMtnToBilling(requestId);
 
 		res.json({
 			data: result,
@@ -1741,10 +1741,11 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 
 export const resendMaintenancePortalLink = async (req: Request, res: Response) => {
 	try {
-		const { requestId } = req.params;
+		const { id } = req.params;
+		const requestId = Number(id);
 
 		// Get maintenance record details
-		const record = await maintenanceModel.getVehicleMtnRequestById(Number(requestId));
+		const record = await maintenanceModel.getVehicleMtnRequestById(requestId);
 
 		if (!record) {
 			return res.status(404).json({
@@ -1825,16 +1826,16 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 // Resend email to recommender (level: Recommend) or approver (level: Approval)
 export const resendWorkflowMail = async (req: Request, res: Response) => {
 	try {
-		const { requestId } = req.params;
+		const { id } = req.params;
 		const { level } = req.query; // 'recommend' | 'approval'
-		const id = Number(requestId);
-		if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid requestId', status: 'error' });
+		const requestId = Number(id);
+		if (!Number.isFinite(requestId) || requestId <= 0) return res.status(400).json({ data: null, message: 'Invalid request id', status: 'error' });
 
-		const rec = await resolveVehicleMtnRecord(id);
+		const rec = await resolveVehicleMtnRecord(requestId);
 		if (!rec) return res.status(404).json({ data: null, message: 'Maintenance record not found', status: 'error' });
 
 		const desired = String(level || '').toLowerCase();
-		const lvlName = desired === 'approval' ? 'Approval' : 'Recommend';
+		const lvlName = desired === 'approval' ? 'approver' : 'recommender';
 		const nextPic = await getWorkflowPic('vehicle maintenance', lvlName);
 		const isValidEmail = (v: any) => typeof v === 'string' && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(v);
 		let to = nextPic?.email && isValidEmail(nextPic.email) ? nextPic.email : null;
@@ -1853,18 +1854,18 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 		if (!to && !ccString) return res.status(400).json({ data: null, message: 'No recipients defined for workflow level', status: 'error' });
 
 		// Build JWT portal URL and CTA buttons
-		const credData = { contact: to || '', ramco_id: nextPic?.ramco_id || '', req_id: id } as any;
+		const credData = { contact: to || '', ramco_id: nextPic?.ramco_id || '', req_id: requestId } as any;
 		const jwtSecret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || 'default_secret_key';
 		const token = jwt.sign(credData, jwtSecret, { expiresIn: '3d' });
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 		const authRamco = (nextPic && (nextPic as any).ramco_id) ? String((nextPic as any).ramco_id) : '';
-		const portalUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${id}?action=${encodeURIComponent(desired === 'approval' ? 'approve' : 'recommend')}&authorize=${encodeURIComponent(authRamco)}&_cred=${encodeURIComponent(token)}`;
+		const portalUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${requestId}?action=${encodeURIComponent(desired === 'approval' ? 'approve' : 'recommend')}&authorize=${encodeURIComponent(authRamco)}&_cred=${encodeURIComponent(token)}`;
 
 		// Compose email body using authorization template (no raw link)
 		const { applicant, deptLocation, formattedDate, requestType, vehicleInfo } = await buildSectionsForRecord(rec);
 		const subject = desired === 'approval'
-			? `Vehicle Maintenance Request Pending Approval - Service Order: ${id}`
-			: `Vehicle Maintenance Request Pending Recommendation - Service Order: ${id}`;
+			? `Vehicle Maintenance Request Pending Approval - Service Order: ${requestId}`
+			: `Vehicle Maintenance Request Pending Recommendation - Service Order: ${requestId}`;
 		const emailBody = vehicleMaintenanceAuthorizationEmail({
 			applicant,
 			date: formattedDate,
@@ -1872,7 +1873,7 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 			footerName: 'ADMS (v4)',
 			greetingName: (nextPic && (nextPic as any).full_name) || applicant,
 			portalUrl,
-			requestNo: id,
+			requestNo: requestId,
 			requestType,
 			role: desired === 'approval' ? 'Approval' : 'Recommendation',
 			vehicleInfo
@@ -1881,7 +1882,7 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 		if (to) {
 			await mailer.sendMail(to, subject, emailBody);
 		}
-		return res.json({ data: { requestId: id, sentTo: to }, message: `Workflow mail resent to ${desired || 'recommend'}`, status: 'success' });
+		return res.json({ data: { requestId, sentTo: to }, message: `Workflow mail resent to ${desired || 'recommend'}`, status: 'success' });
 	} catch (error) {
 		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
 	}

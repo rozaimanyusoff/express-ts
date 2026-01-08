@@ -701,6 +701,10 @@ export const createWorkflow = async (data: any): Promise<number> => {
     //   module_name: string,
     //   description?: string,
     //   is_active?: boolean,
+    //   employees: Array<{ ramco_id: string | number; level_name: string }>
+    // }
+    // OR (legacy format):
+    // {
     //   employees: Array<{ employee_ramco_id: string; authorize_level: string }>
     // }
     const conn = await pool.getConnection();
@@ -715,16 +719,21 @@ export const createWorkflow = async (data: any): Promise<number> => {
         // Map common authorize levels to stable ordering; fallback to index order
         const orderMap: Record<string, number> = {
             approval: 3,
+            approve: 3,
+            recommender: 2,
             recommend: 2,
+            verifier: 1,
             verify: 1
         };
 
         // Build rows to insert
         const rows = employees.map((e: any, idx: number) => {
-            const levelName = String(e?.authorize_level || '').trim();
+            // Support both field name formats: level_name (new) or authorize_level (legacy)
+            const levelName = String(e?.level_name ?? e?.authorize_level ?? '').trim();
             const levelOrder = orderMap[levelName.toLowerCase()] ?? (idx + 1);
-            const ramcoId = String(e?.employee_ramco_id || '').trim();
-            if (!ramcoId) throw new Error(`employees[${idx}].employee_ramco_id is required`);
+            // Support both field name formats: ramco_id (new) or employee_ramco_id (legacy)
+            const ramcoId = String(e?.ramco_id ?? e?.employee_ramco_id ?? '').trim();
+            if (!ramcoId) throw new Error(`employees[${idx}].ramco_id is required`);
             return {
                 description,
                 is_active: isActive,
@@ -788,6 +797,11 @@ export const updateWorkflow = async (id: number, data: any): Promise<void> => {
 export const deleteWorkflow = async (id: number) => {
     const [result] = await pool.query(`DELETE FROM ${workflowTable} WHERE id = ?`, [id]);
     return result;
+};
+
+export const deleteWorkflowByModule = async (moduleName: string): Promise<number> => {
+    const [result] = await pool.query(`DELETE FROM ${workflowTable} WHERE module_name = ?`, [moduleName]);
+    return (result as ResultSetHeader).affectedRows || 0;
 };
 
 // Reorder workflows: accepts either array of ids (implied order) or array of { id, level_order }
