@@ -1850,7 +1850,7 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 			} catch { /* ignore */ }
 		}
 		const { ccString } = getAdminCcList();
-		if (!to && !ccString) return res.status(400).json({ data: null, message: 'No recipient found for workflow level', status: 'error' });
+		if (!to && !ccString) return res.status(400).json({ data: null, message: 'No recipients defined for workflow level', status: 'error' });
 
 		// Build JWT portal URL and CTA buttons
 		const credData = { contact: to || '', ramco_id: nextPic?.ramco_id || '', req_id: id } as any;
@@ -1878,7 +1878,9 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 			vehicleInfo
 		});
 
-		await mailer.sendMail(to!, subject, emailBody);
+		if (to) {
+			await mailer.sendMail(to, subject, emailBody);
+		}
 		return res.json({ data: { requestId: id, sentTo: to }, message: `Workflow mail resent to ${desired || 'recommend'}`, status: 'success' });
 	} catch (error) {
 		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
