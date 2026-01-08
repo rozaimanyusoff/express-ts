@@ -26,13 +26,15 @@ router.post('/request', mtnUploader.single('req_upload'), asyncHandler(maintenan
 router.put('/request/:id', asyncHandler(maintenanceController.updateVehicleMtnRequest));
 // Dedicated endpoint to upload maintenance form
 router.put('/request/:id/form-upload', mtnFormUploader.single('form_upload'), asyncHandler(maintenanceController.uploadVehicleMtnForm));
-router.put('/request/:id/admin', asyncHandler(maintenanceController.adminUpdateVehicleMtnRequest));
+router.put('/request/:id/admin', asyncHandler(maintenanceController.adminUpdateVehicleMtnRequest)); // Admin verify/update & for recommender
+
 // Recommend / Approve single endpoints (actor ramco from ?authorize or body)
-router.put('/request/:id/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestSingle));
-router.put('/request/:id/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestSingle));
-// Bulk endpoints
-router.put('/request/bulk/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestBulk));
-router.put('/request/bulk/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestBulk));
+router.put('/request/:id/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestSingle)); // Recommmend single application
+router.put('/request/:id/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestSingle)); // Approve single application
+
+router.put('/request/bulk/recommend', asyncHandler(maintenanceController.recommendVehicleMtnRequestBulk)); // Recommend bulk applications
+router.put('/request/bulk/approve', asyncHandler(maintenanceController.approveVehicleMtnRequestBulk)); // Approve bulk applications
+
 router.put('/request/:id/cancel', asyncHandler(maintenanceController.cancelVehicleMtnRequest));
 router.delete('/request/:id', asyncHandler(maintenanceController.deleteVehicleMtnRequest));
 router.put('/request/:id/authorize', asyncHandler(maintenanceController.authorizeVehicleMtnRequest));
