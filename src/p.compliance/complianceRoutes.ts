@@ -77,6 +77,7 @@ router.get('/it-assess/:id', asyncHandler(complianceController.getComputerAssess
 router.get('/it-assess', asyncHandler(complianceController.getComputerAssessments));
 router.post('/it-assess', uploadComputerAssessment.any(), asyncHandler(complianceController.createComputerAssessment));
 router.put('/it-assess/:id', uploadComputerAssessment.any(), asyncHandler(complianceController.updateComputerAssessment));
+router.post('/it-assess/:id/resend-email', asyncHandler(complianceController.resendComputerAssessmentEmail));
 router.delete('/it-assess/:id', asyncHandler(complianceController.deleteComputerAssessment));
 
 /* ========== ASSESSMENTS (parent) ROUTES ========== */

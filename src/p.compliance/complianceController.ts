@@ -2772,6 +2772,132 @@ export const deleteComputerAssessment = async (req: Request, res: Response) => {
   }
 };
 
+export const resendComputerAssessmentEmail = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ data: null, message: 'Invalid assessment ID', status: 'error' });
+
+    // Fetch the assessment
+    const assessment = await complianceModel.getComputerAssessmentById(id);
+    if (!assessment) {
+      return res.status(404).json({ data: null, message: 'Computer assessment not found', status: 'error' });
+    }
+
+    // Fetch technician/employee details
+    const data = assessment as any;
+    const employeesRaw = await assetModel.getEmployees();
+    const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
+    const technician = employees.find((e: any) => e.ramco_id === data.ramco_id) as any;
+
+    if (!technician || !technician.email) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Technician email not found for this assessment',
+        data: null,
+      });
+    }
+
+    // Fetch owner details
+    let assessedOwner = { name: '', email: '', ramco_id: data.ramco_id };
+    if (technician) {
+      assessedOwner = {
+        name: technician.full_name || technician.name || '',
+        email: technician.email || '',
+        ramco_id: data.ramco_id,
+      };
+    }
+
+    // Fetch and resolve costcenter, department, location details
+    let costcenter: any = undefined;
+    let department: any = undefined;
+    let location: any = undefined;
+
+    if (data.costcenter_id) {
+      const costcenters = await assetModel.getCostcenters();
+      const costcenterRecord = (costcenters as any[]).find((cc: any) => cc.id === data.costcenter_id);
+      costcenter = { id: data.costcenter_id, name: costcenterRecord?.name || `CC-${data.costcenter_id}` };
+    }
+
+    if (data.department_id) {
+      const departments = await assetModel.getDepartments();
+      const departmentRecord = (departments as any[]).find((d: any) => d.id === data.department_id);
+      department = { id: data.department_id, name: departmentRecord?.name || `Dept-${data.department_id}` };
+    }
+
+    if (data.location_id) {
+      const locations = await assetModel.getLocations();
+      const locationRecord = (locations as any[]).find((l: any) => l.id === data.location_id);
+      location = { id: data.location_id, name: locationRecord?.name || `Location-${data.location_id}` };
+    }
+
+    // Resolve category, brand, and model names from IDs
+    let categoryName = data.category;
+    let brandName = data.brand;
+    let modelName = data.model;
+
+    if (Number.isFinite(Number(data.category))) {
+      const categories = await assetModel.getCategories();
+      const categoryRecord = (categories as any[]).find((c: any) => c.id === Number(data.category));
+      categoryName = categoryRecord?.name || categoryName;
+    }
+
+    if (Number.isFinite(Number(data.brand))) {
+      const brands = await assetModel.getBrands();
+      const brandRecord = (brands as any[]).find((b: any) => b.id === Number(data.brand));
+      brandName = brandRecord?.name || brandName;
+    }
+
+    if (Number.isFinite(Number(data.model))) {
+      const models = await assetModel.getModels();
+      const modelRecord = (models as any[]).find((m: any) => m.id === Number(data.model));
+      modelName = modelRecord?.name || modelName;
+    }
+
+    // Render email
+    const { html, subject } = renderITAssessmentNotification({
+      assessment: {
+        date: data.assessment_date ? new Date(data.assessment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        id,
+        overall_score: data.overall_score,
+        remarks: data.remarks,
+        year: data.assessment_year,
+      },
+      asset: {
+        brand: brandName,
+        category: categoryName,
+        id: data.asset_id,
+        model: modelName,
+        register_number: data.register_number,
+      },
+      technician: {
+        email: technician.email,
+        full_name: technician.full_name || technician.name || 'Technician',
+        ramco_id: data.ramco_id,
+      },
+      assessedOwner,
+      costcenter,
+      department,
+      location,
+    });
+
+    // Send email
+    await sendMail(technician.email, subject, html);
+    console.log(`✓ Assessment email resent to ${technician.email} for assessment ID: ${id}`);
+
+    return res.json({
+      status: 'success',
+      message: 'Computer assessment email resent successfully',
+      data: { assessment_id: id, email: technician.email },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      status: 'error',
+      message: e instanceof Error ? e.message : 'Failed to resend computer assessment email',
+      data: null,
+    });
+  }
+};
+
 /**
  * Get all IT assets with their assessment status
  * Shows which IT assets have been assessed and which haven't
