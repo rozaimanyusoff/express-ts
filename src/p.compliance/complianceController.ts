@@ -2396,10 +2396,28 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
             };
           }
           
-          // Fetch costcenter, department, location details (placeholder structure for now)
-          const costcenter = data.costcenter_id ? { id: data.costcenter_id, name: `CC-${data.costcenter_id}` } : undefined;
-          const department = data.department_id ? { id: data.department_id, name: `Dept-${data.department_id}` } : undefined;
-          const location = data.location_id ? { id: data.location_id, name: `Location-${data.location_id}` } : undefined;
+          // Fetch costcenter, department, location details and resolve names
+          let costcenter: any = undefined;
+          let department: any = undefined;
+          let location: any = undefined;
+          
+          if (data.costcenter_id) {
+            const costcenters = await assetModel.getCostcenters();
+            const costcenterRecord = (costcenters as any[]).find((cc: any) => cc.id === data.costcenter_id);
+            costcenter = { id: data.costcenter_id, name: costcenterRecord?.name || `CC-${data.costcenter_id}` };
+          }
+          
+          if (data.department_id) {
+            const departments = await assetModel.getDepartments();
+            const departmentRecord = (departments as any[]).find((d: any) => d.id === data.department_id);
+            department = { id: data.department_id, name: departmentRecord?.name || `Dept-${data.department_id}` };
+          }
+          
+          if (data.location_id) {
+            const locations = await assetModel.getLocations();
+            const locationRecord = (locations as any[]).find((l: any) => l.id === data.location_id);
+            location = { id: data.location_id, name: locationRecord?.name || `Location-${data.location_id}` };
+          }
           
           // Resolve category, brand, and model names from IDs
           let categoryName = data.category;
