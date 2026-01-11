@@ -131,6 +131,14 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
     const registries = await purchaseModel.getRegistriesByPurchaseIds(purchaseIds);
     const registrySet = new Set((registries || []).map(r => Number(r.purchase_id)));
 
+    // Batch fetch deliveries for all purchases
+    const deliveries = await Promise.all(purchaseIds.map(id => purchaseModel.getDeliveriesByPurchaseId(id)));
+    const deliveryMap = new Map<number, any[]>();
+    purchaseIds.forEach((id, idx) => {
+      const deliveryList = deliveries[idx] || [];
+      deliveryMap.set(id, deliveryList);
+    });
+
     const enrichedPurchases = purchases.map((purchase: any) => {
       const reqRec = purchase.request_id && requestMap.has(Number(purchase.request_id)) ? requestMap.get(Number(purchase.request_id)) : null;
       const requestedBy = reqRec?.ramco_id ? (employeeMap.get(reqRec.ramco_id) ? { full_name: (employeeMap.get(reqRec.ramco_id))?.full_name || null, ramco_id: reqRec.ramco_id } : { full_name: null, ramco_id: reqRec.ramco_id }) : null;
@@ -166,6 +174,23 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
         type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
         unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
         updated_at: purchase.updated_at ?? null,
+        deliveries: (() => {
+          const purchaseDeliveries = deliveryMap.get(Number(purchase.id)) || [];
+          return purchaseDeliveries.length > 0 ? purchaseDeliveries.map((d: any) => ({
+            id: d.id ?? null,
+            do_date: d.do_date ?? null,
+            do_no: d.do_no ?? null,
+            inv_date: d.inv_date ?? null,
+            inv_no: d.inv_no ?? null,
+            grn_date: d.grn_date ?? null,
+            grn_no: d.grn_no ?? null,
+            upload_path: d.upload_path ?? null,
+            handover_to: d.handover_to ?? null,
+            handover_at: d.handover_at ?? null,
+            created_at: d.created_at ?? null,
+            updated_at: d.updated_at ?? null,
+          })) : null;
+        })(),
       };
 
       // Asset registry status: completed if a registry entry exists for this purchase id
@@ -175,9 +200,27 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
       return enrichedPurchase;
     });
 
+    // Calculate summary statistics
+    const unknownItems = enrichedPurchases.filter((p: any) => p.deliveries === null && p.asset_registry === 'completed');
+    const summary = {
+      delivered_unregistered: enrichedPurchases.filter((p: any) => p.deliveries !== null && p.asset_registry === 'incompleted').length,
+      handed_over: enrichedPurchases.filter((p: any) => p.deliveries !== null && p.asset_registry === 'completed').length,
+      undelivered: enrichedPurchases.filter((p: any) => p.deliveries === null && p.asset_registry === 'incompleted').length,
+      unknown: unknownItems.length,
+      unknown_items: unknownItems.map((p: any) => ({
+        id: p.id,
+        pr_no: p.request?.pr_no || null,
+        description: p.description,
+        qty: p.qty,
+        total_price: p.total_price,
+        request_id: p.request_id,
+      })),
+    };
+
     res.json({
       data: enrichedPurchases,
-      message: 'Purchases retrieved successfully',
+      summary,
+      message: 'Purchases retrieved successfully with total entries ' + enrichedPurchases.length,
       status: 'success'
     });
   } catch (error) {
@@ -251,7 +294,8 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
       qty: purchase.qty,
       request: null,
       request_id: purchase.request_id ?? null,
-      supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : null,
+      supplier: purchase.supplier_id && supplierMap.has(purchase.supplier_id) ? { id: purchase.supplier_id, name: supplierMap.get(purchase.supplier_id)?.name || null } : (purchase.supplier ? { id: null, name: purchase.supplier } : null),
+      supplier_name: purchase.supplier ?? null,
       total_price: purchase.total_price !== undefined && purchase.total_price !== null ? Number(purchase.total_price).toFixed(2) : null,
       type: purchase.type_id && typeMap.has(purchase.type_id) ? { id: purchase.type_id, name: typeMap.get(purchase.type_id)?.name || null } : null,
       unit_price: purchase.unit_price !== undefined && purchase.unit_price !== null ? Number(purchase.unit_price).toFixed(2) : null,
@@ -1797,6 +1841,99 @@ export const deleteSupplier = async (req: Request, res: Response) => {
 };
 
 /* ======= MATCH MODELS - For Frontend Input ======= */
+/* ======= MATCH SUPPLIERS ======= */
+export const matchSuppliers = async (req: Request, res: Response) => {
+  try {
+    const { supplier_name } = req.body || {};
+
+    if (!supplier_name || typeof supplier_name !== 'string' || supplier_name.trim() === '') {
+      return res.status(400).json({
+        data: null,
+        message: 'supplier_name is required and must be a non-empty string',
+        status: 'error'
+      });
+    }
+
+    // Trim the input supplier name and split into words (limit to 3 words)
+    const trimmedSupplierName = supplier_name.trim();
+    const words = trimmedSupplierName.split(/\s+/).slice(0, 3).filter(w => w.length > 0);
+
+    if (words.length === 0) {
+      return res.status(400).json({
+        data: null,
+        message: 'supplier_name must contain at least one word',
+        status: 'error'
+      });
+    }
+
+    // Build LIKE queries for each word to find matching suppliers
+    // Normalize by removing special characters (dashes, etc) from both search words and supplier names
+    const matchesMap = new Map<number, { id: number; name: string; matchedWords: string[] }>();
+
+    for (const word of words) {
+      const [supplierRows] = await pool.query(
+        `SELECT DISTINCT id, name FROM purchases2.purchase_supplier
+         WHERE name IS NOT NULL AND name != '' 
+         AND REPLACE(REPLACE(REPLACE(UPPER(name), '-', ''), ' ', ''), '_', '') LIKE CONCAT('%', REPLACE(REPLACE(REPLACE(UPPER(?), '-', ''), ' ', ''), '_', ''), '%')
+         ORDER BY name ASC`,
+        [word]
+      );
+      
+      const suppliers = (supplierRows as any[]) || [];
+      for (const supplier of suppliers) {
+        if (!matchesMap.has(supplier.id)) {
+          matchesMap.set(supplier.id, {
+            id: supplier.id,
+            name: supplier.name,
+            matchedWords: [word]
+          });
+        } else {
+          // Add word to matched words if not already present
+          const existing = matchesMap.get(supplier.id)!;
+          if (!existing.matchedWords.includes(word)) {
+            existing.matchedWords.push(word);
+          }
+        }
+      }
+    }
+
+    // Convert to array and sort by:
+    // 1. Number of matched words (descending)
+    // 2. Supplier name (ascending)
+    const matches = Array.from(matchesMap.values()).sort((a, b) => {
+      if (b.matchedWords.length !== a.matchedWords.length) {
+        return b.matchedWords.length - a.matchedWords.length;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    // Limit to top 15 results
+    const topMatches = matches.slice(0, 15).map(m => ({
+      id: m.id,
+      name: m.name,
+      matched_words: m.matchedWords
+    }));
+
+    return res.json({
+      data: {
+        input_supplier: trimmedSupplierName,
+        search_words: words,
+        total_matches: topMatches.length,
+        matches: topMatches
+      },
+      message: topMatches.length > 0 ? `Found ${topMatches.length} matching suppliers` : 'No matching suppliers found',
+      status: 'success'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      data: null,
+      message: error instanceof Error ? error.message : 'Failed to match suppliers',
+      status: 'error'
+    });
+  }
+};
+
+/* ======= MATCH MODELS ======= */
 export const matchModels = async (req: Request, res: Response) => {
   try {
     const { model_name } = req.body || {};
@@ -2201,5 +2338,104 @@ ${almostMatchesSection}
       message: error instanceof Error ? error.message : 'Failed to check registry models',
       status: 'error'
     });
+  }
+};
+
+/* ======= IMPORT FROM purchase_item_import ======= */
+export const importPurchaseData = async (req: Request, res: Response) => {
+  try {
+    // Fetch all records from purchase_item_import table
+    const importItems = await purchaseModel.getImportItems();
+
+    if (!Array.isArray(importItems) || importItems.length === 0) {
+      return res.json({
+        data: {
+          duplicate_items: [],
+          failed_items: [],
+          imported_count: 0,
+          requests_imported: 0,
+          total_records: 0
+        },
+        message: 'No records found in import table',
+        status: 'success'
+      });
+    }
+
+    // Step 1: Import purchase requests first (to get request_id mapping)
+    const requestsResult = await purchaseModel.importPurchaseRequests(importItems);
+
+    // Step 2: Import purchase items with request_id linking
+    const itemsResult = await purchaseModel.importPurchaseItems(importItems, requestsResult.request_id_map);
+
+    // Step 3: Create import log
+    const logEntry = {
+      timestamp: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      purchase_items_inserted: itemsResult.imported_count,
+      purchase_requests_inserted: requestsResult.imported_count,
+      purchase_items_duplicates: itemsResult.duplicate_items.length,
+      purchase_requests_duplicates: requestsResult.duplicate_items.length,
+      purchase_items_failed: itemsResult.failed_items.length,
+      purchase_requests_failed: requestsResult.failed_items.length,
+      purchase_items_updated_with_request_id: requestsResult.duplicate_items.length,
+      total_rows_processed: itemsResult.total_records + requestsResult.total_records,
+      details: {
+        items: itemsResult,
+        requests: {
+          imported_count: requestsResult.imported_count,
+          total_records: requestsResult.total_records,
+          duplicate_items: requestsResult.duplicate_items,
+          failed_items: requestsResult.failed_items,
+          request_id_map: Array.from(requestsResult.request_id_map.entries()),
+          note: 'When duplicate pr_no found, existing purchase_items records are updated with request_id'
+        }
+      }
+    };
+
+    // Write log to file
+    await writeImportLog(logEntry);
+
+    // Combine results
+    const combinedResult = {
+      duplicate_items: itemsResult.duplicate_items,
+      failed_items: [...itemsResult.failed_items, ...requestsResult.failed_items],
+      imported_count: itemsResult.imported_count,
+      requests_imported: requestsResult.imported_count,
+      request_id_updates: requestsResult.duplicate_items.length,
+      total_records: itemsResult.total_records,
+      log_file: `/p.purchase/import.logs`
+    };
+
+    res.json({
+      data: combinedResult,
+      message: `Successfully imported ${itemsResult.imported_count} items and ${requestsResult.imported_count} requests (${requestsResult.duplicate_items.length} items linked to existing requests)`,
+      status: 'success'
+    });
+  } catch (error) {
+    res.status(500).json({
+      data: null,
+      message: error instanceof Error ? error.message : 'Failed to import purchase data',
+      status: 'error'
+    });
+  }
+};
+
+/**
+ * Write import log entry to import.logs file
+ * Format: JSON lines for easy parsing and undo operations
+ */
+const writeImportLog = async (logEntry: any): Promise<void> => {
+  try {
+    const modulePath = path.join(__dirname, '..', '..', 'p.purchase');
+    const logPath = path.join(modulePath, 'import.logs');
+    
+    // Ensure directory exists
+    await fsPromises.mkdir(modulePath, { recursive: true });
+    
+    // Append log entry as JSON line
+    const logLine = JSON.stringify(logEntry) + '\n';
+    await fsPromises.appendFile(logPath, logLine, 'utf-8');
+  } catch (err) {
+    console.warn('Failed to write import log:', err);
+    // Don't fail the import if logging fails
   }
 };

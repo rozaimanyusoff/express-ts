@@ -25,6 +25,9 @@ router.delete('/suppliers/:id', asyncHandler(purchaseController.deleteSupplier))
 // MATCH MODELS - Frontend input to find matching models
 router.post('/match-models', asyncHandler(purchaseController.matchModels));
 
+// MATCH SUPPLIERS - Frontend input to find matching suppliers
+router.post('/match-suppliers', asyncHandler(purchaseController.matchSuppliers));
+
 
 
 
@@ -59,10 +62,7 @@ router.post('/deliveries', purchaseUploader.single('upload_path'), asyncHandler(
 router.put('/deliveries/:id', purchaseUploader.single('upload_path'), asyncHandler(purchaseController.updateDelivery));
 router.delete('/deliveries/:id', asyncHandler(purchaseController.deleteDelivery));
 
-
-
-
-
-
+// IMPORT FROM purchase_item_import
+router.post('/import', asyncHandler(purchaseController.importPurchaseData));
 
 export default router;

@@ -128,6 +128,7 @@ export interface PurchaseRequestItemRecord {
   purpose?: null | string;
   qty: number;
   request_id?: number;
+  supplier?: string; // supplier name from supplier column
   supplier_id?: number;
   total_price: number;
   type_id: number;
@@ -367,6 +368,12 @@ export const getSupplierByName = async (name: string): Promise<null | Supplier> 
 };
 
 export const createSupplier = async (data: Omit<Supplier, 'id'>): Promise<number> => {
+  // Check for existing supplier with the same name (case-insensitive)
+  const existingSupplier = await getSupplierByName(data.name);
+  if (existingSupplier) {
+    throw new Error(`Supplier with name '${data.name}' already exists (ID: ${existingSupplier.id})`);
+  }
+  
   const [result] = await pool.query(`INSERT INTO ${supplierTable} SET ?`, [data]);
   return (result as any).insertId;
 };
@@ -990,6 +997,259 @@ export const logRegistryAuditBatch = async (
     // Log audit failures but don't fail the main operation
     console.warn(`Failed to log audit batch for registry ${registryId}:`, err);
   }
+};
+
+/* ======= IMPORT FROM purchase_item_import ======= */
+export interface ImportItem {
+  brand?: string;
+  brand_id?: number;
+  category_id?: number;
+  costcenter?: string;
+  costcenter_id?: number;
+  description?: string;
+  id?: number;
+  item_type?: string;
+  name?: string;
+  pic?: string;
+  po_date?: string;
+  po_no?: string;
+  pr_date?: string;
+  pr_no?: string;
+  purpose?: string;
+  qty?: number;
+  ramco_id?: string;
+  request_type?: string;
+  supplier?: string;
+  supplier_id?: number;
+  total_price?: number;
+  type_id?: number;
+  unit_price?: number;
+}
+
+export interface ImportResult {
+  duplicate_items: string[];
+  failed_items: Array<{ pr_no: string; error: string }>;
+  imported_count: number;
+  total_records: number;
+}
+
+export interface ImportLog {
+  timestamp: string;
+  purchase_items_inserted: number;
+  purchase_requests_inserted: number;
+  purchase_items_duplicates: number;
+  purchase_requests_duplicates: number;
+  purchase_items_failed: number;
+  purchase_requests_failed: number;
+  total_rows_processed: number;
+  details: {
+    items: ImportResult;
+    requests: ImportResult & { request_id_map: Map<string, number> };
+  };
+}
+
+/**
+ * Get all records from purchase_item_import table
+ */
+export const getImportItems = async (): Promise<ImportItem[]> => {
+  const importTable = `${dbName}.purchase_item_import`;
+  const [rows] = await pool.query(`SELECT * FROM ${importTable}`);
+  return rows as ImportItem[];
+};
+
+/**
+ * Check if pr_no exists in purchase_items table (for duplicates)
+ */
+export const checkPrNoInPurchaseItems = async (prNo: string): Promise<boolean> => {
+  const [rows] = await pool.query(
+    `SELECT id FROM ${purchaseRequestItemTable} WHERE pr_no = ? LIMIT 1`,
+    [prNo]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+};
+
+/**
+ * Check if pr_no exists in purchase_request table (for duplicates)
+ */
+export const checkPrNoInPurchaseRequest = async (prNo: string): Promise<boolean> => {
+  const [rows] = await pool.query(
+    `SELECT id FROM ${purchaseRequestTable} WHERE pr_no = ? LIMIT 1`,
+    [prNo]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+};
+
+/**
+ * Import purchase items from purchase_item_import into purchase_items
+ * Skips duplicate pr_no entries (already exist in purchase_items)
+ * Also links to purchase_request via request_id if provided
+ */
+export const importPurchaseItems = async (
+  items: ImportItem[],
+  requestIdMap?: Map<string, number>
+): Promise<ImportResult> => {
+  const result: ImportResult = {
+    duplicate_items: [],
+    failed_items: [],
+    imported_count: 0,
+    total_records: items.length
+  };
+
+  for (const item of items) {
+    try {
+      const prNo = item.pr_no || '';
+      
+      // Skip if pr_no is empty
+      if (!prNo.trim()) {
+        result.failed_items.push({ pr_no: prNo, error: 'pr_no is required' });
+        continue;
+      }
+
+      // Check if pr_no already exists in purchase_items
+      const existsInItems = await checkPrNoInPurchaseItems(prNo);
+      if (existsInItems) {
+        result.duplicate_items.push(prNo);
+        continue;
+      }
+
+      // Get request_id from the map if available
+      const requestId = requestIdMap?.get(prNo) || null;
+
+      // Insert into purchase_items
+      const [insertResult] = await pool.query(
+        `INSERT INTO ${purchaseRequestItemTable} (
+          request_id, name, type_id, category_id, qty, description, purpose, brand_id, supplier_id, 
+          unit_price, total_price, po_no, po_date, pr_date, pr_no, costcenter_id, ramco_id, 
+          brand, supplier, request_type, costcenter, pic, item_type, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          requestId,
+          item.name || null,
+          item.type_id || null,
+          item.category_id || null,
+          item.qty || null,
+          item.description || null,
+          item.purpose || null,
+          item.brand_id || null,
+          item.supplier_id || null,
+          item.unit_price || null,
+          item.total_price || null,
+          item.po_no || null,
+          item.po_date || null,
+          item.pr_date || null,
+          item.pr_no || null,
+          item.costcenter_id || null,
+          item.ramco_id || null,
+          item.brand || null,
+          item.supplier || null,
+          item.request_type || null,
+          item.costcenter || null,
+          item.pic || null,
+          item.item_type || null
+        ]
+      );
+
+      result.imported_count++;
+    } catch (err: any) {
+      result.failed_items.push({
+        pr_no: item.pr_no || 'unknown',
+        error: err.message || 'Unknown error'
+      });
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Import purchase requests from purchase_item_import (distinct records)
+ * Creates new purchase_request records with request_type, pr_no, pr_date, ramco_id, costcenter_id
+ * Skips duplicate pr_no entries (already exist in purchase_request)
+ * Returns mapping of pr_no -> request_id for linking to purchase_items
+ */
+export const importPurchaseRequests = async (
+  items: ImportItem[]
+): Promise<ImportResult & { request_id_map: Map<string, number> }> => {
+  const result: ImportResult & { request_id_map: Map<string, number> } = {
+    duplicate_items: [],
+    failed_items: [],
+    imported_count: 0,
+    total_records: items.length,
+    request_id_map: new Map()
+  };
+
+  // Group items by pr_no to get unique records
+  const uniquePrMap = new Map<string, ImportItem>();
+  for (const item of items) {
+    if (item.pr_no && !uniquePrMap.has(item.pr_no)) {
+      uniquePrMap.set(item.pr_no, item);
+    }
+  }
+
+  result.total_records = uniquePrMap.size;
+
+  for (const item of uniquePrMap.values()) {
+    try {
+      const prNo = item.pr_no || '';
+
+      // Skip if pr_no is empty
+      if (!prNo.trim()) {
+        result.failed_items.push({ pr_no: prNo, error: 'pr_no is required' });
+        continue;
+      }
+
+      // Check if pr_no already exists in purchase_request
+      const [existingRows] = await pool.query(
+        `SELECT id FROM ${purchaseRequestTable} WHERE pr_no = ? LIMIT 1`,
+        [prNo]
+      );
+      
+      if (Array.isArray(existingRows) && existingRows.length > 0) {
+        // Record duplicate but still map the existing request_id
+        const existingId = (existingRows[0] as any).id;
+        result.duplicate_items.push(prNo);
+        result.request_id_map.set(prNo, existingId);
+        
+        // Update existing purchase_items records with this pr_no to link them to the request_id
+        try {
+          await pool.query(
+            `UPDATE ${purchaseRequestItemTable} SET request_id = ? WHERE pr_no = ? AND request_id IS NULL`,
+            [existingId, prNo]
+          );
+        } catch (updateErr) {
+          console.warn(`Failed to update purchase_items for duplicate pr_no ${prNo}:`, updateErr);
+          // Don't fail the import if update fails
+        }
+        
+        continue;
+      }
+
+      // Insert into purchase_request
+      const [insertResult] = await pool.query(
+        `INSERT INTO ${purchaseRequestTable} (
+          request_type, pr_no, pr_date, ramco_id, costcenter_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          item.request_type || null,
+          item.pr_no || null,
+          item.pr_date || null,
+          item.ramco_id || null,
+          item.costcenter_id || null
+        ]
+      );
+
+      const insertId = (insertResult as ResultSetHeader).insertId;
+      result.request_id_map.set(prNo, insertId);
+      result.imported_count++;
+    } catch (err: any) {
+      result.failed_items.push({
+        pr_no: item.pr_no || 'unknown',
+        error: err.message || 'Unknown error'
+      });
+    }
+  }
+
+  return result;
 };
 
 
