@@ -2367,17 +2367,23 @@ export const importPurchaseData = async (req: Request, res: Response) => {
     // Step 2: Import purchase items with request_id linking
     const itemsResult = await purchaseModel.importPurchaseItems(importItems, requestsResult.request_id_map);
 
-    // Step 3: Create import log
+    // Step 3: Import delivery data from purchase_item_import into purchase_delivery
+    const deliveryResult = await purchaseModel.importDeliveryData(importItems, requestsResult.request_id_map);
+
+    // Step 4: Create import log
     const logEntry = {
       timestamp: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       purchase_items_inserted: itemsResult.imported_count,
       purchase_requests_inserted: requestsResult.imported_count,
+      purchase_deliveries_inserted: deliveryResult.imported_count,
       purchase_items_duplicates: itemsResult.duplicate_items.length,
       purchase_requests_duplicates: requestsResult.duplicate_items.length,
+      purchase_deliveries_duplicates: deliveryResult.duplicate_items.length,
       purchase_items_failed: itemsResult.failed_items.length,
       purchase_requests_failed: requestsResult.failed_items.length,
+      purchase_deliveries_failed: deliveryResult.failed_items.length,
       purchase_items_updated_with_request_id: requestsResult.duplicate_items.length,
-      total_rows_processed: itemsResult.total_records + requestsResult.total_records,
+      total_rows_processed: itemsResult.total_records + requestsResult.total_records + deliveryResult.total_records,
       details: {
         items: itemsResult,
         requests: {
@@ -2387,6 +2393,13 @@ export const importPurchaseData = async (req: Request, res: Response) => {
           failed_items: requestsResult.failed_items,
           request_id_map: Array.from(requestsResult.request_id_map.entries()),
           note: 'When duplicate pr_no found, existing purchase_items records are updated with request_id'
+        },
+        deliveries: {
+          imported_count: deliveryResult.imported_count,
+          total_records: deliveryResult.total_records,
+          duplicate_items: deliveryResult.duplicate_items,
+          failed_items: deliveryResult.failed_items,
+          note: 'Delivery data (do_date, do_no, inv_date, inv_no, grn_date, grn_no) imported from purchase_item_import'
         }
       }
     };
@@ -2397,9 +2410,10 @@ export const importPurchaseData = async (req: Request, res: Response) => {
     // Combine results
     const combinedResult = {
       duplicate_items: itemsResult.duplicate_items,
-      failed_items: [...itemsResult.failed_items, ...requestsResult.failed_items],
+      failed_items: [...itemsResult.failed_items, ...requestsResult.failed_items, ...deliveryResult.failed_items],
       imported_count: itemsResult.imported_count,
       requests_imported: requestsResult.imported_count,
+      deliveries_imported: deliveryResult.imported_count,
       request_id_updates: requestsResult.duplicate_items.length,
       total_records: itemsResult.total_records,
       log_file: `/p.purchase/import.logs`
@@ -2407,7 +2421,7 @@ export const importPurchaseData = async (req: Request, res: Response) => {
 
     res.json({
       data: combinedResult,
-      message: `Successfully imported ${itemsResult.imported_count} items and ${requestsResult.imported_count} requests (${requestsResult.duplicate_items.length} items linked to existing requests)`,
+      message: `Successfully imported ${itemsResult.imported_count} items, ${requestsResult.imported_count} requests, and ${deliveryResult.imported_count} deliveries (${requestsResult.duplicate_items.length} items linked to existing requests)`,
       status: 'success'
     });
   } catch (error) {

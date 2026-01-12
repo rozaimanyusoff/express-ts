@@ -1683,14 +1683,14 @@ export const getEmployeeByRamco = async (ramco_id: string) => {
   return (rows as RowDataPacket[])[0];
 };
 
-// Get Head of Department (HOD) by department_id using departmental_level = 1
+// Get Head of Department (HOD) by department_id using departmental_level = 2
 export const getDepartmentHeadByDepartmentId = async (department_id: number) => {
   if (!Number.isFinite(department_id)) return null as any;
   const [rows] = await pool.query(
     `SELECT * FROM ${employeeTable}
      WHERE department_id = ?
        AND employment_status = 'active'
-       AND COALESCE(departmental_level, 0) = 1
+       AND COALESCE(departmental_level, 0) = 2
      ORDER BY id ASC
      LIMIT 1`,
     [department_id]

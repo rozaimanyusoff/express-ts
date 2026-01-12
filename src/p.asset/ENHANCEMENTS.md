@@ -85,27 +85,95 @@ Every asset detail response includes calculated NBV:
 - `transfer_checklists` - Condition/status verification checklist
 - `assetdata` - Updated with new employee_id upon completion
 
-### Request Creation
+### Step 1: Create Asset Transfer Request
+
+**Endpoint:** `POST /api/assets/transfers`
+
+**Procedure:**
+1. Parse request payload:
+   - `transfer_by` (required): RAMCO ID of requester
+   - `transfer_date`: Transfer effective date (default: now)
+   - `costcenter_id`: Target cost center (optional)
+   - `department_id`: Target department (optional)
+   - `transfer_status`: Status (default: 'submitted')
+   - `details` (required): Array of transfer items (JSON array or JSON string)
+
+2. Create transfer request record in `transfer_request` table:
+   - Stores requester info, dates, and organizational context (costcenter/department)
+   - Returns `transfer_id` for linking items
+
+3. Create transfer items in `transfer_items` table for each detail:
+   - `asset_id`: Asset being transferred
+   - `type_id`: Asset type
+   - `current_owner`, `new_owner`: RAMCO IDs
+   - `current_costcenter_id`, `new_costcenter_id`: Cost centers
+   - `current_department_id`, `new_department_id`: Departments
+   - `current_location_id`, `new_location_id`: Location/District IDs
+   - `effective_date`: When transfer takes effect
+   - `reason`: Transfer reason
+   - `remarks`: Additional notes
+   - `return_to_asset_manager`: Flag if asset goes back to manager
+   - `attachment`: Optional supporting documents
+
+4. Enrich data for email notifications:
+   - Fetch all employees, costcenters, departments, districts, asset types
+   - Build lookup maps for ID→Name/Code conversions
+   - Resolve requestor details from employee directory
+   - **Determine approver via workflow system:**
+     - Query workflows table: `module_name = 'asset transfer'`, `level_name = 'approver'`, `department_id = applicant's department_id`
+     - Returns department-specific approver (e.g., HR transfers approved by HR HOD, IT transfers by IT HOD)
+     - Fallback: Use requestor's `wk_spv_id` (work supervisor) if no workflow approver found
+
+5. Send email notifications:
+   - **To Requestor**: Confirmation email with transfer summary
+   - **To Supervisor/HOD**: Action email with:
+     - Transfer details and items
+     - Action buttons for approve/reject
+     - Portal link (JWT-signed URL with 3-day expiration)
+     - Department context (via `?dept=` parameter)
+
+6. Response: Returns `transfer_id` for tracking and subsequent approval steps
+
+**Request Payload Example:**
 ```json
 POST /api/assets/transfers
 {
-  "from_employee_id": 156,
-  "to_employee_id": 200,
-  "reason": "Employee transfer to IT department",
-  "items": [
+  "transfer_by": "EMP001",
+  "transfer_date": "2026-01-13",
+  "costcenter_id": 5,
+  "department_id": 3,
+  "transfer_status": "submitted",
+  "details": [
     {
-      "asset_id": 1,
-      "condition": "Good"
-    },
-    {
-      "asset_id": 5,
-      "condition": "Fair - screen needs replacement"
+      "asset_id": 123,
+      "type_id": 2,
+      "current_owner": "EMP001",
+      "new_owner": "EMP002",
+      "current_costcenter_id": 5,
+      "new_costcenter_id": 6,
+      "current_department_id": 3,
+      "new_department_id": 4,
+      "current_location_id": 1,
+      "new_location_id": 2,
+      "effective_date": "2026-01-15",
+      "reason": "Employee promotion",
+      "remarks": "Transfer to new IT department",
+      "return_to_asset_manager": false
     }
   ]
 }
 ```
 
-### Approval Workflow
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Asset transfer request created successfully",
+  "request_id": 42
+}
+```
+
+### Step 2: Approval Workflow
 ```typescript
 // Supervisor checks transfer request
 PUT /api/assets/transfers/approval
@@ -122,7 +190,7 @@ PUT /api/assets/transfers/approval
 // - HOD
 ```
 
-### Acceptance Workflow
+### Step 3: Acceptance Workflow
 New owner accepts/acknowledges transfer with optional attachments (photos, signatures):
 
 ```typescript
@@ -138,7 +206,7 @@ The module sends automated emails at each stage:
 
 | Event | Recipients | Template |
 |-------|-----------|----------|
-| Transfer Requested | Current Owner, Supervisor | `assetTransferRequest` |
+| Transfer Requested | Requestor, Supervisor/HOD | `assetTransferRequest`, `assetTransferSupervisor` |
 | Supervisor Approves | New Owner, Requester | `assetTransferApprovedNewOwner`, `assetTransferApprovedRequestor` |
 | HOD Approves | All parties | `assetTransferApprovalSummary` |
 | Ownership Changed | All parties | `assetTransferAccepted*` |

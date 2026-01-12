@@ -1007,7 +1007,13 @@ export interface ImportItem {
   costcenter?: string;
   costcenter_id?: number;
   description?: string;
+  do_date?: string;
+  do_no?: string;
+  grn_date?: string;
+  grn_no?: string;
   id?: number;
+  inv_date?: string;
+  inv_no?: string;
   item_type?: string;
   name?: string;
   pic?: string;
@@ -1240,6 +1246,112 @@ export const importPurchaseRequests = async (
 
       const insertId = (insertResult as ResultSetHeader).insertId;
       result.request_id_map.set(prNo, insertId);
+      result.imported_count++;
+    } catch (err: any) {
+      result.failed_items.push({
+        pr_no: item.pr_no || 'unknown',
+        error: err.message || 'Unknown error'
+      });
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Import delivery data from purchase_item_import into purchase_delivery table
+ * Maps delivery details (do_date, do_no, inv_date, inv_no, grn_date, grn_no) to purchase_delivery
+ * Then updates purchase_delivery with correct purchase_id and request_id
+ */
+export const importDeliveryData = async (
+  items: ImportItem[],
+  requestIdMap?: Map<string, number>
+): Promise<ImportResult> => {
+  const result: ImportResult = {
+    duplicate_items: [],
+    failed_items: [],
+    imported_count: 0,
+    total_records: 0
+  };
+
+  // Track unique delivery records by pr_no to avoid duplicate deliveries within import batch
+  const uniqueDeliveries = new Map<string, ImportItem>();
+  
+  for (const item of items) {
+    // Only process items that have delivery data and haven't been processed yet
+    if (item.pr_no && (item.do_date || item.inv_date || item.grn_date)) {
+      if (!uniqueDeliveries.has(item.pr_no)) {
+        uniqueDeliveries.set(item.pr_no, item);
+      }
+    }
+  }
+
+  result.total_records = uniqueDeliveries.size;
+
+  for (const item of uniqueDeliveries.values()) {
+    try {
+      const prNo = item.pr_no || '';
+      
+      if (!prNo.trim()) {
+        result.failed_items.push({ pr_no: prNo, error: 'pr_no is required for delivery' });
+        continue;
+      }
+
+      // Get purchase_id from purchase_items using pr_no
+      const [purchaseRows] = await pool.query(
+        `SELECT id FROM ${purchaseRequestItemTable} WHERE pr_no = ? LIMIT 1`,
+        [prNo]
+      );
+      
+      const purchaseList = purchaseRows as Array<{ id: number }>;
+      const purchaseId = purchaseList.length > 0 ? purchaseList[0].id : null;
+
+      // Get request_id from mapping or from purchase_items record
+      let requestId: number | null = requestIdMap?.get(prNo) || null;
+      
+      if (!requestId && purchaseId) {
+        // Try to get request_id from the purchase_items record itself
+        const [itemRows] = await pool.query(
+          `SELECT request_id FROM ${purchaseRequestItemTable} WHERE id = ? LIMIT 1`,
+          [purchaseId]
+        );
+        
+        const itemList = itemRows as Array<{ request_id: number | null }>;
+        if (itemList.length > 0 && itemList[0].request_id) {
+          requestId = itemList[0].request_id;
+        }
+      }
+
+      // Check if delivery already exists in purchase_delivery for this purchase_id
+      // to prevent duplicate delivery records
+      const [existingDelivery] = await pool.query(
+        `SELECT id FROM ${purchaseDeliveryTable} WHERE purchase_id = ? LIMIT 1`,
+        [purchaseId]
+      );
+      
+      const existingDeliveryList = existingDelivery as Array<{ id: number }>;
+      if (existingDeliveryList.length > 0) {
+        result.duplicate_items.push(prNo);
+        continue;
+      }
+
+      // Insert into purchase_delivery with delivery data
+      const [insertResult] = await pool.query(
+        `INSERT INTO ${purchaseDeliveryTable} (
+          purchase_id, request_id, do_date, do_no, inv_date, inv_no, grn_date, grn_no, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          purchaseId,
+          requestId,
+          item.do_date || null,
+          item.do_no || null,
+          item.inv_date || null,
+          item.inv_no || null,
+          item.grn_date || null,
+          item.grn_no || null
+        ]
+      );
+
       result.imported_count++;
     } catch (err: any) {
       result.failed_items.push({

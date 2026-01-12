@@ -10,6 +10,7 @@ import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/ass
 import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
+import { getWorkflowPicByDepartment } from '../utils/workflowHelper';
 import { sendMail } from '../utils/mailer';
 import * as assetModel from './assetModel';
 
@@ -3078,22 +3079,20 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			(requestorObj as any).department = request.department_id != null ? departmentMap.get(request.department_id) || null : (requestorObj as any).department || null;
 			(requestorObj as any).district = request.district_id != null ? districtMap.get(request.district_id) || null : (requestorObj as any).district || null;
 		}
-		// Determine approver as HOD (departmental_level = 1) using department_id from payload (preferred),
-		// fallback to requestor's department_id if payload missing
+		// Determine approver from workflow: module_name='asset transfer', level_name='approver', department_id from request or requestor
 		let supervisorObj: any = null;
-		const deptIdForHod = department_id != null
+		const deptIdForApproval = department_id != null
 			? Number(department_id)
-			: (requestorObj.department_id != null ? Number(requestorObj.department_id) : undefined);
-		if (Number.isFinite(deptIdForHod as any)) {
-			supervisorObj = await (assetModel as any).getDepartmentHeadByDepartmentId(Number(deptIdForHod));
+			: (requestorObj?.department_id != null ? Number(requestorObj.department_id) : null);
+		
+		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
+			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
 		}
-		// Fallback: if no HOD or no email or HOD equals requestor, try requestor.wk_spv_id
-		if (!supervisorObj?.email || (requestorObj && supervisorObj.email === requestorObj.email)) {
-			if (requestorObj.wk_spv_id) {
-				try {
-					supervisorObj = await assetModel.getEmployeeByRamco(String(requestorObj.wk_spv_id));
-				} catch {/* ignore */ }
-			}
+		// Fallback: if no workflow approver found, try requestor.wk_spv_id
+		if (!supervisorObj?.ramco_id && requestorObj?.wk_spv_id) {
+			try {
+				supervisorObj = await assetModel.getEmployeeByRamco(String(requestorObj.wk_spv_id));
+			} catch {/* ignore */ }
 		}
 		// Generate action token and base URL for supervisor email (legacy buttons)
 		const crypto = await import('crypto');
@@ -3107,9 +3106,9 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			const token = jwt.sign(credData, secret, { expiresIn: '3d' } as SignOptions);
 			const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/?$/, '');
 			// Include applicant department_id in portal URL as ?dept= and credential as _cred
-			const deptForPortal = (Number.isFinite(deptIdForHod as any) && deptIdForHod != null)
-				? Number(deptIdForHod)
-				: (requestorObj.department_id ?? request.department_id ?? '');
+			const deptForPortal = (Number.isFinite(deptIdForApproval as any) && deptIdForApproval != null)
+				? Number(deptIdForApproval)
+				: (requestorObj?.department_id ?? request.department_id ?? '');
 			const deptParam = deptForPortal !== '' ? encodeURIComponent(String(deptForPortal)) : '';
 			portalUrl = `${frontendUrl}/assets/transfer/portal/${encodeURIComponent(String(insertId))}?action=approve&authorize=${encodeURIComponent(String(supervisorObj.ramco_id))}` +
 				(deptParam ? `&dept=${deptParam}` : '') +
@@ -3142,7 +3141,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			await sendMail(supervisorObj.email, subject, html);
 		} else {
 			 
-			console.warn('createAssetTransfer: No approver email resolved (HOD/wk_spv_id)');
+			console.warn('createAssetTransfer: No approver resolved via workflow (asset transfer/approver) or wk_spv_id');
 		}
 	} catch (err) {
 		// Log but do not block the response
