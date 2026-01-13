@@ -2040,7 +2040,7 @@ export const searchEmployeesAutocomplete = async (query: string) => {
 /* ============ ASSET TRANSFER REQUESTS CRUD ============ */
 
 export const getAssetTransfers = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable}`);
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferRequestTable} ORDER BY id DESC`);
   return rows;
 };
 
@@ -2125,7 +2125,7 @@ export const getAssetTransferItemById = async (id: number) => {
 };
 
 export const getAllAssetTransferItems = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable}`);
+  const [rows] = await pool.query(`SELECT * FROM ${assetTransferItemTable} ORDER BY id DESC`);
   return rows;
 };
 

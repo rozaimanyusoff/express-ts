@@ -3085,14 +3085,27 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			? Number(department_id)
 			: (requestorObj?.department_id != null ? Number(requestorObj.department_id) : null);
 		
+		console.log('DEBUG: Attempting to resolve approver. deptIdForApproval:', deptIdForApproval, 'requestorObj?.department_id:', requestorObj?.department_id);
+		
 		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
 			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
-		}
-		// Fallback: if no workflow approver found, try requestor.wk_spv_id
-		if (!supervisorObj?.ramco_id && requestorObj?.wk_spv_id) {
-			try {
-				supervisorObj = await assetModel.getEmployeeByRamco(String(requestorObj.wk_spv_id));
-			} catch {/* ignore */ }
+			console.log('DEBUG: Workflow approver result for asset transfer/approver/dept', deptIdForApproval, ':', supervisorObj);
+			
+			// Ensure email is resolved from employees table by ramco_id
+			if (supervisorObj?.ramco_id && !supervisorObj?.email) {
+				try {
+					console.log('DEBUG: Email not populated in workflow result, resolving from employees table for ramco_id:', supervisorObj.ramco_id);
+					const empData = await assetModel.getEmployeeByRamco(String(supervisorObj.ramco_id));
+					if (empData?.email) {
+						supervisorObj.email = empData.email;
+						console.log('DEBUG: Resolved email from employees table:', supervisorObj.email);
+					}
+				} catch (err) {
+					console.log('DEBUG: Failed to resolve email from employees table:', err);
+				}
+			}
+		} else {
+			console.log('DEBUG: deptIdForApproval is null/invalid, cannot resolve workflow approver');
 		}
 		// Generate action token and base URL for supervisor email (legacy buttons)
 		const crypto = await import('crypto');
@@ -3137,11 +3150,12 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		}
 		// Send to supervisor (with action buttons + portal link) — even if same email as requestor (for testing and single-mailbox cases)
 		if (supervisorObj?.email) {
+			console.log('DEBUG: Sending approval email to approver:', supervisorObj.ramco_id, 'email:', supervisorObj.email);
 			const { html, subject } = assetTransferSupervisorEmail({ ...supervisorEmailData, portalUrl });
 			await sendMail(supervisorObj.email, subject, html);
+			console.log('DEBUG: Email sent successfully to approver');
 		} else {
-			 
-			console.warn('createAssetTransfer: No approver resolved via workflow (asset transfer/approver) or wk_spv_id');
+			console.warn(`createAssetTransfer: No approver found. deptIdForApproval=${deptIdForApproval}, supervisorObj.ramco_id=${supervisorObj?.ramco_id}, supervisorObj.email=${supervisorObj?.email}. Ensure workflow record exists with module_name='asset transfer', level_name='approver', department_id=${deptIdForApproval}`);
 		}
 	} catch (err) {
 		// Log but do not block the response

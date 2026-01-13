@@ -832,8 +832,8 @@ export const createWorkflow = async (req: Request, res: Response) => {
     return res.status(201).json({
       data: {
         created_levels: createdCount,
-        department_id: data?.department_id || null,
-        module_name: data?.module_name || null
+        module_name: data?.module_name || null,
+        employees_count: Array.isArray(data?.employees) ? data.employees.length : 0
       },
       message: `Workflow created successfully (${createdCount} level${createdCount === 1 ? '' : 's'})`,
       status: 'success'

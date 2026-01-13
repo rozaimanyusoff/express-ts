@@ -20,7 +20,7 @@ export default function assetTransferRequestEmail({ actionBaseUrl, actionToken, 
   const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
   const reqCostCenter = requestor?.costcenter?.name || '-';
   const reqDepartment = requestor?.department?.name || '-';
-  const reqDistrict = requestor?.district?.name || '-';
+  const reqLocation = requestor?.district?.name || '-';
   const reqStatus = request?.request_status || request?.transfer_status || '-';
   const reqNo = request?.request_no || request?.id || '-';
   const reqDate = request?.request_date || request?.transfer_date || new Date();
@@ -36,6 +36,11 @@ export default function assetTransferRequestEmail({ actionBaseUrl, actionToken, 
   const labelStyle = 'font-weight:600; display:inline-block; min-width:160px; vertical-align:top;';
   const valueStyle = 'display:inline-block; min-width:180px;';
   const rowStyle = 'margin-bottom:6px;';
+  // Table styles for Transfer Details
+  const tableStyle = 'width:100%; border-collapse:collapse; margin-top:12px;';
+  const thStyle = `background:${primarySoft}; color:#fff; padding:10px; text-align:left; font-weight:600; font-size:13px; border:1px solid ${border};`;
+  const tdStyle = `padding:10px; border:1px solid ${border}; font-size:13px;`;
+  const tdLabelStyle = `${tdStyle} background:${bgSoft}; font-weight:600;`;
   // Action buttons (only for supervisor)
   let actionButtons = '';
   if (actionToken && actionBaseUrl && supervisor?.email) {
@@ -71,27 +76,48 @@ export default function assetTransferRequestEmail({ actionBaseUrl, actionToken, 
             <div style="${rowStyle}"><span style="${labelStyle}">Requestor:</span> <span style="${valueStyle}">${safe(requestor?.full_name)} (${safe(requestor?.email)})</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Cost Center:</span> <span style="${valueStyle}">${safe(reqCostCenter)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Department:</span> <span style="${valueStyle}">${safe(reqDepartment)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">District:</span> <span style="${valueStyle}">${safe(reqDistrict)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Location:</span> <span style="${valueStyle}">${safe(reqLocation)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Status:</span> <span style="${valueStyle}">${safe(reqStatus)}</span></div>
           </div>
 
           <div style="${sectionTitle}">Transfer Items</div>
       ${items.map(item => `
         <div style="${cardStyle}">
-          <div style="display: flex; flex-wrap: wrap;">
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(item.identifierDisplay)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Owner:</span> <span style="${valueStyle}">${safe(item.currOwnerName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Costcenter:</span> <span style="${valueStyle}">${safe(item.currCostcenterName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Department:</span> <span style="${valueStyle}">${safe(item.currDepartmentCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current District:</span> <span style="${valueStyle}">${safe(item.currDistrictCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Owner:</span> <span style="${valueStyle}">${safe(item.newOwnerName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Costcenter:</span> <span style="${valueStyle}">${safe(item.newCostcenterName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Department:</span> <span style="${valueStyle}">${safe(item.newDepartmentCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New District:</span> <span style="${valueStyle}">${safe(item.newDistrictCode)}</span></div>
-            <div style="width: 100%; ${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
+          <div style="margin-bottom:12px;">
+            <div style="margin-bottom:6px;"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
+            <div style="margin-bottom:6px;"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+            <div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.identifierDisplay)}</span></div>
+            <div style="margin-bottom:6px;"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
           </div>
+          
+          <div style="margin-top:16px; font-weight:600; color:${primarySoft}; font-size:13px; margin-bottom:8px;">Transfer Details</div>
+          <table style="${tableStyle}">
+            <tr>
+              <th style="${thStyle}">Field</th>
+              <th style="${thStyle}">Current</th>
+              <th style="${thStyle}">New</th>
+            </tr>
+            <tr>
+              <td style="${tdLabelStyle}">Owner</td>
+              <td style="${tdStyle}">${safe(item.currOwnerName)}</td>
+              <td style="${tdStyle}">${safe(item.newOwnerName)}</td>
+            </tr>
+            <tr>
+              <td style="${tdLabelStyle}">Cost Center</td>
+              <td style="${tdStyle}">${safe(item.currCostcenterName)}</td>
+              <td style="${tdStyle}">${safe(item.newCostcenterName)}</td>
+            </tr>
+            <tr>
+              <td style="${tdLabelStyle}">Department</td>
+              <td style="${tdStyle}">${safe(item.currDepartmentCode)}</td>
+              <td style="${tdStyle}">${safe(item.newDepartmentCode)}</td>
+            </tr>
+            <tr>
+              <td style="${tdLabelStyle}">Location</td>
+              <td style="${tdStyle}">${safe(item.currDistrictCode)}</td>
+              <td style="${tdStyle}">${safe(item.newDistrictCode)}</td>
+            </tr>
+          </table>
         </div>
       `).join('')}
           <div style="margin-top: 1em;">

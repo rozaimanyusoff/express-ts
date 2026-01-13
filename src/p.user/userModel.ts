@@ -700,9 +700,8 @@ export const createWorkflow = async (data: any): Promise<number> => {
     // {
     //   module_name: string,
     //   description?: string,
-    //   department_id?: number,
     //   is_active?: boolean,
-    //   employees: Array<{ ramco_id: string | number; level_name: string }>
+    //   employees: Array<{ ramco_id: string | number; level_name: string; department_id?: number }>
     // }
     // OR (legacy format):
     // {
@@ -713,7 +712,6 @@ export const createWorkflow = async (data: any): Promise<number> => {
         const moduleName = String(data?.module_name || '').trim();
         if (!moduleName) throw new Error('module_name is required');
         const description = data?.description ?? null;
-        const departmentId = data?.department_id ?? null;
         const isActive = data?.is_active === false ? 0 : 1;
         const employees = Array.isArray(data?.employees) ? data.employees : [];
         if (employees.length === 0) throw new Error('employees array is required');
@@ -736,6 +734,8 @@ export const createWorkflow = async (data: any): Promise<number> => {
             // Support both field name formats: ramco_id (new) or employee_ramco_id (legacy)
             const ramcoId = String(e?.ramco_id ?? e?.employee_ramco_id ?? '').trim();
             if (!ramcoId) throw new Error(`employees[${idx}].ramco_id is required`);
+            // Get department_id from each employee object (allows per-employee department configuration)
+            const departmentId = e?.department_id ?? null;
             return {
                 department_id: departmentId,
                 description,

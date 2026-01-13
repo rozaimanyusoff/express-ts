@@ -120,9 +120,9 @@ Every asset detail response includes calculated NBV:
    - Build lookup maps for ID→Name/Code conversions
    - Resolve requestor details from employee directory
    - **Determine approver via workflow system:**
-     - Query workflows table: `module_name = 'asset transfer'`, `level_name = 'approver'`, `department_id = applicant's department_id`
-     - Returns department-specific approver (e.g., HR transfers approved by HR HOD, IT transfers by IT HOD)
-     - Fallback: Use requestor's `wk_spv_id` (work supervisor) if no workflow approver found
+     - **Primary**: Query workflows table: `module_name = 'asset transfer'`, `level_name = 'approver'`, `department_id = applicant's department_id` (MUST match exactly)
+     - **Fallback**: Use requestor's `wk_spv_id` (work supervisor) if no workflow approver found
+     - **Important**: The workflow record's `department_id` MUST match the request's `department_id` parameter. No global approvers are supported; each department requires its own approver entry in workflows table.
 
 5. Send email notifications:
    - **To Requestor**: Confirmation email with transfer summary

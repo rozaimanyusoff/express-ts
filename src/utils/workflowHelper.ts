@@ -87,14 +87,29 @@ export async function getWorkflowPicByDepartment(
     const mod = String(moduleName || '').trim().toLowerCase();
     const lvl = String(levelName || '').trim().toLowerCase();
 
-    // Match by module, level, AND department_id
+    console.log(`DEBUG getWorkflowPicByDepartment: Looking for module="${moduleName}", level="${levelName}", department=${departmentId}. Found ${list.length} total workflows.`);
+
+    // Match by module, level, AND department_id (strict match required)
     const matches = list.filter((w: any) => {
       const moduleVal = String(w?.module_name ?? w?.module ?? '').trim().toLowerCase();
       const levelVal = String(w?.level_name ?? w?.level ?? w?.levelName ?? '').trim().toLowerCase();
-      const deptMatch = departmentId == null || Number(w?.department_id) === Number(departmentId);
+      // Strict department match: workflow department_id must equal the requested department_id
+      const deptMatch = Number(w?.department_id) === Number(departmentId);
       return moduleVal === mod && levelVal === lvl && deptMatch;
     });
-    if (!matches.length) return null;
+    
+    console.log(`DEBUG getWorkflowPicByDepartment: Found ${matches.length} matching workflows:`, matches.map(m => ({
+      module_name: m.module_name,
+      level_name: m.level_name,
+      department_id: m.department_id,
+      ramco_id: m.ramco_id,
+      is_active: m.is_active
+    })));
+    
+    if (!matches.length) {
+      console.log(`DEBUG getWorkflowPicByDepartment: No department-specific approver found for department ${departmentId}, returning null`);
+      return null;
+    }
 
     // Prefer active ones first
     const sorted = matches.sort((a: any, b: any) => {
@@ -108,7 +123,12 @@ export async function getWorkflowPicByDepartment(
     const ramco = String(
       pick?.ramco_id ?? pick?.employee?.ramco_id ?? pick?.emp_id ?? pick?.employee_id ?? ''
     ).trim();
-    if (!ramco) return null;
+    if (!ramco) {
+      console.log(`DEBUG getWorkflowPicByDepartment: No ramco_id found in workflow record`);
+      return null;
+    }
+
+    console.log(`DEBUG getWorkflowPicByDepartment: Selected workflow with ramco_id=${ramco}`);
 
     // Try to resolve email/name: workflow record may already include email/full_name
     let email: null | string = null;
@@ -119,19 +139,26 @@ export async function getWorkflowPicByDepartment(
         email = (emp as any).email ? String((emp as any).email) : null;
         full_name = (emp as any).full_name || (emp as any).name || null;
       }
-    } catch {
+      console.log(`DEBUG getWorkflowPicByDepartment: Resolved employee: ${full_name} (${ramco}), email=${email}`);
+    } catch (err) {
       // ignore directory failure
+      console.log(`DEBUG getWorkflowPicByDepartment: Employee lookup failed for ${ramco}:`, err);
     }
 
+    // Fallback: try email from workflow record if not found in employees
     if (!email) {
       email = pick?.email ?? pick?.employee?.email ?? null;
-      if (email) email = String(email);
+      if (email) {
+        email = String(email);
+        console.log(`DEBUG getWorkflowPicByDepartment: Using email from workflow record:`, email);
+      }
     }
     if (!full_name) {
       full_name = pick?.employee?.full_name || pick?.full_name || pick?.name || null;
       if (full_name) full_name = String(full_name);
     }
 
+    console.log(`DEBUG getWorkflowPicByDepartment: Final result - ramco_id=${ramco}, email=${email}, full_name=${full_name}`);
     return { email, full_name, ramco_id: ramco };
   } catch (e) {
      
