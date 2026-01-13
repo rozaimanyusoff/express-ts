@@ -17,7 +17,14 @@ interface EmailData {
 export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToken, items, portalUrl, request, requestor, supervisor }: EmailData) {
   // Helpers
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
-  const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
+  const formatDate = (d: any) => {
+    if (!d) return '-';
+    const date = new Date(d);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
   const reqCostCenter = requestor?.costcenter?.name || '-';
   const reqDepartment = requestor?.department?.name || '-';
   const reqDistrict = requestor?.district?.name || '-';

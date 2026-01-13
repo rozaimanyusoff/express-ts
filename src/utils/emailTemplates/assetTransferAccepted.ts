@@ -13,7 +13,14 @@ interface AssetTransferAcceptedParams {
 }
 
 const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
-const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
+const formatDate = (d: any) => {
+  if (!d) return '-';
+  const date = new Date(d);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 // Green theme styles (matching assetTransferRequest)
 const primary = '#1b5e20'; // dark green

@@ -614,7 +614,244 @@ CREATE FULLTEXT INDEX ft_asset_search ON assetdata(asset_code, asset_name);
 
 ---
 
+## Asset Transfer Acceptance Process (`setAssetTransferAcceptance`)
+
+### Overview
+The acceptance endpoint completes the asset transfer workflow. It records acceptance evidence (attachments, checklist confirmation), updates asset ownership, and triggers notification emails to stakeholders.
+
+### Endpoint
+```
+PUT /api/assets/transfers/:id/acceptance
+Content-Type: multipart/form-data
+```
+
+### Request Payload
+
+**JSON Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `acceptance_by` | string | ✅ | ramco_id of person accepting transfer |
+| `acceptance_date` | ISO 8601 | ❌ | Date/time of acceptance (defaults to now) |
+| `acceptance_remarks` | string | ❌ | Notes/remarks about the acceptance |
+| `checklist-items` | string/array | ❌ | Comma-separated or array of checklist item IDs |
+
+**File Upload:**
+| Field | Type | Max | Description |
+|-------|------|-----|-------------|
+| `acceptance_attachments` | multipart files | 3 | Evidence/documentation files |
+
+### Complete Request Example
+```bash
+curl -X PUT http://localhost:3030/api/assets/transfers/1/acceptance \
+  -F "acceptance_by=000277" \
+  -F "acceptance_date=2026-01-14T10:30:00Z" \
+  -F "acceptance_remarks=Assets verified and in good condition" \
+  -F "checklist-items=1,2,3" \
+  -F "acceptance_attachments=@photo1.jpg" \
+  -F "acceptance_attachments=@photo2.png" \
+  -F "acceptance_attachments=@document.pdf"
+```
+
+### Process Flow
+
+#### Step 1: Request Validation
+```typescript
+// Validate transfer ID exists
+const transfer = await assetModel.getAssetTransferById(requestId);
+if (!transfer) return 404 error;
+```
+
+#### Step 2: Parse Input Parameters
+```typescript
+// Extract and parse form fields
+- acceptance_by: String (ramco_id)
+- acceptance_date: ISO timestamp (defaults to NOW if omitted)
+- acceptance_remarks: String
+- checklist-items: Convert comma-separated string or array to number[]
+```
+
+#### Step 3: Handle File Uploads
+```typescript
+// Multer processes files and saves to disk
+// Uploaded to: /mnt/winshare/uploads/assets/transfers/acceptance/
+// Returns array of file paths
+const filePaths = [];
+if (req.files.acceptance_attachments) {
+  filePaths = req.files.acceptance_attachments.map(f => 
+    uploadUtil.toDbPath('assets/transfers/acceptance', f.filename)
+  );
+}
+```
+
+#### Step 4: Update transfer_items Table
+```sql
+UPDATE transfer_items 
+SET 
+  acceptance_by = ?,
+  acceptance_date = ?,
+  acceptance_remarks = ?,
+  acceptance_checklist_items = ?,  -- stored as "1,2,3"
+  acceptance_attachments = ?,       -- stored as JSON: ["path1", "path2", "path3"]
+  attachment1 = ?,                  -- first file path (or null)
+  attachment2 = ?,                  -- second file path (or null)
+  attachment3 = ?,                  -- third file path (or null)
+  updated_at = NOW()
+WHERE id = ?
+```
+
+**File Distribution Logic:**
+```typescript
+attachment1 = filePaths[0] || null;  // First uploaded file
+attachment2 = filePaths[1] || null;  // Second uploaded file
+attachment3 = filePaths[2] || null;  // Third uploaded file
+// Additional files (if any) are ignored
+```
+
+#### Step 5: Update Asset Ownership (Batch)
+For each transfer item where `new_owner` is specified:
+
+```typescript
+// Fetch asset details
+const asset = await assetModel.getAssetById(item.asset_id);
+
+// 5a. Insert movement record into asset_history
+INSERT INTO asset_history 
+  (asset_id, ramco_id, costcenter_id, department_id, location_id, 
+   register_number, type_id, effective_date)
+VALUES 
+  (item.asset_id, item.new_owner, item.new_costcenter_id, 
+   item.new_department_id, item.new_location_id, 
+   asset.register_number, asset.type_id, acceptance_date)
+
+// 5b. Update current ownership in assetdata
+UPDATE assetdata 
+SET 
+  ramco_id = item.new_owner,
+  costcenter_id = item.new_costcenter_id,
+  department_id = item.new_department_id,
+  location_id = item.new_location_id
+WHERE id = item.asset_id
+```
+
+#### Step 6: Send Email Notifications
+Sends emails to three recipient groups:
+
+**a) To Requestor (Applicant):**
+- Template: `assetTransferAcceptedRequestor.ts`
+- Message: "Your transfer has been accepted"
+- Content: Assets accepted, accepted by, date
+
+**b) To Current Owner:**
+- Template: `assetTransferAcceptedCurrentOwner.ts`
+- Message: "Assets have been transferred out of your control"
+- Content: Transfer details, new owner info
+
+**c) To New Owner's HOD (Head of Department):**
+- Template: `assetTransferAcceptedHodEmail.ts`
+- Message: "Your employee has accepted assets"
+- Content: Assets received, employee details
+
+### Database State After Acceptance
+
+**transfer_items Table:**
+```json
+{
+  "id": 1,
+  "transfer_id": 1,
+  "asset_id": 865,
+  "current_owner": "000475",
+  "new_owner": "000277",
+  "acceptance_by": "000277",
+  "acceptance_date": "2026-01-14 10:30:00",
+  "acceptance_remarks": "Verified and in good condition",
+  "acceptance_checklist_items": "1,2,3",
+  "acceptance_attachments": "['/uploads/assets/transfers/acceptance/photo1.jpg', '/uploads/assets/transfers/acceptance/photo2.png', '/uploads/assets/transfers/acceptance/document.pdf']",
+  "attachment1": "/uploads/assets/transfers/acceptance/photo1.jpg",
+  "attachment2": "/uploads/assets/transfers/acceptance/photo2.png",
+  "attachment3": "/uploads/assets/transfers/acceptance/document.pdf",
+  "updated_at": "2026-01-14 10:30:00"
+}
+```
+
+**assetdata Table (Updated):**
+```json
+{
+  "id": 865,
+  "ramco_id": "000277",        // Changed from 000475
+  "costcenter_id": 26,         // Updated if provided
+  "department_id": 16,         // Updated if provided
+  "location_id": 2             // Updated if provided
+}
+```
+
+**asset_history Table (New Record):**
+```json
+{
+  "asset_id": 865,
+  "ramco_id": "000277",
+  "costcenter_id": 26,
+  "department_id": 16,
+  "location_id": 2,
+  "register_number": "5CG7314HJW",
+  "type_id": 1,
+  "effective_date": "2026-01-14 10:30:00",
+  "created_at": "2026-01-14 10:30:00"
+}
+```
+
+### Error Handling
+
+| Scenario | HTTP Status | Response |
+|----------|------------|----------|
+| Missing transfer ID | 400 | Invalid transfer request id |
+| Transfer not found | 404 | Transfer request not found |
+| Invalid acceptance_by | 400 | (multer validation) |
+| File upload failure | 400 | File upload error |
+| Database update failure | 500 | Internal server error |
+| Ownership update fails | 500 | Error logged but acceptance saved |
+
+**Note:** Ownership update errors don't block acceptance save - issue is logged for manual review.
+
+### Acceptance Portal Integration
+
+The acceptance endpoint is used by the frontend acceptance portal after user clicks "Accept Transfer" button:
+
+```
+Portal URL: {FRONTEND_URL}/assets/transfer/acceptance/{transfer_id}
+Query params: ?new_owner={ramco_id}&_cred={credential_code}
+
+Portal calls:
+1. GET /api/assets/transfers/:id/items?new_owner=:ramco_id
+   ↓ Returns filtered items with full enrichment
+2. PUT /api/assets/transfers/:id/acceptance (multipart)
+   ↓ Submits acceptance with files and checklist
+```
+
+### Security Considerations
+
+1. **File Upload**
+   - Multer validates file types
+   - Files saved with unique names (prevents overwrites)
+   - Directory path restricted to `/mnt/winshare/uploads/assets/transfers/acceptance/`
+
+2. **Ownership Transfer**
+   - Only transfers when acceptance_by is provided
+   - Uses transaction-like pattern (insert history first, then update current)
+   - Asset history provides complete audit trail
+
+3. **Authentication**
+   - Requires valid JWT token (enforced by middleware)
+   - acceptance_by should match authenticated user or be authorized
+
+4. **Data Validation**
+   - Checklist items validated as positive integers
+   - Dates validated as ISO 8601 format
+   - Filenames sanitized by multer
+
+---
+
 ## Testing Strategy
+
 
 ### Unit Tests
 - Depreciation calculation edge cases

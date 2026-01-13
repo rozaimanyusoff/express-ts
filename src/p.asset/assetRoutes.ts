@@ -132,7 +132,7 @@ router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
 
 // ASSET TRANSFER ITEMS (direct access)
 router.get('/transfers/items', asyncHandler(assetController.getAssetTransferItems)); // all items
-router.get('/transfers/:id/items', asyncHandler(assetController.getAssetTransferItemsByTransfer)); // items for a specific transfer
+router.get('/transfers/:id/items', asyncHandler(assetController.getAssetTransferItemsByTransfer)); // items for a specific transfer (?new_owner={ramco_id} to filter by new owner)
 router.get('/transfers/:transferId/items/:itemId', asyncHandler(assetController.getAssetTransferItemByTransfer)); // enriched single item within transfer
 router.post('/transfers/:id/items', asyncHandler(assetController.createAssetTransferItem));
 router.get('/transfer-items/:itemId', asyncHandler(assetController.getAssetTransferItem));

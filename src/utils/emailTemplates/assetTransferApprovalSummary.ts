@@ -10,7 +10,17 @@ interface AssetTransferApprovalSummaryParams {
 export function assetTransferApprovalSummaryEmail({ approvedDate, approver, requestIds }: AssetTransferApprovalSummaryParams) {
   const name = approver.full_name || approver.name || approver.ramco_id || 'Approver';
   const subject = `You approved ${requestIds.length} asset transfer application(s)`;
-  const dateStr = approvedDate ? new Date(approvedDate).toLocaleString('en-US', { day: '2-digit', hour: '2-digit', hour12: true, minute: '2-digit', month: '2-digit', second: '2-digit', year: 'numeric' }) : new Date().toLocaleString('en-US', { day: '2-digit', hour: '2-digit', hour12: true, minute: '2-digit', month: '2-digit', second: '2-digit', year: 'numeric' });
+  const formatDateTime = (d: any) => {
+    const date = new Date(d);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  };
+  const dateStr = formatDateTime(approvedDate || new Date());
   const reqList = requestIds.map(id => `#${id}`).join(', ');
   
   // Green theme styles (matching assetTransferRequest)

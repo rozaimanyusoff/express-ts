@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
 import jwt, { SignOptions } from 'jsonwebtoken';
 
@@ -7,7 +8,8 @@ import { assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail, 
 import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/assetTransferApprovalSummary';
 import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferApprovedNewOwner';
 import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferApprovedRequestor';
-import { assetTransferCurrentOwnerEmail } from '../utils/emailTemplates/assetTransferCurrentOwner';
+import assetTransferAssetManagerEmail from '../utils/emailTemplates/assetTransferAssetManagerEmail';
+import assetTransferCurrentOwnerEmail from '../utils/emailTemplates/assetTransferCurrentOwner';
 import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
 import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
 import { getWorkflowPicByDepartment } from '../utils/workflowHelper';
@@ -15,6 +17,22 @@ import { sendMail } from '../utils/mailer';
 import * as assetModel from './assetModel';
 
 /* ========== HELPER FUNCTIONS ========== */
+/**
+ * Generate a credential code for acceptance portal access
+ * Uses transfer ID, new owner ramco_id, and a timestamp to create a deterministic code
+ */
+function generateAcceptanceCredentialCode(transferId: number, ramcoId: string): string {
+	try {
+		const data = `${transferId}:${ramcoId}:acceptance`;
+		const hash = crypto.createHash('sha256').update(data).digest('hex');
+		// Return first 16 characters of hash for URL-safe credential code
+		return hash.substring(0, 16);
+	} catch (err) {
+		console.warn('Failed to generate credential code:', err);
+		return '';
+	}
+}
+
 /**
  * Format date fields in an object from ISO string to YYYY-MM-DD format
  * Useful for converting MySQL DATE columns that come as ISO timestamps
@@ -266,6 +284,13 @@ export const getAssets = async (req: Request, res: Response) => {
 	const locations = Array.isArray(locationsRaw) ? locationsRaw : [];
 	const employees = isPlainObjectArray(employeesRaw) ? (employeesRaw as any[]) : [];
 
+	// Fetch asset transfer statuses for all filtered assets
+	const assetTransferStatusMap = new Map<number, string | null>();
+	for (const asset of filteredAssets) {
+		const status = await assetModel.getAssetTransferStatus(asset.id);
+		assetTransferStatusMap.set(asset.id, status);
+	}
+
 	// Build lookup maps
 	const typeMap = new Map(types.map((t: any) => [t.id, t]));
 	const categoryMap = new Map(categories.map((c: any) => [c.id, c]));
@@ -289,6 +314,7 @@ export const getAssets = async (req: Request, res: Response) => {
 		return {
 			age: age,
 			asset_code: asset.asset_code,
+			asset_transfer_status: assetTransferStatusMap.get(asset.id) || null,
 			brand: asset.brand_id && brandMap.has(asset.brand_id)
 				? {
 					id: asset.brand_id,
@@ -3157,6 +3183,81 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		} else {
 			console.warn(`createAssetTransfer: No approver found. deptIdForApproval=${deptIdForApproval}, supervisorObj.ramco_id=${supervisorObj?.ramco_id}, supervisorObj.email=${supervisorObj?.email}. Ensure workflow record exists with module_name='asset transfer', level_name='approver', department_id=${deptIdForApproval}`);
 		}
+
+		// Send notification to asset managers based on type_id
+		try {
+			// Collect unique type_ids from items
+			const typeIds = Array.from(new Set(
+				items
+					.map((item: any) => Number(item.type_id))
+					.filter((id: any) => Number.isFinite(id) && id > 0)
+			));
+
+			if (typeIds.length > 0) {
+				// Get type names for email
+				const typeMap = new Map<number, string>((Array.isArray(typesAll) ? typesAll : []).map((t: any) => [Number(t.id), t.name || '']));
+				const typeNames = typeIds.map(id => typeMap.get(id) || `Type ${id}`);
+
+				// For each type_id, get asset managers
+				for (const typeId of typeIds) {
+					const managers = await assetModel.getAssetManagersByTypeId(typeId);
+					if (Array.isArray(managers) && managers.length > 0) {
+						// Get employee details for each manager
+						for (const managerRow of managers) {
+							const manager = managerRow as any;
+							if (manager.ramco_id) {
+								const managerEmployee = await assetModel.getEmployeeByRamco(manager.ramco_id);
+								if (managerEmployee?.email) {
+									const { html, subject } = assetTransferAssetManagerEmail({
+										applicant: requestorObj,
+										date: transfer_date,
+										requestId: insertId,
+										typeNames
+									});
+									await sendMail(managerEmployee.email, subject, html);
+									console.log('DEBUG: Asset manager notification sent to:', manager.ramco_id, 'email:', managerEmployee.email);
+								}
+							}
+						}
+					}
+				}
+			}
+		} catch (err) {
+			console.error('Asset manager notification failed:', err);
+		}
+
+		// Send notification to all unique current owners
+		try {
+			// Collect unique current owners from items
+			const uniqueCurrentOwners = Array.from(new Set(
+				items
+					.map((item: any) => String(item.current_owner || '').trim())
+					.filter((owner: string) => owner.length > 0)
+			));
+
+			if (uniqueCurrentOwners.length > 0) {
+				// For each current owner, send a notification with their items
+				for (const currentOwnerRamco of uniqueCurrentOwners) {
+					// Get employee details for current owner
+					const currentOwnerEmployee = await assetModel.getEmployeeByRamco(currentOwnerRamco);
+					if (currentOwnerEmployee?.email) {
+						// Filter items for this current owner
+						const ownerItems = items.filter((item: any) => String(item.current_owner || '').trim() === currentOwnerRamco);
+						
+						const { html, subject } = assetTransferCurrentOwnerEmail({
+							items: ownerItems,
+							request,
+							requestor: requestorObj,
+							currentOwner: currentOwnerEmployee
+						});
+						await sendMail(currentOwnerEmployee.email, subject, html);
+						console.log('DEBUG: Current owner notification sent to:', currentOwnerRamco, 'email:', currentOwnerEmployee.email, 'for', ownerItems.length, 'item(s)');
+					}
+				}
+			}
+		} catch (err) {
+			console.error('Current owner notification failed:', err);
+		}
 	} catch (err) {
 		// Log but do not block the response
 		console.error('Asset transfer email notification failed:', err);
@@ -3264,45 +3365,138 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 		try {
 			// Approver details
 			const approverEmp = await assetModel.getEmployeeByRamco(String(approved_by));
+			// Fetch all necessary lookup data once for efficiency
+			const [allEmployees, costcenters, departments, locations, typesAll] = await Promise.all([
+				assetModel.getEmployees().catch(() => []),
+				assetModel.getCostcenters().catch(() => []),
+				assetModel.getDepartments().catch(() => []),
+				assetModel.getLocations().catch(() => []),
+				(assetModel as any).getTypes?.().catch(() => []) || Promise.resolve([])
+			]);
+
+			const empArr = Array.isArray(allEmployees) ? allEmployees : [];
+			const costcenterArr = Array.isArray(costcenters) ? costcenters : [];
+			const departmentArr = Array.isArray(departments) ? departments : [];
+			const districtArr = Array.isArray(locations) ? locations : [];
+
+			const empMap = new Map(empArr.map((e: any) => [e.ramco_id, e]));
+			const costcenterMap = new Map(costcenterArr.map((c: any) => [c.id, c]));
+			const departmentMap = new Map(departmentArr.map((d: any) => [d.id, d]));
+			const districtMap = new Map(districtArr.map((d: any) => [d.id, d]));
+			const typeMap = new Map<number, any>((Array.isArray(typesAll) ? typesAll : []).map((t: any) => [Number(t.id), t]));
+
 			// For each request, fetch items + related employees and send notifications
 			for (const request of requestsBefore) {
 				if (!request || !ids.includes(Number(request.id))) continue;
 				// Fetch items
 				const itemsRaw = await assetModel.getAssetTransferItemByRequestId(Number(request.id));
 				const items: any[] = Array.isArray(itemsRaw) ? (itemsRaw as any[]) : [];
-				// Collect ramco IDs: requestor (transfer_by), new_owner(s), maybe current_owner(s)
-				const ramcoSet = new Set<string>();
-				if (request.transfer_by) ramcoSet.add(String(request.transfer_by));
-				for (const it of items) {
-					if (it.new_owner) ramcoSet.add(String(it.new_owner));
-				}
-				if (approved_by) ramcoSet.add(String(approved_by));
-				const employees = await assetModel.getEmployees(undefined, undefined, undefined, undefined, undefined, Array.from(ramcoSet), undefined).catch(() => []);
-				const empMap = new Map<string, any>((Array.isArray(employees) ? employees : []).map((e: any) => [String(e.ramco_id), e]));
-				const requestorEmp = request.transfer_by ? empMap.get(String(request.transfer_by)) : null;
-				// Build basic identifier enrichment (reuse minimal logic)
+
+				// Build asset lookup
 				const assetsForItems = await (async () => {
 					const assetIds = Array.from(new Set(items.map((i: any) => Number(i.asset_id)).filter(n => Number.isFinite(n))));
 					return assetIds.length ? await (assetModel as any).getAssetsByIds(assetIds) : [];
 				})();
 				const assetsMap = new Map<number, any>((Array.isArray(assetsForItems) ? assetsForItems : []).map((a: any) => [Number(a.id), a]));
-				const enrichedItems: any[] = items.map((it: any) => {
-					const assetRow = it.asset_id ? assetsMap.get(Number(it.asset_id)) : null;
-					let identifierDisplay = assetRow?.register_number ? assetRow.register_number : it.identifier;
-					if (it.transfer_type === 'Employee' && it.identifier && empMap.has(String(it.identifier))) {
-						const emp = empMap.get(String(it.identifier));
-						identifierDisplay = emp?.full_name || it.identifier;
+
+				// Enrich items for email (similar to createAssetTransfer logic)
+				const enrichedItems = items.map((item: any) => {
+					// Identifier logic
+					const assetRow = item.asset_id ? assetsMap.get(Number(item.asset_id)) : null;
+					let identifierDisplay = assetRow?.register_number ? assetRow.register_number : item.identifier;
+					if (item.transfer_type === 'Employee' && item.identifier && empMap.has(item.identifier)) {
+						const emp = empMap.get(item.identifier);
+						identifierDisplay = emp && typeof emp === 'object' && 'full_name' in emp ? emp.full_name : item.identifier;
 					}
-					return { ...it, identifierDisplay };
+					// Transfer type name
+					const typeName = item.type_id != null && typeMap.has(Number(item.type_id))
+						? String((typeMap.get(Number(item.type_id))).name || '')
+						: (item.transfer_type || '');
+					// Owners
+					const currOwnerEmp = item.current_owner && empMap.has(item.current_owner) ? empMap.get(item.current_owner) : null;
+					const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
+					const newOwnerEmp = item.new_owner && empMap.has(item.new_owner) ? empMap.get(item.new_owner) : null;
+					const newOwnerName = newOwnerEmp && typeof newOwnerEmp === 'object' && 'full_name' in newOwnerEmp ? newOwnerEmp.full_name : item.new_owner || '-';
+					// Costcenters
+					const currCostcenterKey = Number(item.current_costcenter_id);
+					const currCostcenterObj = Number.isFinite(currCostcenterKey) && costcenterMap.has(currCostcenterKey) ? costcenterMap.get(currCostcenterKey) : null;
+					const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj).name : (item.current_costcenter_id ?? '-');
+					const newCostcenterKey = Number(item.new_costcenter_id);
+					const newCostcenterObj = Number.isFinite(newCostcenterKey) && costcenterMap.has(newCostcenterKey) ? costcenterMap.get(newCostcenterKey) : null;
+					const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj).name : (item.new_costcenter_id ?? '-');
+					// Departments (show code)
+					const currDepartmentKey = Number(item.current_department_id);
+					const currDepartmentObj = Number.isFinite(currDepartmentKey) && departmentMap.has(currDepartmentKey) ? departmentMap.get(currDepartmentKey) : null;
+					const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj).code : (item.current_department_id ?? '-');
+					const newDepartmentKey = Number(item.new_department_id);
+					const newDepartmentObj = Number.isFinite(newDepartmentKey) && departmentMap.has(newDepartmentKey) ? departmentMap.get(newDepartmentKey) : null;
+					const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj).code : (item.new_department_id ?? '-');
+					// Districts/Locations
+					const currLocationKey = Number(item.current_location_id);
+					const currDistrictObj = Number.isFinite(currLocationKey) && districtMap.has(currLocationKey) ? districtMap.get(currLocationKey) : null;
+					const currDistrictCode = currDistrictObj ? ((currDistrictObj).code || (currDistrictObj).name || item.current_location_id || '-') : (item.current_location_id || '-');
+					const newLocationKey = Number(item.new_location_id);
+					const newDistrictObj = Number.isFinite(newLocationKey) && districtMap.has(newLocationKey) ? districtMap.get(newLocationKey) : null;
+					const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
+
+					return {
+						...item,
+						currCostcenterName,
+						currDepartmentCode,
+						currDistrictCode,
+						currOwnerName,
+						identifierDisplay,
+						newCostcenterName,
+						newDepartmentCode,
+						newDistrictCode,
+						newOwnerName,
+						transfer_type: typeName
+					};
 				});
-				// Requestor email (if approved)
+
+				// Get requestor info
+				const requestorEmp = request.transfer_by ? empMap.get(String(request.transfer_by)) : null;
+
+				// Get asset managers for types involved (for CC)
+				const typeIds = Array.from(new Set(
+					items
+						.map((item: any) => Number(item.type_id))
+						.filter((id: any) => Number.isFinite(id) && id > 0)
+				));
+				const assetManagerEmails: Set<string> = new Set();
+				for (const typeId of typeIds) {
+					try {
+						const managers = await assetModel.getAssetManagersByTypeId(typeId);
+						if (Array.isArray(managers) && managers.length > 0) {
+							for (const managerRow of managers) {
+								const manager = managerRow as any;
+								if (manager.ramco_id) {
+									const managerEmployee = await assetModel.getEmployeeByRamco(manager.ramco_id);
+									if (managerEmployee?.email) {
+										assetManagerEmails.add(managerEmployee.email);
+									}
+								}
+							}
+						}
+					} catch (err) {
+						console.warn('Failed to fetch asset managers for type', typeId, err);
+					}
+				}
+
+				// Requestor email (if approved) with CC to asset managers
 				if (String(status).toLowerCase() === 'approved' && requestorEmp?.email) {
 					try {
 						const { html, subject } = assetTransferApprovedRequestorEmail({ approver: approverEmp, items: enrichedItems, request, requestor: requestorEmp });
-						await sendMail(requestorEmp.email, subject, html);
+						const ccArray = Array.from(assetManagerEmails);
+						const mailOptions: any = {};
+						if (ccArray.length > 0) {
+							mailOptions.cc = ccArray.join(', ');
+						}
+						await sendMail(requestorEmp.email, subject, html, mailOptions);
 					} catch (e) { console.warn('Failed to send requestor approval email', e); }
 				}
-				// New owner emails (group items per new_owner)
+
+				// New owner emails (group items per new_owner) with CC to asset managers
 				if (String(status).toLowerCase() === 'approved') {
 					const itemsByNewOwner: Record<string, any[]> = {};
 					for (const it of enrichedItems) {
@@ -3316,13 +3510,29 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 						const newOwnerEmp = empMap.get(newOwnerRamco);
 						if (newOwnerEmp?.email) {
 							try {
-								const { html, subject } = assetTransferApprovedNewOwnerEmail({ approver: approverEmp, itemsForNewOwner: ownerItems, newOwner: newOwnerEmp, request, requestor: requestorEmp });
-								await sendMail(newOwnerEmp.email, subject, html);
+								// Generate credential code for acceptance portal
+								const credentialCode = generateAcceptanceCredentialCode(Number(request.id), newOwnerRamco);
+								const { html, subject } = assetTransferApprovedNewOwnerEmail({ 
+									approver: approverEmp, 
+									credentialCode,
+									itemsForNewOwner: ownerItems, 
+									newOwner: newOwnerEmp, 
+									request, 
+									requestor: requestorEmp,
+									transferId: Number(request.id)
+								});
+								const ccArray = Array.from(assetManagerEmails);
+								const mailOptions: any = {};
+								if (ccArray.length > 0) {
+									mailOptions.cc = ccArray.join(', ');
+								}
+								await sendMail(newOwnerEmp.email, subject, html, mailOptions);
 							} catch (e) { console.warn('Failed to send new owner approval email', e); }
 						}
 					}
 				}
 			} // end for each request
+
 			// Send summary to approver (only once) if multiple approvals
 			if (approverEmp && (approverEmp as any).email && affected > 0) {
 				try {
@@ -3390,7 +3600,11 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// store as comma separated string (no brackets) handled in model
 		acceptance_checklist_items: checklistIds,
 		acceptance_date,
-		acceptance_remarks
+		acceptance_remarks,
+		// Distribute file paths to individual attachment columns (max 3)
+		attachment1: filePaths?.[0] || null,
+		attachment2: filePaths?.[1] || null,
+		attachment3: filePaths?.[2] || null
 	});
 
 	// Fetch transfer items to update ownership
@@ -3551,8 +3765,138 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 	// Ensure request exists (optional strictness)
 	const request = await assetModel.getAssetTransferById(transferId);
 	if (!request) return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
-	const items = await assetModel.getAssetTransferItemByRequestId(transferId);
-	return res.json({ data: Array.isArray(items) ? items : [], message: 'Transfer items retrieved', status: 'success' });
+	const itemsRaw = await assetModel.getAssetTransferItemByRequestId(transferId);
+	const items: any[] = Array.isArray(itemsRaw) ? itemsRaw : [];
+	
+	// Optional filter by new_owner query parameter
+	const newOwnerParam = req.query.new_owner;
+	let filteredItems = items;
+	
+	if (newOwnerParam && typeof newOwnerParam === 'string' && newOwnerParam.trim() !== '') {
+		const newOwnerRamco = newOwnerParam.trim();
+		filteredItems = items.filter((item: any) => item.new_owner === newOwnerRamco);
+	}
+
+	// Enrich items with nested objects (asset, owners, departments, costcenters, locations)
+	if (filteredItems.length === 0) {
+		return res.json({ data: [], message: 'Transfer items retrieved', status: 'success' });
+	}
+
+	// Collect all unique IDs needed for enrichment
+	const employeeIds = new Set<string>();
+	const costcenterIds = new Set<number>();
+	const departmentIds = new Set<number>();
+	const locationIds = new Set<number>();
+	const assetIds = new Set<number>();
+	const typeIds = new Set<number>();
+
+	for (const item of filteredItems) {
+		if (item.current_owner) employeeIds.add(String(item.current_owner));
+		if (item.new_owner) employeeIds.add(String(item.new_owner));
+		if (typeof item.current_costcenter_id === 'number') costcenterIds.add(item.current_costcenter_id);
+		if (typeof item.new_costcenter_id === 'number') costcenterIds.add(item.new_costcenter_id);
+		if (typeof item.current_department_id === 'number') departmentIds.add(item.current_department_id);
+		if (typeof item.new_department_id === 'number') departmentIds.add(item.new_department_id);
+		if (typeof item.current_location_id === 'number') locationIds.add(item.current_location_id);
+		if (typeof item.new_location_id === 'number') locationIds.add(item.new_location_id);
+		if (typeof item.asset_id === 'number') assetIds.add(item.asset_id);
+		if (typeof item.type_id === 'number') typeIds.add(item.type_id);
+	}
+
+	// Fetch all lookup data in parallel
+	const [employeesRaw, costcentersRaw, departmentsRaw, locationsRaw, assetsRaw, typesRaw, brandsRaw, categoriesRaw, modelsRaw] = await Promise.all([
+		assetModel.getEmployees(undefined, undefined, undefined, undefined, undefined, Array.from(employeeIds), undefined).catch(() => []),
+		assetModel.getCostcenters().catch(() => []),
+		assetModel.getDepartments().catch(() => []),
+		assetModel.getLocations().catch(() => []),
+		Promise.all(Array.from(assetIds).map(id => assetModel.getAssetById(id))).catch(() => []),
+		assetModel.getTypes().catch(() => []),
+		(assetModel as any).getBrands?.().catch(() => []) || [],
+		(assetModel as any).getCategories?.().catch(() => []) || [],
+		(assetModel as any).getModels?.().catch(() => []) || []
+	]);
+
+	// Create maps for fast lookup
+	const empMap = new Map<string, any>((employeesRaw as any[]).map(e => [String(e.ramco_id), e]));
+	const costcenterMap = new Map<number, any>((costcentersRaw as any[]).map(c => [Number(c.id), c]));
+	const departmentMap = new Map<number, any>((departmentsRaw as any[]).map(d => [Number(d.id), d]));
+	const locationMap = new Map<number, any>((locationsRaw as any[]).map(l => [Number(l.id), l]));
+	const assetMap = new Map<number, any>((assetsRaw as any[]).filter(a => a?.id).map(a => [Number(a.id), a]));
+	const typeMap = new Map<number, any>((typesRaw as any[]).map(t => [Number(t.id), t]));
+	const brandMap = new Map<number, any>((brandsRaw as any[]).map(b => [Number(b.id), b]));
+	const categoryMap = new Map<number, any>((categoriesRaw as any[]).map(c => [Number(c.id), c]));
+	const modelMap = new Map<number, any>((modelsRaw as any[]).map(m => [Number(m.id), m]));
+
+	// Enrich each item
+	const enrichedItems = filteredItems.map((item: any) => {
+		const currentOwnerEmp = item.current_owner ? empMap.get(String(item.current_owner)) : null;
+		const newOwnerEmp = item.new_owner ? empMap.get(String(item.new_owner)) : null;
+		const currCC = typeof item.current_costcenter_id === 'number' ? costcenterMap.get(item.current_costcenter_id) : null;
+		const newCC = typeof item.new_costcenter_id === 'number' ? costcenterMap.get(item.new_costcenter_id) : null;
+		const currDept = typeof item.current_department_id === 'number' ? departmentMap.get(item.current_department_id) : null;
+		const newDept = typeof item.new_department_id === 'number' ? departmentMap.get(item.new_department_id) : null;
+		const currLoc = typeof item.current_location_id === 'number' ? locationMap.get(item.current_location_id) : null;
+		const newLoc = typeof item.new_location_id === 'number' ? locationMap.get(item.new_location_id) : null;
+		const assetObj = typeof item.asset_id === 'number' ? assetMap.get(item.asset_id) : null;
+		const typeObj = typeof item.type_id === 'number' ? typeMap.get(item.type_id) : null;
+
+		// Build nested asset object with brand, category, model, type
+		let assetDetail: any = null;
+		if (assetObj) {
+			assetDetail = {
+				id: assetObj.id,
+				register_number: assetObj.register_number || null,
+				brand: assetObj.brand_id ? (brandMap.get(assetObj.brand_id) ? { id: brandMap.get(assetObj.brand_id)!.id, name: brandMap.get(assetObj.brand_id)!.name || null } : null) : null,
+				category: assetObj.category_id ? (categoryMap.get(assetObj.category_id) ? { id: categoryMap.get(assetObj.category_id)!.id, name: categoryMap.get(assetObj.category_id)!.name || null } : null) : null,
+				model: assetObj.model_id ? (modelMap.get(assetObj.model_id) ? { id: modelMap.get(assetObj.model_id)!.id, name: modelMap.get(assetObj.model_id)!.name || null } : null) : null,
+				type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : null
+			};
+		}
+
+		return {
+			acceptance_attachments: (() => {
+				const v = item.acceptance_attachments;
+				if (!v) return null;
+				if (Array.isArray(v)) return v;
+				if (typeof v === 'string') {
+					try { const arr = JSON.parse(v); return Array.isArray(arr) ? arr : null; } catch { return null; }
+				}
+				return null;
+			})(),
+			acceptance_by: (() => {
+				const ramco = item.acceptance_by;
+				if (!ramco) return null;
+				const emp = empMap.get(String(ramco));
+				return emp ? { full_name: emp.full_name || emp.name || null, ramco_id: emp.ramco_id } : { full_name: null, ramco_id: String(ramco) };
+			})(),
+			acceptance_checklist_items: item.acceptance_checklist_items || null,
+			acceptance_date: item.acceptance_date || null,
+			acceptance_remarks: item.acceptance_remarks || null,
+			approval_date: item.approved_date || null,
+			approval_status: item.approval_status || 'pending',
+			approved_by: item.approved_by || null,
+			asset: assetDetail,
+			attachment: item.attachment,
+			created_at: item.created_at,
+			current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : null,
+			current_department: currDept ? { id: currDept.id, code: currDept.code || null } : null,
+			current_location: currLoc ? { id: currLoc.id, name: currLoc.name || null } : null,
+			current_owner: currentOwnerEmp ? { full_name: currentOwnerEmp.full_name || currentOwnerEmp.name || null, ramco_id: currentOwnerEmp.ramco_id } : null,
+			effective_date: item.effective_date,
+			id: item.id,
+			new_costcenter: newCC ? { id: newCC.id, name: newCC.name || null } : null,
+			new_department: newDept ? { id: newDept.id, code: newDept.code || null } : null,
+			new_location: newLoc ? { id: newLoc.id, name: newLoc.name || null } : null,
+			new_owner: newOwnerEmp ? { full_name: newOwnerEmp.full_name || newOwnerEmp.name || null, ramco_id: newOwnerEmp.ramco_id } : null,
+			reason: item.reason,
+			remarks: item.remarks,
+			return_to_asset_manager: item.return_to_asset_manager,
+			transfer_id: item.transfer_id,
+			updated_at: item.updated_at
+		};
+	});
+
+	return res.json({ data: enrichedItems, message: 'Transfer items retrieved', status: 'success' });
 };
 
 export const getAssetTransferItem = async (req: Request, res: Response) => {
@@ -3662,8 +4006,9 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 		acceptance_checklist_items: acceptanceChecklist,
 		acceptance_date: (item as any).acceptance_date || null,
 		acceptance_remarks: (item as any).acceptance_remarks ?? null,
-		approved_by: transfer.approved_by,
-		approved_date: transfer.approved_date,
+		approval_date: (item as any).approved_date || null,
+		approval_status: (item as any).approval_status || 'pending',
+		approved_by: (item as any).approved_by || null,
 		asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (item.asset_id ? { id: item.asset_id, register_number: null } : null),
 		attachment: item.attachment,
 		created_at: item.created_at,
@@ -3845,6 +4190,9 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 			// Acceptance fields
 			acceptance_date: it.acceptance_date || null,
 			acceptance_remarks: (it).acceptance_remarks ?? null,
+			approval_date: it.approved_date || null,
+			approval_status: it.approval_status || 'pending',
+			approved_by: it.approved_by || null,
 			asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
 			attachment: it.attachment,
 			created_at: it.created_at,
@@ -3916,6 +4264,18 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 		approval_id: supervisorId,
 		request_status: status
 	});
+
+	// Also update individual transfer items with approval status
+	const mapApprovalStatus = (status: string): string => {
+		const statusLower = String(status).toLowerCase();
+		if (statusLower === 'approved') return 'approved';
+		if (statusLower === 'rejected') return 'rejected';
+		if (statusLower === 'completed') return 'completed';
+		return statusLower;
+	};
+
+	await assetModel.bulkUpdateTransferItemsApproval([requestId], mapApprovalStatus(status), supervisorId, now);
+
 	// Fetch requestor and supervisor
 	const requestor = await assetModel.getEmployeeByRamco(request.requestor);
 	const supervisor = await assetModel.getEmployeeByRamco(supervisorId);
@@ -3941,23 +4301,9 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 		if (ownerRamcoId) {
 			const emp = await assetModel.getEmployeeByRamco(ownerRamcoId);
 			if (emp.email) {
-				// Send asset transfer preparation email to current owner
-				const { html, subject } = assetTransferCurrentOwnerEmail({
-					currentOwner: emp,
-					item,
-					request,
-					supervisor
-				});
-				await sendMail(emp.email, subject, html);
+				// Send simple status update email
+				await sendMail(emp.email, `Asset Transfer Status Update #${request.request_no}`, `Your asset transfer request status has been updated to ${status}.`);
 			}
-		}
-		// Existing notifications for transfer_type Employee/Asset
-		if (item.transfer_type === 'Employee' && item.identifier) {
-			const emp = await assetModel.getEmployeeByRamco(item.identifier);
-			if (emp.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your transfer status has been updated for request #${request.request_no}.`);
-		} else if (item.transfer_type === 'Asset' && item.curr_owner) {
-			const emp = await assetModel.getEmployeeByRamco(item.curr_owner);
-			if (emp.email) await sendMail(emp.email, 'Asset Transfer Status Update', `Your asset transfer status has been updated for request #${request.request_no}.`);
 		}
 	}
 	res.json({ message: `Asset transfer request ${status}. Notifications sent.`, status: 'success' });

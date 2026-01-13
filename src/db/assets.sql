@@ -1091,6 +1091,9 @@ CREATE TABLE `transfer_items` (
   `acceptance_checklist_items` varchar(20) DEFAULT NULL,
   `acceptance_remarks` varchar(200) DEFAULT NULL,
   `acceptance_attachments` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `approval_status` varchar(50) DEFAULT 'pending',
+  `approved_by` varchar(10) DEFAULT NULL,
+  `approved_date` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`)

@@ -10,7 +10,14 @@ interface AssetTransferApprovedRequestorParams {
 
 export function assetTransferApprovedRequestorEmail({ approver, items, request, requestor }: AssetTransferApprovedRequestorParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
-  const formatDate = (d: any) => d ? new Date(d).toLocaleDateString('en-US') : '-';
+  const formatDate = (d: any) => {
+    if (!d) return '-';
+    const date = new Date(d);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
   const subject = `Asset Transfer Approved - Request #${safe(request?.request_no || request?.id)}`;
   
   // Green theme styles (matching assetTransferRequest)
@@ -25,6 +32,11 @@ export function assetTransferApprovedRequestorEmail({ approver, items, request, 
   const labelStyle = 'font-weight:600; display:inline-block; min-width:160px; vertical-align:top;';
   const valueStyle = 'display:inline-block; min-width:180px;';
   const rowStyle = 'margin-bottom:6px;';
+  // Table styles for Transfer Details
+  const tableStyle = 'width:100%; border-collapse:collapse; margin-top:12px;';
+  const thStyle = `background:${primarySoft}; color:#fff; padding:10px; text-align:left; font-weight:600; font-size:13px; border:1px solid ${border};`;
+  const tdStyle = `padding:10px; border:1px solid ${border}; font-size:13px;`;
+  const tdLabelStyle = `${tdStyle} background:${bgSoft}; font-weight:600;`;
   
   const html = `
     <div style="font-family: Arial, sans-serif; color:#1a1a1a;">
@@ -44,9 +56,41 @@ export function assetTransferApprovedRequestorEmail({ approver, items, request, 
           <div style="${sectionTitle}">Approved Items</div>
           ${items.map((it: any) => `
           <div style="${cardStyle}">
-            <div style="${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
+            <div style="margin-bottom:12px;">
+              <div style="margin-bottom:6px;"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
+              <div style="margin-bottom:6px;"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+              <div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
+              <div style="margin-bottom:6px;"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(it.reason)}</span></div>
+            </div>
+            
+            <div style="margin-top:16px; font-weight:600; color:${primarySoft}; font-size:13px; margin-bottom:8px;">Transfer Details</div>
+            <table style="${tableStyle}">
+              <tr>
+                <th style="${thStyle}">Field</th>
+                <th style="${thStyle}">Current</th>
+                <th style="${thStyle}">New</th>
+              </tr>
+              <tr>
+                <td style="${tdLabelStyle}">Owner</td>
+                <td style="${tdStyle}">${safe(it.currOwnerName)}</td>
+                <td style="${tdStyle}">${safe(it.newOwnerName)}</td>
+              </tr>
+              <tr>
+                <td style="${tdLabelStyle}">Cost Center</td>
+                <td style="${tdStyle}">${safe(it.currCostcenterName)}</td>
+                <td style="${tdStyle}">${safe(it.newCostcenterName)}</td>
+              </tr>
+              <tr>
+                <td style="${tdLabelStyle}">Department</td>
+                <td style="${tdStyle}">${safe(it.currDepartmentCode)}</td>
+                <td style="${tdStyle}">${safe(it.newDepartmentCode)}</td>
+              </tr>
+              <tr>
+                <td style="${tdLabelStyle}">Location</td>
+                <td style="${tdStyle}">${safe(it.currDistrictCode)}</td>
+                <td style="${tdStyle}">${safe(it.newDistrictCode)}</td>
+              </tr>
+            </table>
           </div>
           `).join('')}
 
