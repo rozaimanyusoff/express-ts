@@ -1,6 +1,8 @@
 // Email template: notify new owner that transfer application approved
 // Usage: assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, newOwner, requestor, approver, transferId, credentialCode })
 
+import { generateTransferItemCard, ItemFormatConfig } from './assetTransferItemFormat';
+
 interface AssetTransferApprovedNewOwnerParams {
   approver?: any; // approver
   credentialCode?: string; // code for acceptance portal access
@@ -40,6 +42,17 @@ export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, i
   const thStyle = `background:${primarySoft}; color:#fff; padding:10px; text-align:left; font-weight:600; font-size:13px; border:1px solid ${border};`;
   const tdStyle = `padding:10px; border:1px solid ${border}; font-size:13px;`;
   const tdLabelStyle = `${tdStyle} background:${bgSoft}; font-weight:600;`;
+
+  // Configuration object for item card generation
+  const itemFormatConfig: ItemFormatConfig = {
+    bgSoft,
+    border,
+    primarySoft,
+    tdLabelStyle,
+    tdStyle,
+    tableStyle,
+    thStyle
+  };
 
   // Build acceptance portal button
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/?$/, '');
@@ -85,45 +98,7 @@ export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, i
           <div style="margin-bottom:14px;">The asset transfer application <b>#${safe(request?.request_no || request?.id)}</b> has been <b style="color:${primarySoft};">approved</b>. You are listed as the <b>new owner</b> for the following item(s):</div>
           
           <div style="${sectionTitle}">Approved Items</div>
-          ${itemsForNewOwner.map((it: any) => `
-          <div style="${cardStyle}">
-            <div style="margin-bottom:12px;">
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(it.reason)}</span></div>
-            </div>
-            
-            <div style="margin-top:16px; font-weight:600; color:${primarySoft}; font-size:13px; margin-bottom:8px;">Transfer Details</div>
-            <table style="${tableStyle}">
-              <tr>
-                <th style="${thStyle}">Field</th>
-                <th style="${thStyle}">Current</th>
-                <th style="${thStyle}">New</th>
-              </tr>
-              <tr>
-                <td style="${tdLabelStyle}">Owner</td>
-                <td style="${tdStyle}">${safe(it.currOwnerName)}</td>
-                <td style="${tdStyle}">${safe(it.newOwnerName)}</td>
-              </tr>
-              <tr>
-                <td style="${tdLabelStyle}">Cost Center</td>
-                <td style="${tdStyle}">${safe(it.currCostcenterName)}</td>
-                <td style="${tdStyle}">${safe(it.newCostcenterName)}</td>
-              </tr>
-              <tr>
-                <td style="${tdLabelStyle}">Department</td>
-                <td style="${tdStyle}">${safe(it.currDepartmentCode)}</td>
-                <td style="${tdStyle}">${safe(it.newDepartmentCode)}</td>
-              </tr>
-              <tr>
-                <td style="${tdLabelStyle}">Location</td>
-                <td style="${tdStyle}">${safe(it.currDistrictCode)}</td>
-                <td style="${tdStyle}">${safe(it.newDistrictCode)}</td>
-              </tr>
-            </table>
-          </div>
-          `).join('')}
+          ${itemsForNewOwner.map((it: any) => generateTransferItemCard(it, itemFormatConfig)).join('')}
 
           ${acceptanceButton}
 

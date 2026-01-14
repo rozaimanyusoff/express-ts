@@ -1,6 +1,8 @@
 // Asset Transfer Current Owner Notification Email Template
 // Usage: Notifies current owners that assets they own are being transferred
 
+import { generateTransferItemCard, ItemFormatConfig } from './assetTransferItemFormat';
+
 interface EmailData {
   items: any[];
   request: any;
@@ -46,6 +48,17 @@ export default function assetTransferCurrentOwnerEmail({ items, request, request
   const tdStyle = `padding:10px; border:1px solid ${border}; font-size:13px;`;
   const tdLabelStyle = `${tdStyle} background:${bgSoft}; font-weight:600;`;
 
+  // Configuration object for item card generation
+  const itemFormatConfig: ItemFormatConfig = {
+    bgSoft,
+    border,
+    primarySoft,
+    tdLabelStyle,
+    tdStyle,
+    tableStyle,
+    thStyle
+  };
+
   // Email subject
   const subject = `Asset Transfer Notification #${safe(reqNo)} - Assets Being Transferred`;
 
@@ -70,45 +83,7 @@ export default function assetTransferCurrentOwnerEmail({ items, request, request
           </div>
 
           <div style="${sectionTitle}">Assets Being Transferred</div>
-      ${items.map(item => `
-        <div style="${cardStyle}">
-          <div style="margin-bottom:12px;">
-            <div style="margin-bottom:6px;"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-            <div style="margin-bottom:6px;"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
-            <div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.identifierDisplay)}</span></div>
-            <div style="margin-bottom:6px;"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
-          </div>
-          
-          <div style="margin-top:16px; font-weight:600; color:${primarySoft}; font-size:13px; margin-bottom:8px;">Transfer Details</div>
-          <table style="${tableStyle}">
-            <tr>
-              <th style="${thStyle}">Field</th>
-              <th style="${thStyle}">Current</th>
-              <th style="${thStyle}">New</th>
-            </tr>
-            <tr>
-              <td style="${tdLabelStyle}">Owner</td>
-              <td style="${tdStyle}">${safe(item.currOwnerName)}</td>
-              <td style="${tdStyle}">${safe(item.newOwnerName)}</td>
-            </tr>
-            <tr>
-              <td style="${tdLabelStyle}">Cost Center</td>
-              <td style="${tdStyle}">${safe(item.currCostcenterName)}</td>
-              <td style="${tdStyle}">${safe(item.newCostcenterName)}</td>
-            </tr>
-            <tr>
-              <td style="${tdLabelStyle}">Department</td>
-              <td style="${tdStyle}">${safe(item.currDepartmentCode)}</td>
-              <td style="${tdStyle}">${safe(item.newDepartmentCode)}</td>
-            </tr>
-            <tr>
-              <td style="${tdLabelStyle}">Location</td>
-              <td style="${tdStyle}">${safe(item.currDistrictCode)}</td>
-              <td style="${tdStyle}">${safe(item.newDistrictCode)}</td>
-            </tr>
-          </table>
-        </div>
-      `).join('')}
+      ${items.map(item => generateTransferItemCard(item, itemFormatConfig)).join('')}
 
           <div style="margin-top: 1.5em; padding: 12px; background: #fff3e0; border-left: 4px solid #ff9800; border-radius: 4px;">
             <span style="color: #e65100; font-weight: 600;">Note:</span> This is a notification only. No action is required from you.
