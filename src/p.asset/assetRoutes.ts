@@ -145,7 +145,11 @@ router.get('/transfers/:id', asyncHandler(assetController.getAssetTransferById))
 router.get('/transfers', asyncHandler(assetController.getAssetTransfers)); // ?status=&dept=&requester=&supervisor=&hod=&from_date=&to_date=
 router.post('/transfers', asyncHandler(assetController.createAssetTransfer));
 router.put('/transfers/approval', asyncHandler(assetController.updateAssetTransfersApproval)); // bulk/individual approval
-router.put('/transfers/:id/acceptance', acceptanceUploader.array('acceptance_attachments'), asyncHandler(assetController.setAssetTransferAcceptance));
+router.put('/transfers/:id/acceptance', acceptanceUploader.fields([
+	{ name: 'attachment1', maxCount: 1 },
+	{ name: 'attachment2', maxCount: 1 },
+	{ name: 'attachment3', maxCount: 1 }
+]), asyncHandler(assetController.setAssetTransferAcceptance)); // implement in asset-transfer-acceptance-portal
 router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));
 

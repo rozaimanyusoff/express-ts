@@ -2067,8 +2067,8 @@ export const createAssetTransferItem = async (data: any) => {
   // Ensure only primitive values are inserted
   const getId = (v: any) => (v && typeof v === 'object' && 'id' in v) ? v.id : v ?? null;
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferItemTable} (transfer_id, effective_date, asset_id, type_id, current_owner, current_costcenter_id, current_department_id, current_location_id, new_owner, new_costcenter_id, new_department_id, new_location_id, return_to_asset_manager, reason, remarks, attachment, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    `INSERT INTO ${assetTransferItemTable} (transfer_id, effective_date, asset_id, type_id, current_owner, current_costcenter_id, current_department_id, current_location_id, new_owner, new_costcenter_id, new_department_id, new_location_id, return_to_asset_manager, reason, remarks, attachment1, attachment2, attachment3, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [
       data.transfer_id,
       data.effective_date,
@@ -2085,7 +2085,9 @@ export const createAssetTransferItem = async (data: any) => {
       data.return_to_asset_manager,
       data.reason,
       data.remarks,
-      data.attachment
+      data.attachment1 || null,
+      data.attachment2 || null,
+      data.attachment3 || null
     ]
   );
   return result;
@@ -2110,20 +2112,6 @@ export const bulkUpdateAssetTransfersApproval = async (ids: number[], status: st
   const params: any[] = [status, approved_by, dateVal, ...ids];
   const [result] = await pool.query(sql, params);
 
-  // Also update the individual transfer_items with approval status
-  const mapApprovalStatus = (status: string): string => {
-    const statusLower = String(status).toLowerCase();
-    if (statusLower === 'approved') return 'approved';
-    if (statusLower === 'rejected') return 'rejected';
-    if (statusLower === 'completed') return 'completed';
-    return statusLower;
-  };
-  
-  const approvalStatus = mapApprovalStatus(status);
-  const itemsSql = `UPDATE ${assetTransferItemTable} SET approval_status = ?, approved_by = ?, approved_date = ?, updated_at = NOW() WHERE transfer_id IN (${placeholders})`;
-  const itemsParams: any[] = [approvalStatus, approved_by, dateVal, ...ids];
-  await pool.query(itemsSql, itemsParams);
-
   return result;
 };
 
@@ -2131,8 +2119,8 @@ export const bulkUpdateTransferItemsApproval = async (transferIds: number[], sta
   if (!Array.isArray(transferIds) || transferIds.length === 0) return { affectedRows: 0 } as any;
   const placeholders = transferIds.map(() => '?').join(',');
   const dateVal = approved_date ?? new Date();
-  const itemsSql = `UPDATE ${assetTransferItemTable} SET approval_status = ?, approved_by = ?, approved_date = ?, updated_at = NOW() WHERE transfer_id IN (${placeholders})`;
-  const itemsParams: any[] = [status, approved_by, dateVal, ...transferIds];
+  const itemsSql = `UPDATE ${assetTransferItemTable} SET approved_by = ?, approved_date = ?, updated_at = NOW() WHERE transfer_id IN (${placeholders})`;
+  const itemsParams: any[] = [approved_by, dateVal, ...transferIds];
   const [result] = await pool.query(itemsSql, itemsParams);
   return result;
 };
@@ -2175,8 +2163,9 @@ export const updateAssetTransferItem = async (id: number, data: any) => {
     'return_to_asset_manager',
     'reason',
     'remarks',
-    'attachment',
-    'approval_status',
+    'attachment1',
+    'attachment2',
+    'attachment3',
     'approved_by',
     'approved_date'
   ] as const;
@@ -2277,7 +2266,6 @@ export const deleteTransferChecklist = async (id: number) => {
 
 // Update acceptance metadata for a transfer request (dynamic fields)
 export const setAssetTransferAcceptance = async (id: number, data: {
-  acceptance_attachments?: string[]; // stored as JSON array string
   acceptance_by?: null | string;
   acceptance_checklist_items?: number[]; // will be stored as comma-separated string
   acceptance_date?: null | string; // expect 'YYYY-MM-DD hh:mm:ss'
@@ -2291,11 +2279,6 @@ export const setAssetTransferAcceptance = async (id: number, data: {
   if (data.acceptance_by !== undefined) { sets.push('acceptance_by = ?'); params.push(data.acceptance_by); }
   if (data.acceptance_date !== undefined) { sets.push('acceptance_date = ?'); params.push(data.acceptance_date); }
   if (data.acceptance_remarks !== undefined) { sets.push('acceptance_remarks = ?'); params.push(data.acceptance_remarks); }
-  if (data.acceptance_attachments !== undefined) {
-    // keep attachments as JSON string for future-proofing
-    sets.push('acceptance_attachments = ?');
-    params.push(JSON.stringify(data.acceptance_attachments));
-  }
   if (data.attachment1 !== undefined) { sets.push('attachment1 = ?'); params.push(data.attachment1); }
   if (data.attachment2 !== undefined) { sets.push('attachment2 = ?'); params.push(data.attachment2); }
   if (data.attachment3 !== undefined) { sets.push('attachment3 = ?'); params.push(data.attachment3); }
@@ -2727,8 +2710,6 @@ export const createStatusHistory = async (
  * Returns 'pending acceptance' if asset_id exists in transfer_items WHERE:
  *   - acceptance_date IS NULL
  *   - acceptance_by IS NULL
- *   - approval_status = 'approved'
- * Otherwise returns null
  */
 export const getAssetTransferStatus = async (asset_id: number): Promise<string | null> => {
   try {
@@ -2737,7 +2718,6 @@ export const getAssetTransferStatus = async (asset_id: number): Promise<string |
        WHERE asset_id = ? 
        AND acceptance_date IS NULL 
        AND acceptance_by IS NULL 
-       AND approval_status = 'approved'
        LIMIT 1`,
       [asset_id]
     );

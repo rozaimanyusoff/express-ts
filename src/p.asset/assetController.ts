@@ -2995,7 +2995,9 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		const d = dRaw || {};
 		await assetModel.createAssetTransferItem({
 			asset_id: Number(d.asset_id) || null,
-			attachment: d.attachment || null,
+			attachment1: d.attachment1 || null,
+			attachment2: d.attachment2 || null,
+			attachment3: d.attachment3 || null,
 			current_costcenter_id: d.current_costcenter_id != null ? Number(d.current_costcenter_id) : null,
 			current_department_id: d.current_department_id != null ? Number(d.current_department_id) : null,
 			current_location_id: d.current_location_id != null ? Number(d.current_location_id) : null,
@@ -3564,6 +3566,24 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	const body: any = req.body || {};
+	
+	// Parse item_ids (array of transfer item IDs to accept)
+	let itemIds: number[] = [];
+	if (body['item_ids'] !== undefined) {
+		if (Array.isArray(body['item_ids'])) {
+			itemIds = body['item_ids'].map(v => Number(v)).filter(n => Number.isFinite(n));
+		} else if (typeof body['item_ids'] === 'string') {
+			itemIds = body['item_ids']
+				.split(',')
+				.map((s: string) => Number(s.trim()))
+				.filter((n: number) => Number.isFinite(n));
+		}
+	}
+	
+	if (itemIds.length === 0) {
+		return res.status(400).json({ message: 'No item_ids provided', status: 'error' });
+	}
+	
 	// Parse checklist items (comma-separated or array)
 	let checklistIds: number[] | undefined = undefined;
 	if (body['checklist-items'] !== undefined) {
@@ -3580,41 +3600,51 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	const acceptance_date = body.acceptance_date ? String(body.acceptance_date) : null;
 	const acceptance_remarks = body.acceptance_remarks != null ? String(body.acceptance_remarks) : null;
 
-	// Handle uploaded files on field name 'acceptance_attachments' (multer saves to disk already with unique names)
-	// If using multer array, req.files may be object or array depending on setup. We'll read both.
+	// Handle uploaded files on field names 'attachment1', 'attachment2', 'attachment3' (multer saves to disk already with unique names)
 	let filePaths: string[] | undefined = undefined;
-	const filesAny: any = (req as any).files || (req as any).file || undefined;
+	const filesObj: any = (req as any).files || {};
 	const uploadUtil = await import('../utils/uploadUtil.js');
 	const ensureDbPath = (filename: string) => uploadUtil.toDbPath('assets/transfers/acceptance', filename);
-	if (Array.isArray(filesAny)) {
-		filePaths = filesAny.map(f => ensureDbPath(f.filename));
-	} else if (filesAny && typeof filesAny === 'object' && Array.isArray(filesAny.acceptance_attachments)) {
-		filePaths = filesAny.acceptance_attachments.map((f: any) => ensureDbPath(f.filename));
-	} else if ((req as any).file) {
-		filePaths = [ensureDbPath((req as any).file.filename)];
+	
+	const attachments: (string | null)[] = [null, null, null]; // [attachment1, attachment2, attachment3]
+	for (let i = 1; i <= 3; i++) {
+		const fieldName = `attachment${i}`;
+		if (filesObj[fieldName] && Array.isArray(filesObj[fieldName]) && filesObj[fieldName].length > 0) {
+			attachments[i - 1] = ensureDbPath(filesObj[fieldName][0].filename);
+		}
+	}
+	
+	// Build filePaths array with non-null values
+	filePaths = attachments.filter(f => f !== null) as string[];
+
+	// Update acceptance for each item
+	const results = [];
+	for (const itemId of itemIds) {
+		const result = await assetModel.setAssetTransferAcceptance(itemId, {
+			acceptance_by,
+			// store as comma separated string (no brackets) handled in model
+			acceptance_checklist_items: checklistIds,
+			acceptance_date,
+			acceptance_remarks,
+			// Use individual attachment columns (directly from uploaded files)
+			attachment1: attachments[0],
+			attachment2: attachments[1],
+			attachment3: attachments[2]
+		});
+		results.push(result);
 	}
 
-	const result = await assetModel.setAssetTransferAcceptance(requestId, {
-		acceptance_attachments: filePaths,
-		acceptance_by,
-		// store as comma separated string (no brackets) handled in model
-		acceptance_checklist_items: checklistIds,
-		acceptance_date,
-		acceptance_remarks,
-		// Distribute file paths to individual attachment columns (max 3)
-		attachment1: filePaths?.[0] || null,
-		attachment2: filePaths?.[1] || null,
-		attachment3: filePaths?.[2] || null
-	});
-
-	// Fetch transfer items to update ownership
+	// Fetch all transfer items to update ownership for accepted ones
 	const itemsResult = await assetModel.getAssetTransferItemByRequestId(requestId);
-	const items = Array.isArray(itemsResult) ? itemsResult : [];
+	const allItems = Array.isArray(itemsResult) ? itemsResult : [];
+	
+	// Filter to only the items that were just accepted
+	const acceptedItems = allItems.filter((item: any) => itemIds.includes(item.id));
 
 	// Update ownership in asset_history and assetdata after acceptance
-	if (items.length > 0) {
+	if (acceptedItems.length > 0) {
 		try {
-			for (const item of items) {
+			for (const item of acceptedItems) {
 				const itemData = item as any; // Type cast for flexibility
 
 				// Only update if asset_id exists and new owner information is provided
@@ -3654,14 +3684,14 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 
 	// Send email notifications to: requestor, current owner, and new owner's HOD
 	try {
-		if (items.length === 0) {
-			return res.json({ message: 'Acceptance data saved', result, status: 'success' });
+		if (acceptedItems.length === 0) {
+			return res.json({ message: 'Acceptance data saved', results, status: 'success' });
 		}
 
 		// Collect unique employee IDs
 		const employeeIds = new Set<string>();
 		if (request.transfer_by) employeeIds.add(String(request.transfer_by));
-		items.forEach((item: any) => {
+		acceptedItems.forEach((item: any) => {
 			if (item.current_owner) employeeIds.add(String(item.current_owner));
 			if (item.new_owner) employeeIds.add(String(item.new_owner));
 		});
@@ -3677,13 +3707,13 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// Get unique current owners and new owners
 		const currentOwners = new Set<string>();
 		const newOwners = new Set<string>();
-		items.forEach((item: any) => {
+		acceptedItems.forEach((item: any) => {
 			if (item.current_owner) currentOwners.add(String(item.current_owner));
 			if (item.new_owner) newOwners.add(String(item.new_owner));
 		});
 
 		// Enrich items with display names
-		const enrichedItems = items.map((item: any) => ({
+		const enrichedItems = acceptedItems.map((item: any) => ({
 			...item,
 			currOwnerName: item.current_owner ? ((employeeMap.get(String(item.current_owner)))?.full_name || item.current_owner) : '-',
 			identifierDisplay: item.identifier || item.asset_code || item.register_number || '-',
@@ -3755,7 +3785,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		// Don't fail the request if emails fail
 	}
 
-	return res.json({ message: 'Acceptance data saved', result, status: 'success' });
+	return res.json({ message: 'Acceptance data saved', results, status: 'success' });
 };
 
 /* ============ ASSET TRANSFER ITEMS (direct access) ============ */
@@ -3768,13 +3798,15 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 	const itemsRaw = await assetModel.getAssetTransferItemByRequestId(transferId);
 	const items: any[] = Array.isArray(itemsRaw) ? itemsRaw : [];
 	
+	// Filter to only include pending acceptance items (acceptance_date IS NULL and acceptance_by IS NULL)
+	let filteredItems = items.filter((item: any) => item.acceptance_date === null && item.acceptance_by === null);
+	
 	// Optional filter by new_owner query parameter
 	const newOwnerParam = req.query.new_owner;
-	let filteredItems = items;
 	
 	if (newOwnerParam && typeof newOwnerParam === 'string' && newOwnerParam.trim() !== '') {
 		const newOwnerRamco = newOwnerParam.trim();
-		filteredItems = items.filter((item: any) => item.new_owner === newOwnerRamco);
+		filteredItems = filteredItems.filter((item: any) => item.new_owner === newOwnerRamco);
 	}
 
 	// Enrich items with nested objects (asset, owners, departments, costcenters, locations)
