@@ -617,7 +617,12 @@ CREATE FULLTEXT INDEX ft_asset_search ON assetdata(asset_code, asset_name);
 ## Asset Transfer Acceptance Process (`setAssetTransferAcceptance`)
 
 ### Overview
-The acceptance endpoint completes the asset transfer workflow. It records acceptance evidence (attachments, checklist confirmation), updates asset ownership, and triggers notification emails to stakeholders.
+The acceptance endpoint completes the asset transfer workflow. It records acceptance evidence (attachments, checklist confirmation), updates asset ownership, and triggers notification emails to stakeholders. The process executes 4 critical procedures:
+
+1. **Update Transfer Items** - Records acceptance metadata in `transfer_items` table
+2. **Insert Asset History** - Creates movement record in `asset_history` with transfer_id tracking
+3. **Update Asset Ownership** - Updates current owner in `assetdata` table for each asset
+4. **Send Notifications** - Emails new owner, current owner, HOD, and asset managers (by type)
 
 ### Endpoint
 ```
@@ -630,130 +635,237 @@ Content-Type: multipart/form-data
 **JSON Fields:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `item_ids` | array[number] | ✅ | Array of transfer_items IDs to accept |
 | `acceptance_by` | string | ✅ | ramco_id of person accepting transfer |
 | `acceptance_date` | ISO 8601 | ❌ | Date/time of acceptance (defaults to now) |
 | `acceptance_remarks` | string | ❌ | Notes/remarks about the acceptance |
-| `checklist-items` | string/array | ❌ | Comma-separated or array of checklist item IDs |
+| `acceptance_checklist_items` | string/array | ❌ | Comma-separated or array of checklist item IDs |
 
-**File Upload:**
+**File Upload (Individual Fields):**
 | Field | Type | Max | Description |
 |-------|------|-----|-------------|
-| `acceptance_attachments` | multipart files | 3 | Evidence/documentation files |
+| `attachment1` | multipart file | 1 | First evidence file |
+| `attachment2` | multipart file | 1 | Second evidence file |
+| `attachment3` | multipart file | 1 | Third evidence file |
 
 ### Complete Request Example
 ```bash
 curl -X PUT http://localhost:3030/api/assets/transfers/1/acceptance \
+  -F "item_ids=1" \
+  -F "item_ids=2" \
   -F "acceptance_by=000277" \
   -F "acceptance_date=2026-01-14T10:30:00Z" \
   -F "acceptance_remarks=Assets verified and in good condition" \
-  -F "checklist-items=1,2,3" \
-  -F "acceptance_attachments=@photo1.jpg" \
-  -F "acceptance_attachments=@photo2.png" \
-  -F "acceptance_attachments=@document.pdf"
+  -F "acceptance_checklist_items=1,2,3" \
+  -F "attachment1=@photo1.jpg" \
+  -F "attachment2=@photo2.png" \
+  -F "attachment3=@document.pdf"
 ```
 
 ### Process Flow
 
-#### Step 1: Request Validation
+#### Step 1: Request Validation & Parse Item IDs
 ```typescript
 // Validate transfer ID exists
 const transfer = await assetModel.getAssetTransferById(requestId);
 if (!transfer) return 404 error;
+
+// Parse item_ids from payload
+const item_ids: number[] = Array.isArray(req.body.item_ids) 
+  ? req.body.item_ids.map(id => parseInt(id))
+  : [parseInt(req.body.item_ids)];
+
+// Validate at least one item ID provided
+if (!item_ids || item_ids.length === 0) return 400 error;
 ```
 
-#### Step 2: Parse Input Parameters
+#### Step 2: Parse Acceptance Metadata
 ```typescript
 // Extract and parse form fields
-- acceptance_by: String (ramco_id)
-- acceptance_date: ISO timestamp (defaults to NOW if omitted)
-- acceptance_remarks: String
-- checklist-items: Convert comma-separated string or array to number[]
-```
+const acceptance_by = req.body.acceptance_by;        // Required: ramco_id
+const acceptance_date = req.body.acceptance_date || new Date(); // ISO timestamp
+const acceptance_remarks = req.body.acceptance_remarks; // Optional: notes
+const checklist_items = req.body.acceptance_checklist_items; // Optional: "1,2,3"
 
-#### Step 3: Handle File Uploads
-```typescript
-// Multer processes files and saves to disk
-// Uploaded to: /mnt/winshare/uploads/assets/transfers/acceptance/
-// Returns array of file paths
-const filePaths = [];
-if (req.files.acceptance_attachments) {
-  filePaths = req.files.acceptance_attachments.map(f => 
-    uploadUtil.toDbPath('assets/transfers/acceptance', f.filename)
-  );
+// Parse checklist items
+let checklistArray: string = '';
+if (checklist_items) {
+  checklistArray = Array.isArray(checklist_items)
+    ? checklist_items.join(',')
+    : checklist_items;
 }
 ```
 
-#### Step 4: Update transfer_items Table
+#### Step 3: Handle File Uploads (attachment1, attachment2, attachment3)
+```typescript
+// Multer processes individual field files and saves to disk
+// Uploaded to: /mnt/winshare/uploads/assets/transfers/acceptance/
+
+const attachment1 = req.files?.attachment1?.[0] 
+  ? uploadUtil.toDbPath('assets/transfers/acceptance', req.files.attachment1[0].filename)
+  : null;
+
+const attachment2 = req.files?.attachment2?.[0]
+  ? uploadUtil.toDbPath('assets/transfers/acceptance', req.files.attachment2[0].filename)
+  : null;
+
+const attachment3 = req.files?.attachment3?.[0]
+  ? uploadUtil.toDbPath('assets/transfers/acceptance', req.files.attachment3[0].filename)
+  : null;
+```
+
+#### Step 4: PROCEDURE 1 - Update transfer_items Table
+```typescript
+// For each itemId provided, update with acceptance data
+for (const itemId of item_ids) {
+  await assetModel.updateAssetTransferItem(itemId, {
+    acceptance_by,
+    acceptance_date,
+    acceptance_remarks,
+    acceptance_checklist_items: checklistArray,
+    attachment1,
+    attachment2,
+    attachment3,
+    updated_at: new Date()
+  });
+}
+```
+
+**SQL Operation:**
 ```sql
 UPDATE transfer_items 
 SET 
-  acceptance_by = ?,
-  acceptance_date = ?,
-  acceptance_remarks = ?,
-  acceptance_checklist_items = ?,  -- stored as "1,2,3"
-  acceptance_attachments = ?,       -- stored as JSON: ["path1", "path2", "path3"]
-  attachment1 = ?,                  -- first file path (or null)
-  attachment2 = ?,                  -- second file path (or null)
-  attachment3 = ?,                  -- third file path (or null)
+  acceptance_by = ?,           -- ramco_id accepting transfer
+  acceptance_date = ?,         -- timestamp of acceptance
+  acceptance_remarks = ?,      -- notes/remarks
+  acceptance_checklist_items = ?,  -- comma-separated checklist items "1,2,3"
+  attachment1 = ?,             -- first file path (/uploads/...)
+  attachment2 = ?,             -- second file path (/uploads/...)
+  attachment3 = ?,             -- third file path (/uploads/...)
   updated_at = NOW()
 WHERE id = ?
 ```
 
-**File Distribution Logic:**
+#### Step 5: PROCEDURE 2 - Insert Asset History with transfer_id
 ```typescript
-attachment1 = filePaths[0] || null;  // First uploaded file
-attachment2 = filePaths[1] || null;  // Second uploaded file
-attachment3 = filePaths[2] || null;  // Third uploaded file
-// Additional files (if any) are ignored
+// Fetch accepted items with full asset details
+const acceptedItems = await assetModel.getAssetTransferItems(item_ids);
+
+for (const item of acceptedItems) {
+  // Fetch full asset record for register_number and type_id
+  const asset = await assetModel.getAssetById(item.asset_id);
+  
+  // Insert into asset_history with transfer_id for audit tracking
+  await assetModel.insertAssetHistory({
+    asset_id: item.asset_id,
+    register_number: asset.register_number,
+    type_id: asset.type_id,
+    costcenter_id: item.new_costcenter_id,
+    department_id: item.new_department_id,
+    location_id: item.new_location_id,
+    ramco_id: item.new_owner,
+    transfer_id: requestId,      // ✅ NEW: Links movement to transfer request
+    effective_date: acceptance_date
+  });
+}
 ```
 
-#### Step 5: Update Asset Ownership (Batch)
-For each transfer item where `new_owner` is specified:
-
-```typescript
-// Fetch asset details
-const asset = await assetModel.getAssetById(item.asset_id);
-
-// 5a. Insert movement record into asset_history
+**SQL Operation:**
+```sql
 INSERT INTO asset_history 
-  (asset_id, ramco_id, costcenter_id, department_id, location_id, 
-   register_number, type_id, effective_date)
+  (asset_id, register_number, type_id, costcenter_id, department_id, 
+   location_id, ramco_id, transfer_id, effective_date, created_at)
 VALUES 
-  (item.asset_id, item.new_owner, item.new_costcenter_id, 
-   item.new_department_id, item.new_location_id, 
-   asset.register_number, asset.type_id, acceptance_date)
+  (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 
-// 5b. Update current ownership in assetdata
+-- Example record:
+-- asset_id: 865
+-- register_number: "5CG7314HJW"
+-- type_id: 1
+-- costcenter_id: 26
+-- department_id: 16
+-- location_id: 2
+-- ramco_id: "000277" (new owner)
+-- transfer_id: 1 (links to transfer_requests table)
+-- effective_date: 2026-01-14 10:30:00
+```
+
+#### Step 6: PROCEDURE 3 - Update Asset Ownership in assetdata
+```typescript
+// For each accepted item, update the asset's current owner
+for (const item of acceptedItems) {
+  await assetModel.updateAssetCurrentOwner({
+    asset_id: item.asset_id,
+    ramco_id: item.new_owner,
+    costcenter_id: item.new_costcenter_id,
+    department_id: item.new_department_id,
+    location_id: item.new_location_id
+  });
+}
+```
+
+**SQL Operation:**
+```sql
 UPDATE assetdata 
 SET 
-  ramco_id = item.new_owner,
-  costcenter_id = item.new_costcenter_id,
-  department_id = item.new_department_id,
-  location_id = item.new_location_id
-WHERE id = item.asset_id
+  ramco_id = ?,           -- new owner ramco_id
+  costcenter_id = ?,      -- new cost center
+  department_id = ?,      -- new department
+  location_id = ?,        -- new location
+  updated_at = NOW()
+WHERE id = ?
+
+-- Example: Asset 865 ownership changed from 000475 to 000277
 ```
 
-#### Step 6: Send Email Notifications
-Sends emails to three recipient groups:
+#### Step 7: PROCEDURE 4 - Send Email Notifications
+```typescript
+// Fetch transfer request details with asset info
+const transferRequest = await assetModel.getAssetTransferById(requestId);
 
-**a) To Requestor (Applicant):**
-- Template: `assetTransferAcceptedRequestor.ts`
-- Message: "Your transfer has been accepted"
-- Content: Assets accepted, accepted by, date
+// Email 1: To Transfer Requestor
+await sendMail(transferRequest.requested_by, 
+  assetTransferAcceptedRequestorEmail(transferRequest, acceptedItems));
 
-**b) To Current Owner:**
-- Template: `assetTransferAcceptedCurrentOwner.ts`
-- Message: "Assets have been transferred out of your control"
-- Content: Transfer details, new owner info
+// Email 2: To Current Owner (previous owner)
+await sendMail(acceptedItems[0].current_owner,
+  assetTransferAcceptedCurrentOwnerEmail(transferRequest, acceptedItems));
 
-**c) To New Owner's HOD (Head of Department):**
-- Template: `assetTransferAcceptedHodEmail.ts`
+// Email 3: To New Owner's HOD
+for (const item of acceptedItems) {
+  const hodEmail = await assetModel.getEmployeeHodEmail(item.new_owner);
+  await sendMail(hodEmail,
+    assetTransferAcceptedHodEmail(item.new_owner, transferRequest, acceptedItems));
+}
+
+// Email 4: To Asset Managers by Asset Type (CC in all emails)
+for (const item of acceptedItems) {
+  const asset = await assetModel.getAssetById(item.asset_id);
+  const managers = await assetModel.getAssetManagersByType(asset.type_id);
+  // Asset managers CC'd in emails above
+}
+```
+
+**Emails Sent:**
+1. **Requestor Email** - Notifies transfer requester that assets were accepted
+2. **Current Owner Email** - Notifies previous owner that assets have been transferred out
+3. **HOD Email** - Notifies new owner's HOD that assets have been received
+4. **Asset Managers (CC)** - All relevant asset managers for the asset type receive the emails
+
+**Email Content Includes:**
+- Register Number (e.g., "5CG7314HJW")
+- Brand name (e.g., "Dell")
+- Model name (e.g., "Latitude 7490")
+- Previous Owner (for current owner and HOD emails)
+- Accepted By (recipient name)
+- Acceptance Date
+- Location/Department info
 - Message: "Your employee has accepted assets"
 - Content: Assets received, employee details
 
 ### Database State After Acceptance
 
-**transfer_items Table:**
+**transfer_items Table (Procedure 1 - Updated):**
 ```json
 {
   "id": 1,
@@ -765,7 +877,6 @@ Sends emails to three recipient groups:
   "acceptance_date": "2026-01-14 10:30:00",
   "acceptance_remarks": "Verified and in good condition",
   "acceptance_checklist_items": "1,2,3",
-  "acceptance_attachments": "['/uploads/assets/transfers/acceptance/photo1.jpg', '/uploads/assets/transfers/acceptance/photo2.png', '/uploads/assets/transfers/acceptance/document.pdf']",
   "attachment1": "/uploads/assets/transfers/acceptance/photo1.jpg",
   "attachment2": "/uploads/assets/transfers/acceptance/photo2.png",
   "attachment3": "/uploads/assets/transfers/acceptance/document.pdf",
@@ -773,27 +884,31 @@ Sends emails to three recipient groups:
 }
 ```
 
-**assetdata Table (Updated):**
+**assetdata Table (Procedure 3 - Updated):**
 ```json
 {
   "id": 865,
+  "register_number": "5CG7314HJW",
   "ramco_id": "000277",        // Changed from 000475
   "costcenter_id": 26,         // Updated if provided
   "department_id": 16,         // Updated if provided
-  "location_id": 2             // Updated if provided
+  "location_id": 2,            // Updated if provided
+  "updated_at": "2026-01-14 10:30:00"
 }
 ```
 
-**asset_history Table (New Record):**
+**asset_history Table (Procedure 2 - New Record with transfer_id):**
 ```json
 {
+  "id": 1234,
   "asset_id": 865,
-  "ramco_id": "000277",
+  "register_number": "5CG7314HJW",
+  "type_id": 1,
   "costcenter_id": 26,
   "department_id": 16,
   "location_id": 2,
-  "register_number": "5CG7314HJW",
-  "type_id": 1,
+  "ramco_id": "000277",        // New owner
+  "transfer_id": 1,            // ✅ Links to transfer_requests.id
   "effective_date": "2026-01-14 10:30:00",
   "created_at": "2026-01-14 10:30:00"
 }
@@ -804,13 +919,16 @@ Sends emails to three recipient groups:
 | Scenario | HTTP Status | Response |
 |----------|------------|----------|
 | Missing transfer ID | 400 | Invalid transfer request id |
+| Missing item_ids | 400 | At least one item_id required |
 | Transfer not found | 404 | Transfer request not found |
 | Invalid acceptance_by | 400 | (multer validation) |
 | File upload failure | 400 | File upload error |
-| Database update failure | 500 | Internal server error |
-| Ownership update fails | 500 | Error logged but acceptance saved |
+| Database Procedure 1 failure | 500 | Error updating transfer_items |
+| Database Procedure 2 failure | 500 | Error inserting asset_history |
+| Database Procedure 3 failure | 500 | Error updating assetdata |
+| Email Procedure 4 failure | 500 | Error sending notifications (logged) |
 
-**Note:** Ownership update errors don't block acceptance save - issue is logged for manual review.
+**Note:** If Procedures 1-3 fail, transaction is rolled back. Procedure 4 (email) failures are logged but don't block the acceptance response.
 
 ### Acceptance Portal Integration
 

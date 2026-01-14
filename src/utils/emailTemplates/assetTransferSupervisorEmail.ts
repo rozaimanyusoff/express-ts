@@ -27,7 +27,7 @@ export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToke
   };
   const reqCostCenter = requestor?.costcenter?.name || '-';
   const reqDepartment = requestor?.department?.name || '-';
-  const reqDistrict = requestor?.district?.name || '-';
+  const reqLocation = requestor?.district?.name || '-';
   const reqStatus = request?.request_status || request?.transfer_status || '-';
   const reqNo = request?.request_no || request?.id || '-';
   const reqDate = request?.request_date || request?.transfer_date || new Date();
@@ -68,26 +68,51 @@ export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToke
             <div style="${rowStyle}"><span style="${labelStyle}">Requestor:</span> <span style="${valueStyle}">${safe(requestor?.full_name)} (${safe(requestor?.email)})</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Cost Center:</span> <span style="${valueStyle}">${safe(reqCostCenter)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Department:</span> <span style="${valueStyle}">${safe(reqDepartment)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">District:</span> <span style="${valueStyle}">${safe(reqDistrict)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Location:</span> <span style="${valueStyle}">${safe(reqLocation)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Status:</span> <span style="${valueStyle}">${safe(reqStatus)}</span></div>
           </div>
 
           <div style="${sectionTitle}">Transfer Items</div>
       ${items.map(item => `
         <div style="${cardStyle}">
-          <div style="display: flex; flex-wrap: wrap;">
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(item.identifierDisplay)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Owner:</span> <span style="${valueStyle}">${safe(item.currOwnerName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Costcenter:</span> <span style="${valueStyle}">${safe(item.currCostcenterName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current Department:</span> <span style="${valueStyle}">${safe(item.currDepartmentCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">Current District:</span> <span style="${valueStyle}">${safe(item.currDistrictCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Owner:</span> <span style="${valueStyle}">${safe(item.newOwnerName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Costcenter:</span> <span style="${valueStyle}">${safe(item.newCostcenterName)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New Department:</span> <span style="${valueStyle}">${safe(item.newDepartmentCode)}</span></div>
-            <div style="width: 50%; ${rowStyle}"><span style="${labelStyle}">New District:</span> <span style="${valueStyle}">${safe(item.newDistrictCode)}</span></div>
-            <div style="width: 100%; ${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.asset_type || item.transfer_type)}</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.register_number || item.identifierDisplay)}</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
+          
+          <div style="margin-top: 12px; margin-bottom: 8px; border-top: 2px solid ${primarySoft}; padding-top: 10px;">
+            <div style="font-weight: 600; color: ${primarySoft}; margin-bottom: 8px;">Transfer Details</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <thead>
+                <tr style="background-color: ${primarySoft}; color: white;">
+                  <th style="padding: 8px; text-align: left; border: 1px solid ${border};">Field</th>
+                  <th style="padding: 8px; text-align: left; border: 1px solid ${border};">Current</th>
+                  <th style="padding: 8px; text-align: left; border: 1px solid ${border};">New</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="background-color: #f5f5f5;">
+                  <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Owner</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currOwnerName)}</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.newOwnerName)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Cost Center</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currCostcenterName)}</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.newCostcenterName)}</td>
+                </tr>
+                <tr style="background-color: #f5f5f5;">
+                  <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Department</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currDepartmentCode)}</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.newDepartmentCode)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Location</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currDistrictCode)}</td>
+                  <td style="padding: 8px; border: 1px solid ${border};">${safe(item.newDistrictCode)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       `).join('')}

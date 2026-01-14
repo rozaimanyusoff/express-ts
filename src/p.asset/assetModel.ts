@@ -2119,8 +2119,8 @@ export const bulkUpdateTransferItemsApproval = async (transferIds: number[], sta
   if (!Array.isArray(transferIds) || transferIds.length === 0) return { affectedRows: 0 } as any;
   const placeholders = transferIds.map(() => '?').join(',');
   const dateVal = approved_date ?? new Date();
-  const itemsSql = `UPDATE ${assetTransferItemTable} SET approved_by = ?, approved_date = ?, updated_at = NOW() WHERE transfer_id IN (${placeholders})`;
-  const itemsParams: any[] = [approved_by, dateVal, ...transferIds];
+  const itemsSql = `UPDATE ${assetTransferItemTable} SET approval_status = ?, approved_by = ?, approval_date = ?, updated_at = NOW() WHERE transfer_id IN (${placeholders})`;
+  const itemsParams: any[] = [status, approved_by, dateVal, ...transferIds];
   const [result] = await pool.query(itemsSql, itemsParams);
   return result;
 };
@@ -2358,11 +2358,12 @@ export const insertAssetHistory = async (data: {
   location_id?: null | number;
   ramco_id?: null | string;
   register_number?: null | string;
+  transfer_id?: null | number;
   type_id?: null | number;
 }) => {
   const [result] = await pool.query(
-    `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, transfer_id, effective_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.asset_id,
       data.register_number ?? null,
@@ -2371,6 +2372,7 @@ export const insertAssetHistory = async (data: {
       data.department_id ?? null,
       data.location_id ?? null,
       data.ramco_id ?? null,
+      data.transfer_id ?? null,
       data.effective_date ?? new Date()
     ]
   );

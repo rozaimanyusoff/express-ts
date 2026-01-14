@@ -153,11 +153,14 @@ router.put('/transfers/:id/acceptance', acceptanceUploader.fields([
 router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));
 
-
+// RESEND APPROVAL NOTIFICATION
+router.post('/transfers/:id/resend-approval-notification', asyncHandler(assetController.resendApprovalNotification));
 
 
 // ASSET TRANSFER APPROVAL (for supervisor approve/reject buttons)
 router.post('/transfer-requests/:id/approval', asyncHandler(assetController.updateAssetTransferApprovalStatusById));
+
+
 
 // EMAIL APPROVAL/REJECTION LINKS
 router.get('/asset-transfer/approve', asyncHandler(assetController.approveAssetTransferByEmail));

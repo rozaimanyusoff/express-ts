@@ -3654,7 +3654,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 					// Get current asset data for register_number and type_id
 					const asset = await assetModel.getAssetById(itemData.asset_id);
 					if (asset) {
-						// 1. Insert new movement record into asset_history
+						// 1. Insert new movement record into asset_history with transfer_id
 						await assetModel.insertAssetHistory({
 							asset_id: itemData.asset_id,
 							costcenter_id: itemData.new_costcenter_id || null,
@@ -3663,6 +3663,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 							location_id: itemData.new_location_id || null,
 							ramco_id: itemData.new_owner,
 							register_number: asset.register_number || null,
+							transfer_id: requestId,
 							type_id: itemData.new_type_id || asset.type_id || null
 						});
 
@@ -3711,14 +3712,22 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 			if (item.current_owner) currentOwners.add(String(item.current_owner));
 			if (item.new_owner) newOwners.add(String(item.new_owner));
 		});
-
-		// Enrich items with display names
-		const enrichedItems = acceptedItems.map((item: any) => ({
-			...item,
-			currOwnerName: item.current_owner ? ((employeeMap.get(String(item.current_owner)))?.full_name || item.current_owner) : '-',
-			identifierDisplay: item.identifier || item.asset_code || item.register_number || '-',
-			newOwnerName: item.new_owner ? ((employeeMap.get(String(item.new_owner)))?.full_name || item.new_owner) : '-'
-		}));
+		// Enrich items with asset details (brand, model, register_number)
+		const enrichedItems: any[] = [];
+		for (const item of acceptedItems as any[]) {
+			const assetDetails = item.asset_id ? await assetModel.getAssetById(item.asset_id) : null;
+			enrichedItems.push({
+				...item,
+				asset: assetDetails ? {
+					register_number: assetDetails.register_number,
+					brand: { name: assetDetails.brand_name },
+					model: { name: assetDetails.model_name }
+				} : null,
+				current_owner: {
+					full_name: employeeMap.get(String((item as any).current_owner))?.full_name || (item as any).current_owner
+				}
+			});
+		}
 
 		// 1. Notify Requestor/Applicant
 		if (requestor?.email) {
@@ -3779,6 +3788,46 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 					);
 				}
 			}
+		}
+
+		// 4. Notify Asset Managers (by asset type)
+		try {
+			const assetTypeIds = new Set<number>();
+			acceptedItems.forEach((item: any) => {
+				if (item.asset?.type_id) assetTypeIds.add(Number(item.asset.type_id));
+				else if (item.type_id) assetTypeIds.add(Number(item.type_id));
+			});
+
+			for (const typeId of assetTypeIds) {
+				const managers = await assetModel.getAssetManagersByTypeId(typeId);
+				if (Array.isArray(managers) && managers.length > 0) {
+					for (const managerRow of managers) {
+						const manager = managerRow as any;
+						if (manager.ramco_id) {
+							const managerEmployee = await assetModel.getEmployeeByRamco(manager.ramco_id);
+							if (managerEmployee?.email) {
+								const itemsForType = enrichedItems.filter((it: any) => {
+									const itTypeId = it.asset?.type_id || it.type_id;
+									return Number(itTypeId) === typeId;
+								});
+								const { html, subject } = assetTransferAcceptedCurrentOwnerEmail({
+									acceptanceDate: acceptance_date || new Date(),
+									acceptanceRemarks: acceptance_remarks,
+									currentOwner: managerEmployee,
+									items: itemsForType,
+									newOwner: Array.from(newOwners).length > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null,
+									request
+								});
+								await sendMail(managerEmployee.email, subject, html).catch(err =>
+									{ console.error(`Failed to send acceptance email to asset manager ${manager.ramco_id}:`, err); }
+								);
+							}
+						}
+					}
+				}
+			}
+		} catch (managerErr) {
+			console.error('Error sending acceptance email to asset managers:', managerErr);
 		}
 	} catch (emailErr) {
 		console.error('Error sending acceptance notification emails:', emailErr);
@@ -3904,7 +3953,7 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 			acceptance_checklist_items: item.acceptance_checklist_items || null,
 			acceptance_date: item.acceptance_date || null,
 			acceptance_remarks: item.acceptance_remarks || null,
-			approval_date: item.approved_date || null,
+			approval_date: item.approval_date || null,
 			approval_status: item.approval_status || 'pending',
 			approved_by: item.approved_by || null,
 			asset: assetDetail,
@@ -4219,10 +4268,10 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 					.filter(Boolean)
 					.map((c: any) => ({ id: c.id, item: c.item, type_id: c.type_id }));
 			})(),
-			// Acceptance fields
+			// Acceptance fields (NOT approval fields - those belong to transfer_requests)
 			acceptance_date: it.acceptance_date || null,
 			acceptance_remarks: (it).acceptance_remarks ?? null,
-			approval_date: it.approved_date || null,
+			approval_date: it.approval_date || null,
 			approval_status: it.approval_status || 'pending',
 			approved_by: it.approved_by || null,
 			asset: assetObj ? { id: assetObj.id, register_number: assetObj.register_number || null } : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
@@ -4383,6 +4432,235 @@ export const rejectAssetTransferByEmail = async (req: Request, res: Response) =>
 		body: { status: 'rejected', supervisorId },
 		params: { id },
 	} as any, res);
+};
+
+// POST /api/assets/transfers/:id/resend-approval-notification
+// Resend approval notification to supervisor and HOD (no body needed - auto-determines recipients)
+export const resendApprovalNotification = async (req: Request, res: Response) => {
+	const { id } = req.params;
+
+	if (!id) {
+		return res.status(400).json({ 
+			message: 'Transfer ID is required', 
+			status: 'error' 
+		});
+	}
+
+	try {
+		// Fetch transfer request
+		const request = await assetModel.getAssetTransferById(Number(id));
+		if (!request) {
+			return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
+		}
+
+		// Fetch requestor (use transfer_by from database)
+		const requestorRamcoId = request.transfer_by || request.requestor;
+		if (!requestorRamcoId) {
+			return res.status(400).json({ message: 'Requestor (transfer_by) not found in transfer request', status: 'error' });
+		}
+
+		const requestor = await assetModel.getEmployeeByRamco(requestorRamcoId);
+		if (!requestor) {
+			return res.status(400).json({ message: 'Requestor employee not found', status: 'error' });
+		}
+
+		// Fetch transfer items
+		const itemsResult = await assetModel.getAssetTransferItemByRequestId(Number(id));
+		const items = Array.isArray(itemsResult) ? itemsResult : [];
+
+		if (items.length === 0) {
+			return res.status(400).json({ message: 'No transfer items found', status: 'error' });
+		}
+
+		// Get all reference data for enrichment
+		const assetIds = items
+			.map((item: any) => Number(item.asset_id))
+			.filter((id: any) => Number.isFinite(id) && id > 0);
+		
+		const [employees, types, costcenters, departments, districts, assetsData] = await Promise.all([
+			assetModel.getEmployees(),
+			assetModel.getTypes(),
+			assetModel.getCostcenters(),
+			assetModel.getDepartments(),
+			assetModel.getDistricts(),
+			assetIds.length > 0 ? assetModel.getAssetsByIds(assetIds) : Promise.resolve([])
+		]);
+
+		// Build maps
+		const empMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [String(e.ramco_id), e]));
+		const typeMap = new Map((Array.isArray(types) ? types : []).map((t: any) => [Number(t.id), t]));
+		const costcenterMap = new Map((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [Number(c.id), c]));
+		const departmentMap = new Map((Array.isArray(departments) ? departments : []).map((d: any) => [Number(d.id), d]));
+		const districtMap = new Map((Array.isArray(districts) ? districts : []).map((d: any) => [Number(d.id), d]));
+		const assetMap = new Map((Array.isArray(assetsData) ? assetsData : []).map((a: any) => [Number(a.id), a]));
+
+		// Enrich requestor with readable org fields from request (same as createAssetTransfer)
+		if (typeof requestor === 'object' && requestor) {
+			(requestor as any).costcenter = request.costcenter_id != null ? costcenterMap.get(request.costcenter_id) || null : (requestor as any).costcenter || null;
+			(requestor as any).department = request.department_id != null ? departmentMap.get(request.department_id) || null : (requestor as any).department || null;
+			(requestor as any).district = request.district_id != null ? districtMap.get(request.district_id) || null : (requestor as any).district || null;
+		}
+
+		// Enrich items with display data (reusing same pattern as createAssetTransfer)
+		const enrichedItems = items.map((item: any) => {
+			const currOwnerEmp = item.current_owner && empMap.has(item.current_owner) ? empMap.get(item.current_owner) : null;
+			const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
+			const newOwnerEmp = item.new_owner && empMap.has(item.new_owner) ? empMap.get(item.new_owner) : null;
+			const newOwnerName = newOwnerEmp && typeof newOwnerEmp === 'object' && 'full_name' in newOwnerEmp ? newOwnerEmp.full_name : item.new_owner || '-';
+			
+			const currCostcenterKey = Number(item.current_costcenter_id);
+			const currCostcenterObj = Number.isFinite(currCostcenterKey) && costcenterMap.has(currCostcenterKey) ? costcenterMap.get(currCostcenterKey) : null;
+			const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj).name : (item.current_costcenter_id ?? '-');
+			const newCostcenterKey = Number(item.new_costcenter_id);
+			const newCostcenterObj = Number.isFinite(newCostcenterKey) && costcenterMap.has(newCostcenterKey) ? costcenterMap.get(newCostcenterKey) : null;
+			const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj).name : (item.new_costcenter_id ?? '-');
+			
+			const currDepartmentKey = Number(item.current_department_id);
+			const currDepartmentObj = Number.isFinite(currDepartmentKey) && departmentMap.has(currDepartmentKey) ? departmentMap.get(currDepartmentKey) : null;
+			const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj).code : (item.current_department_id ?? '-');
+			const newDepartmentKey = Number(item.new_department_id);
+			const newDepartmentObj = Number.isFinite(newDepartmentKey) && departmentMap.has(newDepartmentKey) ? departmentMap.get(newDepartmentKey) : null;
+			const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj).code : (item.new_department_id ?? '-');
+			
+			const currLocationKey = Number(item.current_location_id);
+			const currDistrictObj = Number.isFinite(currLocationKey) && districtMap.has(currLocationKey) ? districtMap.get(currLocationKey) : null;
+			const currDistrictCode = currDistrictObj ? ((currDistrictObj).code || (currDistrictObj).name || item.current_location_id || '-') : (item.current_location_id || '-');
+			const newLocationKey = Number(item.new_location_id);
+			const newDistrictObj = Number.isFinite(newLocationKey) && districtMap.has(newLocationKey) ? districtMap.get(newLocationKey) : null;
+			const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
+			
+			const typeObj = item.type_id ? typeMap.get(Number(item.type_id)) : null;
+			const typeName = typeObj ? (typeObj.name || '') : (item.transfer_type || '');
+			
+			// Fetch asset register_number from assets table
+			const assetKey = Number(item.asset_id);
+			const assetObj = Number.isFinite(assetKey) && assetMap.has(assetKey) ? assetMap.get(assetKey) : null;
+			const registerNumber = assetObj ? (assetObj.register_number || assetObj.identifier || assetObj.asset_code || '-') : (item.register_number || item.identifier || item.asset_code || '-');
+			
+			return {
+				...item,
+				currCostcenterName,
+				currDepartmentCode,
+				currDistrictCode,
+				currOwnerName,
+				identifierDisplay: registerNumber,
+				newCostcenterName,
+				newDepartmentCode,
+				newDistrictCode,
+				newOwnerName,
+				register_number: registerNumber,
+				transfer_type: typeName,
+				reasons: item.reason
+			};
+		});
+
+		// Get supervisor from workflow (same as createAssetTransfer)
+		const deptIdForApproval = requestor?.department_id ?? request.department_id;
+		let supervisorObj = null;
+		
+		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
+			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
+			
+			// Ensure email is resolved from employees table by ramco_id
+			if (supervisorObj?.ramco_id && !supervisorObj?.email) {
+				try {
+					const empData = await assetModel.getEmployeeByRamco(String(supervisorObj.ramco_id));
+					if (empData?.email) {
+						supervisorObj.email = empData.email;
+					}
+				} catch (err) {
+					console.error('Error resolving supervisor email:', err);
+				}
+			}
+		}
+
+		// Fallback: use requestor's supervisor
+		if (!supervisorObj && requestor?.wk_spv_id) {
+			supervisorObj = await assetModel.getEmployeeByRamco(requestor.wk_spv_id);
+		}
+
+		// Build frontend approval portal URL with signed credential token if approver is available
+		let portalUrl: string | undefined = undefined;
+		if (supervisorObj?.ramco_id) {
+			const secret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY || 'default_secret_key';
+			const credData = { ramco_id: String(supervisorObj.ramco_id), transfer_id: Number(id) } as any;
+			const token = jwt.sign(credData, secret, { expiresIn: '3d' } as SignOptions);
+			const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/?$/, '');
+			const deptForPortal = (Number.isFinite(deptIdForApproval as any) && deptIdForApproval != null)
+				? Number(deptIdForApproval)
+				: (requestor?.department_id ?? request.department_id ?? '');
+			const deptParam = deptForPortal !== '' ? encodeURIComponent(String(deptForPortal)) : '';
+			portalUrl = `${frontendUrl}/assets/transfer/portal/${encodeURIComponent(String(id))}?action=approve&authorize=${encodeURIComponent(String(supervisorObj.ramco_id))}` +
+				(deptParam ? `&dept=${deptParam}` : '') +
+				`&_cred=${encodeURIComponent(token)}`;
+		}
+
+		// Send emails
+		const sentTo = [];
+
+		// Send to supervisor
+		if (supervisorObj?.email) {
+			try {
+				const { html, subject } = assetTransferSupervisorEmail({
+					items: enrichedItems,
+					request,
+					requestor,
+					supervisor: supervisorObj,
+					portalUrl
+				});
+				await sendMail(supervisorObj.email, subject, html);
+				sentTo.push({ type: 'Supervisor', name: supervisorObj.full_name, email: supervisorObj.email });
+			} catch (err) {
+				console.error('Failed to send notification to supervisor:', err);
+			}
+		}
+
+		// Send to HOD (head of requestor's department)
+		if (requestor?.supervisor_ramco_id || requestor?.hod_ramco_id) {
+			const hodId = requestor.supervisor_ramco_id || requestor.hod_ramco_id;
+			const hodObj = await assetModel.getEmployeeByRamco(hodId);
+			
+			if (hodObj?.email && hodObj.email !== supervisorObj?.email) { // Don't duplicate if same person
+				try {
+					const { html, subject } = assetTransferSupervisorEmail({
+						items: enrichedItems,
+						request,
+						requestor,
+						supervisor: hodObj,
+						portalUrl
+					});
+					await sendMail(hodObj.email, subject, html);
+					sentTo.push({ type: 'HOD', name: hodObj.full_name, email: hodObj.email });
+				} catch (err) {
+					console.error('Failed to send notification to HOD:', err);
+				}
+			}
+		}
+
+		if (sentTo.length === 0) {
+			return res.status(400).json({
+				message: 'No valid recipients found (supervisor or HOD)',
+				status: 'error'
+			});
+		}
+
+		return res.json({
+			message: `Approval notification resent successfully`,
+			status: 'success',
+			data: {
+				transferId: id,
+				sentTo,
+				sentAt: new Date().toISOString()
+			}
+		});
+	} catch (error: any) {
+		console.error('Error resending approval notification:', error);
+		return res.status(500).json({
+			message: 'Failed to resend approval notification',
+			status: 'error',
+			error: error.message
+		});
+	}
 };
 
 /* === TRANSFER CHECKLIST === */

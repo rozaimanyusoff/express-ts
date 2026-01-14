@@ -59,8 +59,9 @@ export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, accepta
           <div style="${sectionTitle}">Transferred Items</div>
           ${items.map((it: any) => `
           <div style="${cardStyle}">
-            <div style="${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
           </div>
           `).join('')}
@@ -105,8 +106,10 @@ export function assetTransferAcceptedHodEmail({ acceptanceDate, acceptanceRemark
           <div style="${sectionTitle}">Accepted Assets</div>
           ${items.map((it: any) => `
           <div style="${cardStyle}">
-            <div style="${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.current_owner?.full_name || it.current_owner)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
           </div>
           `).join('')}
@@ -150,8 +153,10 @@ export function assetTransferAcceptedRequestorEmail({ acceptanceDate, acceptance
           <div style="${sectionTitle}">Accepted Items</div>
           ${items.map((it: any) => `
           <div style="${cardStyle}">
-            <div style="${rowStyle}"><span style="${labelStyle}">Identifier:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.current_owner?.full_name || it.current_owner)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
           </div>
           `).join('')}
