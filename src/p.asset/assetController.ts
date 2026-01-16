@@ -2582,9 +2582,11 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 	const requests = await assetModel.getAssetTransfers();
 	const reqArr = Array.isArray(requests) ? (requests as any[]) : [];
 
-	// Optional filter by ?ramco=<username>; later we will include requests where
-	// (transfer_by == ramco) OR (any item.new_owner == ramco)
+	// Optional filter by ?ramco=<username> or ?new_owner=<ramco_id>
+	// Include requests where (transfer_by == ramco) OR (any item.new_owner == ramco)
 	const ramcoParam = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
+	const newOwnerParam = typeof req.query.new_owner === 'string' ? req.query.new_owner.trim() : '';
+	const filterRamcoId = ramcoParam || newOwnerParam; // use either ramco or new_owner param
 	// Additional filters: ?dept=<department_id>&status=<pending|approved>
 	const deptParamRaw = typeof req.query.dept === 'string' ? req.query.dept.trim() : '';
 	const deptParam = deptParamRaw && /^\d+$/.test(deptParamRaw) ? Number(deptParamRaw) : null;
@@ -2629,11 +2631,11 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 	);
 
 	// Start with ramco filter (if provided): include requests where transfer_by matches OR any item's new_owner matches
-	let filteredReqArr = ramcoParam
+	let filteredReqArr = filterRamcoId
 		? reqArr.filter((r: any) => {
-			if (String(r.transfer_by) === ramcoParam) return true;
+			if (String(r.transfer_by) === filterRamcoId) return true;
 			const itemsForReq = itemsMap.get(r.id) || [];
-			return itemsForReq.some((it: any) => String(it.new_owner) === ramcoParam);
+			return itemsForReq.some((it: any) => String(it.new_owner) === filterRamcoId);
 		})
 		: reqArr;
 
