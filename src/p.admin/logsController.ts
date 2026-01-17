@@ -154,17 +154,17 @@ export const getUserLogs = async (req: Request, res: Response): Promise<Response
     startDate.setDate(startDate.getDate() - parseInt(days as string));
     
     let logs = await getUserAuthLogsForDateRange(
-      parseInt(userId),
+      parseInt(userId as string),
       startDate,
       endDate
     );
     
     // Apply filters
     if (action) {
-      logs = logs.filter(log => log.action === action);
+      logs = logs.filter(log => log.action === (action as string));
     }
     if (status) {
-      logs = logs.filter(log => log.status === status);
+      logs = logs.filter(log => log.status === (status as string));
     }
     
     // Aggregate stats
@@ -331,16 +331,17 @@ export const archiveOldLogFiles = async (req: Request, res: Response): Promise<R
 export const downloadLogFile = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { filename } = req.params;
+    const fn = filename as string;
     
     // Validate filename to prevent directory traversal
-    if (!filename.startsWith('auth_') || !filename.endsWith('.jsonl')) {
+    if (!fn.startsWith('auth_') || !fn.endsWith('.jsonl')) {
       return res.status(400).json({
         status: 'error',
         message: 'Invalid filename'
       });
     }
     
-    const filepath = path.join(AUTH_LOGS_DIR, filename);
+    const filepath = path.join(AUTH_LOGS_DIR, fn);
     
     // Verify file exists
     await fs.access(filepath);
@@ -349,7 +350,7 @@ export const downloadLogFile = async (req: Request, res: Response): Promise<Resp
     const content = await fs.readFile(filepath, 'utf-8');
     
     res.setHeader('Content-Type', 'application/x-ndjson');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${fn}"`);
     
     return res.send(content);
   } catch (error) {

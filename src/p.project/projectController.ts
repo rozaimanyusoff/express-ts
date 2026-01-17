@@ -947,7 +947,7 @@ export const getAllAssignments = async (req: Request, res: Response) => {
 // GET /api/assignments/assignee/:assignee - Get assignments by assignee/developer
 export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
   try {
-    const assignee = req.params.assignee;
+    const assignee = req.params.assignee as string;
     if (!assignee) {
       return res.status(400).json({ data: null, message: 'Assignee is required', status: 'error' });
     }

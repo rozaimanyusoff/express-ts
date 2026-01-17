@@ -1263,25 +1263,25 @@ export const deleteBrand = async (req: Request, res: Response) => {
 /* =========== BRAND-CATEGORY RELATIONSHIP ENDPOINTS =========== */
 export const assignCategoryToBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
-	await assetModel.addBrandCategory(brand_code, category_code);
+	await assetModel.addBrandCategory(brand_code as string, category_code as string);
 	res.json({ message: 'Category assigned to brand', status: 'success' });
 };
 
 export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
-	await assetModel.removeBrandCategory(brand_code, category_code);
+	await assetModel.removeBrandCategory(brand_code as string, category_code as string);
 	res.json({ message: 'Category unassigned from brand', status: 'success' });
 };
 
 export const getCategoriesForBrand = async (req: Request, res: Response) => {
 	const { brand_code } = req.params;
-	const categories = await assetModel.getCategoriesByBrand(brand_code);
+	const categories = await assetModel.getCategoriesByBrand(brand_code as string);
 	res.json({ data: categories, status: 'success' });
 };
 
 export const getBrandsForCategory = async (req: Request, res: Response) => {
 	const { category_code } = req.params;
-	const brands = await assetModel.getBrandsByCategory(category_code);
+	const brands = await assetModel.getBrandsByCategory(category_code as string);
 	res.json({ data: brands, status: 'success' });
 };
 
@@ -2074,7 +2074,7 @@ export const getEmployeeById = async (req: Request, res: Response) => {
 };
 
 export const getEmployeeByRamco = async (req: Request, res: Response) => {
-	const ramcoId = req.params.ramco_id;
+	const ramcoId = req.params.ramco_id as string;
 	const emp = await assetModel.getEmployeeByRamco(ramcoId);
 	if (!emp) {
 		return res.status(404).json({ message: 'Employee not found', status: 'error' });
@@ -2113,7 +2113,7 @@ export const getEmployeeByRamco = async (req: Request, res: Response) => {
 }
 
 export const getEmployeeByEmail = async (req: Request, res: Response) => {
-	const email = req.params.email;
+	const email = req.params.email as string;
 	const emp = await assetModel.getEmployeeByEmail(email);
 	if (!emp) {
 		return res.status(404).json({ message: 'Employee not found', status: 'error' });
@@ -2152,7 +2152,7 @@ export const getEmployeeByEmail = async (req: Request, res: Response) => {
 }
 
 export const getEmployeeByContact = async (req: Request, res: Response) => {
-	const email = req.params.email;
+	const email = req.params.email as string;
 	const emp = await assetModel.getEmployeeByEmail(email);
 	if (!emp) {
 		return res.status(404).json({ message: 'Employee not found', status: 'error' });
@@ -2375,7 +2375,7 @@ export const searchEmployees = async (req: Request, res: Response) => {
 
 // Lookup employee by ramco_id, email, or contact
 export const getEmployeeByUsername = async (req: Request, res: Response) => {
-	const username = req.params.username;
+	const username = req.params.username as string;
 	let emp = null;
 	// Try ramco_id (all digits or leading zeros)
 	if (/^\d{5,}$/.test(username) || /^0+\d+$/.test(username)) {
