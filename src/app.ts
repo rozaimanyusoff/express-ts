@@ -38,8 +38,22 @@ import webstockRoutes from './s.webstock/webstockRoutes';
 import { checkDatabaseHealth } from './utils/dbHealthCheck';
 import logger from './utils/logger';
 import { getUploadBaseSync } from './utils/uploadUtil';
+import redis from './utils/redis';
+import redisConfig from './utils/redisConfig';
+import createCacheMiddleware from './middlewares/cacheMiddleware';
 
 const app: Express = express();
+
+// Initialize Redis connection (only if enabled)
+if (redisConfig.enabled) {
+  redis.connect().then(() => {
+    logger.info('Redis initialized and connected');
+  }).catch((err: any) => {
+    logger.error(`Redis initialization failed: ${err.message}`);
+  });
+} else {
+  logger.info('Redis is disabled (REDIS_ENABLED=false)');
+}
 
 // Optionally trust proxy (needed if running behind Nginx/Load Balancer for correct client IPs)
 if (process.env.TRUST_PROXY === 'true') {
@@ -108,6 +122,8 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/logs', tokenValidator, logsRoutes);
+// Apply cache middleware to assets (10 minute cache for GET requests)
+app.use('/api/assets', createCacheMiddleware(600, 'assets'));
 app.use('/api/assets', assetRoutes);
 app.use('/api/telco', telcoRoutes);
 app.use('/api/stock', stockRoutes);

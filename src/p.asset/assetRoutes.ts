@@ -2,9 +2,27 @@ import { Router } from 'express';
 
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
+import invalidateAssetCache from '../utils/cacheInvalidation';
 import * as assetController from './assetController';
 
 const router = Router();
+
+// Middleware to invalidate cache on write operations (POST, PUT, DELETE)
+const cacheInvalidationMiddleware = asyncHandler(async (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const originalJson = res.json;
+    res.json = function (data: any) {
+      // Invalidate cache after sending response
+      invalidateAssetCache().catch(err => {
+        console.error('Cache invalidation failed:', err);
+      });
+      return originalJson.call(this, data);
+    };
+  }
+  next();
+});
+
+router.use(cacheInvalidationMiddleware);
 
 // TYPES
 router.get('/types', asyncHandler(assetController.getTypes));
