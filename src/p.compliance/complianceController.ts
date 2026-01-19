@@ -2134,24 +2134,31 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
   try {
     const data = req.body;
     
-    // Check for duplicate assessment (same year, asset_id, and register_number)
-    const existingAssessments = await complianceModel.getComputerAssessments({
-      assessment_year: String(data.assessment_year),
-      asset_id: Number(data.asset_id),
-    });
+    // If no asset_id provided, mark asset_status as 'new'
+    if (!data.asset_id) {
+      data.asset_status = 'new';
+    }
     
-    const isDuplicate = existingAssessments.some((a: any) => 
-      a.register_number === data.register_number &&
-      a.assessment_year === data.assessment_year &&
-      a.asset_id === data.asset_id
-    );
-    
-    if (isDuplicate) {
-      return res.status(400).json({
-        status: 'error',
-        message: `Assessment already exists for asset ${data.register_number} in year ${data.assessment_year}`,
-        data: null,
+    // Check for duplicate assessment only if asset_id is provided
+    if (data.asset_id) {
+      const existingAssessments = await complianceModel.getComputerAssessments({
+        assessment_year: String(data.assessment_year),
+        asset_id: Number(data.asset_id),
       });
+      
+      const isDuplicate = existingAssessments.some((a: any) => 
+        a.register_number === data.register_number &&
+        a.assessment_year === data.assessment_year &&
+        a.asset_id === data.asset_id
+      );
+      
+      if (isDuplicate) {
+        return res.status(400).json({
+          status: 'error',
+          message: `Assessment already exists for asset ${data.register_number} in year ${data.assessment_year}`,
+          data: null,
+        });
+      }
     }
 
     const id = await complianceModel.createComputerAssessment(data);

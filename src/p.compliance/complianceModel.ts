@@ -919,6 +919,8 @@ export interface ComputerAssessment {
   assessment_year?: null | string;
   // Asset reference
   asset_id?: null | number;
+  // Asset status: 'new' if asset_id is null, otherwise linked to existing asset
+  asset_status?: null | string;
   // Attachments
   attachment_1?: null | string;
   attachment_2?: null | string;
