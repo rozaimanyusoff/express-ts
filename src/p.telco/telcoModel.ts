@@ -12,6 +12,7 @@ const tables = {
     oldSubscribers: `${dbBilling}.celcomsub`, // Assuming this is a table for old subscribers
     simCards: `${dbBilling}.telco_simcards`,
     simCardSubs: `${dbBilling}.telco_simcard_subs`,
+    simsHistory: `${dbBilling}.telco_sims_history`, // SIM history with user, asset tracking
     subscribers: `${dbBilling}.telco_subscribers`,
     telcoBilling: `${dbBilling}.telco_bills`, // Assuming this is a table for telco billing
     telcoBillingDetails: `${dbBilling}.telco_bill_details`, // Assuming this is a table for telco billing history
@@ -212,17 +213,69 @@ export async function getOldSubscribers() {
 
 // ===================== SIM CARD - SUBSCRIBER JOINS =====================
 export async function getSimCardBySubscriber() {
-    // Returns the latest sim card for each subscriber (sub_no_id)
+    // Returns the latest sim card for each subscriber (sub_no_id) with account_sub
     const [rows] = await pool.query<RowDataPacket[]>(`
-        SELECT s.id as sim_id, s.sim_sn, scs.sub_no_id
+        SELECT s.id as sim_id, s.sim_sn, scs.sub_no_id, ts.account_sub
         FROM ${tables.simCardSubs} scs
         JOIN ${tables.simCards} s ON scs.sim_id = s.id
+        JOIN ${tables.subscribers} ts ON scs.sub_no_id = ts.id
         INNER JOIN (
             SELECT sub_no_id, MAX(effective_date) as max_date
             FROM ${tables.simCardSubs}
             GROUP BY sub_no_id
         ) latest ON latest.sub_no_id = scs.sub_no_id AND latest.max_date = scs.effective_date
     `);
+    return rows;
+}
+
+export async function getSimCardHistoryBySubscriber(subId: number) {
+    // Returns all sim card history for a subscriber (sub_no_id) sorted by effective_date DESC
+    const [rows] = await pool.query<RowDataPacket[]>(`
+        SELECT DISTINCT sh.effective_date, ts.sub_no
+        FROM ${tables.simsHistory} sh
+        JOIN ${tables.subscribers} ts ON sh.sub_no_id = ts.id
+        WHERE sh.sub_no_id = ?
+        ORDER BY sh.effective_date DESC
+    `, [subId]);
+    return rows;
+}
+
+export async function getSimUserHistoryBySimId(simId: number) {
+    // Returns user history for a sim card with department, costcenter, location details
+    const [rows] = await pool.query<RowDataPacket[]>(`
+        SELECT 
+            sh.effective_date, 
+            sh.ramco_id,
+            u.full_name,
+            d.id as dept_id,
+            d.name as dept_name,
+            cc.id as cc_id,
+            cc.name as cc_name,
+            l.id as loc_id,
+            l.name as loc_name
+        FROM ${tables.simsHistory} sh
+        LEFT JOIN assets.employees u ON sh.ramco_id = u.ramco_id
+        LEFT JOIN assets.departments d ON u.department_id = d.id
+        LEFT JOIN assets.costcenters cc ON u.costcenter_id = cc.id
+        LEFT JOIN assets.locations l ON u.location_id = l.id
+        WHERE sh.sim_id = ? AND sh.ramco_id IS NOT NULL
+        ORDER BY sh.effective_date DESC
+    `, [simId]);
+    return rows;
+}
+
+export async function getSimAssetHistoryBySimId(simId: number) {
+    // Returns asset history for a sim card
+    const [rows] = await pool.query<RowDataPacket[]>(`
+        SELECT 
+            sh.effective_date,
+            sh.asset_id,
+            ad.register_number
+        FROM ${tables.simsHistory} sh
+        JOIN assets.assetdata ad ON sh.asset_id = ad.id
+        WHERE sh.sim_id = ? AND sh.asset_id IS NOT NULL
+        ORDER BY sh.effective_date DESC
+    `, [simId]);
     return rows;
 }
 // ===================== SIM CARDS =====================
@@ -234,6 +287,28 @@ export async function getSimCards() {
 export async function getSimsBySubscriberId(subscriberId: number) {
     const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.simCards} WHERE sub_no_id = ?`, [subscriberId]);
     return rows;
+}
+
+// ===================== SIM HISTORY =====================
+// Add SIM card history record (for tracking sub_no_id, ramco_id, asset_id changes)
+export async function createSimHistory(data: {
+    sim_id: number;
+    sub_no_id?: number | null;
+    ramco_id?: string | null;
+    asset_id?: number | null;
+    effective_date?: string | null;
+}): Promise<number> {
+    const now = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const payload = {
+        sim_id: data.sim_id,
+        sub_no_id: data.sub_no_id || null,
+        ramco_id: data.ramco_id || null,
+        asset_id: data.asset_id || null,
+        effective_date: data.effective_date || now,
+    };
+    
+    const [result] = await pool.query<ResultSetHeader>(`INSERT INTO ${tables.simsHistory} SET ?`, [payload]);
+    return result.insertId;
 }
 
 // ===================== SUBSCRIBERS =====================

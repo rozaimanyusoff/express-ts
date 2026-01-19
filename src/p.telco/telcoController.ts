@@ -1,5 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
+import { RowDataPacket } from 'mysql2';
 
+import { pool } from '../utils/db';
 import * as assetModel from '../p.asset/assetModel';
 import * as telcoModel from './telcoModel';
 
@@ -1103,11 +1105,92 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
         // Get all subscribers to map sub_no_id to sub_no
         const subscribers = await telcoModel.getSubscribers();
         const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
+        // Get account-subscriber mappings to include account info
+        const accountSubs = await telcoModel.getAccountSubs();
+        const accountSubMap = Object.fromEntries((Array.isArray(accountSubs) ? accountSubs : []).map((as: any) => [as.sub_no_id, { account_id: as.account_id, account_sub: as.account_sub }]));
+        // Get all accounts for account details
+        const accounts = await telcoModel.getAccounts();
+        const accountMap = Object.fromEntries((Array.isArray(accounts) ? accounts : []).map((acc: any) => [acc.id, acc]));
+        
         const formatted = Array.isArray(simCards)
-            ? simCards.map((sim: any) => ({
-                id: sim.sim_id || sim.id,
-                sim_sn: sim.sim_sn || sim.sim_no,
-                subs: sim.sub_no_id ? { id: sim.sub_no_id, sub_no: subNoMap[sim.sub_no_id] || null } : null,
+            ? await Promise.all(simCards.map(async (sim: any) => {
+                const accountSubData = sim.sub_no_id ? accountSubMap[sim.sub_no_id] : null;
+                const accountId = accountSubData ? accountSubData.account_id : null;
+                const account = accountId ? accountMap[accountId] : null;
+                // Get sim card history for this subscriber
+                const simHistory = sim.sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sim.sub_no_id) : [];
+                // Get user history for this sim
+                const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.sim_id);
+                // Get asset history for this sim
+                const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.sim_id);
+                
+                return {
+                    id: sim.sim_id || sim.id,
+                    sim_sn: sim.sim_sn || sim.sim_no,
+                    subs: sim.sub_no_id ? { 
+                        id: sim.sub_no_id, 
+                        sub_no: subNoMap[sim.sub_no_id] || null,
+                        account_sub: sim.account_sub || null
+                    } : null,
+                    account: account ? { id: account.id, account_master: account.account_master || null } : null,
+                    sim_subs_history: Array.isArray(simHistory) ? simHistory.map((h: any) => {
+                        let formattedDate = null;
+                        if (h.effective_date) {
+                            const dateObj = new Date(h.effective_date);
+                            if (!isNaN(dateObj.getTime())) {
+                                formattedDate = dateObj.toISOString().split('T')[0];
+                            }
+                        }
+                        return {
+                            effective_date: formattedDate,
+                            sub_no: h.sub_no
+                        };
+                    }) : [],
+                    sim_user_history: Array.isArray(simUserHistory) ? simUserHistory.map((h: any) => {
+                        let formattedDate = null;
+                        if (h.effective_date) {
+                            const dateObj = new Date(h.effective_date);
+                            if (!isNaN(dateObj.getTime())) {
+                                formattedDate = dateObj.toISOString().split('T')[0];
+                            }
+                        }
+                        return {
+                            effective_date: formattedDate,
+                            user: h.ramco_id ? {
+                                ramco_id: h.ramco_id,
+                                full_name: h.full_name || null
+                            } : null,
+                            department: h.dept_id ? {
+                                id: h.dept_id,
+                                name: h.dept_name || null
+                            } : null,
+                            costcenter: h.cc_id ? {
+                                id: h.cc_id,
+                                name: h.cc_name || null
+                            } : null,
+                            location: h.loc_id ? {
+                                id: h.loc_id,
+                                name: h.loc_name || null
+                            } : null
+                        };
+                    }) : [],
+                    sim_asset_history: Array.isArray(simAssetHistory) ? simAssetHistory.map((h: any) => {
+                        let formattedDate = null;
+                        if (h.effective_date) {
+                            const dateObj = new Date(h.effective_date);
+                            if (!isNaN(dateObj.getTime())) {
+                                formattedDate = dateObj.toISOString().split('T')[0];
+                            }
+                        }
+                        return {
+                            effective_date: formattedDate,
+                            asset: h.asset_id ? {
+                                asset_id: h.asset_id,
+                                register_number: h.register_number || null
+                            } : null
+                        };
+                    }) : []
+                };
             }))
             : [];
         res.status(200).json({ data: formatted, message: 'Fetched sim card data successfully', status: 'success' });
@@ -1116,12 +1199,187 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
     }
 };
 
+export const getSimCardById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const simId = Number(req.params.id);
+        
+        // Get single sim card with subscriber info
+        const [simCardRows] = await pool.query<RowDataPacket[]>(`
+            SELECT s.id as sim_id, s.sim_sn, scs.sub_no_id, ts.account_sub
+            FROM billings.telco_simcards s
+            LEFT JOIN billings.telco_simcard_subs scs ON s.id = scs.sim_id
+            LEFT JOIN billings.telco_subscribers ts ON scs.sub_no_id = ts.id
+            WHERE s.id = ?
+        `, [simId]);
+        
+        if (!simCardRows || simCardRows.length === 0) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Sim card not found',
+                data: null
+            });
+        }
+        
+        const sim = simCardRows[0] as any;
+        
+        // Get all subscribers to map sub_no_id to sub_no
+        const subscribers = await telcoModel.getSubscribers();
+        const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
+        
+        // Get account-subscriber mappings
+        const accountSubs = await telcoModel.getAccountSubs();
+        const accountSubMap = Object.fromEntries((Array.isArray(accountSubs) ? accountSubs : []).map((as: any) => [as.sub_no_id, { account_id: as.account_id, account_sub: as.account_sub }]));
+        
+        // Get all accounts
+        const accounts = await telcoModel.getAccounts();
+        const accountMap = Object.fromEntries((Array.isArray(accounts) ? accounts : []).map((acc: any) => [acc.id, acc]));
+        
+        // Get sim card history for this subscriber
+        const simHistory = sim.sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sim.sub_no_id) : [];
+        // Get user history for this sim
+        const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.sim_id);
+        // Get asset history for this sim
+        const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.sim_id);
+        
+        const accountSubData = sim.sub_no_id ? accountSubMap[sim.sub_no_id] : null;
+        const accountId = accountSubData ? accountSubData.account_id : null;
+        const account = accountId ? accountMap[accountId] : null;
+        
+        const enrichedData = {
+            id: sim.sim_id || sim.id,
+            sim_sn: sim.sim_sn || sim.sim_no,
+            subs: sim.sub_no_id ? { 
+                id: sim.sub_no_id, 
+                sub_no: subNoMap[sim.sub_no_id] || null,
+                account_sub: sim.account_sub || null
+            } : null,
+            account: account ? { id: account.id, account_master: account.account_master || null } : null,
+            sim_subs_history: Array.isArray(simHistory) ? simHistory.map((h: any) => {
+                let formattedDate = null;
+                if (h.effective_date) {
+                    const dateObj = new Date(h.effective_date);
+                    if (!isNaN(dateObj.getTime())) {
+                        formattedDate = dateObj.toISOString().split('T')[0];
+                    }
+                }
+                return {
+                    effective_date: formattedDate,
+                    sub_no: h.sub_no
+                };
+            }) : [],
+            sim_user_history: Array.isArray(simUserHistory) ? simUserHistory.map((h: any) => {
+                let formattedDate = null;
+                if (h.effective_date) {
+                    const dateObj = new Date(h.effective_date);
+                    if (!isNaN(dateObj.getTime())) {
+                        formattedDate = dateObj.toISOString().split('T')[0];
+                    }
+                }
+                return {
+                    effective_date: formattedDate,
+                    user: h.ramco_id ? {
+                        ramco_id: h.ramco_id,
+                        full_name: h.full_name || null
+                    } : null,
+                    department: h.dept_id ? {
+                        id: h.dept_id,
+                        name: h.dept_name || null
+                    } : null,
+                    costcenter: h.cc_id ? {
+                        id: h.cc_id,
+                        name: h.cc_name || null
+                    } : null,
+                    location: h.loc_id ? {
+                        id: h.loc_id,
+                        name: h.loc_name || null
+                    } : null
+                };
+            }) : [],
+            sim_asset_history: Array.isArray(simAssetHistory) ? simAssetHistory.map((h: any) => {
+                let formattedDate = null;
+                if (h.effective_date) {
+                    const dateObj = new Date(h.effective_date);
+                    if (!isNaN(dateObj.getTime())) {
+                        formattedDate = dateObj.toISOString().split('T')[0];
+                    }
+                }
+                return {
+                    effective_date: formattedDate,
+                    asset: h.asset_id ? {
+                        asset_id: h.asset_id,
+                        register_number: h.register_number || null
+                    } : null
+                };
+            }) : []
+        };
+        
+        res.status(200).json({ data: enrichedData, message: 'Sim card retrieved successfully', status: 'success' });
+    } catch (error) {
+        next(error);
+    }
+};
+
 /* Create sim cards. POST /sims */
 export const createSimCard = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const simCard = req.body;
-        const id = await telcoModel.createSimCard(simCard);
-        res.status(201).json({ id, message: 'Sim card created' });
+        const { sim_sn, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
+        
+        // Create the sim card in telco_simcards table
+        const simCardData = { sim_sn };
+        const simCardId = await telcoModel.createSimCard(simCardData);
+        
+        // Create history record in telco_sims_history table
+        await telcoModel.createSimHistory({
+            sim_id: simCardId,
+            sub_no_id: sub_no_id || null,
+            ramco_id: ramco_id || null,
+            asset_id: asset_id || null,
+            effective_date: effective_date || new Date().toISOString().split('T')[0]
+        });
+        
+        res.status(201).json({ 
+            id: simCardId, 
+            message: 'Sim card created with history record',
+            status: 'success'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const updateSimCard = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const simId = Number(req.params.id);
+        const { sim_sn, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
+        
+        // Validate required fields
+        if (!simId) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'SIM ID is required',
+                data: null
+            });
+        }
+        
+        // Update sim_sn in telco_simcards if provided
+        if (sim_sn) {
+            await pool.query(`UPDATE billings.telco_simcards SET sim_sn = ? WHERE id = ?`, [sim_sn, simId]);
+        }
+        
+        // Create new history record in telco_sims_history
+        await telcoModel.createSimHistory({
+            sim_id: simId,
+            sub_no_id: sub_no_id || null,
+            ramco_id: ramco_id || null,
+            asset_id: asset_id || null,
+            effective_date: effective_date || new Date().toISOString().split('T')[0]
+        });
+        
+        res.status(200).json({ 
+            id: simId,
+            message: 'Sim card updated with history record',
+            status: 'success'
+        });
     } catch (error) {
         next(error);
     }

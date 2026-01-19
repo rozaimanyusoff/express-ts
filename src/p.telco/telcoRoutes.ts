@@ -14,8 +14,10 @@ router.delete('/subs/:id', asyncHandler(TelcoController.deleteSubscriber));
 router.patch('/subs/:id/move', asyncHandler(TelcoController.moveSubscriberToAccount)); // update subscriber by id
 
 /* Sim Card */
+router.get('/sims/:id', asyncHandler(TelcoController.getSimCardById)); // get single sim card with enriched data by id
 router.get('/sims', asyncHandler(TelcoController.getSimCards));
 router.post('/sims', asyncHandler(TelcoController.createSimCard));
+router.put('/sims/:id', asyncHandler(TelcoController.updateSimCard)); // update sim with history tracking
 
 /* Accounts */
 router.get('/accounts/:id/subs', asyncHandler(TelcoController.getAccountWithSubscribersById)); // show account and its subscribers by account id
