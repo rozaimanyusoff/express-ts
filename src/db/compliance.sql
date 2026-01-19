@@ -84,6 +84,7 @@ CREATE TABLE `computer_assessment` (
   `attachment_1` varchar(255) DEFAULT NULL,
   `attachment_2` varchar(255) DEFAULT NULL,
   `attachment_3` varchar(255) DEFAULT NULL,
+  `asset_status` varchar(20) DEFAULT NULL COMMENT 'new = unlinked asset, linked = has asset_id in assets.assetdata',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)

@@ -80,17 +80,24 @@ export async function createDepartmentSub(departmentSub: any) {
     return result.insertId;
 }
 export async function createSimCard(simCard: any) {
-    const { note, reason, register_date, sim_sn, sub_no_id } = simCard;
+    const { status, sim_sn, reason, replaced_sim_id, register_date } = simCard;
     // Check for duplicate by sim_sn
     const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.simCards} WHERE sim_sn = ? LIMIT 1`, [sim_sn]);
     if (dupRows && dupRows.length > 0) {
         return dupRows[0].id;
     }
     const [result] = await pool.query<ResultSetHeader>(
-        `INSERT INTO ${tables.simCards} (sim_sn, sub_no_id, register_date, reason, note) VALUES (?, ?, ?, ?, ?)`,
-        [sim_sn, sub_no_id, register_date, reason, note]
+        `INSERT INTO ${tables.simCards} (sim_sn, status, reason, replaced_sim_id, register_date) VALUES (?, ?, ?, ?, ?)`,
+        [sim_sn, status, reason, replaced_sim_id, register_date]
     );
     return result.insertId;
+}
+
+export async function updateSimCardStatus(simId: number, status: string) {
+    await pool.query(
+        `UPDATE ${tables.simCards} SET status = ? WHERE id = ?`,
+        [status, simId]
+    );
 }
 
 export async function createSubscriber(subscriber: any) {
@@ -215,7 +222,7 @@ export async function getOldSubscribers() {
 export async function getSimCardBySubscriber() {
     // Returns the latest sim card for each subscriber (sub_no_id) with account_sub
     const [rows] = await pool.query<RowDataPacket[]>(`
-        SELECT s.id as sim_id, s.sim_sn, scs.sub_no_id, ts.account_sub
+        SELECT s.id as sim_id, s.sim_sn, s.status, scs.sub_no_id, ts.account_sub
         FROM ${tables.simCardSubs} scs
         JOIN ${tables.simCards} s ON scs.sim_id = s.id
         JOIN ${tables.subscribers} ts ON scs.sub_no_id = ts.id
@@ -281,7 +288,7 @@ export async function getSimAssetHistoryBySimId(simId: number) {
 // ===================== SIM CARDS =====================
 // CRUD for simcards
 export async function getSimCards() {
-    const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.simCards}`);
+    const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.simCards} ORDER BY id DESC`);
     return rows;
 }
 export async function getSimsBySubscriberId(subscriberId: number) {
@@ -402,10 +409,10 @@ export async function updateAccount(id: number, account: any) {
 
 
 export async function updateSimCard(id: number, simCard: any) {
-    const { note, reason, register_date, sim_sn, sub_no_id } = simCard;
+    const { status, reason, register_date, sim_sn, sub_no_id } = simCard;
     await pool.query(
-        `UPDATE ${tables.simCards} SET sim_sn = ?, sub_no_id = ?, register_date = ?, reason = ?, note = ? WHERE id = ?`,
-        [sim_sn, sub_no_id, register_date, reason, note, id]
+        `UPDATE ${tables.simCards} SET sim_sn = ?, sub_no_id = ?, register_date = ?, reason = ?, status = ? WHERE id = ?`,
+        [sim_sn, sub_no_id, register_date, reason, status, id]
     );
 }
 

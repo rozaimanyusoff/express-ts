@@ -5,6 +5,14 @@ import asyncHandler from '../utils/asyncHandler';
 
 const router = Router();
 
+/* Sim Card */
+router.post('/sims', asyncHandler(TelcoController.createSimCard));
+router.put('/sims/:id', asyncHandler(TelcoController.updateSimCard)); // update sim with history tracking
+router.get('/sims/:id', asyncHandler(TelcoController.getSimCardById)); // get single sim card with enriched data by id
+router.get('/sims', asyncHandler(TelcoController.getSimCards));
+
+
+
 router.get('/subs/:id/sims', asyncHandler(TelcoController.getSubscriberWithSimsById)); // show subscriber and its sim cards by id
 router.get('/subs/:id', asyncHandler(TelcoController.getSubscriberById)); // show subscriber by id
 router.get('/subs', asyncHandler(TelcoController.getSubscribers)); // list subscribers
@@ -13,11 +21,6 @@ router.put('/subs/:id', asyncHandler(TelcoController.updateSubscriber));
 router.delete('/subs/:id', asyncHandler(TelcoController.deleteSubscriber));
 router.patch('/subs/:id/move', asyncHandler(TelcoController.moveSubscriberToAccount)); // update subscriber by id
 
-/* Sim Card */
-router.get('/sims/:id', asyncHandler(TelcoController.getSimCardById)); // get single sim card with enriched data by id
-router.get('/sims', asyncHandler(TelcoController.getSimCards));
-router.post('/sims', asyncHandler(TelcoController.createSimCard));
-router.put('/sims/:id', asyncHandler(TelcoController.updateSimCard)); // update sim with history tracking
 
 /* Accounts */
 router.get('/accounts/:id/subs', asyncHandler(TelcoController.getAccountWithSubscribersById)); // show account and its subscribers by account id

@@ -1058,21 +1058,26 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
   const assets = assetRows as any[];
 
   // Get all computer assessments
-  let assessmentQuery = `SELECT asset_id, register_number, assessment_year, id FROM ${computerAssessmentTable}`;
+  let assessmentQuery = `SELECT * FROM ${computerAssessmentTable}`;
   const assessmentParams: any[] = [];
 
   if (filters?.assessment_year) {
     assessmentQuery += ` WHERE assessment_year = ?`;
     assessmentParams.push(filters.assessment_year);
   }
+  
+  assessmentQuery += ` ORDER BY assessment_year DESC`;
 
   const [assessmentRows] = await pool.query(assessmentQuery, assessmentParams);
   const assessments = assessmentRows as any[];
 
   // Create a map of asset_id -> assessment records for quick lookup
-  const assessmentMap = new Map<number, any[]>();
+  const assessmentMap = new Map<number | null, any[]>();
+  const assetIdSet = new Set<number | null>();
+  
   assessments.forEach((a: any) => {
-    const assetId = Number(a.asset_id);
+    const assetId = a.asset_id ? Number(a.asset_id) : null;
+    assetIdSet.add(assetId);
     if (!assessmentMap.has(assetId)) {
       assessmentMap.set(assetId, []);
     }
@@ -1091,11 +1096,52 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
       assessment_count: assetAssessments.length,
       assessments: assetAssessments,
       last_assessment: assetAssessments.length > 0 
-        ? assetAssessments.sort((a: any, b: any) => 
-            Number(b.assessment_year) - Number(a.assessment_year)
-          )[0] 
+        ? assetAssessments[0]  // Already sorted DESC by query
         : null,
     };
+  });
+
+  // Add orphaned assessments (those without a corresponding asset in assets.assetdata)
+  const assetIds = new Set(assets.map((a: any) => Number(a.id)));
+  assetIdSet.forEach((assetId: number | null) => {
+    if (assetId === null) {
+      // Assessments with no asset_id (manually created for new discovered assets)
+      // Group by register_number to keep each discovered asset separate
+      const unlinkedAssessments = assessmentMap.get(null) || [];
+      const groupedByRegisterNumber = new Map<string, any[]>();
+      
+      unlinkedAssessments.forEach((a: any) => {
+        const regNum = a.register_number || 'unknown';
+        if (!groupedByRegisterNumber.has(regNum)) {
+          groupedByRegisterNumber.set(regNum, []);
+        }
+        groupedByRegisterNumber.get(regNum)!.push(a);
+      });
+      
+      // Create separate record for each discovered asset (by register_number)
+      groupedByRegisterNumber.forEach((assessmentsForReg: any[]) => {
+        combined.push({
+          asset: null,
+          asset_id: null,
+          register_number: assessmentsForReg[0].register_number,
+          assessed: true,
+          assessment_count: assessmentsForReg.length,
+          assessments: assessmentsForReg,
+          last_assessment: assessmentsForReg.length > 0 ? assessmentsForReg[0] : null,
+        } as any);
+      });
+    } else if (!assetIds.has(assetId)) {
+      // Orphaned assessment - asset_id references non-existent asset
+      const orphanedAssessments = assessmentMap.get(assetId) || [];
+      combined.push({
+        asset: null,
+        asset_id: assetId,
+        assessed: true,
+        assessment_count: orphanedAssessments.length,
+        assessments: orphanedAssessments,
+        last_assessment: orphanedAssessments.length > 0 ? orphanedAssessments[0] : null,
+      } as any);
+    }
   });
 
   // Apply filters
@@ -1107,6 +1153,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
   }
 
   return combined;
+
 };
 
 /**
@@ -1169,8 +1216,17 @@ export const createComputerAssessment = async (data: Partial<ComputerAssessment>
     }
   }
 
+  // Handle asset_id: convert empty string or 0 to null
+  let assetId: number | null = null;
+  if (data.asset_id) {
+    const parsed = Number(data.asset_id);
+    assetId = (isFinite(parsed) && parsed > 0) ? parsed : null;
+  }
+
   const payload = {
     ...data,
+    asset_id: assetId,
+    asset_status: data.asset_status || (assetId ? null : 'new'),  // Ensure asset_status is set
     assessment_date: assessmentDate,
     created_at: now,
     display_interfaces: displayInterfaces,

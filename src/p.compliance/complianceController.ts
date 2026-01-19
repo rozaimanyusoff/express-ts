@@ -2134,6 +2134,11 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
   try {
     const data = req.body;
     
+    // Convert register_number to uppercase
+    if (data.register_number) {
+      data.register_number = String(data.register_number).toUpperCase();
+    }
+    
     // If no asset_id provided, mark asset_status as 'new'
     if (!data.asset_id) {
       data.asset_status = 'new';
@@ -2958,9 +2963,67 @@ export const getITAssetsWithAssessmentStatus = async (req: Request, res: Respons
     const locationMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [l.id, l]));
     const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [e.ramco_id, e]));
 
+    // Helper function to enrich assessment data with lookups
+    const enrichAssessment = (assessment: any) => {
+      if (!assessment) return null;
+      
+      const enriched = {
+        ...assessment,
+        brand: assessment.brand && brandMap.has(Number(assessment.brand))
+          ? { id: Number(assessment.brand), name: brandMap.get(Number(assessment.brand))?.name || null }
+          : (assessment.brand ? { raw: assessment.brand } : null),
+        category: assessment.category && categoryMap.has(Number(assessment.category))
+          ? { id: Number(assessment.category), name: categoryMap.get(Number(assessment.category))?.name || null }
+          : (assessment.category ? { raw: assessment.category } : null),
+        costcenter: assessment.costcenter_id && costcenterMap.has(assessment.costcenter_id)
+          ? { id: assessment.costcenter_id, name: costcenterMap.get(assessment.costcenter_id)?.name || null }
+          : null,
+        department: assessment.department_id && departmentMap.has(assessment.department_id)
+          ? { id: assessment.department_id, name: departmentMap.get(assessment.department_id)?.code || null }
+          : null,
+        location: assessment.location_id && locationMap.has(assessment.location_id)
+          ? { id: assessment.location_id, name: locationMap.get(assessment.location_id)?.name || null }
+          : null,
+        model: assessment.model && modelMap.has(Number(assessment.model))
+          ? { id: Number(assessment.model), name: modelMap.get(Number(assessment.model))?.name || null }
+          : (assessment.model ? { raw: assessment.model } : null),
+        owner: assessment.ramco_id && employeeMap.has(assessment.ramco_id)
+          ? {
+              full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
+              ramco_id: assessment.ramco_id
+            }
+          : null,
+        technician_info: assessment.ramco_id && employeeMap.has(assessment.ramco_id)
+          ? {
+              full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
+              ramco_id: assessment.ramco_id
+            }
+          : (assessment.technician ? { technician: assessment.technician } : null),
+      };
+      
+      // Remove raw ID fields that have been enriched (keep the enriched objects)
+      delete enriched.costcenter_id;
+      delete enriched.department_id;
+      delete enriched.location_id;
+      delete enriched.ramco_id;
+      
+      return enriched;
+    };
+
     // Enrich assets with lookup data
     const enrichedResult = result.map((item: any) => {
       const asset = item.asset;
+      
+      // If asset is null (orphaned assessment), enrich assessments and return
+      if (!asset) {
+        return {
+          ...item,
+          asset: null,
+          assessments: item.assessments.map((a: any) => enrichAssessment(a)),
+          last_assessment: enrichAssessment(item.last_assessment),
+        };
+      }
+      
       const type = typeMap.get(asset.type_id);
       const nbv = assetModel.calculateNBV(asset.unit_price, asset.purchase_year);
       const age = assetModel.calculateAge(asset.purchase_year);
@@ -3008,7 +3071,9 @@ export const getITAssetsWithAssessmentStatus = async (req: Request, res: Respons
           register_number: asset.register_number,
           type: type ? { id: type.id, name: type.name } : null,
           unit_price: asset.unit_price,
-        }
+        },
+        assessments: item.assessments.map((a: any) => enrichAssessment(a)),
+        last_assessment: enrichAssessment(item.last_assessment),
       };
     });
 

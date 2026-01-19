@@ -41,7 +41,7 @@ interface ContractData {
 // Define the structure of the sim card data
 interface SimCardData {
     id: number;
-    note: string;
+    status: string;
     reason: string;
     register_date: string;
     sim_sn: string;
@@ -1100,8 +1100,17 @@ export const moveSubscriberToAccount = async (req: Request, res: Response, next:
 /* list sim cards. ep: /sims */
 export const getSimCards = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // Use join to get sim cards with sub_no_id and sub_no
-        const simCards = await (telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : []);
+        // Get status query parameter for filtering
+        const statusFilter = req.query.status ? String(req.query.status).toLowerCase() : null;
+        
+        // Get all sim cards from telco_simcards table
+        const allSimCards = await telcoModel.getSimCards();
+        // Get sim cards linked to subscribers for enrichment
+        const simCardsWithSubs = await (telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : []);
+        
+        // Create a map of sim cards with subscriber info for quick lookup
+        const simWithSubsMap = Object.fromEntries((Array.isArray(simCardsWithSubs) ? simCardsWithSubs : []).map((sim: any) => [sim.sim_id, sim]));
+        
         // Get all subscribers to map sub_no_id to sub_no
         const subscribers = await telcoModel.getSubscribers();
         const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
@@ -1112,25 +1121,39 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
         const accounts = await telcoModel.getAccounts();
         const accountMap = Object.fromEntries((Array.isArray(accounts) ? accounts : []).map((acc: any) => [acc.id, acc]));
         
-        const formatted = Array.isArray(simCards)
-            ? await Promise.all(simCards.map(async (sim: any) => {
-                const accountSubData = sim.sub_no_id ? accountSubMap[sim.sub_no_id] : null;
+        // Filter by status if provided
+        const filteredSimCards = statusFilter 
+            ? (Array.isArray(allSimCards) ? allSimCards.filter((sim: any) => sim.status && sim.status.toLowerCase() === statusFilter) : [])
+            : allSimCards;
+        
+        const formatted = Array.isArray(filteredSimCards)
+            ? await Promise.all(filteredSimCards.map(async (sim: any) => {
+                // Get enriched data from simWithSubsMap if available
+                const enrichedSim = simWithSubsMap[sim.id] || {};
+                const sub_no_id = enrichedSim.sub_no_id || null;
+                const account_sub = enrichedSim.account_sub || null;
+                
+                const accountSubData = sub_no_id ? accountSubMap[sub_no_id] : null;
                 const accountId = accountSubData ? accountSubData.account_id : null;
                 const account = accountId ? accountMap[accountId] : null;
                 // Get sim card history for this subscriber
-                const simHistory = sim.sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sim.sub_no_id) : [];
+                const simHistory = sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sub_no_id) : [];
                 // Get user history for this sim
-                const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.sim_id);
+                const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.id);
                 // Get asset history for this sim
-                const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.sim_id);
+                const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.id);
                 
                 return {
-                    id: sim.sim_id || sim.id,
-                    sim_sn: sim.sim_sn || sim.sim_no,
-                    subs: sim.sub_no_id ? { 
-                        id: sim.sub_no_id, 
-                        sub_no: subNoMap[sim.sub_no_id] || null,
-                        account_sub: sim.account_sub || null
+                    id: sim.id,
+                    sim_sn: sim.sim_sn,
+                    status: sim.status || null,
+                    reason: sim.reason || null,
+                    replaced_sim_id: sim.replaced_sim_id || null,
+                    register_date: sim.register_date || null,
+                    subs: sub_no_id ? { 
+                        id: sub_no_id, 
+                        sub_no: subNoMap[sub_no_id] || null,
+                        account_sub: account_sub || null
                     } : null,
                     account: account ? { id: account.id, account_master: account.account_master || null } : null,
                     sim_subs_history: Array.isArray(simHistory) ? simHistory.map((h: any) => {
@@ -1205,7 +1228,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
         
         // Get single sim card with subscriber info
         const [simCardRows] = await pool.query<RowDataPacket[]>(`
-            SELECT s.id as sim_id, s.sim_sn, scs.sub_no_id, ts.account_sub
+            SELECT s.id as sim_id, s.sim_sn, s.status, scs.sub_no_id, ts.account_sub
             FROM billings.telco_simcards s
             LEFT JOIN billings.telco_simcard_subs scs ON s.id = scs.sim_id
             LEFT JOIN billings.telco_subscribers ts ON scs.sub_no_id = ts.id
@@ -1248,6 +1271,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
         const enrichedData = {
             id: sim.sim_id || sim.id,
             sim_sn: sim.sim_sn || sim.sim_no,
+            status: sim.status || null,
             subs: sim.sub_no_id ? { 
                 id: sim.sub_no_id, 
                 sub_no: subNoMap[sim.sub_no_id] || null,
@@ -1322,13 +1346,33 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
 /* Create sim cards. POST /sims */
 export const createSimCard = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { sim_sn, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
+        const { sim_sn, status, reason, replacement_sim, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
         
-        // Create the sim card in telco_simcards table
-        const simCardData = { sim_sn };
+        // Validate required field
+        if (!sim_sn) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'sim_sn is required',
+                data: null
+            });
+        }
+        
+        // Create the sim card in telco_simcards table with sim_sn, status, reason, replaced_sim_id, and register_date
+        const simCardData = { 
+            sim_sn, 
+            status: status || null,
+            reason: reason || null,
+            replaced_sim_id: replacement_sim || null,
+            register_date: effective_date || new Date().toISOString().split('T')[0]
+        };
         const simCardId = await telcoModel.createSimCard(simCardData);
         
-        // Create history record in telco_sims_history table
+        // If replacement_sim is provided, set its status to 'inactive'
+        if (replacement_sim) {
+            await telcoModel.updateSimCardStatus(replacement_sim, 'inactive');
+        }
+        
+        // Create history record in telco_sims_history table with sim_id, sub_no_id, ramco_id, asset_id
         await telcoModel.createSimHistory({
             sim_id: simCardId,
             sub_no_id: sub_no_id || null,
@@ -1339,7 +1383,7 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
         
         res.status(201).json({ 
             id: simCardId, 
-            message: 'Sim card created with history record',
+            message: 'Sim card created successfully',
             status: 'success'
         });
     } catch (error) {
