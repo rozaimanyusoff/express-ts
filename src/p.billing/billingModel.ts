@@ -644,36 +644,50 @@ export const getFleetAssetLinks = async (): Promise<any[]> => {
 };
 
 export const createFleetCard = async (data: any): Promise<number> => {
+  // Validate required fields
+  if (!data.card_no) {
+    throw new Error('card_no is required');
+  }
+  if (!data.fuel_id) {
+    throw new Error('fuel_id is required');
+  }
+  if (!data.asset_id) {
+    throw new Error('asset_id is required');
+  }
+
   // Check for duplicate card_no
   const [existingRows] = await pool.query(
     `SELECT id FROM ${fleetCardTable} WHERE card_no = ? LIMIT 1`,
     [data.card_no]
   );
   if (Array.isArray(existingRows) && existingRows.length > 0) {
-    // Duplicate found, return -1 or throw error
     throw new Error('Fleet card with this card_no already exists.');
-    // Or: return (existingRows[0] as any).id;
   }
 
   const [result] = await pool.query(
     `INSERT INTO ${fleetCardTable} (
-      vehicle_id, asset_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks
+      asset_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks, vehicle_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [ data.vehicle_id, data.asset_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.remarks ]
+    [ 
+      data.asset_id, 
+      data.fuel_id, 
+      data.card_no, 
+      data.pin || null, 
+      data.reg_date || null, 
+      data.status || 'active', 
+      data.expiry_date || null, 
+      data.remarks || null, 
+      data.vehicle_id || null 
+    ]
   );
 
   const cardId = (result as ResultSetHeader).insertId;
 
-  // Update card_id in tempVehicleRecordTable
+  // Insert initial history record when card is created with an asset_id
   if (data.asset_id) {
     await pool.query(
-      `UPDATE assets.assetdata SET card_id = ? WHERE id = ?`,
-      [cardId, data.asset_id]
-    );
-    // Insert into fleet_asset join table
-    await pool.query(
-      `INSERT INTO ${fleetAssetJoinTable} (asset_id, card_id) VALUES (?, ?)`,
-      [data.asset_id, cardId]
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
+      [cardId, null, data.asset_id]
     );
   }
 
@@ -697,19 +711,6 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
         [id, current.asset_id, data.asset_id ?? current.asset_id]
       );
 
-      // Update card_id in assetdata
-      await pool.query(
-        `UPDATE assets.assetdata SET card_id = ? WHERE id = ?`,
-        [id, data.asset_id]
-      );
-
-      // Set vehicle_id as NULL on old card id
-      if (current.asset_id) {
-        await pool.query(
-          `UPDATE ${fleetCardTable} SET asset_id = NULL WHERE id = ?`,
-          [current.asset_id]
-        );
-      }
       // Maintain fleet_asset join links: remove old link, add new link if present
       try {
         if (current?.asset_id) {

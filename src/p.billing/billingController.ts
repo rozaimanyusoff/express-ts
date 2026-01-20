@@ -2147,8 +2147,13 @@ export const createFleetCard = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFleetCard(req.body);
 		res.status(201).json({ id: insertId, message: 'Fleet card created successfully', status: 'success' });
-	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to create fleet card', status: 'error' });
+	} catch (error: any) {
+		console.error('Create fleet card error:', error?.message || error);
+		res.status(500).json({ 
+			error: error?.message || String(error), 
+			message: 'Failed to create fleet card', 
+			status: 'error' 
+		});
 	}
 };
 export const updateFleetCard = async (req: Request, res: Response) => {
