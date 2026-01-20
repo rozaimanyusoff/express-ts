@@ -10,8 +10,8 @@ const tables = {
     contracts: `${dbBilling}.telco_contracts`,
     deptSubs: `${dbBilling}.telco_department_subs`, // Assuming this is a table for department subscriptions
     oldSubscribers: `${dbBilling}.celcomsub`, // Assuming this is a table for old subscribers
-    simCards: `${dbBilling}.telco_simcards`,
-    simCardSubs: `${dbBilling}.telco_simcard_subs`,
+    simCards: `${dbBilling}.telco_sims`,
+    simCardSubs: `${dbBilling}.telco_sims_subs`,
     simsHistory: `${dbBilling}.telco_sims_history`, // SIM history with user, asset tracking
     subscribers: `${dbBilling}.telco_subscribers`,
     telcoBilling: `${dbBilling}.telco_bills`, // Assuming this is a table for telco billing
@@ -80,15 +80,15 @@ export async function createDepartmentSub(departmentSub: any) {
     return result.insertId;
 }
 export async function createSimCard(simCard: any) {
-    const { status, sim_sn, reason, replaced_sim_id, register_date } = simCard;
+    const { status, sim_sn, reason, replacement_sim_id, activated_at } = simCard;
     // Check for duplicate by sim_sn
     const [dupRows] = await pool.query<RowDataPacket[]>(`SELECT id FROM ${tables.simCards} WHERE sim_sn = ? LIMIT 1`, [sim_sn]);
     if (dupRows && dupRows.length > 0) {
         return dupRows[0].id;
     }
     const [result] = await pool.query<ResultSetHeader>(
-        `INSERT INTO ${tables.simCards} (sim_sn, status, reason, replaced_sim_id, register_date) VALUES (?, ?, ?, ?, ?)`,
-        [sim_sn, status, reason, replaced_sim_id, register_date]
+        `INSERT INTO ${tables.simCards} (sim_sn, status, reason, replacement_sim_id, activated_at) VALUES (?, ?, ?, ?, ?)`,
+        [sim_sn, status || 'active', reason || 'new', replacement_sim_id || null, activated_at || new Date()]
     );
     return result.insertId;
 }

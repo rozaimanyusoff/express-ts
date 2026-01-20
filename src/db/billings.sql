@@ -2427,35 +2427,40 @@ CREATE TABLE `telco_department_subs` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `telco_simcard_subs`
+-- Table structure for table `telco_sims_subs`
 --
 
-DROP TABLE IF EXISTS `telco_simcard_subs`;
+DROP TABLE IF EXISTS `telco_sims_subs`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `telco_simcard_subs` (
+CREATE TABLE `telco_sims_subs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `sim_id` int DEFAULT NULL,
   `sub_no_id` int DEFAULT NULL,
   `effective_date` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_sim_id` (`sim_id`),
+  KEY `idx_sub_no_id` (`sub_no_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=236 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `telco_simcards`
+-- Table structure for table `telco_sims`
 --
 
-DROP TABLE IF EXISTS `telco_simcards`;
+DROP TABLE IF EXISTS `telco_sims`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `telco_simcards` (
+CREATE TABLE `telco_sims` (
   `id` int NOT NULL AUTO_INCREMENT,
   `sim_sn` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
-  `register_date` date DEFAULT NULL,
+  `activated_at` datetime DEFAULT NULL,
+  `deactivated_at` datetime DEFAULT NULL,
   `reason` enum('new','lost','broken','replace') DEFAULT 'new',
-  `note` varchar(200) DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  `status` varchar(20) DEFAULT 'active',
+  `replacement_sim_id` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_replacement_sim_id` (`replacement_sim_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=236 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

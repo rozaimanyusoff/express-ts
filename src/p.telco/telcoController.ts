@@ -907,18 +907,20 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
 export const getSubscribers = async (req: Request, res: Response, next: NextFunction) => {
     try {
         // Fetch all required data in parallel
-        const [subscribers, accounts, accountSubs, simCards, departments, costcenters, employees, assets, userSubs, brands, models] = await Promise.all([
+        const [subscribers, accounts, accountSubs, simCards, departments, costcenters, districts, employees, assets, userSubs, brands, models, categories] = await Promise.all([
             telcoModel.getSubscribers(),
             telcoModel.getAccounts(),
             telcoModel.getAccountSubs(),
             telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : [],
             assetModel.getDepartments ? assetModel.getDepartments() : [],
             assetModel.getCostcenters ? assetModel.getCostcenters() : [],
+            assetModel.getDistricts ? assetModel.getDistricts() : [],
             assetModel.getEmployees ? assetModel.getEmployees() : [],
             assetModel.getAssets ? assetModel.getAssets() : [],
             telcoModel.getUserSubs(),
             assetModel.getBrands ? assetModel.getBrands() : [],
             assetModel.getModels ? assetModel.getModels() : [],
+            assetModel.getCategories ? assetModel.getCategories() : [],
         ]);
 
         // Build lookup maps for fast access
@@ -931,16 +933,19 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
         // Defensive: ensure departments/costcenters are arrays of objects
         const departmentArr = Array.isArray(departments) && !(departments as any).hasOwnProperty('affectedRows') ? departments : [];
         const costcenterArr = Array.isArray(costcenters) && !(costcenters as any).hasOwnProperty('affectedRows') ? costcenters : [];
+        const districtArr = Array.isArray(districts) && !(districts as any).hasOwnProperty('affectedRows') ? districts : [];
         const departmentMap = Object.fromEntries((departmentArr).map((d: any) => [d.id, d]));
         const costcenterMap = Object.fromEntries((costcenterArr).map((c: any) => [c.id, c]));
+        const districtMap = Object.fromEntries((districtArr).map((d: any) => [d.id, d]));
         const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
         const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
         const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
+        const categoryMap = Object.fromEntries((Array.isArray(categories) ? categories : []).map((c: any) => [c.id, c]));
 
         // Format each subscriber
         const formatted = subscribers.map((sub: any) => {
-            // Destructure to remove asset_id from the returned object
-            const { asset_id, ...rest } = sub;
+            // Destructure to remove asset_id and category_id from the returned object
+            const { asset_id, category_id, ...rest } = sub;
             // Find account
             const accountId = accountSubMap[sub.id];
             const account = accountId ? accountMap[accountId] : null;
@@ -956,8 +961,10 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             if (asset) {
                 const brand = asset.brand_id && brandMap[asset.brand_id] ? { id: asset.brand_id, name: brandMap[asset.brand_id].name } : null;
                 const model = asset.model_id && modelMap[asset.model_id] ? { id: asset.model_id, name: modelMap[asset.model_id].name } : null;
+                const category = category_id && categoryMap[category_id] ? { id: categoryMap[category_id].id, name: categoryMap[category_id].name } : null;
                 assetData = {
                     brand,
+                    category,
                     id: asset.id,
                     model,
                     register_number: asset.register_number
@@ -966,12 +973,19 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             // Find user
             const ramcoId = userSubMap[sub.id];
             const user = ramcoId && employeeMap[ramcoId] ? { full_name: employeeMap[ramcoId].full_name, ramco_id: ramcoId } : null;
+            // Find district/location
+            const location = sub.district_id ? districtMap[sub.district_id] : null;
             return {
-                ...rest,
+                id: sub.id,
+                sub_no: sub.sub_no,
+                account_sub: sub.account_sub,
+                status: sub.status,
+                register_date: sub.register_date,
                 account: account ? { account_master: account.account_master, id: account.id, provider: account.provider } : null,
                 asset: assetData,
                 costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
                 department: department ? { id: department.id, name: department.code } : null,
+                location: location ? { id: location.id, name: location.code } : null,
                 simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                 user,
             };
@@ -1103,7 +1117,7 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
         // Get status query parameter for filtering
         const statusFilter = req.query.status ? String(req.query.status).toLowerCase() : null;
         
-        // Get all sim cards from telco_simcards table
+        // Get all sim cards from telco_sims table
         const allSimCards = await telcoModel.getSimCards();
         // Get sim cards linked to subscribers for enrichment
         const simCardsWithSubs = await (telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : []);
@@ -1148,8 +1162,9 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                     sim_sn: sim.sim_sn,
                     status: sim.status || null,
                     reason: sim.reason || null,
-                    replaced_sim_id: sim.replaced_sim_id || null,
-                    register_date: sim.register_date || null,
+                    replacement_sim_id: sim.replacement_sim_id || null,
+                    activated_at: sim.activated_at || null,
+                    deactivated_at: sim.deactivated_at || null,
                     subs: sub_no_id ? { 
                         id: sub_no_id, 
                         sub_no: subNoMap[sub_no_id] || null,
@@ -1229,8 +1244,8 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
         // Get single sim card with subscriber info
         const [simCardRows] = await pool.query<RowDataPacket[]>(`
             SELECT s.id as sim_id, s.sim_sn, s.status, scs.sub_no_id, ts.account_sub
-            FROM billings.telco_simcards s
-            LEFT JOIN billings.telco_simcard_subs scs ON s.id = scs.sim_id
+            FROM billings.telco_sims s
+            LEFT JOIN billings.telco_sims_subs scs ON s.id = scs.sim_id
             LEFT JOIN billings.telco_subscribers ts ON scs.sub_no_id = ts.id
             WHERE s.id = ?
         `, [simId]);
@@ -1272,6 +1287,10 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
             id: sim.sim_id || sim.id,
             sim_sn: sim.sim_sn || sim.sim_no,
             status: sim.status || null,
+            reason: sim.reason || null,
+            replacement_sim_id: sim.replacement_sim_id || null,
+            activated_at: sim.activated_at || null,
+            deactivated_at: sim.deactivated_at || null,
             subs: sim.sub_no_id ? { 
                 id: sim.sub_no_id, 
                 sub_no: subNoMap[sim.sub_no_id] || null,
@@ -1357,12 +1376,12 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
             });
         }
         
-        // Create the sim card in telco_simcards table with sim_sn, status, reason, replaced_sim_id, and register_date
+        // Create the sim card in telco_sims table with sim_sn, status, reason, replacement_sim_id, and activated_at
         const simCardData = { 
             sim_sn, 
-            status: status || null,
-            reason: reason || null,
-            replaced_sim_id: replacement_sim || null,
+            status: status || 'active',
+            reason: reason || 'new',
+            replacement_sim_id: replacement_sim || null,
             register_date: effective_date || new Date().toISOString().split('T')[0]
         };
         const simCardId = await telcoModel.createSimCard(simCardData);
@@ -1405,9 +1424,9 @@ export const updateSimCard = async (req: Request, res: Response, next: NextFunct
             });
         }
         
-        // Update sim_sn in telco_simcards if provided
+        // Update sim_sn in telco_sims if provided
         if (sim_sn) {
-            await pool.query(`UPDATE billings.telco_simcards SET sim_sn = ? WHERE id = ?`, [sim_sn, simId]);
+            await pool.query(`UPDATE billings.telco_sims SET sim_sn = ? WHERE id = ?`, [sim_sn, simId]);
         }
         
         // Create new history record in telco_sims_history
