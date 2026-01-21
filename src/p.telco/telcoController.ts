@@ -1150,6 +1150,19 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                 const accountSubData = sub_no_id ? accountSubMap[sub_no_id] : null;
                 const accountId = accountSubData ? accountSubData.account_id : null;
                 const account = accountId ? accountMap[accountId] : null;
+                
+                // Get replacement SIM details if replacement_sim_id exists
+                let replacementSim = null;
+                if (sim.replacement_sim_id) {
+                    const [replacementRows] = await pool.query<RowDataPacket[]>(
+                        `SELECT id, sim_sn FROM billings.telco_sims WHERE id = ?`,
+                        [sim.replacement_sim_id]
+                    );
+                    if (replacementRows && replacementRows.length > 0) {
+                        replacementSim = replacementRows[0];
+                    }
+                }
+                
                 // Get sim card history for this subscriber
                 const simHistory = sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sub_no_id) : [];
                 // Get user history for this sim
@@ -1162,7 +1175,10 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                     sim_sn: sim.sim_sn,
                     status: sim.status || null,
                     reason: sim.reason || null,
-                    replacement_sim_id: sim.replacement_sim_id || null,
+                    replacement_sim: sim.replacement_sim_id ? {
+                        id: sim.replacement_sim_id,
+                        sim_sn: replacementSim?.sim_sn || null
+                    } : null,
                     activated_at: sim.activated_at || null,
                     deactivated_at: sim.deactivated_at || null,
                     subs: sub_no_id ? { 
@@ -1184,13 +1200,20 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                             sub_no: h.sub_no
                         };
                     }) : [],
-                    sim_user_history: Array.isArray(simUserHistory) ? simUserHistory.map((h: any) => {
+                    sim_user_history: Array.isArray(simUserHistory) && simUserHistory.length > 0 ? simUserHistory.map((h: any) => {
                         let formattedDate = null;
                         if (h.effective_date) {
                             const dateObj = new Date(h.effective_date);
                             if (!isNaN(dateObj.getTime())) {
                                 formattedDate = dateObj.toISOString().split('T')[0];
                             }
+                        }
+                        // If employee enrichment failed (3rd party assignment), just show ramco_id
+                        if (!h.full_name && h.ramco_id) {
+                            return {
+                                effective_date: formattedDate,
+                                user: h.ramco_id
+                            };
                         }
                         return {
                             effective_date: formattedDate,
@@ -1211,8 +1234,8 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                                 name: h.loc_name || null
                             } : null
                         };
-                    }) : [],
-                    sim_asset_history: Array.isArray(simAssetHistory) ? simAssetHistory.map((h: any) => {
+                    }) : null,
+                    sim_asset_history: Array.isArray(simAssetHistory) && simAssetHistory.length > 0 ? simAssetHistory.map((h: any) => {
                         let formattedDate = null;
                         if (h.effective_date) {
                             const dateObj = new Date(h.effective_date);
@@ -1227,7 +1250,7 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                                 register_number: h.register_number || null
                             } : null
                         };
-                    }) : []
+                    }) : null
                 };
             }))
             : [];
@@ -1243,10 +1266,10 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
         
         // Get single sim card with subscriber info
         const [simCardRows] = await pool.query<RowDataPacket[]>(`
-            SELECT s.id as sim_id, s.sim_sn, s.status, scs.sub_no_id, ts.account_sub
+            SELECT s.id as sim_id, s.sim_sn, s.status, s.reason, s.activated_at, s.deactivated_at, s.replacement_sim_id, scs.sub_no_id, ts.account_sub
             FROM billings.telco_sims s
             LEFT JOIN billings.telco_sims_subs scs ON s.id = scs.sim_id
-            LEFT JOIN billings.telco_subscribers ts ON scs.sub_no_id = ts.id
+            LEFT JOIN billings.telco_subs ts ON scs.sub_no_id = ts.id
             WHERE s.id = ?
         `, [simId]);
         
@@ -1283,12 +1306,27 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
         const accountId = accountSubData ? accountSubData.account_id : null;
         const account = accountId ? accountMap[accountId] : null;
         
+        // Get replacement SIM details if replacement_sim_id exists
+        let replacementSim = null;
+        if (sim.replacement_sim_id) {
+            const [replacementRows] = await pool.query<RowDataPacket[]>(
+                `SELECT id, sim_sn FROM billings.telco_sims WHERE id = ?`,
+                [sim.replacement_sim_id]
+            );
+            if (replacementRows && replacementRows.length > 0) {
+                replacementSim = replacementRows[0];
+            }
+        }
+        
         const enrichedData = {
             id: sim.sim_id || sim.id,
             sim_sn: sim.sim_sn || sim.sim_no,
             status: sim.status || null,
             reason: sim.reason || null,
-            replacement_sim_id: sim.replacement_sim_id || null,
+            replacement_sim: sim.replacement_sim_id ? {
+                id: sim.replacement_sim_id,
+                sim_sn: replacementSim?.sim_sn || null
+            } : null,
             activated_at: sim.activated_at || null,
             deactivated_at: sim.deactivated_at || null,
             subs: sim.sub_no_id ? { 
@@ -1310,13 +1348,20 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                     sub_no: h.sub_no
                 };
             }) : [],
-            sim_user_history: Array.isArray(simUserHistory) ? simUserHistory.map((h: any) => {
+            sim_user_history: Array.isArray(simUserHistory) && simUserHistory.length > 0 ? simUserHistory.map((h: any) => {
                 let formattedDate = null;
                 if (h.effective_date) {
                     const dateObj = new Date(h.effective_date);
                     if (!isNaN(dateObj.getTime())) {
                         formattedDate = dateObj.toISOString().split('T')[0];
                     }
+                }
+                // If employee enrichment failed (3rd party assignment), just show ramco_id
+                if (!h.full_name && h.ramco_id) {
+                    return {
+                        effective_date: formattedDate,
+                        user: h.ramco_id
+                    };
                 }
                 return {
                     effective_date: formattedDate,
@@ -1337,8 +1382,8 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                         name: h.loc_name || null
                     } : null
                 };
-            }) : [],
-            sim_asset_history: Array.isArray(simAssetHistory) ? simAssetHistory.map((h: any) => {
+            }) : null,
+            sim_asset_history: Array.isArray(simAssetHistory) && simAssetHistory.length > 0 ? simAssetHistory.map((h: any) => {
                 let formattedDate = null;
                 if (h.effective_date) {
                     const dateObj = new Date(h.effective_date);
@@ -1353,7 +1398,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                         register_number: h.register_number || null
                     } : null
                 };
-            }) : []
+            }) : null
         };
         
         res.status(200).json({ data: enrichedData, message: 'Sim card retrieved successfully', status: 'success' });
@@ -1365,7 +1410,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
 /* Create sim cards. POST /sims */
 export const createSimCard = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { sim_sn, status, reason, replacement_sim, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
+        const { sim_sn, status, reason, replacement_sim, sub_no_id, asset_id, effective_date } = req.body;
         
         // Validate required field
         if (!sim_sn) {
@@ -1376,32 +1421,47 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
             });
         }
         
-        // Create the sim card in telco_sims table with sim_sn, status, reason, replacement_sim_id, and activated_at
+        const effDate = effective_date || new Date().toISOString().split('T')[0];
+        
+        // Create the new sim card in telco_sims table
         const simCardData = { 
             sim_sn, 
-            status: status || 'active',
+            status: 'active', // Always set new SIM as active
             reason: reason || 'new',
-            replacement_sim_id: replacement_sim || null,
-            register_date: effective_date || new Date().toISOString().split('T')[0]
+            replacement_sim_id: null, // Will be set after replacement_sim is deactivated
+            activated_at: new Date()
         };
-        const simCardId = await telcoModel.createSimCard(simCardData);
+        const newSimCardId = await telcoModel.createSimCard(simCardData);
         
-        // If replacement_sim is provided, set its status to 'inactive'
+        // If replacement_sim is provided (replacing an old SIM)
         if (replacement_sim) {
-            await telcoModel.updateSimCardStatus(replacement_sim, 'inactive');
+            // 1. Deactivate the old SIM with status='deactivated', reason='broken', deactivated_at=effective_date
+            await telcoModel.deactivateSimCard(replacement_sim, 'broken', effDate);
+            
+            // 2. Link the new SIM to the old SIM (set replacement_sim_id on old SIM)
+            await telcoModel.linkReplacementSim(replacement_sim, newSimCardId);
         }
         
-        // Create history record in telco_sims_history table with sim_id, sub_no_id, ramco_id, asset_id
-        await telcoModel.createSimHistory({
-            sim_id: simCardId,
-            sub_no_id: sub_no_id || null,
-            ramco_id: ramco_id || null,
-            asset_id: asset_id || null,
-            effective_date: effective_date || new Date().toISOString().split('T')[0]
-        });
+        // 3. Insert new record in telco_sims_subs: sim_id, sub_no_id, effective_date
+        if (sub_no_id) {
+            await telcoModel.createSimSubsMapping({
+                sim_id: newSimCardId,
+                sub_no_id,
+                effective_date: effDate
+            });
+        }
+        
+        // 4. Insert new record in telco_subs_devices: sub_no_id, asset_id, effective_date
+        if (sub_no_id && asset_id) {
+            await telcoModel.createSubsDeviceMapping({
+                sub_no_id,
+                asset_id,
+                effective_date: effDate
+            });
+        }
         
         res.status(201).json({ 
-            id: simCardId, 
+            id: newSimCardId, 
             message: 'Sim card created successfully',
             status: 'success'
         });

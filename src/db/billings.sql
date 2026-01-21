@@ -2465,13 +2465,31 @@ CREATE TABLE `telco_sims` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `telco_subscribers`
+-- Table structure for table `telco_subs_devices`
 --
 
-DROP TABLE IF EXISTS `telco_subscribers`;
+DROP TABLE IF EXISTS `telco_subs_devices`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `telco_subscribers` (
+CREATE TABLE `telco_subs_devices` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `sub_no_id` int DEFAULT NULL,
+  `asset_id` int DEFAULT NULL,
+  `effective_date` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_sub_no_id` (`sub_no_id`),
+  KEY `idx_asset_id` (`asset_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `telco_subs`
+--
+
+DROP TABLE IF EXISTS `telco_subs`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `telco_subs` (
   `id` int NOT NULL AUTO_INCREMENT,
   `sub_no` varchar(15) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `account_sub` varchar(25) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,

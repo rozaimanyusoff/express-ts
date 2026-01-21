@@ -13,7 +13,8 @@ const tables = {
     simCards: `${dbBilling}.telco_sims`,
     simCardSubs: `${dbBilling}.telco_sims_subs`,
     simsHistory: `${dbBilling}.telco_sims_history`, // SIM history with user, asset tracking
-    subscribers: `${dbBilling}.telco_subscribers`,
+    subsDevices: `${dbBilling}.telco_subs_devices`, // Subscriber device mapping
+    subscribers: `${dbBilling}.telco_subs`,
     telcoBilling: `${dbBilling}.telco_bills`, // Assuming this is a table for telco billing
     telcoBillingDetails: `${dbBilling}.telco_bill_details`, // Assuming this is a table for telco billing history
     userSubs: `${dbBilling}.telco_user_subs`, // Assuming this is a table for user subscriptions
@@ -236,23 +237,23 @@ export async function getSimCardBySubscriber() {
 }
 
 export async function getSimCardHistoryBySubscriber(subId: number) {
-    // Returns all sim card history for a subscriber (sub_no_id) sorted by effective_date DESC
+    // Returns all sim card history for a subscriber (sub_no_id) from telco_sims_subs, sorted by effective_date DESC
     const [rows] = await pool.query<RowDataPacket[]>(`
-        SELECT DISTINCT sh.effective_date, ts.sub_no
-        FROM ${tables.simsHistory} sh
-        JOIN ${tables.subscribers} ts ON sh.sub_no_id = ts.id
-        WHERE sh.sub_no_id = ?
-        ORDER BY sh.effective_date DESC
+        SELECT DISTINCT scs.effective_date, ts.sub_no
+        FROM ${tables.simCardSubs} scs
+        JOIN ${tables.subscribers} ts ON scs.sub_no_id = ts.id
+        WHERE scs.sub_no_id = ?
+        ORDER BY scs.effective_date DESC
     `, [subId]);
     return rows;
 }
 
 export async function getSimUserHistoryBySimId(simId: number) {
-    // Returns user history for a sim card with department, costcenter, location details
+    // Returns user history for a sim card from telco_user_subs via telco_sims_subs with department, costcenter, location details
     const [rows] = await pool.query<RowDataPacket[]>(`
         SELECT 
-            sh.effective_date, 
-            sh.ramco_id,
+            tus.effective_date, 
+            tus.ramco_id,
             u.full_name,
             d.id as dept_id,
             d.name as dept_name,
@@ -260,28 +261,30 @@ export async function getSimUserHistoryBySimId(simId: number) {
             cc.name as cc_name,
             l.id as loc_id,
             l.name as loc_name
-        FROM ${tables.simsHistory} sh
-        LEFT JOIN assets.employees u ON sh.ramco_id = u.ramco_id
+        FROM ${tables.simCardSubs} scs
+        JOIN ${tables.userSubs} tus ON scs.sub_no_id = tus.sub_no_id
+        LEFT JOIN assets.employees u ON tus.ramco_id = u.ramco_id
         LEFT JOIN assets.departments d ON u.department_id = d.id
         LEFT JOIN assets.costcenters cc ON u.costcenter_id = cc.id
         LEFT JOIN assets.locations l ON u.location_id = l.id
-        WHERE sh.sim_id = ? AND sh.ramco_id IS NOT NULL
-        ORDER BY sh.effective_date DESC
+        WHERE scs.sim_id = ? AND tus.ramco_id IS NOT NULL
+        ORDER BY tus.effective_date DESC
     `, [simId]);
     return rows;
 }
 
 export async function getSimAssetHistoryBySimId(simId: number) {
-    // Returns asset history for a sim card
+    // Returns asset history for a sim card from telco_subs_devices via telco_sims_subs
     const [rows] = await pool.query<RowDataPacket[]>(`
         SELECT 
-            sh.effective_date,
-            sh.asset_id,
+            tsd.effective_date,
+            tsd.asset_id,
             ad.register_number
-        FROM ${tables.simsHistory} sh
-        JOIN assets.assetdata ad ON sh.asset_id = ad.id
-        WHERE sh.sim_id = ? AND sh.asset_id IS NOT NULL
-        ORDER BY sh.effective_date DESC
+        FROM ${tables.simCardSubs} scs
+        JOIN ${tables.subsDevices} tsd ON scs.sub_no_id = tsd.sub_no_id
+        JOIN assets.assetdata ad ON tsd.asset_id = ad.id
+        WHERE scs.sim_id = ? AND tsd.asset_id IS NOT NULL
+        ORDER BY tsd.effective_date DESC
     `, [simId]);
     return rows;
 }
@@ -316,6 +319,51 @@ export async function createSimHistory(data: {
     
     const [result] = await pool.query<ResultSetHeader>(`INSERT INTO ${tables.simsHistory} SET ?`, [payload]);
     return result.insertId;
+}
+
+// ===================== SIM SUBS & DEVICES =====================
+// Create SIM-Subscriber mapping record
+export async function createSimSubsMapping(data: {
+    sim_id: number;
+    sub_no_id: number;
+    effective_date?: string | null;
+}): Promise<number> {
+    const now = new Date().toISOString().split('T')[0];
+    const [result] = await pool.query<ResultSetHeader>(
+        `INSERT INTO ${tables.simCardSubs} (sim_id, sub_no_id, effective_date) VALUES (?, ?, ?)`,
+        [data.sim_id, data.sub_no_id, data.effective_date || now]
+    );
+    return result.insertId;
+}
+
+// Create Subscriber-Device mapping record
+export async function createSubsDeviceMapping(data: {
+    sub_no_id: number;
+    asset_id: number;
+    effective_date?: string | null;
+}): Promise<number> {
+    const now = new Date().toISOString().split('T')[0];
+    const [result] = await pool.query<ResultSetHeader>(
+        `INSERT INTO ${tables.subsDevices} (sub_no_id, asset_id, effective_date) VALUES (?, ?, ?)`,
+        [data.sub_no_id, data.asset_id, data.effective_date || now]
+    );
+    return result.insertId;
+}
+
+// Deactivate SIM card (when replaced)
+export async function deactivateSimCard(simId: number, deactivationReason: string, deactivatedAt: string): Promise<void> {
+    await pool.query(
+        `UPDATE ${tables.simCards} SET status = ?, reason = ?, deactivated_at = ? WHERE id = ?`,
+        ['deactivated', deactivationReason, deactivatedAt, simId]
+    );
+}
+
+// Link old SIM to new SIM (set replacement_sim_id on old SIM)
+export async function linkReplacementSim(oldSimId: number, newSimId: number): Promise<void> {
+    await pool.query(
+        `UPDATE ${tables.simCards} SET replacement_sim_id = ? WHERE id = ?`,
+        [newSimId, oldSimId]
+    );
 }
 
 // ===================== SUBSCRIBERS =====================
