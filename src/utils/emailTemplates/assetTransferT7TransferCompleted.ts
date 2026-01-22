@@ -1,7 +1,7 @@
-// Email templates for asset transfer acceptance notifications
+// Email templates for asset transfer acceptance and completion notifications (T7)
 // Usage: Call appropriate function with transfer data
 
-interface AssetTransferAcceptedParams {
+interface AssetTransferT7TransferCompletedParams {
   acceptanceDate?: Date | string;
   acceptanceRemarks?: null | string;
   currentOwner?: any; // previous owner
@@ -36,7 +36,7 @@ const valueStyle = 'display:inline-block; min-width:180px;';
 const rowStyle = 'margin-bottom:6px;';
 
 // 2. Email to Current/Previous Owner
-export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, acceptanceRemarks, currentOwner, items, newOwner, request }: AssetTransferAcceptedParams) {
+export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, acceptanceRemarks, currentOwner, items, newOwner, request }: AssetTransferT7TransferCompletedParams) {
   const subject = `Asset Transfer Completed - Request #${safe(request?.request_no || request?.id)}`;
   const acceptedDate = formatDate(acceptanceDate || new Date());
   
@@ -60,8 +60,10 @@ export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, accepta
           ${items.map((it: any) => `
           <div style="${cardStyle}">
             <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type || it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name || it.asset?.brand)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name || it.asset?.model)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.asset?.owner?.full_name || it.currOwnerName || it.asset?.owner)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
           </div>
           `).join('')}
@@ -81,7 +83,7 @@ export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, accepta
 }
 
 // 3. Email to New Owner's HOD
-export function assetTransferAcceptedHodEmail({ acceptanceDate, acceptanceRemarks, items, newOwner, newOwnerHod, request }: AssetTransferAcceptedParams) {
+export function assetTransferAcceptedHodEmail({ acceptanceDate, acceptanceRemarks, items, newOwner, newOwnerHod, request }: AssetTransferT7TransferCompletedParams) {
   const subject = `Asset Transfer Accepted by ${safe(newOwner?.full_name)} - Request #${safe(request?.request_no || request?.id)}`;
   const acceptedDate = formatDate(acceptanceDate || new Date());
   
@@ -129,7 +131,7 @@ export function assetTransferAcceptedHodEmail({ acceptanceDate, acceptanceRemark
 }
 
 // 1. Email to Requestor/Applicant
-export function assetTransferAcceptedRequestorEmail({ acceptanceDate, acceptanceRemarks, items, newOwner, request, requestor }: AssetTransferAcceptedParams) {
+export function assetTransferAcceptedRequestorEmail({ acceptanceDate, acceptanceRemarks, items, newOwner, request, requestor }: AssetTransferT7TransferCompletedParams) {
   const subject = `Asset Transfer Accepted - Request #${safe(request?.request_no || request?.id)}`;
   const acceptedDate = formatDate(acceptanceDate || new Date());
   
@@ -154,9 +156,10 @@ export function assetTransferAcceptedRequestorEmail({ acceptanceDate, acceptance
           ${items.map((it: any) => `
           <div style="${cardStyle}">
             <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.current_owner?.full_name || it.current_owner)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type || it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name || it.asset?.brand)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name || it.asset?.model)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.asset?.owner?.full_name || it.currOwnerName || it.asset?.owner)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
           </div>
           `).join('')}

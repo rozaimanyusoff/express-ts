@@ -4,14 +4,15 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 
 import * as billingModel from '../p.billing/billingModel';
 import * as purchaseModel from '../p.purchase/purchaseModel';
-import { assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail, assetTransferAcceptedRequestorEmail } from '../utils/emailTemplates/assetTransferAccepted';
-import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/assetTransferApprovalSummary';
-import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferApprovedNewOwner';
-import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferApprovedRequestor';
+import { assetTransferAcceptedCurrentOwnerEmail, assetTransferAcceptedHodEmail, assetTransferAcceptedRequestorEmail } from '../utils/emailTemplates/assetTransferT7TransferCompleted';
+import { assetTransferApprovalSummaryEmail } from '../utils/emailTemplates/assetTransferT3HodDecision';
+import { assetTransferApprovedNewOwnerEmail } from '../utils/emailTemplates/assetTransferT5AwaitingAcceptance';
+import { assetTransferApprovedRequestorEmail } from '../utils/emailTemplates/assetTransferT4HodApproved';
 import assetTransferAssetManagerEmail from '../utils/emailTemplates/assetTransferAssetManagerEmail';
 import assetTransferCurrentOwnerEmail from '../utils/emailTemplates/assetTransferCurrentOwner';
-import assetTransferRequestEmail from '../utils/emailTemplates/assetTransferRequest';
-import assetTransferSupervisorEmail from '../utils/emailTemplates/assetTransferSupervisorEmail';
+import assetTransferT1SubmissionEmail from '../utils/emailTemplates/assetTransferT1Submission';
+import assetTransferT2HodApprovalRequestEmail from '../utils/emailTemplates/assetTransferT2HodApprovalRequest';
+import { assetTransferT6HodRejectedEmail } from '../utils/emailTemplates/assetTransferT6HodRejected';
 import { getWorkflowPicByDepartment } from '../utils/workflowHelper';
 import { sendMail } from '../utils/mailer';
 import * as assetModel from './assetModel';
@@ -3178,13 +3179,13 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		};
 		// Send to requestor (notification only)
 		if (requestorObj.email) {
-			const { html, subject } = assetTransferRequestEmail(requestorEmailData);
+			const { html, subject } = assetTransferT1SubmissionEmail(requestorEmailData);
 			await sendMail(requestorObj.email, subject, html);
 		}
 		// Send to supervisor (with action buttons + portal link) — even if same email as requestor (for testing and single-mailbox cases)
 		if (supervisorObj?.email) {
 			console.log('DEBUG: Sending approval email to approver:', supervisorObj.ramco_id, 'email:', supervisorObj.email);
-			const { html, subject } = assetTransferSupervisorEmail({ ...supervisorEmailData, portalUrl });
+			const { html, subject } = assetTransferT2HodApprovalRequestEmail({ ...supervisorEmailData, portalUrl });
 			await sendMail(supervisorObj.email, subject, html);
 			console.log('DEBUG: Email sent successfully to approver');
 		} else {
@@ -4606,7 +4607,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 		// Send to supervisor
 		if (supervisorObj?.email) {
 			try {
-				const { html, subject } = assetTransferSupervisorEmail({
+				const { html, subject } = assetTransferT2HodApprovalRequestEmail({
 					items: enrichedItems,
 					request,
 					requestor,
@@ -4627,7 +4628,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 			
 			if (hodObj?.email && hodObj.email !== supervisorObj?.email) { // Don't duplicate if same person
 				try {
-					const { html, subject } = assetTransferSupervisorEmail({
+					const { html, subject } = assetTransferT2HodApprovalRequestEmail({
 						items: enrichedItems,
 						request,
 						requestor,

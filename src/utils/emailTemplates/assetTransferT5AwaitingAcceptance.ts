@@ -1,9 +1,9 @@
-// Email template: notify new owner that transfer application approved
+// Email template: HOD Approved - Awaiting Acceptance (T5)
 // Usage: assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, newOwner, requestor, approver, transferId, credentialCode })
 
 import { generateTransferItemCard, ItemFormatConfig } from './assetTransferItemFormat';
 
-interface AssetTransferApprovedNewOwnerParams {
+interface AssetTransferT5AwaitingAcceptanceParams {
   approver?: any; // approver
   credentialCode?: string; // code for acceptance portal access
   itemsForNewOwner: any[]; // subset of items that affect this new owner
@@ -13,7 +13,7 @@ interface AssetTransferApprovedNewOwnerParams {
   transferId?: number; // transfer request ID for portal link
 }
 
-export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, itemsForNewOwner, newOwner, request, requestor, transferId }: AssetTransferApprovedNewOwnerParams) {
+export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, itemsForNewOwner, newOwner, request, requestor, transferId }: AssetTransferT5AwaitingAcceptanceParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => {
     if (!d) return '-';

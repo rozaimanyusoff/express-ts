@@ -1,14 +1,14 @@
-// Email template: notify requestor that transfer application approved
+// Email template: HOD Approved notification to Requestor (T4)
 // Usage: assetTransferApprovedRequestorEmail({ request, items, requestor, approver })
 
-interface AssetTransferApprovedRequestorParams {
+interface AssetTransferT4HodApprovedParams {
   approver: any;  // approver employee object
   items: any[];
   request: any;
   requestor: any; // employee object with full_name, email
 }
 
-export function assetTransferApprovedRequestorEmail({ approver, items, request, requestor }: AssetTransferApprovedRequestorParams) {
+export function assetTransferApprovedRequestorEmail({ approver, items, request, requestor }: AssetTransferT4HodApprovedParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => {
     if (!d) return '-';

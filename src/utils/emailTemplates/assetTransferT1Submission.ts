@@ -1,4 +1,4 @@
-// Asset Transfer Request Email Template
+// Asset Transfer Submission Email Template (T1)
 // Usage: import and call with { request, items, requestor, supervisor }
 
 import crypto from 'crypto';
@@ -15,7 +15,7 @@ interface EmailData {
   supervisor: any;
 }
 
-export default function assetTransferRequestEmail({ actionBaseUrl, actionToken, items, request, requestor, supervisor }: EmailData) {
+export default function assetTransferT1SubmissionEmail({ actionBaseUrl, actionToken, items, request, requestor, supervisor }: EmailData) {
   // Helpers
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => {

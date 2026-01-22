@@ -1,13 +1,13 @@
-// Email template: summary to the approver confirming approvals
+// Email template: HOD Decision Confirmation (T3)
 // Usage: assetTransferApprovalSummaryEmail({ approver, requestIds, approvedDate })
 
-interface AssetTransferApprovalSummaryParams {
+interface AssetTransferT3HodDecisionParams {
   approvedDate?: Date | string;
   approver: { email?: string; full_name?: string; name?: string; ramco_id?: string };
   requestIds: number[];
 }
 
-export function assetTransferApprovalSummaryEmail({ approvedDate, approver, requestIds }: AssetTransferApprovalSummaryParams) {
+export function assetTransferApprovalSummaryEmail({ approvedDate, approver, requestIds }: AssetTransferT3HodDecisionParams) {
   const name = approver.full_name || approver.name || approver.ramco_id || 'Approver';
   const subject = `You approved ${requestIds.length} asset transfer application(s)`;
   const formatDateTime = (d: any) => {

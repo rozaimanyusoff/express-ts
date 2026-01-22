@@ -1,4 +1,4 @@
-// Asset Transfer Supervisor Email Template
+// Asset Transfer HOD Approval Request Email Template (T2)
 // Usage: import and call with { request, items, requestor, supervisor, actionToken, actionBaseUrl }
 
 import { AssetTransferDetailItem } from '../../p.asset/assetController';
@@ -14,7 +14,7 @@ interface EmailData {
   supervisor: any;
 }
 
-export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToken, items, portalUrl, request, requestor, supervisor }: EmailData) {
+export default function assetTransferT2HodApprovalRequestEmail({ actionBaseUrl, actionToken, items, portalUrl, request, requestor, supervisor }: EmailData) {
   // Helpers
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
   const formatDate = (d: any) => {
@@ -52,12 +52,12 @@ export default function assetTransferSupervisorEmail({ actionBaseUrl, actionToke
     `
     : '';
   // Email subject
-  const subject = `Asset Transfer Request #${safe(reqNo)} - Supervisor Action Required`;
+  const subject = `Asset Transfer Request #${safe(reqNo)} - HOD Action Required`;
   // Email HTML
   const html = `
     <div style="font-family: Arial, sans-serif; color:#1a1a1a;">
       <div style="${container}">
-        <div style="${header}">Asset Transfer - Supervisor Action Required</div>
+        <div style="${header}">Asset Transfer - HOD Action Required</div>
         <div style="padding:16px 20px;">
           <div style="margin-bottom:10px; color:#444;">Dear Supervisor,</div>
           <div style="margin-bottom:14px;">An asset transfer request <b>#${safe(reqNo)}</b> has been submitted by <b>${safe(requestor?.full_name)}</b> on <span style="color:${primarySoft}; font-weight:700;">${formatDate(reqDate)}</span>.</div>
