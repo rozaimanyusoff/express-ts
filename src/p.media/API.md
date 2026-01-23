@@ -4,9 +4,11 @@
 
 **Base URL**: `http://localhost:3000/api/media`
 
+**Backend URL**: Configured via `BACKEND_URL` environment variable (defaults to `http://localhost:3000`)
+
 **Authentication**: All endpoints require valid JWT token in `Authorization: Bearer {token}` header
 
-**Content-Type**: `application/json`
+**Content-Type**: `application/json` (except file uploads which use `multipart/form-data`)
 
 **Rate Limits**: Per authorization middleware
 
@@ -36,162 +38,187 @@
 
 ## Endpoints
 
-### 1. Generate Pre-signed Upload URL
+### 1. Upload Document
 
-**POST** `/presign`
+**POST** `/upload/document`
 
-Generate a time-bound URL for uploading a file. Client must PUT file to `uploadUrl`, then use `fileUrl` in media creation.
+Upload a document file directly. File is stored automatically and media record is created in one step.
 
 #### Request
 
 **Headers:**
 ```
 Authorization: Bearer {jwt_token}
-Content-Type: application/json
+Content-Type: multipart/form-data
 ```
 
-**Body:**
-```json
-{
-  "filename": "report.pdf",
-  "mimeType": "application/pdf",
-  "kind": "document",
-  "size": 5242880
-}
-```
+**Body:** Multipart form with `file` field
 
-**Parameters:**
+#### Supported MIME Types
+- `application/pdf`
+- `application/msword`
+- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- `application/vnd.ms-excel`
+- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+- `text/plain`
+- `text/csv`
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `filename` | string | Yes | Original filename with extension |
-| `mimeType` | string | Yes | MIME type (application/pdf, image/png, etc.) |
-| `kind` | enum | Yes | One of: `document`, `image`, `video` |
-| `size` | number | No | Expected file size in bytes (for validation) |
-
-#### Response (200)
+#### Response (201)
 
 ```json
 {
   "status": "success",
-  "message": "Pre-signed URL generated",
+  "message": "Document uploaded successfully",
   "data": {
-    "presignId": "presign_1704067200000_abc123",
-    "uploadUrl": "http://localhost:3000/api/media/upload/presign_1704067200000_abc123",
-    "fileUrl": "http://localhost:3000/uploads/media/document/1704067200000_report.pdf",
-    "expiresIn": 600,
-    "maxSize": 52428800,
-    "checksum": "chk_1704067200000"
+    "id": 123,
+    "name": "report.pdf",
+    "kind": "document",
+    "file_url": "http://localhost:3000/uploads/media/documents/file-1704067200000-123456789.pdf",
+    "size": 5242880,
+    "mime_type": "application/pdf",
+    "user_id": 42,
+    "project_id": null,
+    "tags": null,
+    "created_at": "2024-01-01T10:00:00Z",
+    "updated_at": "2024-01-01T10:00:00Z",
+    "deleted_at": null
   }
 }
 ```
-
-**Response Fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `presignId` | string | Unique presign identifier |
-| `uploadUrl` | string | URL to PUT file to (valid for 10 min) |
-| `fileUrl` | string | Final URL reference for media creation |
-| `expiresIn` | number | Expiry in seconds (default: 600) |
-| `maxSize` | number | Max allowed file size in bytes |
-| `checksum` | string | Integrity checksum for validation |
 
 #### Errors
 
 | Status | Code | Message |
 |--------|------|---------|
-| 400 | - | Missing required fields: filename, mimeType, kind |
-| 415 | - | Invalid kind. Must be one of: document, image, video |
-| 415 | - | Invalid MIME type for {kind} |
-| 413 | - | File too large for {kind}. Max: {limit}MB |
+| 400 | - | No file uploaded |
+| 400 | - | Unsupported file type |
+| 413 | - | File too large |
 | 500 | - | Server error |
 
 #### Example
 
 ```bash
-curl -X POST http://localhost:3000/api/media/presign \
+curl -X POST http://localhost:3000/api/media/upload/document \
   -H "Authorization: Bearer eyJhbGc..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "filename": "report.pdf",
-    "mimeType": "application/pdf",
-    "kind": "document",
-    "size": 5242880
-  }'
+  -F "file=@report.pdf"
 ```
 
 ---
 
-### 2. Batch Generate Pre-signed URLs
+### 2. Upload Image
 
-**POST** `/presign/batch`
+**POST** `/upload/image`
 
-Generate multiple pre-signed URLs for batch upload.
+Upload an image file directly. File is stored automatically and media record is created in one step.
 
 #### Request
 
-**Body:**
-```json
-{
-  "files": [
-    {
-      "filename": "report1.pdf",
-      "mimeType": "application/pdf",
-      "kind": "document",
-      "size": 5242880
-    },
-    {
-      "filename": "chart.png",
-      "mimeType": "image/png",
-      "kind": "image",
-      "size": 2097152
-    }
-  ]
-}
+**Headers:**
+```
+Authorization: Bearer {jwt_token}
+Content-Type: multipart/form-data
 ```
 
-#### Response (200)
+**Body:** Multipart form with `file` field
+
+#### Supported MIME Types
+- `image/jpeg`
+- `image/png`
+- `image/gif`
+- `image/webp`
+- `image/svg+xml`
+
+#### Response (201)
 
 ```json
 {
   "status": "success",
-  "message": "Generated 2 pre-signed URLs",
+  "message": "Image uploaded successfully",
   "data": {
-    "urls": [
-      {
-        "filename": "report1.pdf",
-        "presignId": "presign_...",
-        "uploadUrl": "http://localhost:3000/api/media/upload/presign_...",
-        "fileUrl": "http://localhost:3000/uploads/media/document/...",
-        "expiresIn": 600,
-        "maxSize": 52428800
-      },
-      {
-        "filename": "chart.png",
-        "presignId": "presign_...",
-        "uploadUrl": "http://localhost:3000/api/media/upload/presign_...",
-        "fileUrl": "http://localhost:3000/uploads/media/image/...",
-        "expiresIn": 600,
-        "maxSize": 10485760
-      }
-    ]
+    "id": 124,
+    "name": "photo.jpg",
+    "kind": "image",
+    "file_url": "http://localhost:3000/uploads/media/images/file-1704067200000-123456789.jpg",
+    "size": 2097152,
+    "mime_type": "image/jpeg",
+    "user_id": 42,
+    "project_id": null,
+    "tags": null,
+    "created_at": "2024-01-01T10:00:00Z",
+    "updated_at": "2024-01-01T10:00:00Z",
+    "deleted_at": null
   }
 }
 ```
 
-#### Errors
+#### Example
 
-| Status | Code | Message |
-|--------|------|---------|
-| 400 | - | files must be a non-empty array |
-| 400 | - | Each file must have: filename, mimeType, kind |
-| 415 | - | Invalid kind: {kind} |
-| 500 | - | Server error |
+```bash
+curl -X POST http://localhost:3000/api/media/upload/image \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -F "file=@photo.jpg"
+```
 
 ---
 
-### 3. Create Media Record
+### 3. Upload Video
+
+**POST** `/upload/video`
+
+Upload a video file directly. File is stored automatically and media record is created in one step.
+
+#### Request
+
+**Headers:**
+```
+Authorization: Bearer {jwt_token}
+Content-Type: multipart/form-data
+```
+
+**Body:** Multipart form with `file` field
+
+#### Supported MIME Types
+- `video/mp4`
+- `video/mpeg`
+- `video/quicktime`
+- `video/x-msvideo`
+- `video/x-matroska`
+- `video/webm`
+
+#### Response (201)
+
+```json
+{
+  "status": "success",
+  "message": "Video uploaded successfully",
+  "data": {
+    "id": 125,
+    "name": "tutorial.mp4",
+    "kind": "video",
+    "file_url": "http://localhost:3000/uploads/media/videos/file-1704067200000-123456789.mp4",
+    "size": 104857600,
+    "mime_type": "video/mp4",
+    "user_id": 42,
+    "project_id": null,
+    "tags": null,
+    "created_at": "2024-01-01T10:00:00Z",
+    "updated_at": "2024-01-01T10:00:00Z",
+    "deleted_at": null
+  }
+}
+```
+
+#### Example
+
+```bash
+curl -X POST http://localhost:3000/api/media/upload/video \
+  -H "Authorization: Bearer eyJhbGc..." \
+  -F "file=@tutorial.mp4"
+```
+
+---
+
+### 4. Create Media Record
 
 **POST** `/`
 
@@ -257,7 +284,7 @@ Create a media metadata record after successful file upload.
 
 ---
 
-### 4. List Media
+### 5. List Media
 
 **GET** `/`
 
@@ -336,7 +363,7 @@ curl -X GET "http://localhost:3000/api/media?kind=image&search=product" \
 
 ---
 
-### 5. Get Single Media
+### 6. Get Single Media
 
 **GET** `/:id`
 
@@ -381,7 +408,7 @@ Retrieve a specific media by ID.
 
 ---
 
-### 6. Update Media
+### 7. Update Media
 
 **PATCH** `/:id`
 
@@ -439,7 +466,7 @@ Update media metadata (name, tags, project).
 
 ---
 
-### 7. Delete Media
+### 8. Delete Media
 
 **DELETE** `/:id`
 
@@ -468,7 +495,7 @@ Soft delete a media (mark as deleted, keep for audit).
 
 ---
 
-### 8. Get Media Statistics
+### 9. Get Media Statistics
 
 **GET** `/stats/overview`
 
@@ -494,7 +521,7 @@ Get aggregated media statistics.
 
 ---
 
-### 9. Generate Thumbnail
+### 10. Generate Thumbnail
 
 **POST** `/:id/thumbnail`
 
@@ -523,7 +550,7 @@ Queue thumbnail generation for media (images/videos).
 
 ---
 
-### 10. Stream Media
+### 11. Stream Media
 
 **GET** `/:id/stream`
 
@@ -605,10 +632,11 @@ Get streaming URL with range request support.
 
 ## Testing Checklist
 
-- [ ] Generate single presign URL
-- [ ] Generate batch presign URLs
-- [ ] Upload file to presigned URL
-- [ ] Create media record after upload
+- [ ] Upload document (PDF, DOCX)
+- [ ] Upload image (JPG, PNG)
+- [ ] Upload video (MP4)
+- [ ] Verify media record created after upload
+- [ ] Verify file stored in correct directory
 - [ ] List all media
 - [ ] List media by kind (document, image, video)
 - [ ] Search media by name/tags
@@ -619,9 +647,9 @@ Get streaming URL with range request support.
 - [ ] Update tags
 - [ ] Delete media (soft delete)
 - [ ] Verify deleted_at is set
-- [ ] Test invalid kind
-- [ ] Test oversized file
-- [ ] Test wrong MIME type
-- [ ] Test missing auth token
+- [ ] Test invalid MIME type (should be rejected)
+- [ ] Test oversized file (should be rejected)
+- [ ] Test missing auth token (should be 401)
 - [ ] Get statistics
 - [ ] Verify user_id from JWT is stored
+- [ ] Test streaming URL generation

@@ -2,6 +2,29 @@ import { Request, Response } from 'express';
 import path from 'path';
 import * as mediaModel from './mediaModel';
 
+// Get base URL from environment, default to localhost
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+
+/**
+ * Helper function to ensure file_url is a full URL with BACKEND_URL
+ */
+function normalizeMediaUrl(media: any) {
+	if (media.file_url && !media.file_url.startsWith('http')) {
+		return {
+			...media,
+			file_url: `${BACKEND_URL}${media.file_url}`,
+		};
+	}
+	return media;
+}
+
+/**
+ * Helper function to normalize an array of media items
+ */
+function normalizeMediaUrls(items: any[]) {
+	return items.map(normalizeMediaUrl);
+}
+
 /* ============ FILE UPLOAD ENDPOINTS ============ */
 
 /**
@@ -21,11 +44,19 @@ export const uploadDocument = async (req: Request, res: Response) => {
 		});
 	}
 
+	if (!userId) {
+		return res.status(401).json({
+			status: 'error',
+			message: 'Unauthorized - User ID not found in token',
+			data: null,
+		});
+	}
+
 	try {
 		const mediaId = await mediaModel.createMedia(userId, {
 			name: file.originalname,
 			kind: 'document',
-			fileUrl: `/uploads/media/documents/${file.filename}`,
+			fileUrl: `${BACKEND_URL}/uploads/media/documents/${file.filename}`,
 			size: file.size,
 			mimeType: file.mimetype,
 		});
@@ -35,12 +66,15 @@ export const uploadDocument = async (req: Request, res: Response) => {
 		return res.status(201).json({
 			status: 'success',
 			message: 'Document uploaded successfully',
-			data: media,
+			data: normalizeMediaUrl(media),
 		});
 	} catch (error) {
+		const errorMessage = (error as Error).message || 'Unknown error occurred';
+		console.error('Document upload error:', errorMessage);
+		console.error('Error details:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: (error as Error).message,
+			message: `Upload failed: ${errorMessage}`,
 			data: null,
 		});
 	}
@@ -63,11 +97,19 @@ export const uploadImage = async (req: Request, res: Response) => {
 		});
 	}
 
+	if (!userId) {
+		return res.status(401).json({
+			status: 'error',
+			message: 'Unauthorized - User ID not found in token',
+			data: null,
+		});
+	}
+
 	try {
 		const mediaId = await mediaModel.createMedia(userId, {
 			name: file.originalname,
 			kind: 'image',
-			fileUrl: `/uploads/media/images/${file.filename}`,
+			fileUrl: `${BACKEND_URL}/uploads/media/images/${file.filename}`,
 			size: file.size,
 			mimeType: file.mimetype,
 		});
@@ -77,12 +119,15 @@ export const uploadImage = async (req: Request, res: Response) => {
 		return res.status(201).json({
 			status: 'success',
 			message: 'Image uploaded successfully',
-			data: media,
+			data: normalizeMediaUrl(media),
 		});
 	} catch (error) {
+		const errorMessage = (error as Error).message || 'Unknown error occurred';
+		console.error('Image upload error:', errorMessage);
+		console.error('Error details:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: (error as Error).message,
+			message: `Upload failed: ${errorMessage}`,
 			data: null,
 		});
 	}
@@ -105,11 +150,19 @@ export const uploadVideo = async (req: Request, res: Response) => {
 		});
 	}
 
+	if (!userId) {
+		return res.status(401).json({
+			status: 'error',
+			message: 'Unauthorized - User ID not found in token',
+			data: null,
+		});
+	}
+
 	try {
 		const mediaId = await mediaModel.createMedia(userId, {
 			name: file.originalname,
 			kind: 'video',
-			fileUrl: `/uploads/media/videos/${file.filename}`,
+			fileUrl: `${BACKEND_URL}/uploads/media/videos/${file.filename}`,
 			size: file.size,
 			mimeType: file.mimetype,
 		});
@@ -119,12 +172,15 @@ export const uploadVideo = async (req: Request, res: Response) => {
 		return res.status(201).json({
 			status: 'success',
 			message: 'Video uploaded successfully',
-			data: media,
+			data: normalizeMediaUrl(media),
 		});
 	} catch (error) {
+		const errorMessage = (error as Error).message || 'Unknown error occurred';
+		console.error('Video upload error:', errorMessage);
+		console.error('Error details:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: (error as Error).message,
+			message: `Upload failed: ${errorMessage}`,
 			data: null,
 		});
 	}
@@ -177,7 +233,7 @@ export const createMedia = async (req: Request, res: Response) => {
     return res.status(201).json({
       status: 'success',
       message: 'Media created successfully',
-      data: media,
+      data: normalizeMediaUrl(media),
     });
   } catch (error) {
     return res.status(500).json({
@@ -225,7 +281,7 @@ export const listMedia = async (req: Request, res: Response) => {
       status: 'success',
       message: 'Media retrieved successfully',
       data: {
-        items: result.items,
+        items: normalizeMediaUrls(result.items),
         pagination: {
           page,
           limit,
@@ -273,7 +329,7 @@ export const getMedia = async (req: Request, res: Response) => {
     return res.json({
       status: 'success',
       message: 'Media retrieved',
-      data: media,
+      data: normalizeMediaUrl(media),
     });
   } catch (error) {
     return res.status(500).json({
@@ -327,7 +383,7 @@ export const updateMedia = async (req: Request, res: Response) => {
     return res.json({
       status: 'success',
       message: 'Media updated successfully',
-      data: updatedMedia,
+      data: normalizeMediaUrl(updatedMedia),
     });
   } catch (error) {
     return res.status(500).json({

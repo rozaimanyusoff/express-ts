@@ -17,7 +17,32 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
   let statusCode = err?.status ? err.status : 500;
   let userMessage = 'Internal Server Error';
   
-  if (err?.code === 'ER_DUP_ENTRY') {
+  // Handle multer file size errors
+  if (err?.code === 'LIMIT_FILE_SIZE') {
+    userMessage = 'File too large. Maximum file size is 500MB';
+    statusCode = 413; // Payload too large
+  } else if (err?.code === 'LIMIT_PART_COUNT') {
+    userMessage = 'Too many file parts';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_FILE_COUNT') {
+    userMessage = 'Too many files';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_FIELD_KEY') {
+    userMessage = 'Field name too long';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_FIELD_VALUE') {
+    userMessage = 'Field value too long';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_FIELD_COUNT') {
+    userMessage = 'Too many fields';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_UNEXPECTED_FILE') {
+    userMessage = 'Unexpected file field';
+    statusCode = 400;
+  } else if (err?.code === 'LIMIT_ABORTED') {
+    userMessage = 'File upload aborted';
+    statusCode = 400;
+  } else if (err?.code === 'ER_DUP_ENTRY') {
     // Extract field name from error message (e.g., "Duplicate entry 'value' for key 'table.field'")
     const match = err?.message?.match(/for key '([^']+)'/);
     const fieldInfo = match ? match[1] : 'duplicate value';
