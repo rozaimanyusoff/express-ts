@@ -122,7 +122,7 @@ export default function assetTransferT2HodApprovalRequestEmail({ actionBaseUrl, 
       <div style="margin-top: 1em; font-size: 12px; color: #607d8b;">
         <b>Disclaimer:</b> If this request has not been made by your team, please contact the IT Asset Management team immediately. This is an automated notification; please do not reply to this email.
       </div>
-      <div style="margin-top: 1.2em;">Thank you.</div>
+      <div style="margin-top: 1.2em;">Thank you.<br/><strong>${process.env.BRAND_NAME || 'Asset Management System'}</strong></div>
     </div>
   `;
   return { html, subject };

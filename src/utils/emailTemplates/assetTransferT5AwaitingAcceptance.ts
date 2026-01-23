@@ -116,7 +116,7 @@ export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, i
       <div style="margin-top: 1em; font-size: 12px; color: #607d8b;">
         <b>Disclaimer:</b> This is an automated notification; please do not reply to this email.
       </div>
-      <div style="margin-top: 1.2em;">Thank you.</div>
+      <div style="margin-top: 1.2em;">Thank you.<br/><strong>${process.env.BRAND_NAME || 'Asset Management System'}</strong></div>
     </div>
   `;
   return { html, subject };

@@ -2217,13 +2217,13 @@ CREATE TABLE `tbl_utilities` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `telco_account_subs`
+-- Table structure for table `telco_subs_account`
 --
 
-DROP TABLE IF EXISTS `telco_account_subs`;
+DROP TABLE IF EXISTS `telco_subs_account`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `telco_account_subs` (
+CREATE TABLE `telco_subs_account` (
   `id` int NOT NULL AUTO_INCREMENT,
   `sub_no_id` int DEFAULT NULL,
   `account_id` int DEFAULT NULL,

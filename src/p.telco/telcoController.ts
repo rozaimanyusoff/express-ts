@@ -3,7 +3,9 @@ import { RowDataPacket } from 'mysql2';
 
 import { pool } from '../utils/db';
 import * as assetModel from '../p.asset/assetModel';
+import * as userModel from '../p.user/userModel';
 import * as telcoModel from './telcoModel';
+import { sendMail } from '../utils/mailer';
 
 // Define the structure of the account data
 interface AccountData {
@@ -865,39 +867,173 @@ export const getSubscriberWithSimsById = async (req: Request, res: Response, nex
 export const getSubscriberById = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = Number(req.params.id);
-        const subscriber = await telcoModel.getSubscriberById(id);
-        if (!subscriber) {
-            return res.status(404).json({ message: 'Subscriber not found' });
+        
+        // Fetch subscriber with full history
+        const subWithHistory = await telcoModel.getSubscriberByIdWithHistory(id);
+        if (!subWithHistory) {
+            return res.status(404).json({ message: 'Subscriber not found', status: 'error' });
         }
-        // Enrich with costcenter, department, district (id & name only)
-        const [costcenters, departments, districts, simCards] = await Promise.all([
+        
+        const subscriber = subWithHistory.subscriber;
+        const history = subWithHistory.history;
+        
+        // Fetch all reference data in parallel
+        const [accounts, simCards, employees, assets, brands, models, categories, costcenters, departments, districts] = await Promise.all([
+            telcoModel.getAccounts(),
+            telcoModel.getSimCards ? telcoModel.getSimCards() : [],
+            assetModel.getEmployees ? assetModel.getEmployees() : [],
+            assetModel.getAssets ? assetModel.getAssets() : [],
+            assetModel.getBrands ? assetModel.getBrands() : [],
+            assetModel.getModels ? assetModel.getModels() : [],
+            assetModel.getCategories ? assetModel.getCategories() : [],
             assetModel.getCostcenters ? assetModel.getCostcenters() : [],
             assetModel.getDepartments ? assetModel.getDepartments() : [],
             assetModel.getDistricts ? assetModel.getDistricts() : [],
-            telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : [],
         ]);
-        const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, { id: c.id, name: c.name }]));
-        const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
-        const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, { id: d.id, name: d.code }]));
-        // Remove costcenter_id, department_id, district_id
-        const { costcenter_id, department_id, district_id, ...rest } = subscriber;
-        // Filter simCards for this subscriber
-        const sims = Array.isArray(simCards)
-            ? simCards.filter((sim: any) => sim.sub_no_id === id).map((sim: any) => ({
-                id: sim.sim_id || sim.id,
-                register_date: sim.register_date,
-                sim_no: sim.sim_sn || sim.sim_no,
-                status: sim.status,
-            }))
-            : [];
+        
+        // Build lookup maps
+        const accountMap = Object.fromEntries(accounts.map((a: any) => [a.id, a]));
+        const simCardMap = Object.fromEntries((Array.isArray(simCards) ? simCards : []).map((s: any) => [s.id, s]));
+        const employeeMap = Object.fromEntries((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
+        const assetMap = Object.fromEntries((Array.isArray(assets) ? assets : []).map((a: any) => [a.id, a]));
+        const brandMap = Object.fromEntries((Array.isArray(brands) ? brands : []).map((b: any) => [b.id, b]));
+        const modelMap = Object.fromEntries((Array.isArray(models) ? models : []).map((m: any) => [m.id, m]));
+        const categoryMap = Object.fromEntries((Array.isArray(categories) ? categories : []).map((c: any) => [c.id, c]));
+        const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, c]));
+        const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, d]));
+        const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, d]));
+        
+        // Build enriched current data (latest from history)
+        const latestAccount = history.account.length > 0 ? accountMap[history.account[0].account_id] : null;
+        const latestSimId = history.sim.length > 0 ? history.sim[0].sim_id : null;
+        const latestSim = latestSimId ? simCardMap[latestSimId] : null;
+        const latestRamcoId = history.user.length > 0 ? history.user[0].ramco_id : null;
+        const latestUser = latestRamcoId ? employeeMap[latestRamcoId] : null;
+        const latestAssetId = history.asset.length > 0 ? history.asset[0].asset_id : null;
+        const latestAsset = latestAssetId ? assetMap[latestAssetId] : null;
+        
+        // Format enriched asset data
+        let assetData = null;
+        if (latestAsset) {
+            const brand = latestAsset.brand_id && brandMap[latestAsset.brand_id] ? { id: latestAsset.brand_id, name: brandMap[latestAsset.brand_id].name } : null;
+            const model = latestAsset.model_id && modelMap[latestAsset.model_id] ? { id: latestAsset.model_id, name: modelMap[latestAsset.model_id].name } : null;
+            const category = latestAsset.category_id && categoryMap[latestAsset.category_id] ? { id: latestAsset.category_id, name: categoryMap[latestAsset.category_id].name } : null;
+            assetData = {
+                brand,
+                category,
+                id: latestAsset.id,
+                model,
+                register_number: latestAsset.register_number
+            };
+        }
+        
+        // Format enriched user data
+        let userData = null;
+        if (latestUser) {
+            userData = {
+                full_name: latestUser.full_name || latestUser.fullname || latestUser.name,
+                ramco_id: latestRamcoId,
+                costcenter: latestUser.costcenter_id ? { id: latestUser.costcenter_id, name: costcenterMap[latestUser.costcenter_id]?.name || null } : null,
+                department: latestUser.department_id ? { id: latestUser.department_id, name: departmentMap[latestUser.department_id]?.name || null } : null,
+                location: latestUser.location_id ? { id: latestUser.location_id, name: districtMap[latestUser.location_id]?.name || null } : null,
+            };
+        }
+        
+        // Build account history with enriched data
+        const accountHistoryEnriched = history.account.map((acc: any) => ({
+            id: acc.id,
+            account_id: acc.account_id,
+            account: accountMap[acc.account_id] ? {
+                id: accountMap[acc.account_id].id,
+                account_master: accountMap[acc.account_id].account_master,
+                provider: accountMap[acc.account_id].provider
+            } : null,
+            effective_date: acc.effective_date,
+            created_at: acc.created_at,
+            status: acc.status,
+            updated_by: acc.updated_by
+        }));
+        
+        // Build SIM history with enriched data
+        const simHistoryEnriched = history.sim.map((sim: any) => {
+            const simData = simCardMap[sim.sim_id];
+            return {
+                id: sim.id,
+                sim_id: sim.sim_id,
+                simcard: simData ? {
+                    id: simData.id,
+                    sim_sn: simData.sim_sn,
+                    status: simData.status
+                } : null,
+                effective_date: sim.effective_date,
+                created_at: sim.created_at
+            };
+        });
+        
+        // Build user history with enriched data
+        const userHistoryEnriched = history.user.map((usr: any) => {
+            const emp = employeeMap[usr.ramco_id];
+            return {
+                id: usr.id,
+                ramco_id: usr.ramco_id,
+                user: emp ? {
+                    full_name: emp.full_name || emp.fullname || emp.name,
+                    ramco_id: usr.ramco_id,
+                    costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap[emp.costcenter_id]?.name || null } : null,
+                    department: emp.department_id ? { id: emp.department_id, name: departmentMap[emp.department_id]?.name || null } : null,
+                    location: emp.location_id ? { id: emp.location_id, name: districtMap[emp.location_id]?.name || null } : null,
+                } : null,
+                effective_date: usr.effective_date,
+                created_at: usr.created_at,
+                updated_by: usr.updated_by
+            };
+        });
+        
+        // Build asset history with enriched data
+        const assetHistoryEnriched = history.asset.map((ast: any) => {
+            const assetData = assetMap[ast.asset_id];
+            let assetInfo = null;
+            if (assetData) {
+                const brand = assetData.brand_id && brandMap[assetData.brand_id] ? { id: assetData.brand_id, name: brandMap[assetData.brand_id].name } : null;
+                const model = assetData.model_id && modelMap[assetData.model_id] ? { id: assetData.model_id, name: modelMap[assetData.model_id].name } : null;
+                const category = assetData.category_id && categoryMap[assetData.category_id] ? { id: assetData.category_id, name: categoryMap[assetData.category_id].name } : null;
+                assetInfo = {
+                    brand,
+                    category,
+                    id: assetData.id,
+                    model,
+                    register_number: assetData.register_number
+                };
+            }
+            return {
+                id: ast.id,
+                asset_id: ast.asset_id,
+                asset: assetInfo,
+                effective_date: ast.effective_date,
+                created_at: ast.created_at
+            };
+        });
+        
+        // Build response
         const enriched = {
-            ...rest,
-            costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
-            department: department_id ? departmentMap[department_id] || null : null,
-            district: district_id ? districtMap[district_id] || null : null,
-            sims,
+            id: subscriber.id,
+            sub_no: subscriber.sub_no,
+            account_sub: subscriber.account_sub,
+            status: subscriber.status,
+            register_date: subscriber.register_date,
+            account: latestAccount ? { account_master: latestAccount.account_master, id: latestAccount.id, provider: latestAccount.provider } : null,
+            asset: assetData,
+            simcard: latestSim ? { id: latestSim.id, sim_sn: latestSim.sim_sn } : null,
+            user: userData,
+            history: {
+                account: accountHistoryEnriched,
+                sim: simHistoryEnriched,
+                user: userHistoryEnriched,
+                asset: assetHistoryEnriched
+            }
         };
-        res.status(200).json({ data: enriched, message: 'Show subscriber by id', status: 'success' });
+        
+        res.status(200).json({ data: enriched, message: 'Show subscriber by id with history', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -970,11 +1106,19 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
                     register_number: asset.register_number
                 };
             }
-            // Find user
+            // Find user with enriched data
             const ramcoId = userSubMap[sub.id];
-            const user = ramcoId && employeeMap[ramcoId] ? { full_name: employeeMap[ramcoId].full_name, ramco_id: ramcoId } : null;
-            // Find district/location
-            const location = sub.district_id ? districtMap[sub.district_id] : null;
+            let user = null;
+            if (ramcoId && employeeMap[ramcoId]) {
+                const emp = employeeMap[ramcoId];
+                user = {
+                    full_name: emp.full_name || emp.fullname || emp.name,
+                    ramco_id: ramcoId,
+                    costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap[emp.costcenter_id]?.name || null } : null,
+                    department: emp.department_id ? { id: emp.department_id, name: departmentMap[emp.department_id]?.code || null } : null,
+                    location: emp.location_id ? { id: emp.location_id, name: districtMap[emp.location_id]?.code || null } : null,
+                };
+            }
             return {
                 id: sub.id,
                 sub_no: sub.sub_no,
@@ -983,9 +1127,6 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
                 register_date: sub.register_date,
                 account: account ? { account_master: account.account_master, id: account.id, provider: account.provider } : null,
                 asset: assetData,
-                costcenter: costcenter ? { id: costcenter.id, name: costcenter.name } : null,
-                department: department ? { id: department.id, name: department.code } : null,
-                location: location ? { id: location.id, name: location.code } : null,
                 simcard: sim ? { id: sim.sim_id, sim_sn: sim.sim_sn } : null,
                 user,
             };
@@ -1077,8 +1218,42 @@ export const updateSubscriber = async (req: Request, res: Response, next: NextFu
     try {
         const id = Number(req.params.id);
         const subscriber = req.body;
+        const { updated_by } = subscriber;
+        
+        // Update subscriber in database
         await telcoModel.updateSubscriber(id, subscriber);
-        res.status(200).json({ message: 'Subscriber updated' });
+        
+        // Send notification email to updated_by user if provided
+        if (updated_by) {
+            try {
+                const updater = await userModel.getEmployeeByRamcoId(updated_by);
+                if (updater && updater.email) {
+                    const subscriberData = await telcoModel.getSubscriberById(id);
+                    const emailSubject = `Subscriber Account Updated - ${subscriberData?.sub_no || `ID: ${id}`}`;
+                    const emailBody = `
+                        <h3>Subscriber Account Update Notification</h3>
+                        <p>The following subscriber account has been updated:</p>
+                        <ul>
+                            <li><strong>Subscriber Number:</strong> ${subscriberData?.sub_no || 'N/A'}</li>
+                            <li><strong>Account Sub:</strong> ${subscriberData?.account_sub || 'N/A'}</li>
+                            <li><strong>Status:</strong> ${subscriberData?.status || 'N/A'}</li>
+                            <li><strong>Register Date:</strong> ${subscriberData?.register_date || 'N/A'}</li>
+                        </ul>
+                        <p><strong>Updated by:</strong> ${updater.full_name || updated_by}</p>
+                        <p>Please log in to the system to review the changes.</p>
+                    `;
+                    
+                    await sendMail(updater.email, emailSubject, emailBody);
+                } else {
+                    console.warn(`Could not send notification email: User ${updated_by} not found or has no email`);
+                }
+            } catch (emailErr) {
+                console.error('Error sending subscriber update notification email:', emailErr);
+                // Don't fail the main request if email fails
+            }
+        }
+        
+        res.status(200).json({ message: 'Subscriber updated successfully', status: 'success' });
     } catch (error) {
         next(error);
     }

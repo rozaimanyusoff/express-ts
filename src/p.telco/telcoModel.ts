@@ -6,7 +6,8 @@ import { pool, pool2 } from '../utils/db';
 const dbBilling = 'billings'; //
 const tables = {
     accounts: `${dbBilling}.telco_accounts`,
-    accountSubs: `${dbBilling}.telco_account_subs`,
+    accountSubs: `${dbBilling}.telco_subs_account`, // Subscriber-Account mapping history
+    subsAccounts: `${dbBilling}.telco_subs_account`, // Subscriber-Account mapping history
     contracts: `${dbBilling}.telco_contracts`,
     deptSubs: `${dbBilling}.telco_department_subs`, // Assuming this is a table for department subscriptions
     oldSubscribers: `${dbBilling}.celcomsub`, // Assuming this is a table for old subscribers
@@ -372,8 +373,68 @@ export async function getSubscriberById(id: number) {
     const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers} WHERE id = ?`, [id]);
     return rows[0];
 }
+
+// Get subscriber with all history records (account, SIM, user, asset)
+export async function getSubscriberByIdWithHistory(id: number) {
+    // Get subscriber record
+    const [subRows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers} WHERE id = ?`, [id]);
+    if (!subRows || subRows.length === 0) return null;
+    
+    const subscriber = subRows[0];
+    
+    // Fetch all history records in parallel (ordered by effective_date DESC - latest first)
+    const [accountHistory, simHistory, userHistory, assetHistory] = await Promise.all([
+        pool.query<RowDataPacket[]>(`
+            SELECT * FROM ${tables.subsAccounts} 
+            WHERE sub_no_id = ? 
+            ORDER BY effective_date DESC
+        `, [id]),
+        pool.query<RowDataPacket[]>(`
+            SELECT * FROM ${tables.simCardSubs} 
+            WHERE sub_no_id = ? 
+            ORDER BY effective_date DESC
+        `, [id]),
+        pool.query<RowDataPacket[]>(`
+            SELECT * FROM ${tables.userSubs} 
+            WHERE sub_no_id = ? 
+            ORDER BY effective_date DESC
+        `, [id]),
+        pool.query<RowDataPacket[]>(`
+            SELECT * FROM ${tables.subsDevices} 
+            WHERE sub_no_id = ? 
+            ORDER BY effective_date DESC
+        `, [id]),
+    ]);
+    
+    return {
+        subscriber,
+        history: {
+            account: Array.isArray(accountHistory[0]) ? accountHistory[0] : [],
+            sim: Array.isArray(simHistory[0]) ? simHistory[0] : [],
+            user: Array.isArray(userHistory[0]) ? userHistory[0] : [],
+            asset: Array.isArray(assetHistory[0]) ? assetHistory[0] : [],
+        }
+    };
+}
 export async function getSubscribers() {
-    const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers}`);
+    // Get all subscribers with their latest account, SIM, user, and asset assignments
+    const [rows] = await pool.query<RowDataPacket[]>(`
+        SELECT 
+            ts.id,
+            ts.sub_no,
+            ts.account_sub,
+            ts.status,
+            ts.register_date,
+            -- Get latest account from telco_subs_account
+            (SELECT account_id FROM ${tables.subsAccounts} WHERE sub_no_id = ts.id ORDER BY effective_date DESC LIMIT 1) as account_id,
+            -- Get latest sim from telco_sims_subs
+            (SELECT sim_id FROM ${tables.simCardSubs} WHERE sub_no_id = ts.id ORDER BY effective_date DESC LIMIT 1) as sim_id,
+            -- Get latest user from telco_user_subs
+            (SELECT ramco_id FROM ${tables.userSubs} WHERE sub_no_id = ts.id ORDER BY effective_date DESC LIMIT 1) as ramco_id,
+            -- Get latest asset from telco_subs_devices
+            (SELECT asset_id FROM ${tables.subsDevices} WHERE sub_no_id = ts.id ORDER BY effective_date DESC LIMIT 1) as asset_id
+        FROM ${tables.subscribers} ts
+    `);
     return rows;
 }
 // Costcenter summary by bill ID and date range
@@ -464,37 +525,53 @@ export async function updateSimCard(id: number, simCard: any) {
     );
 }
 
-/* table involved: subscribers, simcard_subs (createSimCard), user_subs, account_subs */
+/* table involved: subscribers, sims_subs, user_subs, subs_account, subs_devices */
 export async function updateSubscriber(id: number, subscriber: any) {
-    const { account, account_sub, costcenter, department, register_date, simcard, status, sub_no, user } = subscriber;
-    // 1. Fetch current subscriber
-    const [currentRows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers} WHERE id = ?`, [id]);
-    const current = currentRows[0];
+    const { account, account_sub, asset_id, register_date, simcard, status, sub_no, user } = subscriber;
+    
+    // Convert register_date to proper format if it's a string
+    const effectiveDate = register_date ? new Date(register_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
-    // 2. Fetch latest simcard, department, account, user from *_subs tables
+    // 1. Fetch latest records from history tables
     const [[simSub]] = await pool.query<RowDataPacket[]>(`SELECT sim_id FROM ${tables.simCardSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
-    const [[deptSub]] = await pool.query<RowDataPacket[]>(`SELECT department_id FROM ${tables.deptSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
-    const [[accSub]] = await pool.query<RowDataPacket[]>(`SELECT account_id FROM ${tables.accountSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
-    const [[userSub]] = await pool.query<RowDataPacket[]>(`SELECT ramco_id FROM ${tables.userSubs} WHERE sub_no_id = ? ORDER BY id DESC LIMIT 1`, [id]);
+    const [[userSub]] = await pool.query<RowDataPacket[]>(`SELECT ramco_id FROM ${tables.userSubs} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
+    const [[accSub]] = await pool.query<RowDataPacket[]>(`SELECT account_id FROM ${tables.subsAccounts} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
+    const [[assetSub]] = await pool.query<RowDataPacket[]>(`SELECT asset_id FROM ${tables.subsDevices} WHERE sub_no_id = ? ORDER BY effective_date DESC LIMIT 1`, [id]);
 
-    // 3. Insert new row if changed
-    if (simcard && (!simSub || simSub.sim_id !== simcard)) {
-        await pool.query(`INSERT INTO ${tables.simCardSubs} (sub_no_id, sim_id, effective_date) VALUES (?, ?, NOW())`, [id, simcard]);
+    // 2. Insert history records if changed (using register_date as effective_date)
+    if (asset_id && (!assetSub || assetSub.asset_id !== asset_id)) {
+        await pool.query(
+            `INSERT INTO ${tables.subsDevices} (sub_no_id, asset_id, effective_date) VALUES (?, ?, ?)`,
+            [id, asset_id, effectiveDate]
+        );
     }
-    if (department && (!deptSub || deptSub.dept_id !== department)) {
-        await pool.query(`INSERT INTO ${tables.deptSubs} (sub_no_id, department_id, effective_date) VALUES (?, ?, NOW())`, [id, department]);
-    }
-    if (account && (!accSub || accSub.account_id !== account)) {
-        await pool.query(`INSERT INTO ${tables.accountSubs} (sub_no_id, account_id, effective_date) VALUES (?, ?, NOW())`, [id, account]);
-    }
+    
     if (user && (!userSub || userSub.ramco_id !== user)) {
-        await pool.query(`INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id, effective_date) VALUES (?, ?, NOW())`, [id, user]);
+        await pool.query(
+            `INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id, effective_date) VALUES (?, ?, ?)`,
+            [id, user, effectiveDate]
+        );
+    }
+    
+    if (simcard && (!simSub || simSub.sim_id !== simcard)) {
+        await pool.query(
+            `INSERT INTO ${tables.simCardSubs} (sub_no_id, sim_id, effective_date) VALUES (?, ?, ?)`,
+            [id, simcard, effectiveDate]
+        );
+    }
+    
+    if (account && (!accSub || accSub.account_id !== account)) {
+        await pool.query(
+            `INSERT INTO ${tables.subsAccounts} (sub_no_id, account_id, effective_date) VALUES (?, ?, ?)`,
+            [id, account, effectiveDate]
+        );
     }
 
-    // 4. Update subscribers table for basic fields
+    // 3. Update subscribers table - only basic fields (sub_no, account_sub, status, register_date)
+    // costcenter_id, department_id, district_id, asset_id removed from update
     await pool.query(
-        `UPDATE ${tables.subscribers} SET sub_no = ?, account_sub = ?, status = ?, register_date = ?, costcenter_id = ?, department_id = ? WHERE id = ?`,
-        [sub_no, account_sub, status, register_date, costcenter, department, id]
+        `UPDATE ${tables.subscribers} SET sub_no = ?, account_sub = ?, status = ?, register_date = ? WHERE id = ?`,
+        [sub_no, account_sub, status, register_date, id]
     );
 }
 
