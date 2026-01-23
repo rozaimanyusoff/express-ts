@@ -1,22 +1,57 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler';
+import { createUploader, validateUploadedFile } from '../utils/fileUploader';
 import * as mediaController from './mediaController';
 
 const router = Router();
 
-/* ============ PRESIGN ENDPOINTS ============ */
+// Create uploaders for different media kinds with appropriate MIME types and size limits
+const documentUploader = createUploader('media/documents', [
+	'application/pdf',
+	'application/msword',
+	'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	'application/vnd.ms-excel',
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+	'text/plain',
+	'text/csv',
+]);
+
+const imageUploader = createUploader('media/images', [
+	'image/jpeg',
+	'image/png',
+	'image/gif',
+	'image/webp',
+	'image/svg+xml',
+]);
+
+const videoUploader = createUploader('media/videos', [
+	'video/mp4',
+	'video/mpeg',
+	'video/quicktime',
+	'video/x-msvideo',
+	'video/x-matroska',
+	'video/webm',
+]);
+
+/* ============ FILE UPLOAD ENDPOINTS ============ */
 
 /**
- * POST /api/media/presign
- * Generate a pre-signed URL for upload
+ * POST /api/media/upload/document
+ * Upload document with automatic processing
  */
-router.post('/presign', asyncHandler(mediaController.generatePresign));
+router.post('/upload/document', documentUploader.single('file'), validateUploadedFile, asyncHandler(mediaController.uploadDocument));
 
 /**
- * POST /api/media/presign/batch
- * Generate multiple pre-signed URLs
+ * POST /api/media/upload/image
+ * Upload image with automatic processing
  */
-router.post('/presign/batch', asyncHandler(mediaController.generatePresignBatch));
+router.post('/upload/image', imageUploader.single('file'), validateUploadedFile, asyncHandler(mediaController.uploadImage));
+
+/**
+ * POST /api/media/upload/video
+ * Upload video with automatic processing
+ */
+router.post('/upload/video', videoUploader.single('file'), validateUploadedFile, asyncHandler(mediaController.uploadVideo));
 
 /* ============ MEDIA CRUD ============ */
 

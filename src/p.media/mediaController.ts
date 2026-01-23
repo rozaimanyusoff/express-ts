@@ -1,139 +1,137 @@
 import { Request, Response } from 'express';
+import path from 'path';
 import * as mediaModel from './mediaModel';
 
-/* ============ PRESIGN ENDPOINTS ============ */
+/* ============ FILE UPLOAD ENDPOINTS ============ */
 
 /**
- * POST /api/media/presign
- * Generate a pre-signed URL for upload
- * Body: { filename, mimeType, kind: "document" | "image" | "video", size? }
+ * POST /api/media/upload/document
+ * Upload document with automatic processing
+ * Body: multipart form-data with 'file' field
  */
-export const generatePresign = async (req: Request, res: Response) => {
-  const { filename, mimeType, kind, size } = req.body;
-  const userId = (req as any).user?.id;
+export const uploadDocument = async (req: Request, res: Response) => {
+	const userId = (req as any).user?.id;
+	const file = req.file;
 
-  // Validation
-  if (!filename || !mimeType || !kind) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Missing required fields: filename, mimeType, kind',
-      data: null,
-    });
-  }
+	if (!file) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'No file uploaded',
+			data: null,
+		});
+	}
 
-  if (!['document', 'image', 'video'].includes(kind)) {
-    return res.status(415).json({
-      status: 'error',
-      message: 'Invalid kind. Must be one of: document, image, video',
-      data: null,
-    });
-  }
+	try {
+		const mediaId = await mediaModel.createMedia(userId, {
+			name: file.originalname,
+			kind: 'document',
+			fileUrl: `/uploads/media/documents/${file.filename}`,
+			size: file.size,
+			mimeType: file.mimetype,
+		});
 
-  // Validate MIME type by kind
-  const mimeValidation: Record<string, string[]> = {
-    document: [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain',
-    ],
-    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
-    video: ['video/mp4', 'video/mpeg', 'video/quicktime', 'video/x-msvideo', 'video/webm'],
-  };
+		const media = await mediaModel.getMediaById(mediaId);
 
-  const allowedMimes = mimeValidation[kind];
-  if (allowedMimes && !allowedMimes.includes(mimeType)) {
-    return res.status(415).json({
-      status: 'error',
-      message: `Invalid MIME type for ${kind}. Allowed: ${allowedMimes.join(', ')}`,
-      data: null,
-    });
-  }
-
-  // Validate file size
-  const sizeLimits: Record<string, number> = {
-    document: 52428800, // 50MB
-    image: 10485760, // 10MB
-    video: 524288000, // 500MB
-  };
-
-  if (size && size > sizeLimits[kind]) {
-    return res.status(413).json({
-      status: 'error',
-      message: `File too large for ${kind}. Max: ${sizeLimits[kind] / 1024 / 1024}MB`,
-      data: null,
-    });
-  }
-
-  try {
-    const presignData = await mediaModel.generatePresignedUrl(userId, filename, mimeType, kind, size);
-    return res.json({
-      status: 'success',
-      message: 'Pre-signed URL generated',
-      data: presignData,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      status: 'error',
-      message: (error as Error).message,
-      data: null,
-    });
-  }
+		return res.status(201).json({
+			status: 'success',
+			message: 'Document uploaded successfully',
+			data: media,
+		});
+	} catch (error) {
+		return res.status(500).json({
+			status: 'error',
+			message: (error as Error).message,
+			data: null,
+		});
+	}
 };
 
 /**
- * POST /api/media/presign/batch
- * Generate multiple pre-signed URLs
- * Body: { files: [{ filename, mimeType, kind, size? }] }
+ * POST /api/media/upload/image
+ * Upload image with automatic processing
+ * Body: multipart form-data with 'file' field
  */
-export const generatePresignBatch = async (req: Request, res: Response) => {
-  const { files } = req.body;
-  const userId = (req as any).user?.id;
+export const uploadImage = async (req: Request, res: Response) => {
+	const userId = (req as any).user?.id;
+	const file = req.file;
 
-  if (!files || !Array.isArray(files) || files.length === 0) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'files must be a non-empty array',
-      data: null,
-    });
-  }
+	if (!file) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'No file uploaded',
+			data: null,
+		});
+	}
 
-  // Validate all files
-  for (const file of files) {
-    if (!file.filename || !file.mimeType || !file.kind) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Each file must have: filename, mimeType, kind',
-        data: null,
-      });
-    }
+	try {
+		const mediaId = await mediaModel.createMedia(userId, {
+			name: file.originalname,
+			kind: 'image',
+			fileUrl: `/uploads/media/images/${file.filename}`,
+			size: file.size,
+			mimeType: file.mimetype,
+		});
 
-    if (!['document', 'image', 'video'].includes(file.kind)) {
-      return res.status(415).json({
-        status: 'error',
-        message: `Invalid kind: ${file.kind}`,
-        data: null,
-      });
-    }
-  }
+		const media = await mediaModel.getMediaById(mediaId);
 
-  try {
-    const presignData = await mediaModel.generatePresignedUrlBatch(userId, files);
-    return res.json({
-      status: 'success',
-      message: `Generated ${presignData.length} pre-signed URLs`,
-      data: { urls: presignData },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      status: 'error',
-      message: (error as Error).message,
-      data: null,
-    });
-  }
+		return res.status(201).json({
+			status: 'success',
+			message: 'Image uploaded successfully',
+			data: media,
+		});
+	} catch (error) {
+		return res.status(500).json({
+			status: 'error',
+			message: (error as Error).message,
+			data: null,
+		});
+	}
 };
+
+/**
+ * POST /api/media/upload/video
+ * Upload video with automatic processing
+ * Body: multipart form-data with 'file' field
+ */
+export const uploadVideo = async (req: Request, res: Response) => {
+	const userId = (req as any).user?.id;
+	const file = req.file;
+
+	if (!file) {
+		return res.status(400).json({
+			status: 'error',
+			message: 'No file uploaded',
+			data: null,
+		});
+	}
+
+	try {
+		const mediaId = await mediaModel.createMedia(userId, {
+			name: file.originalname,
+			kind: 'video',
+			fileUrl: `/uploads/media/videos/${file.filename}`,
+			size: file.size,
+			mimeType: file.mimetype,
+		});
+
+		const media = await mediaModel.getMediaById(mediaId);
+
+		return res.status(201).json({
+			status: 'success',
+			message: 'Video uploaded successfully',
+			data: media,
+		});
+	} catch (error) {
+		return res.status(500).json({
+			status: 'error',
+			message: (error as Error).message,
+			data: null,
+		});
+	}
+};
+
+/* ============ MEDIA CRUD ============ */
+
 
 /* ============ CREATE MEDIA ============ */
 
