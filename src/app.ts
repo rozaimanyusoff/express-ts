@@ -134,7 +134,7 @@ app.use('/api/purchases', purchaseRoutes);
 app.use('/api/bills', billingRoutes);
 app.use('/api/jobs', jobbankRoutes);
 app.use('/api/mtn', maintenanceRoutes);
-app.use('/api/media', mediaRoutes);
+app.use('/api/media', tokenValidator, mediaRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/importer', tokenValidator, importRoutes);
 app.use('/api/webstock', webstockRoutes);
