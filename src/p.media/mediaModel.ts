@@ -234,6 +234,7 @@ export const updateMedia = async (
   id: number,
   data: Partial<{
     name: string;
+    kind: string;
     tags: string[];
     projectId: number;
   }>
@@ -244,6 +245,11 @@ export const updateMedia = async (
   if (data.name !== undefined) {
     updates.push('name = ?');
     params.push(data.name);
+  }
+
+  if (data.kind !== undefined) {
+    updates.push('kind = ?');
+    params.push(data.kind);
   }
 
   if (data.tags !== undefined) {

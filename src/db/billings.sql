@@ -607,6 +607,8 @@ CREATE TABLE `fleet2` (
   `entry_code` varchar(10) DEFAULT NULL,
   `vehicle_id` int DEFAULT NULL,
   `reg_date` date DEFAULT NULL,
+  `replacement_card_id` int DEFAULT NULL COMMENT 'ID of the card being replaced (for replacement assignments)',
+  `assignment` enum('new','replace') CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT 'new' COMMENT 'Assignment type: new or replace',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=408 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

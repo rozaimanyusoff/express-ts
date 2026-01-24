@@ -612,8 +612,17 @@ export const updateFuelVendor = async (id: number, data: any): Promise<void> => 
 
 /* =================== FLEET CARD TABLE ========================== */
 
-export const getFleetCards = async (): Promise<any[]> => {
-  const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} ORDER BY register_number`);
+export const getFleetCards = async (status?: string): Promise<any[]> => {
+  let query = `SELECT * FROM ${fleetCardTable}`;
+  const params: any[] = [];
+  
+  if (status) {
+    query += ` WHERE status = ?`;
+    params.push(status);
+  }
+  
+  query += ` ORDER BY register_number`;
+  const [rows] = await pool.query(query, params);
   return rows as any[];
 };
 export const getFleetCardsByVendor = async (vendorId: number): Promise<any[]> => {
@@ -664,10 +673,35 @@ export const createFleetCard = async (data: any): Promise<number> => {
     throw new Error('Fleet card with this card_no already exists.');
   }
 
+  // Handle different assignment types
+  let oldCardData = null;
+  
+  if (data.assignment === 'new' && data.asset_id) {
+    // For "new" assignment: find and unassign any old card with the same asset_id
+    const [oldCards] = await pool.query(
+      `SELECT id, asset_id, costcenter_id FROM ${fleetCardTable} WHERE asset_id = ? LIMIT 1`,
+      [data.asset_id]
+    );
+    if (Array.isArray(oldCards) && oldCards.length > 0) {
+      oldCardData = (oldCards as any[])[0];
+      // Unassign the old card
+      await pool.query(
+        `UPDATE ${fleetCardTable} SET asset_id = NULL, costcenter_id = NULL WHERE id = ?`,
+        [oldCardData.id]
+      );
+    }
+  } else if (data.assignment === 'replace' && data.replacement_card_id) {
+    // For "replace" assignment: unassign the replacement card
+    await pool.query(
+      `UPDATE ${fleetCardTable} SET asset_id = NULL, costcenter_id = NULL WHERE id = ?`,
+      [data.replacement_card_id]
+    );
+  }
+
   const [result] = await pool.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks, vehicle_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      asset_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks, vehicle_id, costcenter_id, purpose, replacement_card_id, assignment
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ 
       data.asset_id, 
       data.fuel_id, 
@@ -677,14 +711,45 @@ export const createFleetCard = async (data: any): Promise<number> => {
       data.status || 'active', 
       data.expiry_date || null, 
       data.remarks || null, 
-      data.vehicle_id || null 
+      data.vehicle_id || null,
+      data.costcenter_id || null,
+      data.purpose || null,
+      data.replacement_card_id || null,
+      data.assignment || null
     ]
   );
 
   const cardId = (result as ResultSetHeader).insertId;
 
-  // Insert initial history record when card is created with an asset_id
-  if (data.asset_id) {
+  // Handle history recording
+  if (data.assignment === 'new' && data.asset_id) {
+    // Insert history record with old and new asset/costcenter info
+    await pool.query(
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [
+        cardId, 
+        oldCardData?.asset_id || null,
+        data.asset_id,
+        oldCardData?.costcenter_id || null,
+        data.costcenter_id || null
+      ]
+    );
+  } else if (data.assignment === 'replace' && data.asset_id) {
+    // For replacement: old_asset_id and old_costcenter_id are null since we're replacing with a new card
+    await pool.query(
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [
+        cardId,
+        null,
+        data.asset_id,
+        null,
+        data.costcenter_id || null
+      ]
+    );
+  } else if (data.asset_id) {
+    // Insert initial history record when card is created with an asset_id (non-new/non-replace assignment)
     await pool.query(
       `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
       [cardId, null, data.asset_id]
@@ -697,19 +762,55 @@ export const createFleetCard = async (data: any): Promise<number> => {
 export const updateFleetCard = async (id: number, data: any): Promise<void> => {
   // Fetch current values for comparison
   const [currentRows] = await pool.query(
-    `SELECT asset_id FROM ${fleetCardTable} WHERE id = ?`,
+    `SELECT asset_id, costcenter_id FROM ${fleetCardTable} WHERE id = ?`,
     [id]
   );
   const current = Array.isArray(currentRows) && currentRows.length > 0 ? (currentRows[0] as any) : null;
   let assetChanged = false;
+  let oldAssetData = null;
+
   if (current) {
     assetChanged = data.asset_id !== undefined && data.asset_id !== current.asset_id;
+    
     if (assetChanged) {
-      // Insert into history table
-      await pool.query(
-        `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
-        [id, current.asset_id, data.asset_id ?? current.asset_id]
-      );
+      oldAssetData = { asset_id: current.asset_id, costcenter_id: current.costcenter_id };
+
+      // Handle different assignment types when asset changes
+      if (data.assignment === 'new') {
+        // For "new" assignment: find and unassign any other card with the same new asset_id
+        const [otherCards] = await pool.query(
+          `SELECT id FROM ${fleetCardTable} WHERE asset_id = ? AND id != ? LIMIT 1`,
+          [data.asset_id, id]
+        );
+        if (Array.isArray(otherCards) && otherCards.length > 0) {
+          const otherId = (otherCards as any[])[0].id;
+          await pool.query(
+            `UPDATE ${fleetCardTable} SET asset_id = NULL, costcenter_id = NULL WHERE id = ?`,
+            [otherId]
+          );
+        }
+      } else if (data.assignment === 'replace' && data.replacement_card_id) {
+        // For "replace" assignment: unassign the replacement card
+        await pool.query(
+          `UPDATE ${fleetCardTable} SET asset_id = NULL, costcenter_id = NULL WHERE id = ?`,
+          [data.replacement_card_id]
+        );
+      }
+
+      // Insert into history table with asset/costcenter tracking
+      if (data.assignment === 'new' || data.assignment === 'replace') {
+        await pool.query(
+          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
+           VALUES (?, ?, ?, ?, ?, NOW())`,
+          [id, oldAssetData.asset_id || null, data.asset_id ?? null, oldAssetData.costcenter_id || null, data.costcenter_id || null]
+        );
+      } else {
+        // Standard history recording for non-assignment updates
+        await pool.query(
+          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
+          [id, oldAssetData.asset_id, data.asset_id ?? current.asset_id]
+        );
+      }
 
       // Maintain fleet_asset join links: remove old link, add new link if present
       try {
@@ -724,9 +825,25 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
       }
     }
   }
+
+  // Update fleet card with all supported fields
   await pool.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ? WHERE id = ?`,
-    [ data.asset_id, data.fuel_id, data.card_no, data.pin, data.reg_date, data.status, data.expiry_date, data.remarks, id ]
+    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ?, purpose = ?, costcenter_id = ?, replacement_card_id = ?, assignment = ? WHERE id = ?`,
+    [ 
+      data.asset_id || null, 
+      data.fuel_id || null, 
+      data.card_no || null, 
+      data.pin || null, 
+      data.reg_date || null, 
+      data.status || null, 
+      data.expiry_date || null, 
+      data.remarks || null,
+      data.purpose || null,
+      data.costcenter_id || null,
+      data.replacement_card_id || null,
+      data.assignment || null,
+      id 
+    ]
   );
 };
 

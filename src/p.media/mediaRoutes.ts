@@ -74,10 +74,10 @@ router.get('/', asyncHandler(mediaController.listMedia));
 router.get('/:id', asyncHandler(mediaController.getMedia));
 
 /**
- * PATCH /api/media/:id
+ * PUT /api/media/:id
  * Update media metadata
  */
-router.patch('/:id', asyncHandler(mediaController.updateMedia));
+router.put('/:id', asyncHandler(mediaController.updateMedia));
 
 /**
  * DELETE /api/media/:id

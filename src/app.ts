@@ -61,8 +61,10 @@ if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1);
 }
 
-app.use(urlencoded({ extended: true, limit: '10mb' }));
-app.use(json({ limit: '10mb' }));
+// Increase request size limits to support large file uploads (especially videos)
+// Note: UPLOAD_MAX_FILE_SIZE in .env controls multer's individual file size limit
+app.use(urlencoded({ extended: true, limit: '500mb' }));
+app.use(json({ limit: '500mb' }));
 app.use(corsMiddleware);
 app.options('*', corsMiddleware);
 //app.use(rateLimit);

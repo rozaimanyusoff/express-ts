@@ -1907,6 +1907,7 @@ export const removeFuelBillEntry = async (req: Request, res: Response) => {
 export const getFleetCards = async (req: Request, res: Response) => {
 	try {
 		const vendorQ = req.query.vendor as string | undefined;
+		const statusQ = req.query.status as string | undefined;
 
 		// If vendor param provided, validate and use model helper to fetch
 		if (vendorQ !== undefined) {
@@ -1980,7 +1981,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 
 		// No vendor filter - return all fleet cards with enrichment
 		const assets = Array.isArray(await assetsModel.getAssets()) ? await assetsModel.getAssets() : [];
-		const fleetCards = await billingModel.getFleetCards();
+		const fleetCards = await billingModel.getFleetCards(statusQ);
 		const fuelVendors = await billingModel.getFuelVendor();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
@@ -2146,7 +2147,16 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 export const createFleetCard = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFleetCard(req.body);
-		res.status(201).json({ id: insertId, message: 'Fleet card created successfully', status: 'success' });
+		const assignmentMsg = req.body.assignment === 'new' 
+			? ' (assignment: new)' 
+			: req.body.assignment === 'replace' 
+			? ' (assignment: replacement)' 
+			: '';
+		res.status(201).json({ 
+			id: insertId, 
+			message: `Fleet card created successfully${assignmentMsg}`, 
+			status: 'success' 
+		});
 	} catch (error: any) {
 		console.error('Create fleet card error:', error?.message || error);
 		res.status(500).json({ 
@@ -2160,7 +2170,12 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateFleetCard(id, req.body);
-		res.json({ message: 'Fleet card updated successfully', status: 'success' });
+		const assignmentMsg = req.body.assignment === 'new' 
+			? ' (assignment: new)' 
+			: req.body.assignment === 'replace' 
+			? ' (assignment: replacement)' 
+			: '';
+		res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });
 	} catch (error) {
 		res.status(500).json({ error, message: 'Failed to update fleet card', status: 'error' });
 	}

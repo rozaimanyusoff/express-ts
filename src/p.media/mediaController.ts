@@ -343,13 +343,13 @@ export const getMedia = async (req: Request, res: Response) => {
 /* ============ UPDATE MEDIA ============ */
 
 /**
- * PATCH /api/media/:id
+ * PUT /api/media/:id
  * Update media metadata
- * Body: { name?, tags?, projectId? }
+ * Body: { name?, kind?, tags?, projectId? }
  */
 export const updateMedia = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, tags, projectId } = req.body;
+  const { name, kind, tags, projectId } = req.body;
   const mediaId = parseInt(String(id));
 
   if (isNaN(mediaId)) {
@@ -371,9 +371,19 @@ export const updateMedia = async (req: Request, res: Response) => {
       });
     }
 
+    // Validate kind if provided
+    if (kind && !['document', 'image', 'video'].includes(kind)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid kind. Must be one of: document, image, video',
+        data: null,
+      });
+    }
+
     // Update the media
     await mediaModel.updateMedia(mediaId, {
       name,
+      kind,
       tags,
       projectId,
     });
