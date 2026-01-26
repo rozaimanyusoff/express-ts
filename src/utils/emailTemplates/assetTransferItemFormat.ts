@@ -16,7 +16,8 @@ export interface ItemFormatConfig {
 
 export interface TransferItem {
   effective_date?: string | Date;
-  transfer_type?: string; // Asset Type
+  transfer_type?: string; // "Asset" or "Employee" from payload
+  assetTypeName?: string; // Asset type name from types table
   identifierDisplay?: string;
   identifier?: string;
   asset_code?: string;
@@ -74,7 +75,8 @@ export function generateTransferItemCard(item: TransferItem, config: ItemFormatC
     <div style="${cardStyle}">
       <div style="margin-bottom:12px;">
         <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-        <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+        <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+        ${item.assetTypeName ? `<div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
         <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.identifierDisplay || item.identifier || item.asset_code || item.register_number)}</span></div>
         <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
       </div>
@@ -146,7 +148,8 @@ export function generateAcceptanceItemCard(item: TransferItem, config: ItemForma
   return `
     <div style="${cardStyle}">
       <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-      <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.transfer_type || item.asset?.type?.name)}</span></div>
+      <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+      ${item.assetTypeName ? `<div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
       <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.asset?.register_number || item.register_number)}</span></div>
       <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reason)}</span></div>
     </div>

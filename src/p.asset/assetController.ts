@@ -3017,6 +3017,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			remarks: d.remarks || null,
 			return_to_asset_manager: d.return_to_asset_manager ? 1 : 0,
 			transfer_id: insertId,
+			transfer_type: d.transfer_type || null,
 			type_id: Number(d.type_id) || null
 		});
 	}
@@ -3060,10 +3061,12 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 				const emp = empMap.get(item.identifier);
 				identifierDisplay = emp && typeof emp === 'object' && 'full_name' in emp ? emp.full_name : item.identifier;
 			}
-			// Transfer type name
-			const typeName = item.type_id != null && typeMap.has(Number(item.type_id))
+			// Asset type name (from types table)
+			const assetTypeName = item.type_id != null && typeMap.has(Number(item.type_id))
 				? String((typeMap.get(Number(item.type_id))).name || '')
-				: (item.transfer_type || '');
+				: '';
+			// Preserve transfer_type from payload ("Asset" or "Employee")
+			const transferTypePayload = item.transfer_type || null;
 			// Owners
 			const currOwnerEmp = item.current_owner && empMap.has(item.current_owner) ? empMap.get(item.current_owner) : null;
 			const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
@@ -3092,6 +3095,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
 			return {
 				...item,
+				assetTypeName,
 				currCostcenterName,
 				currDepartmentCode,
 				currDistrictCode,
@@ -3101,7 +3105,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 				newDepartmentCode,
 				newDistrictCode,
 				newOwnerName,
-				transfer_type: typeName
+				transfer_type: transferTypePayload
 			};
 		});
 
@@ -3190,6 +3194,65 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			console.log('DEBUG: Email sent successfully to approver');
 		} else {
 			console.warn(`createAssetTransfer: No approver found. deptIdForApproval=${deptIdForApproval}, supervisorObj.ramco_id=${supervisorObj?.ramco_id}, supervisorObj.email=${supervisorObj?.email}. Ensure workflow record exists with module_name='asset transfer', level_name='approver', department_id=${deptIdForApproval}`);
+		}
+
+		// Send notification to New Asset Owner's HOD (if different from Current Asset Owner's HOD)
+		try {
+			// Collect unique new_department_ids from items
+			const newDepartmentIds = Array.from(new Set(
+				items
+					.map((item: any) => Number(item.new_department_id))
+					.filter((id: any) => Number.isFinite(id) && id > 0)
+			));
+
+			// For each new_department_id, get the HOD via workflow
+			const newOwnerHodEmails: Set<string> = new Set();
+			for (const newDeptId of newDepartmentIds) {
+				// Skip if it's the same as the approval department (to avoid duplicate emails)
+				if (newDeptId === deptIdForApproval) {
+					console.log('DEBUG: Skipping New Asset Owner HOD notification for dept', newDeptId, 'as it is the same as Current Asset Owner HOD');
+					continue;
+				}
+				
+				try {
+					const newOwnerHod = await getWorkflowPicByDepartment('asset transfer', 'approver', newDeptId);
+					if (newOwnerHod?.ramco_id) {
+						// Ensure email is resolved from employees table by ramco_id
+						if (!newOwnerHod?.email) {
+							try {
+								const empData = await assetModel.getEmployeeByRamco(String(newOwnerHod.ramco_id));
+								if (empData?.email) {
+									newOwnerHod.email = empData.email;
+								}
+							} catch (err) {
+								console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
+							}
+						}
+						
+						if (newOwnerHod.email) {
+							newOwnerHodEmails.add(newOwnerHod.email);
+							console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
+						}
+					}
+				} catch (err) {
+					console.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
+				}
+			}
+
+			// Send notification to each new owner HOD
+			if (newOwnerHodEmails.size > 0) {
+				for (const hodEmail of newOwnerHodEmails) {
+					try {
+						const { html, subject } = assetTransferT2HodApprovalRequestEmail({ ...supervisorEmailData, portalUrl });
+						await sendMail(hodEmail, subject, html);
+						console.log('DEBUG: New Asset Owner HOD notification sent to:', hodEmail);
+					} catch (err) {
+						console.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
+					}
+				}
+			}
+		} catch (err) {
+			console.error('New Asset Owner HOD notification failed:', err);
 		}
 
 		// Send notification to asset managers based on type_id
@@ -3416,10 +3479,12 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 						const emp = empMap.get(item.identifier);
 						identifierDisplay = emp && typeof emp === 'object' && 'full_name' in emp ? emp.full_name : item.identifier;
 					}
-					// Transfer type name
-					const typeName = item.type_id != null && typeMap.has(Number(item.type_id))
+					// Asset type name (from types table)
+					const assetTypeName = item.type_id != null && typeMap.has(Number(item.type_id))
 						? String((typeMap.get(Number(item.type_id))).name || '')
-						: (item.transfer_type || '');
+						: '';
+					// Preserve transfer_type from payload ("Asset" or "Employee")
+					const transferTypePayload = item.transfer_type || null;
 					// Owners
 					const currOwnerEmp = item.current_owner && empMap.has(item.current_owner) ? empMap.get(item.current_owner) : null;
 					const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
@@ -3449,6 +3514,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 
 					return {
 						...item,
+						assetTypeName,
 						currCostcenterName,
 						currDepartmentCode,
 						currDistrictCode,
@@ -3458,7 +3524,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 						newDepartmentCode,
 						newDistrictCode,
 						newOwnerName,
-						transfer_type: typeName
+						transfer_type: transferTypePayload
 					};
 				});
 
@@ -3537,6 +3603,63 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 								await sendMail(newOwnerEmp.email, subject, html, mailOptions);
 							} catch (e) { console.warn('Failed to send new owner approval email', e); }
 						}
+					}
+
+					// NEW: Send notification to New Asset Owner's HOD
+					try {
+						const newDepartmentIds = Array.from(new Set(
+							enrichedItems
+								.map((item: any) => Number(item.new_department_id))
+								.filter((id: any) => Number.isFinite(id) && id > 0)
+						));
+
+						// For each new_department_id, get the HOD via workflow
+						const newOwnerHodEmails: Set<string> = new Set();
+						for (const newDeptId of newDepartmentIds) {
+							try {
+								const newOwnerHod = await getWorkflowPicByDepartment('asset transfer', 'approver', newDeptId);
+								if (newOwnerHod?.ramco_id) {
+									// Ensure email is resolved from employees table by ramco_id
+									if (!newOwnerHod?.email) {
+										try {
+											const empData = await assetModel.getEmployeeByRamco(String(newOwnerHod.ramco_id));
+											if (empData?.email) {
+												newOwnerHod.email = empData.email;
+											}
+										} catch (err) {
+											console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
+										}
+									}
+									
+									if (newOwnerHod.email) {
+										newOwnerHodEmails.add(newOwnerHod.email);
+										console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
+									}
+								}
+							} catch (err) {
+								console.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
+							}
+						}
+
+						// Send notification to each new owner HOD
+						if (newOwnerHodEmails.size > 0) {
+							for (const hodEmail of newOwnerHodEmails) {
+								try {
+									const { html, subject } = assetTransferApprovedRequestorEmail({ approver: approverEmp, items: enrichedItems, request, requestor: requestorEmp });
+									const ccArray = Array.from(assetManagerEmails);
+									const mailOptions: any = {};
+									if (ccArray.length > 0) {
+										mailOptions.cc = ccArray.join(', ');
+									}
+									await sendMail(hodEmail, subject, html, mailOptions);
+									console.log('DEBUG: New Asset Owner HOD approval notification sent to:', hodEmail);
+								} catch (err) {
+									console.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
+								}
+							}
+						}
+					} catch (err) {
+						console.error('New Asset Owner HOD approval notification failed:', err);
 					}
 				}
 			} // end for each request

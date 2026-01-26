@@ -2067,10 +2067,11 @@ export const createAssetTransferItem = async (data: any) => {
   // Ensure only primitive values are inserted
   const getId = (v: any) => (v && typeof v === 'object' && 'id' in v) ? v.id : v ?? null;
   const [result] = await pool.query(
-    `INSERT INTO ${assetTransferItemTable} (transfer_id, effective_date, asset_id, type_id, current_owner, current_costcenter_id, current_department_id, current_location_id, new_owner, new_costcenter_id, new_department_id, new_location_id, return_to_asset_manager, reason, remarks, attachment1, attachment2, attachment3, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+    `INSERT INTO ${assetTransferItemTable} (transfer_id, transfer_type, effective_date, asset_id, type_id, current_owner, current_costcenter_id, current_department_id, current_location_id, new_owner, new_costcenter_id, new_department_id, new_location_id, return_to_asset_manager, reason, remarks, attachment1, attachment2, attachment3, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
     [
       data.transfer_id,
+      data.transfer_type,
       data.effective_date,
       data.asset_id,
       data.type_id,
