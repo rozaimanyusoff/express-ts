@@ -2169,10 +2169,20 @@ export const createFleetCard = async (req: Request, res: Response) => {
 export const updateFleetCard = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
-		await billingModel.updateFleetCard(id, req.body);
-		const assignmentMsg = req.body.assignment === 'new' 
+		const body = req.body;
+		
+		// If status is "inactive", unset asset_id, costcenter_id, purpose, and register_number
+		if (body.status === 'inactive') {
+			body.asset_id = null;
+			body.costcenter_id = null;
+			body.purpose = null;
+			body.register_number = null;
+		}
+		
+		await billingModel.updateFleetCard(id, body);
+		const assignmentMsg = body.assignment === 'new' 
 			? ' (assignment: new)' 
-			: req.body.assignment === 'replace' 
+			: body.assignment === 'replace' 
 			? ' (assignment: replacement)' 
 			: '';
 		res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });

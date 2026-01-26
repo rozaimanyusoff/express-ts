@@ -828,7 +828,7 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
 
   // Update fleet card with all supported fields
   await pool.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ?, purpose = ?, costcenter_id = ?, replacement_card_id = ?, assignment = ? WHERE id = ?`,
+    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ?, purpose = ?, costcenter_id = ?, replacement_card_id = ?, assignment = ?, register_number = ? WHERE id = ?`,
     [ 
       data.asset_id || null, 
       data.fuel_id || null, 
@@ -842,6 +842,7 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
       data.costcenter_id || null,
       data.replacement_card_id || null,
       data.assignment || null,
+      data.register_number || null,
       id 
     ]
   );
