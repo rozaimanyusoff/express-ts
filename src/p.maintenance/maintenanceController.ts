@@ -20,6 +20,7 @@ import { getSocketIOInstance } from '../utils/socketIoInstance';
 import { buildStoragePath, safeMove, sanitizeFilename, toDbPath, toPublicUrl } from '../utils/uploadUtil';
 import { getWorkflowPic } from '../utils/workflowHelper';
 import { sendApprovalEmail, sendRecommendationEmail, sendRequesterApprovalEmail } from '../utils/workflowService';
+import { cacheService } from '../utils/cacheService';
 import * as maintenanceModel from './maintenanceModel';
 
 // Admin CC list for pool car submission notifications (comma-separated in env or define directly)
@@ -34,6 +35,16 @@ function getApiBaseUrl(): string {
 	const noTrail = root.replace(/\/$/, '');
 	const hasApi = /\/api$/i.test(noTrail);
 	return hasApi ? noTrail : `${noTrail}/api`;
+}
+
+// Helper: invalidate maintenance request caches
+async function invalidateMaintenanceCaches(): Promise<void> {
+	try {
+		await cacheService.delPattern('maintenance:requests:*');
+		await cacheService.delPattern('maintenance:request:asset:*');
+	} catch (error) {
+		console.error('Failed to invalidate maintenance caches:', error);
+	}
 }
 
 /* ================== BADGE INDICATOR / UNSEEN BILLS COUNT ================== */
@@ -431,6 +442,18 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		// Support ?includeInvoice=true to optionally include billing data (off by default for performance)
 		const includeInvoice = req.query.includeInvoice === 'true';
 
+		// Build cache key from query parameters
+		const cacheKey = `maintenance:requests:${status || 'all'}:${ramco || 'all'}:${years?.join(',') || 'all'}:${pendingStatus || 'all'}:${includeInvoice ? 'invoice' : 'noinvoice'}`;
+		
+		// Try to get from cache
+		const cachedResult = await cacheService.get<any>(cacheKey);
+		if (cachedResult) {
+			return res.json({
+				...cachedResult,
+				_cached: true
+			});
+		}
+
 		const records = await maintenanceModel.getVehicleMtnRequests(status, ramco, years, pendingStatus);
 
 		// Collect only the IDs we need from records to minimize lookup queries
@@ -579,11 +602,16 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		});
 
 		const total = resolvedRecords.length;
-		res.json({
+		const responseData = {
 			data: resolvedRecords,
 			message: `Maintenance records data retrieved successfully (total: ${total})`,
 			status: 'success'
-		});
+		};
+
+		// Cache the result with 10-minute TTL
+		await cacheService.set(cacheKey, responseData, 600);
+
+		res.json(responseData);
 	} catch (error) {
 		res.status(500).json({
 			data: null,
@@ -1092,6 +1120,9 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 			message: 'Maintenance record updated successfully',
 			status: 'success'
 		});
+
+		// Invalidate caches after successful update
+		await invalidateMaintenanceCaches();
 	} catch (error) {
 		res.status(500).json({
 			data: null,
@@ -1230,6 +1261,9 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 			message: 'Maintenance record deleted successfully',
 			status: 'success'
 		});
+
+		// Invalidate caches after successful deletion
+		await invalidateMaintenanceCaches();
 	} catch (error) {
 		res.status(500).json({
 			data: null,
@@ -1279,6 +1313,9 @@ export const recommendVehicleMtnRequestSingle = async (req: Request, res: Respon
 		if (recommendation_stat === 1) {
 			try { await sendApprovalEmail(reqId); } catch { /* ignore */ }
 		}
+
+		// Invalidate caches after successful update
+		await invalidateMaintenanceCaches();
 
 		return res.json({ data: { requestId: reqId, result }, message: 'Recommendation updated', status: 'success' });
 	} catch (error) {
@@ -1332,6 +1369,10 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 
 		// Best-effort notify requester of approval outcome
 		try { await sendRequesterApprovalEmail(reqId, approval_stat); } catch { /* ignore */ }
+
+		// Invalidate caches after successful update
+		await invalidateMaintenanceCaches();
+
 		return res.json({ data: { billing, requestId: reqId, result }, message: 'Approval updated', status: 'success' });
 	} catch (error) {
 		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
@@ -1363,7 +1404,12 @@ export const recommendVehicleMtnRequestBulk = async (req: Request, res: Response
 				results.push({ error: e instanceof Error ? e.message : 'update failed', req_id: reqId });
 			}
 		}
-		return res.json({ data: results, message: 'Bulk recommendation processed', status: 'success' });
+		const responseData = { data: results, message: 'Bulk recommendation processed', status: 'success' };
+		
+		// Invalidate caches after successful bulk update
+		await invalidateMaintenanceCaches();
+
+		return res.json(responseData);
 	} catch (error) {
 		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
@@ -1403,7 +1449,12 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 				results.push({ error: e instanceof Error ? e.message : 'update failed', req_id: reqId });
 			}
 		}
-		return res.json({ data: results, message: 'Bulk approval processed', status: 'success' });
+		const responseData = { data: results, message: 'Bulk approval processed', status: 'success' };
+		
+		// Invalidate caches after successful bulk update
+		await invalidateMaintenanceCaches();
+
+		return res.json(responseData);
 	} catch (error) {
 		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
@@ -2005,6 +2056,18 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 			return res.status(400).json({ data: null, message: 'Invalid asset_id', status: 'error' });
 		}
 
+		// Build cache key from asset_id and status
+		const cacheKey = `maintenance:request:asset:${assetId}:${status || 'all'}`;
+		
+		// Try to get from cache
+		const cachedResult = await cacheService.get<any>(cacheKey);
+		if (cachedResult) {
+			return res.json({
+				...cachedResult,
+				_cached: true
+			});
+		}
+
 		const records = await maintenanceModel.getVehicleMtnRequestByAssetId(assetId, status);
 
 		// Fetch all lookup data in parallel
@@ -2133,14 +2196,19 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 		// Resolve register_number for message and include in response
 		const register_number = assetMap.has(assetId) ? (assetMap.get(assetId))?.register_number : null;
 
-		res.json({
+		const responseData = {
 			assetId,
 			count: finalRecords.length,
 			data: finalRecords,
 			message: `Maintenance records for vehicle ${assetId}${register_number ? ' (' + register_number + ')' : ''} retrieved successfully`,
 			register_number,
 			status: 'success'
-		});
+		};
+
+		// Cache the result with 10-minute TTL
+		await cacheService.set(cacheKey, responseData, 600);
+
+		res.json(responseData);
 	} catch (error) {
 		res.status(500).json({
 			data: null,

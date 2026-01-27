@@ -241,39 +241,42 @@ export const getAssets = async (req: Request, res: Response) => {
 	const purchaseItemsRaw = purchaseIds.length > 0 ? (await assetModel.getPurchaseItemsByAssetIds(purchaseIds) as any[]) : [];
 	const purchaseItemMap = new Map(purchaseItemsRaw.map((pi: any) => [pi.id, pi]));
 
-	// Fetch specs for each asset
+	// Fetch specs for each asset (only when manager filter is provided)
 	const specsMap = new Map();
-	for (const asset of filteredAssets) {
-		if (asset.type_id && asset.id) {
-			try {
-				const specRows = await assetModel.getSpecsForAsset(asset.type_id, asset.id);
-				let specs: any = {};
-				
-				// Extract the first row as the spec data (tables store one row per asset)
-				if (Array.isArray(specRows) && specRows.length > 0) {
-					const specData = specRows[0];
-					// Only include the per-type spec fields; categories/brands/models are already present above
-					// Remove duplicate fields that are already at the top level
-					const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
-					specs = filteredSpec;
-				}
-				
-				// For vehicles (type_id = 2), add insurance and roadtax expiry as fields in the specs object
-				if (asset.type_id === 2) {
-					try {
-						const expiryData = await assetModel.getVehicleRoadtaxAndInsuranceExpiry(asset.id);
-						specs.insurance_expiry = expiryData.insurance_expiry || null;
-						specs.roadtax_expiry = expiryData.roadtax_expiry || null;
-						// Format these date fields
-						specs = formatDateFields(specs, ['roadtax_expiry', 'insurance_expiry']);
-					} catch (err) {
-						// Silently fail if expiry data can't be fetched
+	const shouldFetchSpecs = manager !== undefined;
+	if (shouldFetchSpecs) {
+		for (const asset of filteredAssets) {
+			if (asset.type_id && asset.id) {
+				try {
+					const specRows = await assetModel.getSpecsForAsset(asset.type_id, asset.id);
+					let specs: any = {};
+					
+					// Extract the first row as the spec data (tables store one row per asset)
+					if (Array.isArray(specRows) && specRows.length > 0) {
+						const specData = specRows[0];
+						// Only include the per-type spec fields; categories/brands/models are already present above
+						// Remove duplicate fields that are already at the top level
+						const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
+						specs = filteredSpec;
 					}
+					
+					// For vehicles (type_id = 2), add insurance and roadtax expiry as fields in the specs object
+					if (asset.type_id === 2) {
+						try {
+							const expiryData = await assetModel.getVehicleRoadtaxAndInsuranceExpiry(asset.id);
+							specs.insurance_expiry = expiryData.insurance_expiry || null;
+							specs.roadtax_expiry = expiryData.roadtax_expiry || null;
+							// Format these date fields
+							specs = formatDateFields(specs, ['roadtax_expiry', 'insurance_expiry']);
+						} catch (err) {
+							// Silently fail if expiry data can't be fetched
+						}
+					}
+					
+					specsMap.set(asset.id, specs);
+				} catch (err) {
+					specsMap.set(asset.id, {});
 				}
-				
-				specsMap.set(asset.id, specs);
-			} catch (err) {
-				specsMap.set(asset.id, {});
 			}
 		}
 	}
@@ -369,7 +372,7 @@ export const getAssets = async (req: Request, res: Response) => {
 			purpose: asset.purpose,
 			record_status: asset.record_status,
 			register_number: asset.register_number,
-			specs: specsMap.get(asset.id) || {},
+			...(shouldFetchSpecs && { specs: specsMap.get(asset.id) || {} }),
 			status: asset.status,
 			transmission: asset.transmission,
 			type: type ? {
