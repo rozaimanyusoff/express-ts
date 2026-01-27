@@ -3770,47 +3770,13 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	// Filter to only the items that were just accepted
 	const acceptedItems = allItems.filter((item: any) => itemIds.includes(item.id));
 
-	// Update ownership in asset_history and assetdata after acceptance
-	if (acceptedItems.length > 0) {
-		try {
-			for (const item of acceptedItems) {
-				const itemData = item as any; // Type cast for flexibility
-
-				// Only update if asset_id exists and new owner information is provided
-				if (itemData.asset_id && itemData.new_owner) {
-					const effectiveDate = acceptance_date || new Date().toISOString().slice(0, 19).replace('T', ' ');
-
-					// Get current asset data for register_number and type_id
-					const asset = await assetModel.getAssetById(itemData.asset_id);
-					if (asset) {
-						// 1. Insert new movement record into asset_history with transfer_id
-						await assetModel.insertAssetHistory({
-							asset_id: itemData.asset_id,
-							costcenter_id: itemData.new_costcenter_id || null,
-							department_id: itemData.new_department_id || null,
-							effective_date: effectiveDate,
-							location_id: itemData.new_location_id || null,
-							ramco_id: itemData.new_owner,
-							register_number: asset.register_number || null,
-							transfer_id: requestId,
-							type_id: itemData.new_type_id || asset.type_id || null
-						});
-
-						// 2. Update current ownership in assetdata table
-						await assetModel.updateAssetCurrentOwner(itemData.asset_id, {
-							costcenter_id: itemData.new_costcenter_id || asset.costcenter_id,
-							department_id: itemData.new_department_id || asset.department_id,
-							location_id: itemData.new_location_id || asset.location_id,
-							ramco_id: itemData.new_owner
-						});
-					}
-				}
-			}
-		} catch (ownershipErr) {
-			console.error('Error updating asset ownership after transfer acceptance:', ownershipErr);
-			// Log error but don't fail the acceptance
-		}
-	}
+	// NOTE: Asset ownership update deferred to scheduled job
+	// The scheduled job (processAssetTransfers) will:
+	// 1. Wait for effective_date to arrive
+	// 2. Insert asset_history records
+	// 3. Update assetdata table with new ownership
+	// 4. Mark items as transferred_on
+	// This ensures audit trail accuracy and prevents premature ownership changes
 
 	// Send email notifications to: requestor, current owner, and new owner's HOD
 	try {

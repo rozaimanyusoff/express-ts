@@ -7,6 +7,7 @@ import app from './app.js';
 import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
 import logger from './utils/logger.js';
 import { setSocketIOInstance } from './utils/socketIoInstance.js';
+import { initAssetTransferJob } from './jobs/processAssetTransfers.js';
 
 dotenv.config();
 
@@ -47,6 +48,9 @@ io.on('connection', (socket) => {
 
 // Set the io instance globally so controllers can emit events
 setSocketIOInstance(io);
+
+// Initialize scheduled jobs
+initAssetTransferJob();
 
 export { io }; // Export the WebSocket instance
 

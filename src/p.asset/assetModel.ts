@@ -2735,5 +2735,89 @@ export const getAssetTransferStatus = async (asset_id: number): Promise<string |
   }
 };
 
+/**
+ * Process accepted asset transfers with effective_date <= NOW()
+ * Inserts asset_history records and updates assetdata for each accepted item
+ * Only processes items that haven't been transferred yet (transferred_on IS NULL)
+ */
+export const processAcceptedTransfers = async () => {
+  try {
+    // Get all accepted transfer items where effective_date has passed and not yet processed
+    const [items] = await pool.query(
+      `SELECT ti.*, t.id as transfer_id 
+       FROM ${assetTransferItemTable} ti
+       JOIN ${assetTransferRequestTable} t ON ti.transfer_id = t.id
+       WHERE ti.acceptance_date IS NOT NULL 
+         AND ti.effective_date <= NOW()
+         AND ti.transferred_on IS NULL
+         AND ti.new_owner IS NOT NULL`
+    );
+
+    if (!Array.isArray(items) || items.length === 0) {
+      console.log('No pending transfers to process');
+      return 0;
+    }
+
+    let processedCount = 0;
+
+    for (const item of items) {
+      const itemData = item as any;
+      
+      try {
+        // Fetch current asset data
+        const asset = await getAssetById(itemData.asset_id);
+        if (!asset) {
+          console.warn(`Asset ${itemData.asset_id} not found, skipping`);
+          continue;
+        }
+
+        const effectiveDate = itemData.effective_date
+          ? new Date(itemData.effective_date).toISOString().slice(0, 19).replace('T', ' ')
+          : new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+        // 1. Insert asset movement record into asset_history
+        await insertAssetHistory({
+          asset_id: itemData.asset_id,
+          costcenter_id: itemData.new_costcenter_id || null,
+          department_id: itemData.new_department_id || null,
+          effective_date: effectiveDate,
+          location_id: itemData.new_location_id || null,
+          ramco_id: itemData.new_owner,
+          register_number: asset.register_number || null,
+          transfer_id: itemData.transfer_id,
+          type_id: itemData.new_type_id || asset.type_id || null
+        });
+
+        // 2. Update current ownership in assetdata table
+        await updateAssetCurrentOwner(itemData.asset_id, {
+          costcenter_id: itemData.new_costcenter_id || asset.costcenter_id,
+          department_id: itemData.new_department_id || asset.department_id,
+          location_id: itemData.new_location_id || asset.location_id,
+          ramco_id: itemData.new_owner
+        });
+
+        // 3. Mark transfer item as processed
+        const nowIso = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        await pool.query(
+          `UPDATE ${assetTransferItemTable} SET transferred_on = ? WHERE id = ?`,
+          [nowIso, itemData.id]
+        );
+
+        processedCount++;
+        console.log(`✓ Processed transfer item ${itemData.id} for asset ${itemData.asset_id}`);
+      } catch (itemErr) {
+        console.error(`✗ Error processing transfer item ${itemData.id}:`, itemErr);
+        // Continue with next item instead of failing entire batch
+      }
+    }
+
+    console.log(`✅ Asset transfer processing complete. Processed: ${processedCount}/${items.length}`);
+    return processedCount;
+  } catch (err) {
+    console.error('❌ Error in processAcceptedTransfers:', err);
+    throw err;
+  }
+};
+
 // Note: named exports are used throughout the codebase. No default export to normalize usage.
 
