@@ -1,7 +1,11 @@
 // Asset Transfer HOD Approval Request Email Template (T2)
 // Usage: import and call with { request, items, requestor, supervisor, actionToken, actionBaseUrl }
+// Updated: Conditional display based on transfer_type (Asset vs Employee)
 
 import { AssetTransferDetailItem } from '../../p.asset/assetController';
+
+const isEmployeeTransfer = (transferType?: string) => 
+  transferType && String(transferType).toLowerCase() === 'employee';
 
 interface EmailData {
   actionBaseUrl?: string; // no longer used
@@ -73,11 +77,14 @@ export default function assetTransferT2HodApprovalRequestEmail({ actionBaseUrl, 
           </div>
 
           <div style="${sectionTitle}">Transfer Items</div>
-      ${items.map(item => `
+      ${items.map(item => {
+        const isEmployee = isEmployeeTransfer(item.transfer_type);
+        return `
         <div style="${cardStyle}">
           <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
-          <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.asset_type || item.transfer_type)}</span></div>
-          <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.register_number || item.identifierDisplay)}</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+          ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(item.asset_type || item.assetTypeName)}</span></div>` : ''}
+          ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.register_number || item.identifierDisplay)}</span></div>` : ''}
           <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
           
           <div style="margin-top: 12px; margin-bottom: 8px; border-top: 2px solid ${primarySoft}; padding-top: 10px;">
@@ -91,11 +98,13 @@ export default function assetTransferT2HodApprovalRequestEmail({ actionBaseUrl, 
                 </tr>
               </thead>
               <tbody>
+                ${!isEmployee ? `
                 <tr style="background-color: #f5f5f5;">
                   <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Owner</td>
                   <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currOwnerName)}</td>
                   <td style="padding: 8px; border: 1px solid ${border};">${safe(item.newOwnerName)}</td>
                 </tr>
+                ` : ''}
                 <tr>
                   <td style="padding: 8px; border: 1px solid ${border}; font-weight: 600;">Cost Center</td>
                   <td style="padding: 8px; border: 1px solid ${border};">${safe(item.currCostcenterName)}</td>
@@ -114,8 +123,10 @@ export default function assetTransferT2HodApprovalRequestEmail({ actionBaseUrl, 
               </tbody>
             </table>
           </div>
+          ${item.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(item.remarks)}</span></div>` : ''}
         </div>
-      `).join('')}
+      `;
+      }).join('')}
           ${portalButton}
         </div>
       </div>

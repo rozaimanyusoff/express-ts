@@ -2,6 +2,10 @@
  * Asset Transfer Item Format Helper
  * Standardized format for all asset transfer emails
  * Maintains consistency across transfer request, approved, accepted, and transferred notifications
+ * 
+ * Conditional display based on transfer_type:
+ * - "Employee": Hide Brand, Model, Register Number; Show Department & Cost Center instead of Owner
+ * - "Asset": Show all fields including Brand, Model, Owner
  */
 
 export interface ItemFormatConfig {
@@ -24,6 +28,7 @@ export interface TransferItem {
   register_number?: string;
   reason?: string;
   reasons?: string;
+  remarks?: string; // Additional remarks for this transfer item
   currOwnerName?: string;
   newOwnerName?: string;
   currCostcenterName?: string;
@@ -50,6 +55,9 @@ const formatDate = (d: any) => {
   return `${day}/${month}/${year}`;
 };
 
+const isEmployeeTransfer = (transferType?: string) => 
+  transferType && String(transferType).toLowerCase() === 'employee';
+
 /**
  * Generate a standardized item card with header info and transfer details table
  * This format is used for transfer items, approved items, accepted items, transferred items
@@ -70,15 +78,18 @@ export function generateTransferItemCard(item: TransferItem, config: ItemFormatC
   const valueStyle = 'display:inline-block; min-width:180px;';
   const rowStyle = 'margin-bottom:6px;';
 
+  const isEmployee = isEmployeeTransfer(item.transfer_type);
+
   // Header section
   const headerHtml = `
     <div style="${cardStyle}">
       <div style="margin-bottom:12px;">
         <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
         <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
-        ${item.assetTypeName ? `<div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
-        <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.identifierDisplay || item.identifier || item.asset_code || item.register_number)}</span></div>
+        ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
+        ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.identifierDisplay || item.identifier || item.asset_code || item.register_number)}</span></div>` : ''}
         <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reasons || item.reason)}</span></div>
+        ${item.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(item.remarks)}</span></div>` : ''}
       </div>
   `;
 
@@ -98,7 +109,7 @@ export function generateTransferItemCard(item: TransferItem, config: ItemFormatC
           <th style="${thStyle}">Current</th>
           <th style="${thStyle}">New</th>
         </tr>
-        ${item.currOwnerName || item.newOwnerName ? `
+        ${!isEmployee && (item.currOwnerName || item.newOwnerName) ? `
         <tr>
           <td style="${tdLabelStyle}">Owner</td>
           <td style="${tdStyle}">${safe(item.currOwnerName)}</td>
@@ -107,14 +118,14 @@ export function generateTransferItemCard(item: TransferItem, config: ItemFormatC
         ` : ''}
         ${item.currCostcenterName || item.newCostcenterName ? `
         <tr>
-          <td style="${tdLabelStyle}">Cost Center</td>
+          <td style="${tdLabelStyle}">${isEmployee ? 'Cost Center' : 'Cost Center'}</td>
           <td style="${tdStyle}">${safe(item.currCostcenterName)}</td>
           <td style="${tdStyle}">${safe(item.newCostcenterName)}</td>
         </tr>
         ` : ''}
         ${item.currDepartmentCode || item.newDepartmentCode ? `
         <tr>
-          <td style="${tdLabelStyle}">Department</td>
+          <td style="${tdLabelStyle}">${isEmployee ? 'Department' : 'Department'}</td>
           <td style="${tdStyle}">${safe(item.currDepartmentCode)}</td>
           <td style="${tdStyle}">${safe(item.newDepartmentCode)}</td>
         </tr>
@@ -136,6 +147,9 @@ export function generateTransferItemCard(item: TransferItem, config: ItemFormatC
 /**
  * Alternative format for acceptance items (without transfer details table, simpler format)
  * Used in acceptance emails where current/new values aren't needed
+ * 
+ * For Employee transfers: Hide Brand, Model, Register Number
+ * For Asset transfers: Show all details
  */
 export function generateAcceptanceItemCard(item: TransferItem, config: ItemFormatConfig): string {
   const { bgSoft, border } = config;
@@ -145,13 +159,16 @@ export function generateAcceptanceItemCard(item: TransferItem, config: ItemForma
   const valueStyle = 'display:inline-block; min-width:180px;';
   const rowStyle = 'margin-bottom:6px;';
 
+  const isEmployee = isEmployeeTransfer(item.transfer_type);
+
   return `
     <div style="${cardStyle}">
       <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(item.effective_date)}</span></div>
       <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
-      ${item.assetTypeName ? `<div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
-      <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.asset?.register_number || item.register_number)}</span></div>
+      ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(item.assetTypeName)}</span></div>` : ''}
+      ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.asset?.register_number || item.register_number)}</span></div>` : ''}
       <div style="${rowStyle}"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(item.reason)}</span></div>
+      ${item.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(item.remarks)}</span></div>` : ''}
     </div>
   `;
 }

@@ -1,5 +1,6 @@
 // Email templates for asset transfer acceptance and completion notifications (T7)
 // Usage: Call appropriate function with transfer data
+// Updated: Conditional display based on transfer_type (Asset vs Employee)
 
 interface AssetTransferT7TransferCompletedParams {
   acceptanceDate?: Date | string;
@@ -21,6 +22,9 @@ const formatDate = (d: any) => {
   const year = date.getFullYear();
   return `${day}/${month}/${year}`;
 };
+
+const isEmployeeTransfer = (transferType?: string) => 
+  transferType && String(transferType).toLowerCase() === 'employee';
 
 // Green theme styles (matching assetTransferRequest)
 const primary = '#1b5e20'; // dark green
@@ -57,16 +61,26 @@ export function assetTransferAcceptedCurrentOwnerEmail({ acceptanceDate, accepta
           </div>
 
           <div style="${sectionTitle}">Transferred Items</div>
-          ${items.map((it: any) => `
+          ${items.map((it: any) => {
+            const isEmployee = isEmployeeTransfer(it.transfer_type);
+            return `
           <div style="${cardStyle}">
+            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type)}</span></div>` : ''}
+            ${!isEmployee ? `
             <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type || it.transfer_type)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name || it.asset?.brand)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name || it.asset?.model)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.asset?.owner?.full_name || it.currOwnerName || it.asset?.owner)}</span></div>
+            ` : `
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Department:</span> <span style="${valueStyle}">${safe(it.currDepartmentCode)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Cost Center:</span> <span style="${valueStyle}">${safe(it.currCostcenterName)}</span></div>
+            `}
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
+            ${it.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(it.remarks)}</span></div>` : ''}
           </div>
-          `).join('')}
+            `;
+          }).join('')}
 
           <div style="margin-top: 1em;">
             The transfer is now complete and these assets are no longer under your responsibility.
@@ -106,15 +120,26 @@ export function assetTransferAcceptedHodEmail({ acceptanceDate, acceptanceRemark
           </div>
 
           <div style="${sectionTitle}">Accepted Assets</div>
-          ${items.map((it: any) => `
+          ${items.map((it: any) => {
+            const isEmployee = isEmployeeTransfer(it.transfer_type);
+            return `
           <div style="${cardStyle}">
+            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type)}</span></div>` : ''}
+            ${!isEmployee ? `
             <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.current_owner?.full_name || it.current_owner)}</span></div>
+            ` : `
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Department:</span> <span style="${valueStyle}">${safe(it.currDepartmentCode)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Cost Center:</span> <span style="${valueStyle}">${safe(it.currCostcenterName)}</span></div>
+            `}
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
+            ${it.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(it.remarks)}</span></div>` : ''}
           </div>
-          `).join('')}
+            `;
+          }).join('')}
 
           <div style="margin-top: 1em;">
             These assets are now under the responsibility of your department member. Please ensure proper custody and accountability are maintained.
@@ -153,16 +178,26 @@ export function assetTransferAcceptedRequestorEmail({ acceptanceDate, acceptance
           </div>
 
           <div style="${sectionTitle}">Accepted Items</div>
-          ${items.map((it: any) => `
+          ${items.map((it: any) => {
+            const isEmployee = isEmployeeTransfer(it.transfer_type);
+            return `
           <div style="${cardStyle}">
+            ${!isEmployee ? `
             <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.asset?.register_number || it.register_number)}</span></div>
-            <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type || it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(it.asset?.type?.name || it.asset_type || it.transfer_type)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Brand:</span> <span style="${valueStyle}">${safe(it.asset?.brand?.name || it.brand_name || it.asset?.brand)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Model:</span> <span style="${valueStyle}">${safe(it.asset?.model?.name || it.model_name || it.asset?.model)}</span></div>
             <div style="${rowStyle}"><span style="${labelStyle}">Previous Owner:</span> <span style="${valueStyle}">${safe(it.asset?.owner?.full_name || it.currOwnerName || it.asset?.owner)}</span></div>
+            ` : `
+            <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Department:</span> <span style="${valueStyle}">${safe(it.currDepartmentCode)}</span></div>
+            <div style="${rowStyle}"><span style="${labelStyle}">Previous Cost Center:</span> <span style="${valueStyle}">${safe(it.currCostcenterName)}</span></div>
+            `}
             <div style="${rowStyle}"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
+            ${it.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(it.remarks)}</span></div>` : ''}
           </div>
-          `).join('')}
+            `;
+          }).join('')}
 
           <div style="margin-top: 1em;">
             The asset has been successfully received by the new owner. The transfer process is now complete.

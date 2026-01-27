@@ -1,6 +1,7 @@
 // Asset Transfer HOD Rejected Email Template (T6)
 // Usage: assetTransferT6HodRejectedEmail({ request, items, requestor, rejectReason, rejectedBy })
 // Note: Uses red color scheme for rejection notification
+// Updated: Conditional display based on transfer_type (Asset vs Employee)
 
 interface AssetTransferT6HodRejectedParams {
   items?: any[];
@@ -9,6 +10,9 @@ interface AssetTransferT6HodRejectedParams {
   request: any;
   requestor: any;
 }
+
+const isEmployeeTransfer = (transferType?: string) => 
+  transferType && String(transferType).toLowerCase() === 'employee';
 
 export function assetTransferT6HodRejectedEmail({ items = [], rejectedBy, rejectReason, request, requestor }: AssetTransferT6HodRejectedParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
@@ -71,14 +75,26 @@ export function assetTransferT6HodRejectedEmail({ items = [], rejectedBy, reject
 
           ${items && items.length > 0 ? `
             <div style="${sectionTitle}">Rejected Transfer Items</div>
-            ${items.map(item => `
+            ${items.map(item => {
+              const isEmployee = isEmployeeTransfer(item.transfer_type);
+              return `
               <div style="${cardStyle}">
-                <div style="${rowStyle}"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(item.asset_type || item.transfer_type)}</span></div>
-                <div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.register_number || item.identifierDisplay)}</span></div>
-                <div style="${rowStyle}"><span style="${labelStyle}">Current Owner:</span> <span style="${valueStyle}">${safe(item.currOwnerName)}</span></div>
-                <div style="${rowStyle}"><span style="${labelStyle}">Proposed New Owner:</span> <span style="${valueStyle}">${safe(item.newOwnerName)}</span></div>
+                <div style="${rowStyle}"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(item.transfer_type)}</span></div>
+                ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(item.asset_type || item.assetTypeName)}</span></div>` : ''}
+                ${!isEmployee ? `<div style="${rowStyle}"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(item.register_number || item.identifierDisplay)}</span></div>` : ''}
+                ${isEmployee ? `
+                  <div style="${rowStyle}"><span style="${labelStyle}">Current Department:</span> <span style="${valueStyle}">${safe(item.currDepartmentCode)}</span></div>
+                  <div style="${rowStyle}"><span style="${labelStyle}">Current Cost Center:</span> <span style="${valueStyle}">${safe(item.currCostcenterName)}</span></div>
+                  <div style="${rowStyle}"><span style="${labelStyle}">Proposed Department:</span> <span style="${valueStyle}">${safe(item.newDepartmentCode)}</span></div>
+                  <div style="${rowStyle}"><span style="${labelStyle}">Proposed Cost Center:</span> <span style="${valueStyle}">${safe(item.newCostcenterName)}</span></div>
+                ` : `
+                  <div style="${rowStyle}"><span style="${labelStyle}">Current Owner:</span> <span style="${valueStyle}">${safe(item.currOwnerName)}</span></div>
+                  <div style="${rowStyle}"><span style="${labelStyle}">Proposed New Owner:</span> <span style="${valueStyle}">${safe(item.newOwnerName)}</span></div>
+                `}
+                ${item.remarks ? `<div style="${rowStyle}"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(item.remarks)}</span></div>` : ''}
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           ` : ''}
 
           <div style="margin-top:16px; padding:12px; background:#f3e5f5; border:1px solid #ce93d8; border-radius:6px; font-size:13px;">

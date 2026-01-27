@@ -1,5 +1,6 @@
 // Email template: HOD Approved notification to Requestor (T4)
 // Usage: assetTransferApprovedRequestorEmail({ request, items, requestor, approver })
+// Updated: Conditional display based on transfer_type (Asset vs Employee)
 
 interface AssetTransferT4HodApprovedParams {
   approver: any;  // approver employee object
@@ -7,6 +8,9 @@ interface AssetTransferT4HodApprovedParams {
   request: any;
   requestor: any; // employee object with full_name, email
 }
+
+const isEmployeeTransfer = (transferType?: string) => 
+  transferType && String(transferType).toLowerCase() === 'employee';
 
 export function assetTransferApprovedRequestorEmail({ approver, items, request, requestor }: AssetTransferT4HodApprovedParams) {
   const safe = (v: any) => (v !== undefined && v !== null && String(v).trim() !== '' ? v : '-');
@@ -54,12 +58,15 @@ export function assetTransferApprovedRequestorEmail({ approver, items, request, 
           </div>
 
           <div style="${sectionTitle}">Approved Items</div>
-          ${items.map((it: any) => `
+          ${items.map((it: any) => {
+            const isEmployee = isEmployeeTransfer(it.transfer_type);
+            return `
           <div style="${cardStyle}">
             <div style="margin-bottom:12px;">
               <div style="margin-bottom:6px;"><span style="${labelStyle}">Effective Date:</span> <span style="${valueStyle}">${formatDate(it.effective_date)}</span></div>
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Asset Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
-              <div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>
+              <div style="margin-bottom:6px;"><span style="${labelStyle}">Transfer Type:</span> <span style="${valueStyle}">${safe(it.transfer_type)}</span></div>
+              ${!isEmployee ? `<div style="margin-bottom:6px;"><span style="${labelStyle}">Category:</span> <span style="${valueStyle}">${safe(it.assetTypeName)}</span></div>` : ''}
+              ${!isEmployee ? `<div style="margin-bottom:6px;"><span style="${labelStyle}">Register Number:</span> <span style="${valueStyle}">${safe(it.identifierDisplay || it.identifier || it.asset_code || it.register_number)}</span></div>` : ''}
               <div style="margin-bottom:6px;"><span style="${labelStyle}">Reason:</span> <span style="${valueStyle}">${safe(it.reason)}</span></div>
             </div>
             
@@ -70,11 +77,13 @@ export function assetTransferApprovedRequestorEmail({ approver, items, request, 
                 <th style="${thStyle}">Current</th>
                 <th style="${thStyle}">New</th>
               </tr>
+              ${!isEmployee ? `
               <tr>
                 <td style="${tdLabelStyle}">Owner</td>
                 <td style="${tdStyle}">${safe(it.currOwnerName)}</td>
                 <td style="${tdStyle}">${safe(it.newOwnerName)}</td>
               </tr>
+              ` : ''}
               <tr>
                 <td style="${tdLabelStyle}">Cost Center</td>
                 <td style="${tdStyle}">${safe(it.currCostcenterName)}</td>
@@ -91,8 +100,10 @@ export function assetTransferApprovedRequestorEmail({ approver, items, request, 
                 <td style="${tdStyle}">${safe(it.newDistrictCode)}</td>
               </tr>
             </table>
+            ${it.remarks ? `<div style="margin-top:12px;"><span style="${labelStyle}">Remarks:</span> <span style="${valueStyle}">${safe(it.remarks)}</span></div>` : ''}
           </div>
-          `).join('')}
+            `;
+          }).join('')}
 
           <div style="margin-top: 1em;">
             Next, the asset team will proceed with the transfer process.
