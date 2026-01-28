@@ -2667,10 +2667,18 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 	// Collect lookup IDs from items for filtered requests to enrich nested structures
 	const allItemsForFiltered: any[] = filteredReqArr.flatMap((r: any) => itemsMap.get(r.id) || []);
 	const assetIdsSet = new Set<number>();
+	const assetTypeEmployeeRamcoIds = new Set<string>();
 	const typeIdsSet = new Set<number>();
 	const locationIdsSet = new Set<number>();
 	for (const it of allItemsForFiltered) {
-		if (typeof it.asset_id === 'number') assetIdsSet.add(Number(it.asset_id));
+		const transferTypeNorm = String(it.transfer_type || '').toLowerCase();
+		if (transferTypeNorm === 'asset' && it.asset_id) {
+			// asset_id can be string or number, convert to number for asset lookup
+			const assetId = Number(it.asset_id);
+			if (Number.isFinite(assetId)) assetIdsSet.add(assetId);
+		} else if (transferTypeNorm === 'employee' && it.asset_id) {
+			assetTypeEmployeeRamcoIds.add(String(it.asset_id));
+		}
 		if (typeof it.type_id === 'number') typeIdsSet.add(Number(it.type_id));
 		if (typeof it.current_location_id === 'number') locationIdsSet.add(Number(it.current_location_id));
 		if (typeof it.new_location_id === 'number') locationIdsSet.add(Number(it.new_location_id));
@@ -2704,9 +2712,9 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 		const costcenter = cc ? { id: Number(cc.id), name: cc.name || null } : null;
 		const department = dept ? { code: dept.code || null, id: Number(dept.id) } : null;
 		// Raw items for this request
-		const itemsRawForReq = itemsMap.get(r.id) || [];
-		// Build new_owner array from items (legacy quick view)
-		const new_owner = itemsRawForReq
+		const detailsRawForReq = itemsMap.get(r.id) || [];
+		// Build new_owner array from details (legacy quick view)
+		const new_owner = detailsRawForReq
 			.map((it: any, idx: number) => {
 				if (!it.new_owner) return null;
 				const newOwnerEmp = empMap.get(String(it.new_owner));
@@ -2717,10 +2725,52 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 				};
 			})
 			.filter((v: any) => v !== null);
-		// Enrich items structure as requested
-		const enrichedItems = itemsRawForReq.map((it: any) => {
-			// Lookups
-			const assetObj = typeof it.asset_id === 'number' ? assetMap.get(Number(it.asset_id)) : null;
+		// Enrich details structure as requested
+		const enrichedDetails = detailsRawForReq.map((it: any) => {
+			// Lookups - resolve asset_id based on transfer_type
+			let transferItem = null;
+			const transferTypeNorm = String(it.transfer_type || '').toLowerCase();
+			
+			if (transferTypeNorm === 'asset') {
+				// For asset transfers: resolve as asset object
+				// asset_id can be string or number, so convert to number for lookup
+				const assetId = it.asset_id ? Number(it.asset_id) : null;
+				const assetObj = assetId && Number.isFinite(assetId) ? assetMap.get(assetId) : null;
+				if (assetObj) {
+					transferItem = {
+						brand: (() => {
+							const b = brandMap.get(Number(assetObj.brand_id));
+							return b ? { id: Number(b.id), name: b.name || null } : (assetObj.brand_id ? { id: Number(assetObj.brand_id), name: null } : null);
+						})(),
+						category: (() => {
+							const c = categoryMap.get(Number(assetObj.category_id));
+							return c ? { id: Number(c.id), name: c.name || null } : (assetObj.category_id ? { id: Number(assetObj.category_id), name: null } : null);
+						})(),
+						id: assetObj.id,
+						model: (() => {
+							const m = modelMap.get(Number(assetObj.model_id));
+							return m ? { id: Number(m.id), name: m.name || null } : (assetObj.model_id ? { id: Number(assetObj.model_id), name: null } : null);
+						})(),
+						register_number: assetObj.register_number || null,
+						type: (() => {
+							const t = typeMap.get(Number(assetObj.type_id));
+							return t ? { id: Number(t.id), name: t.name || null } : (assetObj.type_id ? { id: Number(assetObj.type_id), name: null } : null);
+						})()
+					};
+				} else if (it.asset_id) {
+					transferItem = { brand: null, category: null, id: it.asset_id, model: null, register_number: null, type: it.type_id ? { id: it.type_id, name: null } : null };
+				}
+			} else if (transferTypeNorm === 'employee' && it.asset_id) {
+				// For employee transfers: resolve as employee object
+				const employeeRamcoId = String(it.asset_id);
+				const empData = empMap.get(employeeRamcoId);
+				if (empData) {
+					transferItem = {
+						full_name: empData.full_name || empData.name || null,
+						ramco_id: empData.ramco_id,
+					};
+				}
+			}
 			// Resolve owners
 			const currOwnerEmp = it.current_owner ? empMap.get(String(it.current_owner)) : null;
 			const newOwnerEmp = it.new_owner ? empMap.get(String(it.new_owner)) : null;
@@ -2731,36 +2781,13 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 			// Locations names
 			const currLocRow = typeof it.current_location_id === 'number' ? locationMap.get(Number(it.current_location_id)) : null;
 			const newLocRow = typeof it.new_location_id === 'number' ? locationMap.get(Number(it.new_location_id)) : null;
-			// Asset nested with type/category/brand/model
-			const assetNested = assetObj
-				? {
-					brand: (() => {
-						const b = brandMap.get(Number(assetObj.brand_id));
-						return b ? { id: Number(b.id), name: b.name || null } : (assetObj.brand_id ? { id: Number(assetObj.brand_id), name: null } : null);
-					})(),
-					category: (() => {
-						const c = categoryMap.get(Number(assetObj.category_id));
-						return c ? { id: Number(c.id), name: c.name || null } : (assetObj.category_id ? { id: Number(assetObj.category_id), name: null } : null);
-					})(),
-					id: assetObj.id,
-					model: (() => {
-						const m = modelMap.get(Number(assetObj.model_id));
-						return m ? { id: Number(m.id), name: m.name || null } : (assetObj.model_id ? { id: Number(assetObj.model_id), name: null } : null);
-					})(),
-					register_number: assetObj.register_number || null,
-					type: (() => {
-						const t = typeMap.get(Number(assetObj.type_id));
-						return t ? { id: Number(t.id), name: t.name || null } : (assetObj.type_id ? { id: Number(assetObj.type_id), name: null } : null);
-					})()
-				}
-				: (it.asset_id ? { brand: null, category: null, id: it.asset_id, model: null, register_number: null, type: it.type_id ? { id: it.type_id, name: null } : null } : null);
 			return {
 				acceptance_attachments: it.acceptance_attachments || null,
 				acceptance_by: it.acceptance_by || null,
 				acceptance_checklist_items: it.acceptance_checklist_items || null,
 				acceptance_date: it.acceptance_date || null,
 				acceptance_remarks: it.acceptance_remarks || null,
-				asset: assetNested,
+				transfer_item: transferItem,
 				attachment: it.attachment,
 				created_at: it.created_at,
 				current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof it.current_costcenter_id === 'number' ? { id: it.current_costcenter_id, name: null } : null),
@@ -2777,6 +2804,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 				remarks: it.remarks,
 				return_to_asset_manager: it.return_to_asset_manager,
 				transfer_id: it.transfer_id,
+				transfer_type: it.transfer_type || null,
 				updated_at: it.updated_at
 			};
 		});
@@ -2788,11 +2816,11 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 			created_at: r.created_at,
 			department,
 			id: r.id,
-			items: enrichedItems,
+			details: enrichedDetails,
 			new_owner,
 			total_items: countsMap.get(r.id) || 0,
 			transfer_by: transfer_by_obj,
-			transfer_date: r.transfer_date,
+			transfer_date: r.transfer_date ? new Date(r.transfer_date).toISOString().split('T')[0] : null,
 			transfer_status: r.transfer_status,
 			updated_at: r.updated_at,
 		};
@@ -2878,8 +2906,51 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 		const newDept = it.new_department_id != null ? departmentMap.get(Number(it.new_department_id)) : null;
 		const currLoc = it.current_location_id != null ? locationMap.get(Number(it.current_location_id)) : null;
 		const newLoc = it.new_location_id != null ? locationMap.get(Number(it.new_location_id)) : null;
-		const assetObj = it.asset_id != null ? assetMap.get(Number(it.asset_id)) : null;
-		const typeObj = it.type_id != null ? typeMap.get(Number(it.type_id)) : null;
+		
+		// Resolve transfer_item based on transfer_type
+		let transferItem = null;
+		const transferTypeNorm = String(it.transfer_type || '').toLowerCase();
+		
+		if (transferTypeNorm === 'asset') {
+			// For asset transfers: resolve as asset object
+			// asset_id can be string or number, so convert to number for lookup
+			const assetId = it.asset_id ? Number(it.asset_id) : null;
+			const assetObj = assetId && Number.isFinite(assetId) ? assetMap.get(assetId) : null;
+			transferItem = assetObj ? {
+				brand: (() => {
+					const bid = assetObj.brand_id != null ? Number(assetObj.brand_id) : null;
+					const b = bid != null ? brandMap.get(bid) : null;
+					return b ? { id: b.id, name: b.name || null } : (bid != null ? { id: bid, name: null } : null);
+				})(),
+				category: (() => {
+					const cid = assetObj.category_id != null ? Number(assetObj.category_id) : null;
+					const c = cid != null ? categoryMap.get(cid) : null;
+					return c ? { id: c.id, name: c.name || null } : (cid != null ? { id: cid, name: null } : null);
+				})(),
+				id: assetObj.id,
+				model: (() => {
+					const mid = assetObj.model_id != null ? Number(assetObj.model_id) : null;
+					const m = mid != null ? modelMap.get(mid) : null;
+					return m ? { id: m.id, name: m.name || null } : (mid != null ? { id: mid, name: null } : null);
+				})(),
+				register_number: assetObj.register_number || null,
+				type: (() => {
+					const tid = assetObj.type_id != null ? Number(assetObj.type_id) : null;
+					const t = tid != null ? typeMap.get(tid) : null;
+					return t ? { id: t.id, name: t.name || null } : (tid != null ? { id: tid, name: null } : null);
+				})()
+			} : (it.asset_id ? { id: it.asset_id, register_number: null } : null);
+		} else if (transferTypeNorm === 'employee' && it.asset_id) {
+			// For employee transfers: resolve as employee object
+			const employeeRamcoId = String(it.asset_id);
+			const empData = empMap.get(employeeRamcoId);
+			if (empData) {
+				transferItem = {
+					full_name: empData.full_name || empData.name || null,
+					ramco_id: empData.ramco_id,
+				};
+			}
+		}
 
 		// acceptance checklist mapping
 		let acceptanceChecklist: any[] | null = null;
@@ -2908,30 +2979,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 			acceptance_checklist_items: acceptanceChecklist,
 			acceptance_date: (it).acceptance_date || null,
 			acceptance_remarks: (it).acceptance_remarks ?? null,
-			asset: assetObj ? {
-				brand: (() => {
-					const bid = assetObj.brand_id != null ? Number(assetObj.brand_id) : null;
-					const b = bid != null ? brandMap.get(bid) : null;
-					return b ? { id: b.id, name: b.name || null } : (bid != null ? { id: bid, name: null } : null);
-				})(),
-				category: (() => {
-					const cid = assetObj.category_id != null ? Number(assetObj.category_id) : null;
-					const c = cid != null ? categoryMap.get(cid) : null;
-					return c ? { id: c.id, name: c.name || null } : (cid != null ? { id: cid, name: null } : null);
-				})(),
-				id: assetObj.id,
-				model: (() => {
-					const mid = assetObj.model_id != null ? Number(assetObj.model_id) : null;
-					const m = mid != null ? modelMap.get(mid) : null;
-					return m ? { id: m.id, name: m.name || null } : (mid != null ? { id: mid, name: null } : null);
-				})(),
-				register_number: assetObj.register_number || null,
-				type: (() => {
-					const tid = assetObj.type_id != null ? Number(assetObj.type_id) : null;
-					const t = tid != null ? typeMap.get(tid) : null;
-					return t ? { id: t.id, name: t.name || null } : (tid != null ? { id: tid, name: null } : null);
-				})()
-			} : (it.asset_id ? { id: it.asset_id, register_number: null } : null),
+			transfer_item: transferItem,
 			attachment: it.attachment,
 			created_at: it.created_at,
 			current_costcenter: currCC ? { id: Number(currCC.id), name: currCC.name || null } : (it.current_costcenter_id != null ? { id: Number(it.current_costcenter_id), name: null } : null),
@@ -2948,6 +2996,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 			remarks: it.remarks,
 			return_to_asset_manager: it.return_to_asset_manager,
 			transfer_id: it.transfer_id,
+			transfer_type: it.transfer_type || null,
 			updated_at: it.updated_at,
 		};
 	});
@@ -2956,7 +3005,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 		...request,
 		costcenter,
 		department,
-		items: itemsEnriched,
+		details: itemsEnriched,
 		total_items: itemsEnriched.length,
 		transfer_by_user,
 	};
@@ -3003,7 +3052,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 	for (const dRaw of details) {
 		const d = dRaw || {};
 		await assetModel.createAssetTransferItem({
-			asset_id: Number(d.asset_id) || null,
+			asset_id: String(d.asset_id || '').trim() || null,
 			attachment1: d.attachment1 || null,
 			attachment2: d.attachment2 || null,
 			attachment3: d.attachment3 || null,
@@ -4071,6 +4120,7 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 			remarks: item.remarks,
 			return_to_asset_manager: item.return_to_asset_manager,
 			transfer_id: item.transfer_id,
+			transfer_type: item.transfer_type || null,
 			updated_at: item.updated_at
 		};
 	});
@@ -4206,6 +4256,7 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 		return_to_asset_manager: item.return_to_asset_manager,
 		transfer_by: transfer_by_emp ? { name: transfer_by_emp.full_name || transfer_by_emp.name || null, ramco_id: transfer_by_emp.ramco_id } : null,
 		transfer_id: item.transfer_id,
+		transfer_type: item.transfer_type || null,
 		type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (item.type_id ? { id: item.type_id, name: null } : null),
 		updated_at: item.updated_at
 	};
@@ -4390,6 +4441,7 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 			return_to_asset_manager: it.return_to_asset_manager,
 			transfer_by: transfer_by_emp ? { name: transfer_by_emp.full_name || transfer_by_emp.name || null, ramco_id: transfer_by_emp.ramco_id } : null,
 			transfer_id: it.transfer_id,
+			transfer_type: it.transfer_type || null,
 			type: typeObj ? { id: typeObj.id, name: typeObj.name || null } : (it.type_id ? { id: it.type_id, name: null } : null),
 			updated_at: it.updated_at
 		};
