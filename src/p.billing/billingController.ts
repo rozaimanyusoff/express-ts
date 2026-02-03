@@ -11,6 +11,9 @@ import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 import * as userModel from '../p.user/userModel';
 import logger from '../utils/logger';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
+import { sendMail } from '../utils/mailer';
+import { renderFleetCardCreatedNotification } from '../utils/emailTemplates/fleetCardCreated';
+import { renderFleetCardUpdatedNotification } from '../utils/emailTemplates/fleetCardUpdated';
 import { toPublicUrl } from '../utils/uploadUtil';
 import * as billingModel from './billingModel';
 import { setUtilityBillRef } from './billingModel';
@@ -1944,7 +1947,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 							: null,
 						entry_code: assetObj.entry_code || null,
-						fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+						fuel_type: card.fuel_type || assetObj.fuel_type || assetObj.vfuel_type || null,
 						id: card.asset_id,
 						locations: (() => {
 							const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
@@ -2010,7 +2013,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
-					fuel_type: assetObj.fuel_type || assetObj.vfuel_type,
+					fuel_type: card.fuel_type || assetObj.fuel_type || assetObj.vfuel_type || null,
 					id: card.asset_id,
 					locations: (() => {
 						const locId = assetObj.location_id ?? assetObj.location?.id ?? assetObj.locationId ?? null;
@@ -2074,7 +2077,7 @@ export const getFleetCardById = async (req: Request, res: Response) => {
 			costcenter: assetMap.get(fleetCard.asset_id).costcenter_id && costcenterMap.has(assetMap.get(fleetCard.asset_id).costcenter_id)
 				? { id: assetMap.get(fleetCard.asset_id).costcenter_id, name: costcenterMap.get(assetMap.get(fleetCard.asset_id).costcenter_id).name }
 				: null,
-			fuel_type: assetMap.get(fleetCard.asset_id).fuel_type || assetMap.get(fleetCard.asset_id).vfuel_type,
+			fuel_type: fleetCard.fuel_type || assetMap.get(fleetCard.asset_id).fuel_type || assetMap.get(fleetCard.asset_id).vfuel_type || null,
 			id: fleetCard.asset_id,
 			purpose: assetMap.get(fleetCard.asset_id).purpose || null,
 			register_number: assetMap.get(fleetCard.asset_id).register_number || assetMap.get(fleetCard.asset_id).vehicle_regno
@@ -2109,7 +2112,7 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 	const fuelVendorMap = new Map(fuelVendors.map((fv: any) => [fv.id ?? fv.fuel_id, fv]));
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 
-	// Build asset summary
+	// Build asset summary (fuel_type will be overridden by card if present)
 	const assetSummary = asset ? {
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id).name }
@@ -2152,6 +2155,93 @@ export const createFleetCard = async (req: Request, res: Response) => {
 			: req.body.assignment === 'replace' 
 			? ' (assignment: replacement)' 
 			: '';
+
+		// Send notification to updated_by user
+		if (req.body.updated_by) {
+			try {
+				logger.info(`[FleetCard] Create: Attempting to notify user ${req.body.updated_by}`);
+				const updatedByUser = await userModel.getEmployeeByRamcoId(req.body.updated_by);
+				logger.info(`[FleetCard] Create: User lookup result:`, updatedByUser ? `Found - ${updatedByUser.email}` : 'User not found');
+				
+				if (updatedByUser && updatedByUser.email) {
+					const fleetCard = await billingModel.getFleetCardById(insertId);
+					const asset = req.body.asset_id ? await assetsModel.getAssetById(req.body.asset_id) : null;
+					
+					// Resolve costcenter name
+					let costcenterName = null;
+					if (asset?.costcenter_id) {
+						try {
+							const costcenters = await assetsModel.getCostcenters() as any[];
+							const costcenter = costcenters.find((cc: any) => cc.id === asset.costcenter_id);
+							costcenterName = costcenter?.costcenter || null;
+						} catch (e) {
+							logger.error('Error fetching costcenters:', e);
+						}
+					}
+					
+					// Resolve asset owner name
+					let assetOwnerName = null;
+					if (asset?.ramco_id) {
+						try {
+							const owner = await userModel.getEmployeeByRamcoId(asset.ramco_id);
+							assetOwnerName = owner?.full_name || null;
+						} catch (e) {
+							logger.error('Error fetching asset owner:', e);
+						}
+					}
+					
+					const cardNo = fleetCard?.card_no || req.body.card_no;
+					const fuelType = req.body.fuel_type || (asset?.fuel_type || asset?.vfuel_type || null);
+					const regDate = fleetCard?.reg_date || req.body.reg_date;
+					const expiryDate = fleetCard?.expiry_date || req.body.expiry_date;
+					
+					// Send email notification using template
+					try {
+						logger.info(`[FleetCard] Create: Rendering email template for ${updatedByUser.email}`);
+						const emailHtml = renderFleetCardCreatedNotification({
+							cardId: insertId,
+							cardNo,
+							fuelType,
+							regDate,
+							expiryDate,
+							registerNumber: asset?.register_number || asset?.vehicle_regno,
+							costcenterName,
+							assetOwnerName,
+							userName: updatedByUser.full_name || updatedByUser.name
+						});
+						
+						logger.info(`[FleetCard] Create: Sending email to ${updatedByUser.email}`);
+						await sendMail(updatedByUser.email, 'Fleet Card Created Successfully', emailHtml);
+						logger.info(`[FleetCard] Create: Email sent successfully to ${updatedByUser.email}`);
+					} catch (emailError) {
+						logger.error('Failed to send email notification for fleet card creation:', emailError);
+					}
+					
+					// Emit socket notification if available
+					try {
+						const io = getSocketIOInstance();
+						if (io) {
+							io.to(`user_${req.body.updated_by}`).emit('fleet_card_created', {
+								message: `You have created fleet card ${cardNo}`,
+								data: {
+									fleet_card_id: insertId,
+									card_no: cardNo,
+									fuel_type: fuelType,
+									reg_date: regDate,
+									asset_id: asset?.id
+								}
+							});
+						}
+					} catch (e) {
+						// Silent catch - socket not required
+					}
+				}
+			} catch (notifError) {
+				logger.error('Notification error during fleet card creation:', notifError);
+				// Don't fail the main operation if notification fails
+			}
+		}
+
 		res.status(201).json({ 
 			id: insertId, 
 			message: `Fleet card created successfully${assignmentMsg}`, 
@@ -2185,6 +2275,95 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 			: body.assignment === 'replace' 
 			? ' (assignment: replacement)' 
 			: '';
+
+		// Send notification to updated_by user
+		if (body.updated_by) {
+			try {
+				logger.info(`[FleetCard] Update: Attempting to notify user ${body.updated_by}`);
+				const updatedByUser = await userModel.getEmployeeByRamcoId(body.updated_by);
+				logger.info(`[FleetCard] Update: User lookup result:`, updatedByUser ? `Found - ${updatedByUser.email}` : 'User not found');
+				
+				if (updatedByUser && updatedByUser.email) {
+					const fleetCard = await billingModel.getFleetCardById(id);
+					const asset = body.asset_id ? await assetsModel.getAssetById(body.asset_id) : null;
+					
+					// Resolve costcenter name
+					let costcenterName = null;
+					if ((asset?.costcenter_id) || (fleetCard?.costcenter_id)) {
+						try {
+							const costcenters = await assetsModel.getCostcenters() as any[];
+							const ccId = asset?.costcenter_id || fleetCard?.costcenter_id;
+							const costcenter = costcenters.find((cc: any) => cc.id === ccId);
+							costcenterName = costcenter?.costcenter || null;
+						} catch (e) {
+							logger.error('Error fetching costcenters:', e);
+						}
+					}
+					
+					// Resolve asset owner name
+					let assetOwnerName = null;
+					const ownerRamcoId = asset?.ramco_id || fleetCard?.asset_ramco_id;
+					if (ownerRamcoId) {
+						try {
+							const owner = await userModel.getEmployeeByRamcoId(ownerRamcoId);
+							assetOwnerName = owner?.full_name || null;
+						} catch (e) {
+							logger.error('Error fetching asset owner:', e);
+						}
+					}
+					
+					const cardNo = fleetCard?.card_no || body.card_no;
+					const fuelType = body.fuel_type || fleetCard?.fuel_type || (asset?.fuel_type || asset?.vfuel_type || null);
+					const regDate = fleetCard?.reg_date || body.reg_date;
+					const expiryDate = fleetCard?.expiry_date || body.expiry_date;
+					
+					// Send email notification using template
+					try {
+						logger.info(`[FleetCard] Update: Rendering email template for ${updatedByUser.email}`);
+						const emailHtml = renderFleetCardUpdatedNotification({
+							cardId: id,
+							cardNo,
+							fuelType,
+							regDate,
+							expiryDate,
+							registerNumber: asset?.register_number || asset?.vehicle_regno || fleetCard?.register_number,
+							costcenterName,
+							assetOwnerName,
+							userName: updatedByUser.full_name || updatedByUser.name
+						});
+						
+						logger.info(`[FleetCard] Update: Sending email to ${updatedByUser.email}`);
+						await sendMail(updatedByUser.email, 'Fleet Card Updated Successfully', emailHtml);
+						logger.info(`[FleetCard] Update: Email sent successfully to ${updatedByUser.email}`);
+					} catch (emailError) {
+						logger.error('Failed to send email notification for fleet card update:', emailError);
+					}
+					
+					// Emit socket notification if available
+					try {
+						const io = getSocketIOInstance();
+						if (io) {
+							io.to(`user_${body.updated_by}`).emit('fleet_card_updated', {
+								message: `You have updated fleet card ${cardNo}`,
+								data: {
+									fleet_card_id: id,
+									card_no: cardNo,
+									fuel_type: fuelType,
+									reg_date: regDate,
+									asset_id: asset?.id || fleetCard?.asset_id
+								}
+							});
+						}
+					} catch (e) {
+						// Silent catch - socket not required
+					}
+				}
+			} catch (notifError) {
+				logger.error('Notification error during fleet card update:', notifError);
+				// Don't fail the main operation if notification fails
+			}
+		}
+
 		res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });
 	} catch (error) {
 		res.status(500).json({ error, message: 'Failed to update fleet card', status: 'error' });
@@ -2393,7 +2572,7 @@ export const getFleetCardByRegisterNumber = async (req: Request, res: Response) 
 		return res.json({ data: [], message: 'No fleet cards found for this register number', status: 'success' });
 	}
 
-	// Step 3: Enrich with related data
+	// Step 3: Enrich with related data (fuel_type prioritizes card value)
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const locations = await assetsModel.getLocations() as any[];
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
@@ -2472,9 +2651,10 @@ export const getFleetCardsByAssets = async (req: Request, res: Response) => {
 
 	const data = Array.from(grouped.keys()).map((aid: number) => {
 		const a = assetMap.get(aid);
+		const cards = grouped.get(aid) || [];
 		const assetSummary = a ? {
 			costcenter: a.costcenter_id && costcenterMap.has(a.costcenter_id) ? { id: a.costcenter_id, name: costcenterMap.get(a.costcenter_id).name } : null,
-			fuel_type: a.fuel_type || a.vfuel_type || null,
+			fuel_type: (cards.length > 0 && cards[0].fuel_type) || a.fuel_type || a.vfuel_type || null,
 			id: a.id,
 			purpose: a.purpose || null,
 			register_number: a.register_number || a.vehicle_regno || null,

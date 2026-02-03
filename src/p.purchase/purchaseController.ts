@@ -1494,7 +1494,8 @@ export const deleteDelivery = async (req: Request, res: Response) => {
 /* ======= PURCHASE REQUEST - for new form ======= */
 export const getPurchaseRequests = async (req: Request, res: Response) => {
   try {
-    const rows = await purchaseModel.getPurchaseRequests();
+    const ramcoId = typeof req.query.ramco === 'string' ? req.query.ramco : undefined;
+    const rows = await purchaseModel.getPurchaseRequests(ramcoId);
     const requestIds = rows.map((r: any) => r.id).filter((id: any) => id != null);
     const allItems = await purchaseModel.getPurchaseRequestItems();
     // Group items by request_id

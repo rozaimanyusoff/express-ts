@@ -9,6 +9,7 @@ const purchaseUploader = createUploader('purchases');
 const router = Router();
 
 // PURCHASE REQUEST (simple CRUD)
+// Query params: ?ramco={ramco_id} to filter by requester
 router.get('/requests/:id', asyncHandler(purchaseController.getPurchaseRequestById));
 router.get('/requests', asyncHandler(purchaseController.getPurchaseRequests));
 router.post('/requests', asyncHandler(purchaseController.createPurchaseRequest));

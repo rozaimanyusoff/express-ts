@@ -30,10 +30,17 @@ export interface PurchaseRequestRecord {
   updated_at?: string;
 }
 
-export const getPurchaseRequests = async (): Promise<PurchaseRequestRecord[]> => {
-  const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseRequestTable} ORDER BY pr_date DESC, id DESC`
-  );
+export const getPurchaseRequests = async (ramcoId?: string): Promise<PurchaseRequestRecord[]> => {
+  let query = `SELECT * FROM ${purchaseRequestTable}`;
+  const params: any[] = [];
+  
+  if (ramcoId) {
+    query += ` WHERE ramco_id = ?`;
+    params.push(ramcoId);
+  }
+  
+  query += ` ORDER BY pr_date DESC, id DESC`;
+  const [rows] = await pool.query(query, params);
   return rows as PurchaseRequestRecord[];
 };
 

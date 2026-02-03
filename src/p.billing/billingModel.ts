@@ -700,11 +700,12 @@ export const createFleetCard = async (data: any): Promise<number> => {
 
   const [result] = await pool.query(
     `INSERT INTO ${fleetCardTable} (
-      asset_id, fuel_id, card_no, pin, reg_date, status, expiry_date, remarks, vehicle_id, costcenter_id, purpose, replacement_card_id, assignment
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      asset_id, fuel_id, fuel_type, card_no, pin, reg_date, status, expiry_date, remarks, vehicle_id, costcenter_id, purpose, replacement_card_id, assignment
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [ 
       data.asset_id, 
       data.fuel_id, 
+      data.fuel_type || null,
       data.card_no, 
       data.pin || null, 
       data.reg_date || null, 
@@ -725,34 +726,36 @@ export const createFleetCard = async (data: any): Promise<number> => {
   if (data.assignment === 'new' && data.asset_id) {
     // Insert history record with old and new asset/costcenter info
     await pool.query(
-      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
-       VALUES (?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at, updated_by) 
+       VALUES (?, ?, ?, ?, ?, NOW(), ?)`,
       [
         cardId, 
         oldCardData?.asset_id || null,
         data.asset_id,
         oldCardData?.costcenter_id || null,
-        data.costcenter_id || null
+        data.costcenter_id || null,
+        data.updated_by || null
       ]
     );
   } else if (data.assignment === 'replace' && data.asset_id) {
     // For replacement: old_asset_id and old_costcenter_id are null since we're replacing with a new card
     await pool.query(
-      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
-       VALUES (?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at, updated_by) 
+       VALUES (?, ?, ?, ?, ?, NOW(), ?)`,
       [
         cardId,
         null,
         data.asset_id,
         null,
-        data.costcenter_id || null
+        data.costcenter_id || null,
+        data.updated_by || null
       ]
     );
   } else if (data.asset_id) {
     // Insert initial history record when card is created with an asset_id (non-new/non-replace assignment)
     await pool.query(
-      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
-      [cardId, null, data.asset_id]
+      `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at, updated_by) VALUES (?, ?, ?, NOW(), ?)`,
+      [cardId, null, data.asset_id, data.updated_by || null]
     );
   }
 
@@ -800,15 +803,15 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
       // Insert into history table with asset/costcenter tracking
       if (data.assignment === 'new' || data.assignment === 'replace') {
         await pool.query(
-          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at) 
-           VALUES (?, ?, ?, ?, ?, NOW())`,
-          [id, oldAssetData.asset_id || null, data.asset_id ?? null, oldAssetData.costcenter_id || null, data.costcenter_id || null]
+          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, old_costcenter_id, new_costcenter_id, changed_at, updated_by) 
+           VALUES (?, ?, ?, ?, ?, NOW(), ?)`,
+          [id, oldAssetData.asset_id || null, data.asset_id ?? null, oldAssetData.costcenter_id || null, data.costcenter_id || null, data.updated_by || null]
         );
       } else {
         // Standard history recording for non-assignment updates
         await pool.query(
-          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at) VALUES (?, ?, ?, NOW())`,
-          [id, oldAssetData.asset_id, data.asset_id ?? current.asset_id]
+          `INSERT INTO ${fleetCardHistoryTable} (card_id, old_asset_id, new_asset_id, changed_at, updated_by) VALUES (?, ?, ?, NOW(), ?)`,
+          [id, oldAssetData.asset_id, data.asset_id ?? current.asset_id, data.updated_by || null]
         );
       }
 
@@ -828,10 +831,11 @@ export const updateFleetCard = async (id: number, data: any): Promise<void> => {
 
   // Update fleet card with all supported fields
   await pool.query(
-    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ?, purpose = ?, costcenter_id = ?, replacement_card_id = ?, assignment = ?, register_number = ? WHERE id = ?`,
+    `UPDATE ${fleetCardTable} SET asset_id = ?, fuel_id = ?, fuel_type = ?, card_no = ?, pin = ?, reg_date = ?, status = ?, expiry_date = ?, remarks = ?, purpose = ?, costcenter_id = ?, replacement_card_id = ?, assignment = ?, register_number = ? WHERE id = ?`,
     [ 
       data.asset_id || null, 
       data.fuel_id || null, 
+      data.fuel_type || null,
       data.card_no || null, 
       data.pin || null, 
       data.reg_date || null, 
