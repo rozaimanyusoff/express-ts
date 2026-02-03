@@ -4230,6 +4230,7 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 		if (typeof item.current_location_id === 'number') locationIds.add(item.current_location_id);
 		if (typeof item.new_location_id === 'number') locationIds.add(item.new_location_id);
 		if (typeof item.asset_id === 'number') assetIds.add(item.asset_id);
+		else if (typeof item.asset_id === 'string' && item.asset_id) assetIds.add(Number(item.asset_id));
 		if (typeof item.type_id === 'number') typeIds.add(item.type_id);
 	}
 
@@ -4267,7 +4268,7 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 		const newDept = typeof item.new_department_id === 'number' ? departmentMap.get(item.new_department_id) : null;
 		const currLoc = typeof item.current_location_id === 'number' ? locationMap.get(item.current_location_id) : null;
 		const newLoc = typeof item.new_location_id === 'number' ? locationMap.get(item.new_location_id) : null;
-		const assetObj = typeof item.asset_id === 'number' ? assetMap.get(item.asset_id) : null;
+		const assetObj = typeof item.asset_id === 'number' ? assetMap.get(item.asset_id) : (typeof item.asset_id === 'string' && item.asset_id ? assetMap.get(Number(item.asset_id)) : null);
 		const typeObj = typeof item.type_id === 'number' ? typeMap.get(item.type_id) : null;
 
 		// Build nested asset object with brand, category, model, type
@@ -4370,6 +4371,7 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 	if (typeof item.new_location_id === 'number') locationIds.add(item.new_location_id);
 	const assetIds = new Set<number>();
 	if (typeof item.asset_id === 'number') assetIds.add(item.asset_id);
+	else if (typeof item.asset_id === 'string' && item.asset_id) assetIds.add(Number(item.asset_id));
 	const typeIds = new Set<number>();
 	if (typeof item.type_id === 'number') typeIds.add(item.type_id);
 
@@ -4400,7 +4402,7 @@ export const getAssetTransferItemByTransfer = async (req: Request, res: Response
 	const newDept = typeof item.new_department_id === 'number' ? departmentMap.get(item.new_department_id) : null;
 	const currLoc = typeof item.current_location_id === 'number' ? locationMap.get(item.current_location_id) : null;
 	const newLoc = typeof item.new_location_id === 'number' ? locationMap.get(item.new_location_id) : null;
-	const assetObj = typeof item.asset_id === 'number' ? assetMap.get(item.asset_id) : null;
+	const assetObj = typeof item.asset_id === 'number' ? assetMap.get(item.asset_id) : (typeof item.asset_id === 'string' && item.asset_id ? assetMap.get(Number(item.asset_id)) : null);
 	const typeObj = typeof item.type_id === 'number' ? typeMap.get(item.type_id) : null;
 
 	// Enrich acceptance checklist items
