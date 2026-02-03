@@ -108,9 +108,6 @@ router.get('/employees/email/:email', asyncHandler(assetController.getEmployeeBy
 router.get('/employees/contact/:contact', asyncHandler(assetController.getEmployeeByContact));
 router.get('/employees/lookup/:username', asyncHandler(assetController.getEmployeeByUsername));
 
-/* LOCATIONS */
-router.get('/locations', asyncHandler(assetController.getLocations));
-
 
 // DISTRICTS
 router.get('/districts', asyncHandler(assetController.getDistricts));
@@ -209,6 +206,13 @@ router.get('/categories/:category_code/brands', asyncHandler(assetController.get
 
 // Get all brand-category associations (for frontend mapping)
 router.get('/brand-category-mappings', asyncHandler(assetController.getAllBrandCategoryMappings));
+
+// LOCATIONS
+router.get('/locations', asyncHandler(assetController.getLocations));
+router.get('/locations/:id', asyncHandler(assetController.getLocationById));
+router.post('/locations', asyncHandler(assetController.createLocation));
+router.put('/locations/:id', asyncHandler(assetController.updateLocation));
+router.delete('/locations/:id', asyncHandler(assetController.deleteLocation));
 
 // BY EMPLOYEE, SUPERVISOR, HOD (deprecated; use unified /api/assets with query params)
 

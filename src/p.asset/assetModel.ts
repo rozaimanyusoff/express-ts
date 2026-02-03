@@ -1334,8 +1334,16 @@ export const deleteCostcenter = async (id: number) => {
 
 /* =========== DEPARTMENTS =========== */
 export const createDepartment = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${departmentTable} (name) VALUES (?)`, [name]);
+  const { code, name, ramco_name, dept_desc_malay, status } = data;
+  
+  if (!name) {
+    throw new Error('Department name is required');
+  }
+  
+  const [result] = await pool.query(
+    `INSERT INTO ${departmentTable} (code, name, ramco_name, dept_desc_malay, status) VALUES (?, ?, ?, ?, ?)`,
+    [code || null, name, ramco_name || null, dept_desc_malay || null, status !== undefined ? status : 1]
+  );
   return result;
 };
 
@@ -1350,8 +1358,16 @@ export const getDepartmentById = async (id: number) => {
 };
 
 export const updateDepartment = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${departmentTable} SET name = ? WHERE id = ?`, [name, id]);
+  const { code, name, ramco_name, dept_desc_malay, status } = data;
+  
+  if (!name) {
+    throw new Error('Department name is required');
+  }
+  
+  const [result] = await pool.query(
+    `UPDATE ${departmentTable} SET code = ?, name = ?, ramco_name = ?, dept_desc_malay = ?, status = ? WHERE id = ?`,
+    [code || null, name, ramco_name || null, dept_desc_malay || null, status !== undefined ? status : 1, id]
+  );
   return result;
 };
 
@@ -1391,24 +1407,91 @@ export const deleteSection = async (id: number) => {
 
 /* =========== LOCATIONS =========== */
 export const createLocation = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${locationTable} (name) VALUES (?)`, [name]);
-  return result;
+  const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = data;
+  
+  if (!name) {
+    throw new Error('Location name is required');
+  }
+  
+  // Check for duplicate location by code
+  if (code) {
+    const [existingByCode] = await pool.query(
+      `SELECT id FROM ${locationTable} WHERE code = ?`,
+      [code]
+    );
+    if ((existingByCode as RowDataPacket[]).length > 0) {
+      throw new Error(`Location with code "${code}" already exists`);
+    }
+  }
+  
+  // Check for duplicate location by name
+  const [existingByName] = await pool.query(
+    `SELECT id FROM ${locationTable} WHERE name = ?`,
+    [name]
+  );
+  if ((existingByName as RowDataPacket[]).length > 0) {
+    throw new Error(`Location with name "${name}" already exists`);
+  }
+  
+  const [result] = await pool.query(
+    `INSERT INTO ${locationTable} (code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [code || null, name, ramco_name || null, loc_add || null, loc_ctc || null, loc_pic || null, department_id || null, loc_stat ? 1 : 0]
+  );
+  return (result as ResultSetHeader).insertId;
 };
 
 export const getLocations = async () => {
-  const [rows] = await pool.query(`SELECT * FROM ${locationTable}`);
-  return rows;
+  const [rows] = await pool.query(`
+    SELECT 
+      l.*,
+      d.id as dept_id,
+      d.name as dept_name
+    FROM ${locationTable} l
+    LEFT JOIN ${departmentTable} d ON l.department_id = d.id
+  `);
+  
+  return (rows as RowDataPacket[]).map((row: any) => {
+    const { dept_id, dept_name, ...locationData } = row;
+    return {
+      ...locationData,
+      department: dept_id ? { id: dept_id, name: dept_name } : null
+    };
+  });
 };
 
 export const getLocationById = async (id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${locationTable} WHERE id = ?`, [id]);
-  return (rows as RowDataPacket[])[0];
+  const [rows] = await pool.query(`
+    SELECT 
+      l.*,
+      d.id as dept_id,
+      d.name as dept_name
+    FROM ${locationTable} l
+    LEFT JOIN ${departmentTable} d ON l.department_id = d.id
+    WHERE l.id = ?
+  `, [id]);
+  
+  const row = (rows as RowDataPacket[])[0];
+  if (!row) return null;
+  
+  const { dept_id, dept_name, ...locationData } = row as any;
+  return {
+    ...locationData,
+    department: dept_id ? { id: dept_id, name: dept_name } : null
+  };
 };
 
 export const updateLocation = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${locationTable} SET name = ? WHERE id = ?`, [name, id]);
+  const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = data;
+  
+  if (!name) {
+    throw new Error('Location name is required');
+  }
+  
+  const [result] = await pool.query(
+    `UPDATE ${locationTable} SET code = ?, name = ?, ramco_name = ?, loc_add = ?, loc_ctc = ?, loc_pic = ?, department_id = ?, loc_stat = ? WHERE id = ?`,
+    [code || null, name, ramco_name || null, loc_add || null, loc_ctc || null, loc_pic || null, department_id || null, loc_stat ? 1 : 0, id]
+  );
   return result;
 };
 
@@ -1745,8 +1828,16 @@ export const updateEmployeesResignation = async (
 
 /* =========== POSITIONS =========== */
 export const createPosition = async (data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`INSERT INTO ${positionTable} (name) VALUES (?)`, [name]);
+  const { name, ramco_name, status } = data;
+  
+  if (!name) {
+    throw new Error('Position name is required');
+  }
+  
+  const [result] = await pool.query(
+    `INSERT INTO ${positionTable} (name, ramco_name, status) VALUES (?, ?, ?)`,
+    [name, ramco_name || null, status !== undefined ? status : null]
+  );
   return result;
 };
 
@@ -1761,8 +1852,16 @@ export const getPositionById = async (id: number) => {
 };
 
 export const updatePosition = async (id: number, data: any) => {
-  const { name } = data;
-  const [result] = await pool.query(`UPDATE ${positionTable} SET name = ? WHERE id = ?`, [name, id]);
+  const { name, ramco_name, status } = data;
+  
+  if (!name) {
+    throw new Error('Position name is required');
+  }
+  
+  const [result] = await pool.query(
+    `UPDATE ${positionTable} SET name = ?, ramco_name = ?, status = ? WHERE id = ?`,
+    [name, ramco_name || null, status !== undefined ? status : null, id]
+  );
   return result;
 };
 

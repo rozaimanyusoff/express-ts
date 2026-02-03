@@ -1566,21 +1566,92 @@ export const getDepartmentById = async (req: Request, res: Response) => {
 };
 
 export const createDepartment = async (req: Request, res: Response) => {
-	const result = await assetModel.createDepartment(req.body);
-	res.json({
-		message: 'Department created successfully',
-		result,
-		status: 'success'
-	});
+	try {
+		const { code, name, ramco_name, dept_desc_malay, status } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Department name is required',
+				data: null
+			});
+		}
+
+		const result = await assetModel.createDepartment({
+			code: code || null,
+			name,
+			ramco_name: ramco_name || null,
+			dept_desc_malay: dept_desc_malay || null,
+			status: status !== undefined ? status : 1
+		});
+
+		const departmentId = (result as any).insertId;
+		const createdDepartment = await assetModel.getDepartmentById(departmentId);
+
+		return res.status(201).json({
+			status: 'success',
+			message: 'Department created successfully',
+			data: createdDepartment
+		});
+	} catch (error: any) {
+		console.error('Error creating department:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error creating department',
+			data: null
+		});
+	}
 };
 
 export const updateDepartment = async (req: Request, res: Response) => {
-	const result = await assetModel.updateDepartment(Number(req.params.id), req.body);
-	res.json({
-		message: 'Department updated successfully',
-		result,
-		status: 'success'
-	});
+	try {
+		const { id } = req.params;
+		const { code, name, ramco_name, dept_desc_malay, status } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Department name is required',
+				data: null
+			});
+		}
+
+		// Verify department exists
+		const existingDepartment = await assetModel.getDepartmentById(Number(id));
+		if (!existingDepartment) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Department not found',
+				data: null
+			});
+		}
+
+		await assetModel.updateDepartment(Number(id), {
+			code: code || null,
+			name,
+			ramco_name: ramco_name || null,
+			dept_desc_malay: dept_desc_malay || null,
+			status: status !== undefined ? status : 1
+		});
+
+		// Fetch updated department
+		const updatedDepartment = await assetModel.getDepartmentById(Number(id));
+
+		return res.json({
+			status: 'success',
+			message: 'Department updated successfully',
+			data: updatedDepartment
+		});
+	} catch (error: any) {
+		console.error('Error updating department:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error updating department',
+			data: null
+		});
+	}
 };
 
 export const deleteDepartment = async (req: Request, res: Response) => {
@@ -1680,6 +1751,65 @@ export const getLocations = async (req: Request, res: Response) => {
 	}
 	res.json({ data: locations, message: 'Locations retrieved successfully', status: 'success' });
 }
+
+export const getLocationById = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const location = await assetModel.getLocationById(Number(id));
+		
+		if (!location) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Location not found',
+				data: null
+			});
+		}
+
+		return res.json({
+			status: 'success',
+			message: 'Location retrieved successfully',
+			data: location
+		});
+	} catch (error: any) {
+		console.error('Error retrieving location:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error retrieving location',
+			data: null
+		});
+	}
+}
+
+export const deleteLocation = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+
+		// Verify location exists
+		const existingLocation = await assetModel.getLocationById(Number(id));
+		if (!existingLocation) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Location not found',
+				data: null
+			});
+		}
+
+		await assetModel.deleteLocation(Number(id));
+
+		return res.json({
+			status: 'success',
+			message: 'Location deleted successfully',
+			data: { id: Number(id) }
+		});
+	} catch (error: any) {
+		console.error('Error deleting location:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error deleting location',
+			data: null
+		});
+	}
+};
 
 /* =========== DISTRICTS =========== */
 export const getDistricts = async (req: Request, res: Response) => {
@@ -2409,7 +2539,12 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 		? { id: costcenter.id, name: costcenter.name ?? null }
 		: null;
 	const locationResp = location
-		? { code: (location as any).code ?? null, id: location.id, name: location.name ?? null }
+		? { 
+			code: (location as any).code ?? null, 
+			id: (location as any).id, 
+			name: (location as any).name ?? null,
+			department: (location as any).department ?? null
+		}
 		: null;
 	res.json({
 		data: {
@@ -2457,21 +2592,88 @@ export const getPositionById = async (req: Request, res: Response) => {
 };
 
 export const createPosition = async (req: Request, res: Response) => {
-	const result = await assetModel.createPosition(req.body);
-	res.json({
-		message: 'Position created successfully',
-		result,
-		status: 'success'
-	});
+	try {
+		const { name, ramco_name, status } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Position name is required',
+				data: null
+			});
+		}
+
+		const result = await assetModel.createPosition({
+			name,
+			ramco_name: ramco_name || null,
+			status: status !== undefined ? status : null
+		});
+
+		const positionId = (result as any).insertId;
+		const createdPosition = await assetModel.getPositionById(positionId);
+
+		return res.status(201).json({
+			status: 'success',
+			message: 'Position created successfully',
+			data: createdPosition
+		});
+	} catch (error: any) {
+		console.error('Error creating position:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error creating position',
+			data: null
+		});
+	}
 };
 
 export const updatePosition = async (req: Request, res: Response) => {
-	const result = await assetModel.updatePosition(Number(req.params.id), req.body);
-	res.json({
-		message: 'Position updated successfully',
-		result,
-		status: 'success'
-	});
+	try {
+		const { id } = req.params;
+		const { name, ramco_name, status } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Position name is required',
+				data: null
+			});
+		}
+
+		// Verify position exists
+		const existingPosition = await assetModel.getPositionById(Number(id));
+		if (!existingPosition) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Position not found',
+				data: null
+			});
+		}
+
+		await assetModel.updatePosition(Number(id), {
+			name,
+			ramco_name: ramco_name || null,
+			status: status !== undefined ? status : null
+		});
+
+		// Fetch updated position
+		const updatedPosition = await assetModel.getPositionById(Number(id));
+
+		return res.json({
+			status: 'success',
+			message: 'Position updated successfully',
+			data: updatedPosition
+		});
+	} catch (error: any) {
+		console.error('Error updating position:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error updating position',
+			data: null
+		});
+	}
 };
 
 export const deletePosition = async (req: Request, res: Response) => {
@@ -5181,3 +5383,108 @@ export const updateAssetStatus = async (req: Request, res: Response) => {
 		});
 	}
 }
+
+/* =========== LOCATIONS =========== */
+
+export const createLocation = async (req: Request, res: Response) => {
+	try {
+		const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Location name is required',
+				data: null
+			});
+		}
+
+		const locationId = await assetModel.createLocation({
+			code: code || null,
+			name,
+			ramco_name: ramco_name || null,
+			loc_add: loc_add || null,
+			loc_ctc: loc_ctc || null,
+			loc_pic: loc_pic || null,
+			department_id: department_id || null,
+			loc_stat: loc_stat ? 1 : 0
+		});
+
+		// Fetch the created location with enriched department data
+		const createdLocation = await assetModel.getLocationById(locationId);
+
+		return res.status(201).json({
+			status: 'success',
+			message: 'Location created successfully',
+			data: createdLocation
+		});
+	} catch (error: any) {
+		console.error('Error creating location:', error);
+		// Check for duplicate error
+		if (error?.message?.includes('already exists')) {
+			return res.status(409).json({
+				status: 'error',
+				message: error.message,
+				data: null
+			});
+		}
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error creating location',
+			data: null
+		});
+	}
+};
+
+export const updateLocation = async (req: Request, res: Response) => {
+	try {
+		const { id } = req.params;
+		const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = req.body;
+
+		// Validate required fields
+		if (!name) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'Location name is required',
+				data: null
+			});
+		}
+
+		// Verify location exists
+		const existingLocation = await assetModel.getLocationById(Number(id));
+		if (!existingLocation) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Location not found',
+				data: null
+			});
+		}
+
+		await assetModel.updateLocation(Number(id), {
+			code: code || null,
+			name,
+			ramco_name: ramco_name || null,
+			loc_add: loc_add || null,
+			loc_ctc: loc_ctc || null,
+			loc_pic: loc_pic || null,
+			department_id: department_id || null,
+			loc_stat: loc_stat ? 1 : 0
+		});
+
+		// Fetch the updated location with enriched department data
+		const updatedLocation = await assetModel.getLocationById(Number(id));
+
+		return res.json({
+			status: 'success',
+			message: 'Location updated successfully',
+			data: updatedLocation
+		});
+	} catch (error: any) {
+		console.error('Error updating location:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error updating location',
+			data: null
+		});
+	}
+};
