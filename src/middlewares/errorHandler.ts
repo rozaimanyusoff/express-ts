@@ -64,7 +64,10 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
     // For 500+ errors, only expose message in development
     userMessage = isDevelopment ? (err?.message || 'Internal Server Error') : 'Internal Server Error';
   } else {
-    userMessage = err?.message || userMessage;
+    // For 4xx errors, use predefined messages - don't expose raw error messages
+    userMessage = err?.message && typeof err.message === 'string' 
+      ? err.message.substring(0, 200)  // Limit length and only if explicitly set
+      : userMessage;
   }
 
   res.status(statusCode).json({

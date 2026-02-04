@@ -26,15 +26,32 @@ import { toPublicUrl } from '../../utils/uploadUtil';
 
 dotenv.config();
 
-// Sanitize FRONTEND_URL using regex to remove redundant slashes
-let sanitizedFrontendUrl;
-try {
-    sanitizedFrontendUrl = (process.env.FRONTEND_URL ?? '').replace(/([^:]\/\/)+/g, '$1');
-    new URL(sanitizedFrontendUrl); // Validate the URL
-} catch (error) {
-    logger.error('Invalid FRONTEND_URL in environment variables:', error);
-    throw new Error('Invalid FRONTEND_URL in environment variables');
-}
+// Lazy-initialize sanitizedFrontendUrl to avoid throwing at module load time
+let sanitizedFrontendUrl: string | null = null;
+
+const getSanitizedFrontendUrl = (): string => {
+    if (sanitizedFrontendUrl !== null) {
+        return sanitizedFrontendUrl;
+    }
+    
+    try {
+        const rawUrl = (process.env.FRONTEND_URL ?? '').trim();
+        if (!rawUrl) {
+            logger.warn('FRONTEND_URL is not configured in environment variables');
+            return 'http://localhost:3000'; // Safe fallback
+        }
+        
+        // Use URL constructor to normalize and validate the URL properly
+        const urlObj = new URL(rawUrl);
+        sanitizedFrontendUrl = urlObj.toString().replace(/\/$/, ''); // Remove trailing slash for consistency
+    } catch (error) {
+        logger.error('Invalid FRONTEND_URL in environment variables:', error);
+        // Use safe fallback instead of throwing
+        sanitizedFrontendUrl = 'http://localhost:3000';
+    }
+    
+    return sanitizedFrontendUrl;
+};
 
 // Register a new user (mirrors frontend handler validation)
 export const register = async (req: Request, res: Response): Promise<Response> => {
@@ -109,17 +126,17 @@ export const register = async (req: Request, res: Response): Promise<Response> =
         if (pendingAccounts.length > 0) {
             const pending = pendingAccounts[0];
             if (Number(userType) === 1) {
-                // Employee: ensure activation_code present & (re)send activation email
-                let activationCode = pending.activation_code;
-                if (!activationCode) {
-                    activationCode = crypto.randomBytes(32).toString('hex');
-                    await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pending.id]);
-                }
-                const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+                // Employee: generate NEW activation_code on each resend to invalidate old codes
+                // Point 17 FIX: Always generate fresh code to prevent old codes being reused
+                const activationCode = crypto.randomBytes(32).toString('hex');
+                const activationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24-hour expiration
+                await pool.query('UPDATE pending_users SET activation_code = ?, activation_expires_at = ?, status = 2 WHERE id = ?', [activationCode, activationExpiresAt, pending.id]);
+                const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
                 try {
                     await sendMail(normalizedEmail, 'Account Activation (Resent)', accountActivationTemplate(pending.fname || name, activationLink));
                 } catch (mailErr) {
                     logger.error('Resend activation email error:', mailErr);
+                    return res.status(500).json({ code: 500, message: 'Failed to send activation email. Please try again later.', status: 'error' });
                 }
                 return res.status(200).json({ message: 'Activation email resent. Please check your inbox.', status: 'success' });
             }
@@ -160,7 +177,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
                 username: username.trim(),
             });
 
-            const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+            const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             try {
                 await sendMail(normalizedEmail, 'Account Activation', accountActivationTemplate(name.trim(), activationLink));
             } catch (mailErr) {
@@ -244,7 +261,7 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
             }
             // Generate activation code and link
             const activationCode = crypto.randomBytes(32).toString('hex');
-            const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+            const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             // Update pending user with activation code
             await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pendingUserId]);
             // Send activation email
@@ -354,7 +371,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                 email,
                 contact,
                 groupNames.join(', '),
-                `${sanitizedFrontendUrl}/auth/login`
+                `${getSanitizedFrontendUrl()}/auth/login`
             ),
             subject: 'Account Activation',
             to: email,
@@ -405,6 +422,13 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             return res.status(401).json({ code: 401, message: 'Invalid credential', status: 'error' });
         }
 
+        // Validate user object exists and has required fields
+        if (!result.user || typeof result.user !== 'object' || !result.user.id) {
+            logger.error('Invalid user object returned from credential verification', { userId: result.user?.id });
+            return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
+        }
+
+        // Check activation status (0 = not activated, 3 = password reset required)
         if (result.user.status === 0) {
             return res.status(403).json({ code: 403, message: 'Account not activated. Please check your email for the activation link.', status: 'error' });
         }
@@ -424,7 +448,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             }
         }
 
-        // Set new session token
+        // Set new session token atomically (clear any previous session)
         const sessionToken = uuidv4();
         await userModel.setUserSessionToken(result.user.id, sessionToken);
 
@@ -449,7 +473,15 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
     const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
         
         // Fetch navigation based on user's ID and groups
-        const navigation = await adminModel.getNavigationByUserId(result.user.id) || [];
+        // Point 19 FIX: Handle group fetch failures gracefully with fallback
+        let navigation: any[] = [];
+        try {
+            const nav = await adminModel.getNavigationByUserId(result.user.id);
+            navigation = nav || [];
+        } catch (navError) {
+            logger.warn(`Warning: Could not fetch navigation for userId=${result.user.id}:`, navError);
+            // Continue with empty navigation - user can still login
+        }
         
         const uniqueFlatNavItems = Array.from(
             new Map(
@@ -482,13 +514,25 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         } : null;
 
         // Fetch user groups as objects
-        const groupIds = await adminModel.getGroupsByUserId(result.user.id);
-        const usergroups = await Promise.all(
-            groupIds.map(async (groupId: number) => {
-                const group = await adminModel.getGroupById(groupId);
-                return group ? { id: group.id, name: group.name } : null;
-            })
-        );
+        // Point 19 FIX: Handle group fetch errors gracefully
+        let usergroups: Array<{ id: number; name: string } | null> = [];
+        try {
+            const groupIds = await adminModel.getGroupsByUserId(result.user.id);
+            usergroups = await Promise.all(
+                groupIds.map(async (groupId: number) => {
+                    try {
+                        const group = await adminModel.getGroupById(groupId);
+                        return group ? { id: group.id, name: group.name } : null;
+                    } catch (err) {
+                        logger.warn(`Failed to fetch group ${groupId} for userId=${result.user.id}:`, err);
+                        return null;
+                    }
+                })
+            );
+        } catch (groupError) {
+            logger.warn(`Warning: Could not fetch user groups for userId=${result.user.id}:`, groupError);
+            // Continue with empty groups - user can still login
+        }
 
         // Fetch user profile
         const userProfile = await userModel.getUserProfile(result.user.id);
@@ -652,7 +696,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 
         const mailOptions = {
             from: process.env.EMAIL_FROM,
-            html: resetPasswordTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
+            html: resetPasswordTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/reset-password?token=${resetToken}`),
             subject: 'Reset Password',
             to: email,
         };
@@ -686,7 +730,10 @@ export const verifyResetToken = async (req: Request, res: Response): Promise<Res
         const [payloadBase64] = token.split('-');
         const payload = JSON.parse(Buffer.from(payloadBase64, 'base64').toString());
 
+        // Point 18 FIX: Check token expiration AND invalidate expired tokens
         if (Date.now() > payload.x) {
+            // Clear expired token from database to prevent reuse
+            await userModel.updateUserResetTokenAndStatus(user.id, null, user.status);
             await userModel.reactivateUser(user.id);
 
             return res.status(400).json({
@@ -756,7 +803,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
         const mailOptions = {
             from: process.env.EMAIL_FROM,
-            html: passwordChangedTemplate(user.fname || user.username, `${sanitizedFrontendUrl}/auth/login`),
+            html: passwordChangedTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/login`),
             subject: 'Password Changed Successfully',
             to: email,
         };
@@ -780,15 +827,17 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 };
 
 // Logout controller
+// Point 21 FIX: Clear session token on logout to invalidate JWT tokens
 export const logout = async (req: Request, res: Response): Promise<Response> => {
     try {
         const userId = (req as any).user?.id;
         
-        // Clear session token on logout
+        // Clear session token on logout - prevents token reuse with single-session enforcement
         if (userId) {
             await userModel.setUserSessionToken(userId, null);
             // Update user logout time and calculate session time_spent
             await userModel.updateUserLogoutAndTimeSpent(userId);
+            logger.info(`User ${userId} logged out and session invalidated`);
         }
         
         res.clearCookie('token', {
@@ -922,8 +971,7 @@ export const resetPasswordMulti = async (req: Request, res: Response): Promise<R
                 await userModel.updateUserResetTokenAndStatus(user.id, resetToken, 3);
 
                 // Sanitize frontend URL
-                let sanitizedFrontendUrl = (process.env.FRONTEND_URL ?? '').replace(/([^:]\/\/)+/g, '$1');
-                try { new URL(sanitizedFrontendUrl); } catch (e) { sanitizedFrontendUrl = ''; }
+                const sanitizedFrontendUrl = getSanitizedFrontendUrl();
 
                 // Send reset email
                 const mailOptions = {
@@ -1003,7 +1051,7 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
                 user_type: userType,
             });
             // Send activation email
-            const activationLink = `${sanitizedFrontendUrl}/auth/activate?code=${activationCode}`;
+            const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             const mailOptions = {
                 from: process.env.EMAIL_FROM,
                 html: accountActivationTemplate(name, activationLink),

@@ -43,13 +43,28 @@ router.get('/admin/rate-limit/blocks', tokenValidator, asyncHandler(async (req, 
 }));
 
 // Admin: unblock a specific client key or ip+ua+route
+// Point 22 FIX: Proper input validation to prevent injection attacks
 router.post('/admin/rate-limit/unblock', tokenValidator, asyncHandler(async (req, res) => {
 	const { ip, key, route, userAgent } = req.body || {};
 	let ok = false;
+	
+	// Validate input types and formats
 	if (typeof key === 'string' && key.trim()) {
+		// Key should be alphanumeric with hyphens (safe format)
+		if (!/^[a-zA-Z0-9\-|]+$/.test(key)) {
+			return res.status(400).json({ message: 'Invalid key format', status: 'error' });
+		}
 		ok = clearClientBlockByKey(key.trim());
 	} else if (ip && userAgent && route) {
-		ok = clearClientBlockByParams(String(ip), String(userAgent), String(route));
+		// Point 22 FIX: Validate each parameter type strictly
+		if (typeof ip !== 'string' || typeof userAgent !== 'string' || typeof route !== 'string') {
+			return res.status(400).json({ message: 'Invalid parameter types: ip, userAgent, route must be strings', status: 'error' });
+		}
+		// Basic validation: route should start with /
+		if (!route.startsWith('/')) {
+			return res.status(400).json({ message: 'Invalid route format: must start with /', status: 'error' });
+		}
+		ok = clearClientBlockByParams(String(ip).trim(), String(userAgent).trim(), String(route).trim());
 	} else {
 		return res.status(400).json({ message: 'Provide either { key } or { ip, userAgent, route }', status: 'error' });
 	}

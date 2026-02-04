@@ -354,7 +354,7 @@ export const findUserByResetToken = async (resetToken: string): Promise<null | U
 };
 
 // Update user reset token and status
-export const updateUserResetTokenAndStatus = async (userId: number, resetToken: string, status: number): Promise<void> => {
+export const updateUserResetTokenAndStatus = async (userId: number, resetToken: string | null, status: number): Promise<void> => {
     try {
         await pool.query(
             `UPDATE ${usersTable} SET reset_token = ?, status = ? WHERE id = ?`,

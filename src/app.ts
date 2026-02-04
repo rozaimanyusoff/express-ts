@@ -1,7 +1,11 @@
 //import { toNodeHandler } from "better-auth/node";
+import dotenv from 'dotenv';
 import express, { Express, json, urlencoded } from 'express';
 import fs from 'fs';
 import path from 'path';
+
+// Load environment variables early
+dotenv.config();
 
 //import aqsAuthRoutes from './aqs/a.auth/authRoutes';
 //import districtRoutes from './aqs/a.district/districtRoutes';
@@ -61,10 +65,14 @@ if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1);
 }
 
-// Increase request size limits to support large file uploads (especially videos)
-// Note: UPLOAD_MAX_FILE_SIZE in .env controls multer's individual file size limit
-app.use(urlencoded({ extended: true, limit: '500mb' }));
-app.use(json({ limit: '500mb' }));
+// Request size limits with security controls
+// Point 20 FIX: Use reasonable limits and environment-driven configuration to prevent DoS attacks
+const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '10mb'; // Default 10MB, configurable via .env
+const MAX_REQUEST_SIZE = '100mb'; // Hard maximum to prevent unbounded DoS
+const requestLimit = REQUEST_SIZE_LIMIT === 'unlimited' ? MAX_REQUEST_SIZE : REQUEST_SIZE_LIMIT;
+logger.info(`Request size limit set to: ${requestLimit}`);
+app.use(urlencoded({ extended: true, limit: requestLimit }));
+app.use(json({ limit: requestLimit }));
 app.use(corsMiddleware);
 app.options('*', corsMiddleware);
 //app.use(rateLimit);

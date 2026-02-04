@@ -22,7 +22,7 @@ interface HealthCheckResponse extends HealthCheckResult {
 }
 
 /**
- * Check database connection health
+ * Check database connection health with timeout protection
  * Returns connection status and latency for both pools
  */
 export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
@@ -31,32 +31,40 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
     pool2: { connected: false }
   };
 
-  // Check pool 1
-  try {
+  const DB_QUERY_TIMEOUT = 5000; // 5 second timeout per query
+
+  // Helper function to run query with timeout
+  const queryWithTimeout = async (pool: any, poolName: string): Promise<{ latency: number } | { error: string }> => {
     const start = Date.now();
-    await pool.query('SELECT 1');
-    const latency = Date.now() - start;
-    result.pool1 = { connected: true, latency };
-  } catch (error: any) {
-    result.pool1 = { 
-      connected: false, 
-      error: error.message || 'Connection failed' 
-    };
-    console.error('Database pool1 health check failed:', error);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(`${poolName} query timeout (${DB_QUERY_TIMEOUT}ms)`)), DB_QUERY_TIMEOUT)
+    );
+    
+    try {
+      await Promise.race([pool.query('SELECT 1'), timeoutPromise]);
+      const latency = Date.now() - start;
+      return { latency };
+    } catch (error: any) {
+      return { error: error.message || 'Connection failed' };
+    }
+  };
+
+  // Check pool 1
+  const pool1Result = await queryWithTimeout(pool, 'pool1');
+  if ('error' in pool1Result) {
+    result.pool1 = { connected: false, error: pool1Result.error };
+    console.error('Database pool1 health check failed:', pool1Result.error);
+  } else {
+    result.pool1 = { connected: true, latency: pool1Result.latency };
   }
 
   // Check pool 2
-  try {
-    const start = Date.now();
-    await pool2.query('SELECT 1');
-    const latency = Date.now() - start;
-    result.pool2 = { connected: true, latency };
-  } catch (error: any) {
-    result.pool2 = { 
-      connected: false, 
-      error: error.message || 'Connection failed' 
-    };
-    console.error('Database pool2 health check failed:', error);
+  const pool2Result = await queryWithTimeout(pool2, 'pool2');
+  if ('error' in pool2Result) {
+    result.pool2 = { connected: false, error: pool2Result.error };
+    console.error('Database pool2 health check failed:', pool2Result.error);
+  } else {
+    result.pool2 = { connected: true, latency: pool2Result.latency };
   }
 
   return result;

@@ -174,12 +174,68 @@ function extractIdentity(req: Request): null | string {
 
 // Periodic cleanup of expired blocks to avoid memory leaks
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
-setInterval(() => {
+const MAX_BLOCKED_ENTRIES = 10000; // Prevent unbounded memory growth
+
+const cleanupInterval = setInterval(() => {
     const now = Date.now();
+    let deleted = 0;
+    
+    // Remove expired entries
     for (const [key, info] of blockedMap.entries()) {
-        if (info.blockedUntil <= now) blockedMap.delete(key);
+        if (info.blockedUntil <= now) {
+            blockedMap.delete(key);
+            deleted++;
+        }
     }
-}, CLEANUP_INTERVAL).unref();
+    
+    // If still over limit, remove oldest entries
+    if (blockedMap.size > MAX_BLOCKED_ENTRIES) {
+        const entriesToRemove = blockedMap.size - MAX_BLOCKED_ENTRIES;
+        let removed = 0;
+        for (const [key] of blockedMap.entries()) {
+            if (removed >= entriesToRemove) break;
+            blockedMap.delete(key);
+            removed++;
+        }
+    }
+    
+    if (deleted > 0) {
+        console.log(`[RateLimiter] Cleanup: removed ${deleted} expired entries, total: ${blockedMap.size}`);
+    }
+}, CLEANUP_INTERVAL);
+
+// Attempt map cleanup with max size
+const attemptCleanupInterval = setInterval(() => {
+    const now = Date.now();
+    let deleted = 0;
+    
+    // Remove expired attempt records
+    for (const [key, rec] of attemptMap.entries()) {
+        if (now - rec.windowStart >= WINDOW_MS) {
+            attemptMap.delete(key);
+            deleted++;
+        }
+    }
+    
+    // Enforce max size on attempt map
+    if (attemptMap.size > MAX_BLOCKED_ENTRIES) {
+        const entriesToRemove = attemptMap.size - MAX_BLOCKED_ENTRIES;
+        let removed = 0;
+        for (const [key] of attemptMap.entries()) {
+            if (removed >= entriesToRemove) break;
+            attemptMap.delete(key);
+            removed++;
+        }
+    }
+    
+    if (deleted > 0) {
+        console.log(`[RateLimiter] Attempt cleanup: removed ${deleted} expired records, total: ${attemptMap.size}`);
+    }
+}, CLEANUP_INTERVAL);
+
+// Prevent cleanup timers from blocking process exit
+cleanupInterval.unref();
+attemptCleanupInterval.unref();
 
 const rateLimiter = rateLimit({
     handler: async (req: Request, res: Response, next: NextFunction) => {

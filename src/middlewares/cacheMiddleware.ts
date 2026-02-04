@@ -30,8 +30,8 @@ export const createCacheMiddleware = (
         return;
       }
 
-      // Store original json method
-      const originalJson = res.json;
+      // Store original json method - bind it to res context
+      const originalJson = res.json.bind(res);
 
       // Override json to cache response
       res.json = function (data: any) {
@@ -46,7 +46,7 @@ export const createCacheMiddleware = (
         }
 
         res.set('X-Cache', 'MISS');
-        return originalJson.call(this, data);
+        return originalJson(data);
       };
 
       next();

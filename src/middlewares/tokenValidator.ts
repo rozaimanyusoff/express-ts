@@ -3,6 +3,8 @@ import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 
 import * as userModel from '../p.user/userModel';
+import { isTokenBlacklisted } from '../utils/tokenBlacklist';
+import logger from '../utils/logger';
 
 dotenv.config();
 
@@ -17,8 +19,16 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
     return;
   }
 
+  // Point 21 FIX: Check if token is blacklisted (logged out)
+  if (isTokenBlacklisted(token)) {
+    logger.warn('Access attempt with blacklisted token');
+    res.status(401).json({ message: 'Token has been invalidated. Please login again.' });
+    return;
+  }
+
   try {
     if (!JWT_SECRET) {
+      logger.error('JWT_SECRET is not configured in environment variables');
       res.status(500).json({ message: 'Server configuration error: JWT secret not set' });
       return;
     }
@@ -44,7 +54,8 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
             res.status(401).json({ message: 'Session expired or invalidated' });
             return;
           }
-        } catch (_) {
+        } catch (error) {
+          logger.error('Session validation database error:', error);
           res.status(401).json({ message: 'Session validation failed' });
           return;
         }
@@ -52,7 +63,8 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
     }
 
     next();
-  } catch (_error) {
+  } catch (error) {
+    logger.error('Token validation error:', error);
     res.status(401).json({ message: 'Invalid or expired token.' });
   }
 };
