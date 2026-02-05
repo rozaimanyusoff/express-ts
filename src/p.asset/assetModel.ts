@@ -1443,21 +1443,11 @@ export const createLocation = async (data: any) => {
 
 export const getLocations = async () => {
   const [rows] = await pool.query(`
-    SELECT 
-      l.*,
-      d.id as dept_id,
-      d.name as dept_name
-    FROM ${locationTable} l
-    LEFT JOIN ${departmentTable} d ON l.department_id = d.id
+    SELECT *
+    FROM ${locationTable}
   `);
   
-  return (rows as RowDataPacket[]).map((row: any) => {
-    const { dept_id, dept_name, ...locationData } = row;
-    return {
-      ...locationData,
-      department: dept_id ? { id: dept_id, name: dept_name } : null
-    };
-  });
+  return rows as RowDataPacket[];
 };
 
 export const getLocationById = async (id: number) => {
