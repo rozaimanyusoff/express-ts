@@ -12,7 +12,7 @@ router.get('/sims/:id', asyncHandler(TelcoController.getSimCardById)); // get si
 router.get('/sims', asyncHandler(TelcoController.getSimCards));
 
 
-
+/* Subscribers */
 router.get('/subs/:id/sims', asyncHandler(TelcoController.getSubscriberWithSimsById)); // show subscriber and its sim cards by id
 router.get('/subs/:id', asyncHandler(TelcoController.getSubscriberById)); // show subscriber by id
 router.get('/subs', asyncHandler(TelcoController.getSubscribers)); // list subscribers
