@@ -1,8 +1,18 @@
-import { getAdminUserIds } from '../p.user/userModel';
-import { io } from '../server';
-import {pool} from '../utils/db';
-import logger from '../utils/logger';
-import { sendWebhook } from '../utils/webhook';
+import { getSocketIOInstance } from './socketIoInstance';
+import { pool } from './db';
+import logger from './logger';
+import { sendWebhook } from './webhook';
+
+// Import dynamically to avoid circular dependencies
+const getAdminUserIds = async () => {
+  try {
+    const userModel = await import('../p.user/userModel');
+    return userModel.getAdminUserIds();
+  } catch (error) {
+    logger.error('Error fetching admin user IDs:', error);
+    return [];
+  }
+};
 
 export interface Notification {
   message: string;
@@ -41,7 +51,10 @@ export const createNotification = async ({ message, type, userId }: Notification
 
     const payload = { created_at: new Date().toISOString(), id: result.insertId, message, type, userId };
     // Emit only to specific user room
-    io.to(`user:${userId}`).emit('notification', payload);
+    const io = getSocketIOInstance();
+    if (io) {
+      io.to(`user:${userId}`).emit('notification', payload);
+    }
 
     // Forward to configured webhook (if any) - fire-and-forget
     const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
@@ -68,7 +81,11 @@ export const createAdminNotification = async ({ message, type }: { message: stri
   const placeholders = adminIds.map(id => { values.push(id, type, message); return '(?, ?, ?)' }).join(',');
   const [result]: any = await pool.query(`INSERT INTO notifications (user_id, type, message) VALUES ${placeholders}`, values);
   // Emit to all admin rooms
-  for (const adminId of adminIds) {
-    io.to(`user:${adminId}`).emit('notification', { created_at: new Date().toISOString(), id: null, message, type, userId: adminId });
+  const io = getSocketIOInstance();
+  if (io) {
+    for (const adminId of adminIds) {
+      io.to(`user:${adminId}`).emit('notification', { created_at: new Date().toISOString(), id: null, message, type, userId: adminId });
+    }
   }
 };
+

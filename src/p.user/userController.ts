@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 
-import * as logModel from '../p.admin/logModel';
+import * as authLogger from '../utils/authLogger';
 import * as assetModel from '../p.asset/assetModel';
 import * as adminModel from '../p.admin/adminModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
@@ -71,7 +71,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
     const [roles, groups, timeSpentRows] = await Promise.all([
       adminModel.getAllRoles(),
       adminModel.getAllGroups(),
-      (await import('../p.admin/logModel.js')).getTimeSpentByUsers(userIds)
+      (await import('../utils/authLogger.js')).getTimeSpentByUsers(userIds)
     ]);
 
     const rolesMap = new Map<number, { id: number; name: string }>(
@@ -496,8 +496,8 @@ export const getUserAuthLogs = async (req: Request, res: Response): Promise<Resp
         return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
     }
     try {
-        const logModel = await import('../p.admin/logModel.js');
-        const { getUserAuthLogs } = logModel;
+        const authLoggerModule = await import('../utils/authLogger.js');
+        const { getUserAuthLogs } = authLoggerModule;
         const logs = await getUserAuthLogs(userId);
         return res.status(200).json({ logs, status: 'success' });
     } catch (error) {
@@ -509,7 +509,7 @@ export const getUserAuthLogs = async (req: Request, res: Response): Promise<Resp
 // Get all authentication logs (admin only, using logModel)
 export const getAllAuthLogs = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const logs = await logModel.getAuthLogs();
+        const logs = await authLogger.getAuthLogs();
         // Use userModel.getAllUsers to get user info
         const users = await userModel.getAllUsers();
         const userMap = new Map(users.map((u: any) => [u.id, u]));
@@ -536,7 +536,7 @@ export const getAuthLogs = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
   }
   try {
-    const logs = await logModel.getUserAuthLogs(userId);
+    const logs = await authLogger.getUserAuthLogs(userId);
     return res.status(200).json({ logs, status: 'success' });
   } catch (error) {
     logger.error('Error fetching user auth logs:', error);

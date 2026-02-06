@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 
-import { logAuthActivity } from '../p.admin/logModel';
+import { logAuthActivity } from '../utils/authLogger';
 
 interface BlockRecord {
     blockedUntil: number;

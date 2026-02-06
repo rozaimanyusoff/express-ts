@@ -425,6 +425,9 @@ export async function getSubscribers() {
             ts.account_sub,
             ts.status,
             ts.register_date,
+            ts.costcenter_id,
+            ts.department_id,
+            ts.district_id,
             -- Get latest account from telco_subs_account
             (SELECT account_id FROM ${tables.subsAccounts} WHERE sub_no_id = ts.id ORDER BY effective_date DESC LIMIT 1) as account_id,
             -- Get latest sim from telco_sims_subs

@@ -3,7 +3,7 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 
-import * as adminNotificationModel from '../p.admin/notificationModel';
+import * as notificationManager from '../utils/notificationManager';
 import * as assetModel from '../p.asset/assetModel';
 import { renderSummonNotification } from '../utils/emailTemplates/summonNotification';
 import { renderSummonPaymentReceipt } from '../utils/emailTemplates/summonPaymentReceipt';
@@ -476,7 +476,7 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
         const created = await complianceModel.getSummonById(id);
         const r = Array.isArray(created) ? created[0] : created;
         const msg = `Payment receipt uploaded for summon #${r?.smn_id || id} by ${r?.ramco_id || 'unknown'}`;
-        await adminNotificationModel.createAdminNotification({ message: msg, type: 'summon_payment' });
+        await notificationManager.createAdminNotification({ message: msg, type: 'summon_payment' });
 
         // Also send email to configured ADMIN_EMAIL (best-effort)
         const ADMIN_EMAIL = process.env.ADMIN_EMAIL || null;

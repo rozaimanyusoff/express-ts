@@ -12,6 +12,13 @@ Complete documentation of all utility modules in the Express TypeScript backend,
 6. [Business Logic Helpers](#business-logic-helpers)
 7. [Email Templates](#email-templates)
 8. [Attachment Templates](#attachment-templates)
+9. [Summary Table](#summary-table)
+10. [Installation & Configuration](#installation--configuration)
+11. [Best Practices](#best-practices)
+12. [Troubleshooting](#troubleshooting)
+13. [Recent Changes](#recent-changes-february-2026)
+14. [Version History](#version-history)
+15. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -1058,7 +1065,225 @@ Builds hierarchical navigation tree from flat array of navigation items.
 
 ---
 
+### 23. **authLogger.ts**
+
+**Location:** `src/utils/authLogger.ts`
+
+**Purpose:**
+File-based authentication activity logging with functions for retrieving user authentication history and time tracking.
+
+**Type:** Authentication Logging Utility
+
+**Key Functions:**
+- `logAuthActivity(userId, action, status, reason?, req?)` - Log authentication events to file
+- `getAuthLogs()` - Retrieve all authentication logs (sorted by date)
+- `getUserAuthLogs(userId)` - Get specific user's authentication logs
+- `getTimeSpentByUsers(userIds)` - Batch fetch time spent for multiple users
+
+**Supported Auth Actions:**
+```typescript
+type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
+```
+
+**Status Values:** `'success'` | `'fail'`
+
+**Log Structure:**
+```typescript
+{
+  user_id: number,
+  action: AuthAction,
+  status: 'success' | 'fail',
+  ip: string | null,
+  user_agent: string | null,
+  details: string | null,
+  created_at: ISO string
+}
+```
+
+**Used By:**
+- `src/p.auth/adms/authController.ts` - Auth lifecycle (register, login, logout, password reset)
+- `src/p.user/userController.ts` - User management and auth logs retrieval
+- `src/middlewares/rateLimiter.ts` - Rate limit tracking
+
+**Usage:**
+```typescript
+import { logAuthActivity, getAuthLogs, getUserAuthLogs } from '../utils/authLogger';
+
+// Log authentication event
+await logAuthActivity(userId, 'login', 'success', {}, req);
+
+// Retrieve logs (batched)
+const logs = await getAuthLogs();
+const userLogs = await getUserAuthLogs(userId);
+```
+
+**Benefits:**
+- Centralized auth activity tracking
+- Compliance-ready audit trail
+- Batch user time tracking optimization
+- IP and user-agent capture for security analysis
+
+**Related:** Before relocation, these functions were in `src/p.admin/logModel.ts`
+
+---
+
+### 24. **notificationManager.ts**
+
+**Location:** `src/utils/notificationManager.ts`
+
+**Purpose:**
+Real-time notification system with Socket.IO integration for user notifications and admin broadcasts.
+
+**Type:** Notification Management Service
+
+**Key Functions:**
+- `getNotificationsByUser(userId, {limit, offset})` - Fetch paginated notifications for user
+- `markNotificationsRead(userId, ids)` - Mark specific notifications as read
+- `markAllRead(userId)` - Mark all user notifications as read
+- `getUnreadCount(userId)` - Get count of unread notifications
+- `createNotification({message, type, userId})` - Create notification and emit via Socket.IO
+- `createAdminNotification({message, type})` - Create notification for all admin users
+
+**Notification Interface:**
+```typescript
+interface Notification {
+  message: string;
+  type: string;
+  userId: number;
+}
+```
+
+**Features:**
+- Real-time Socket.IO emission to user rooms (`user:{userId}`)
+- Webhook integration for external notification systems (configurable via `NOTIFICATION_WEBHOOK_URL` env var)
+- Fire-and-forget webhook delivery (doesn't block main flow)
+- Automatic admin lookup for admin notifications
+
+**Used By:**
+- `src/p.notification/notificationController.ts` - Notification endpoints (get, mark read, unread count)
+- `src/p.compliance/complianceController.ts` - Summons/compliance notifications
+- `src/p.auth/adms/authController.ts` - User activation notifications
+
+**Usage:**
+```typescript
+import { createNotification, getUnreadCount, markNotificationsRead } from '../utils/notificationManager';
+
+// Create and emit notification
+await createNotification({
+  message: 'Your request has been approved',
+  type: 'approval',
+  userId: 123
+});
+
+// Get user's notifications (paginated)
+const { rows, total } = await getNotificationsByUser(userId, { limit: 20, offset: 0 });
+
+// Mark as read
+await markNotificationsRead(userId, [1, 2, 3]);
+```
+
+**Environment Variables:**
+```bash
+NOTIFICATION_WEBHOOK_URL=https://external-service/webhooks/notifications  # Optional
+```
+
+**Benefits:**
+- Unified notification system across modules
+- Real-time updates via Socket.IO
+- Graceful webhook integration without blocking
+- Pagination support for large notification sets
+- Admin broadcast capability
+
+**Related:** Before relocation, these functions were in `src/p.admin/notificationModel.ts`
+
+---
+
+### 25. **stockAnalysis.ts**
+
+**Location:** `src/utils/stockAnalysis.ts`
+
+**Purpose:**
+Generate analysis sections and summaries from stock tracking data with team and item-level aggregations.
+
+**Type:** Data Analysis Helper
+
+**Key Functions:**
+- `generateStockAnalysis(data)` - Transform tracking data into comprehensive analysis
+
+**Input:**
+```typescript
+interface StockTracking {
+  issuance?: {
+    issue_to?: { id: number; name: string };
+  };
+  items: { item_code: string; item_name: string };
+  status: string;
+}
+```
+
+**Output:**
+```typescript
+interface Analysis {
+  stock: {
+    total_available: number;
+    total_defective: number;
+    total_installed: number;
+    total_issued: number;
+    total_items: number;
+    total_uninstalled: number;
+  };
+  teams: {
+    available_count: number;
+    defective_count: number;
+    installed_count: number;
+    issued_count: number;
+    team_id: number;
+    team_name: string;
+    uninstalled_count: number;
+  }[];
+  top_5_items: {
+    available_count: number;
+    defective_count: number;
+    installed_count: number;
+    issued_count: number;
+    item_code: string;
+    item_name: string;
+    uninstalled_count: number;
+  }[];
+}
+```
+
+**Status Values:** `'available'` | `'defective'` | `'installed'` | `'issued'` | `'uninstalled'`
+
+**Used By:**
+- `src/p.stock/rt/stockController.ts` - Stock analysis endpoint
+
+**Usage:**
+```typescript
+import { generateStockAnalysis } from '../utils/stockAnalysis';
+
+const analysisData = await fetchStockData(); // From database
+const analysis = generateStockAnalysis(analysisData);
+  
+res.json({
+  stock_summary: analysis.stock,
+  team_breakdown: analysis.teams,
+  top_items: analysis.top_5_items
+});
+```
+
+**Benefits:**
+- Efficient single-pass analysis
+- Team and item aggregations in one operation
+- Top 5 items sorting by issued count
+- Type-safe data transformations
+
+**Related:** Before relocation, this function was in `src/p.stock/rt/generateStockAnalysis.ts`
+
+---
+
 ## Email Templates
+
 
 ### 23. **emailTemplates Directory**
 
@@ -1181,6 +1406,9 @@ const pdfBuffer = await assessmentPdf.generate(assessmentData);
 | workflowHelper.ts | Business | Approver resolution | Helper |
 | workflowService.ts | Business | Workflow operations | Core |
 | navBuilder.ts | Business | Navigation building | Helper |
+| authLogger.ts | Business | Auth activity logging | Core |
+| notificationManager.ts | Business | User notifications | Core |
+| stockAnalysis.ts | Business | Stock data analysis | Helper |
 | emailTemplates/ | Templates | HTML email templates | Core |
 | attachmentTemplates/ | Templates | Document generators | Integration |
 
@@ -1303,12 +1531,36 @@ UPLOAD_BASE_PATH=./uploads
 
 ---
 
+## Recent Changes (February 2026)
+
+### Utilities Relocation
+Three utility-like functions from module directories have been relocated to `/src/utils/` for better code organization:
+
+1. **authLogger.ts** - Relocated from `src/p.admin/logModel.ts`
+   - Authentication activity logging functions
+   - User time tracking queries
+   - Auth logs retrieval
+
+2. **notificationManager.ts** - Relocated from `src/p.admin/notificationModel.ts`
+   - Real-time notification operations
+   - Socket.IO integration for user notifications
+   - Admin notification broadcasting
+
+3. **stockAnalysis.ts** - Relocated from `src/p.stock/rt/generateStockAnalysis.ts`
+   - Stock tracking data analysis
+   - Team and item-level aggregations
+
+**Impact:** All imports have been updated across consuming modules. Old files removed from module directories.
+
+---
+
 ## Version History
 
 - **Current:** February 2026
 - All utilities production-tested
 - Redis caching optional (graceful degradation)
 - JWT token blacklist in-memory (single server)
+- Recent: Relocated auth, notification, and stock analysis utilities from modules to /utils/
 
 ---
 

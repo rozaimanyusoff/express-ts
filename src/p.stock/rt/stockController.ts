@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 
-import { generateStockAnalysis } from './generateStockAnalysis';
+import { generateStockAnalysis } from '../../utils/stockAnalysis';
 import * as stockModel from './stockModel';
 
 export const createStockPurchase = async (req: Request, res: Response) => {

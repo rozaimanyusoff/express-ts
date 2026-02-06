@@ -7,8 +7,8 @@ import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 
 import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../middlewares/rateLimiter';
-import * as logModel from '../../p.admin/logModel';
-import * as notificationModel from '../../p.admin/notificationModel';
+import * as authLogger from '../../utils/authLogger';
+import * as notificationManager from '../../utils/notificationManager';
 import * as assetModel from '../../p.asset/assetModel';
 import * as adminModel from '../../p.admin/adminModel';
 import * as pendingUserModel from '../../p.user/pendingUserModel';
@@ -187,7 +187,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
 
             // Optional: notify admins of auto employee registration
             try {
-                await notificationModel.createNotification({
+                await notificationManager.createNotification({
                     message: `Employee registration (auto activation sent): ${name} (${normalizedEmail})`,
                     type: 'registration',
                     userId: 0,
@@ -216,7 +216,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
             });
 
             try {
-                await notificationModel.createNotification({
+                await notificationManager.createNotification({
                     message: `New user registration pending admin approval: ${name} (${normalizedEmail})`,
                     type: 'registration',
                     userId: 0,
@@ -238,7 +238,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
         }
     } catch (error: unknown) {
         logger.error('Registration error:', error);
-        await logModel.logAuthActivity(0, 'register', 'fail', { error: String(error), reason: 'exception' }, req);
+        await authLogger.logAuthActivity(0, 'register', 'fail', { error: String(error), reason: 'exception' }, req);
         return res.status(500).json({ code: 500, message: 'Internal server error', status: 'error' });
     }
 };
@@ -272,7 +272,7 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
                 to: pendingUser.email,
             };
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
-            await logModel.logAuthActivity(0, 'register', 'success', { pendingUserId }, req);
+            await authLogger.logAuthActivity(0, 'register', 'success', { pendingUserId }, req);
             results.push({ status: 'sent', user_id: pendingUserId });
         } catch (error) {
             logger.error('Admin approval error:', error);
@@ -311,11 +311,11 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
             const existingUsers = await userModel.findUserByEmailOrContact(email, contact);
             if (existingUsers.length > 0 && existingUsers[0].activated_at) {
                 logger.info('Activation attempt for already activated account', { contact, email });
-                await logModel.logAuthActivity(existingUsers[0].id, 'activate', 'fail', { contact, email, reason: 'already_activated' }, req);
+                await authLogger.logAuthActivity(existingUsers[0].id, 'activate', 'fail', { contact, email, reason: 'already_activated' }, req);
                 return res.status(409).json({ code: 409, message: 'Account already activated. Please log in.', status: 'error' });
             }
             logger.error('Activation failed: invalid activation details', { activationCode, contact, email });
-            await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, reason: 'invalid_activation_details' }, req);
+            await authLogger.logAuthActivity(0, 'activate', 'fail', { contact, email, reason: 'invalid_activation_details' }, req);
             return res.status(401).json({ code: 401, message: 'Activation failed. Please check your details.', status: 'error' });
         }
 
@@ -386,7 +386,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
         // Notify all admins about the new user activation
         try {
-            await notificationModel.createAdminNotification({
+            await notificationManager.createAdminNotification({
                 message: `User ${username} (${email}) has activated their account.`,
                 type: 'activation'
             });
@@ -395,11 +395,11 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
             // Don't fail activation if notification fails
         }
 
-        await logModel.logAuthActivity(newUserId, 'activate', 'success', {}, req);
+        await authLogger.logAuthActivity(newUserId, 'activate', 'success', {}, req);
         return res.status(200).json({ message: 'Account activated successfully.', status: 'success' });
     } catch (error: any) {
         logger.error('Activation error:', { error: error.message, stack: error.stack });
-        await logModel.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error.message), reason: 'exception' }, req);
+        await authLogger.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error.message), reason: 'exception' }, req);
         return res.status(500).json({ 
             code: 500, 
             message: 'Internal server error during activation',
@@ -443,7 +443,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             const existingSession = await userModel.getUserSessionToken(result.user.id);
             if (existingSession) {
                 // Block login if session exists (optionally, could check user-agent/IP here if desired)
-                await logModel.logAuthActivity(result.user.id, 'login', 'fail', { reason: 'already_logged_in' }, req);
+                await authLogger.logAuthActivity(result.user.id, 'login', 'fail', { reason: 'already_logged_in' }, req);
                 return res.status(403).json({ code: 403, message: 'This account is already logged in elsewhere. Only one session is allowed.', status: 'error' });
             }
         }
@@ -453,7 +453,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         await userModel.setUserSessionToken(result.user.id, sessionToken);
 
     await userModel.updateLastLogin(result.user.id);
-        await logModel.logAuthActivity(result.user.id, 'login', 'success', {}, req);
+        await authLogger.logAuthActivity(result.user.id, 'login', 'success', {}, req);
 
     // On successful login: clear any block and reset failed-attempts counter
     try { clearClientBlock(req); } catch (_) { /* noop */ }
@@ -678,7 +678,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
         const users = await userModel.findUserByEmailOrContact(email, contact);
         const user = users[0];
         if (!user) {
-            await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'user_not_found' }, req);
+            await authLogger.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'user_not_found' }, req);
             return res.status(404).json({ code: 404, message: 'User not found', status: 'error' });
         }
 
@@ -703,11 +703,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
 
         await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
-        await logModel.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
+        await authLogger.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
         return res.status(200).json({ message: 'Reset password email sent successfully', status: 'success' });
     } catch (error) {
         logger.error('Reset password error:', error);
-        await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
+        await authLogger.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
         return res.status(500).json({ code: 500, message: 'Error processing reset password request', status: 'error' });
     }
 };
@@ -768,7 +768,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
     try {
         const user = await userModel.findUserByResetToken(token);
         if (!user) {
-            await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'invalid_token' }, req);
+            await authLogger.logAuthActivity(0, 'reset_password', 'fail', { contact, email, reason: 'invalid_token' }, req);
             return res.status(400).json({
                 code: 400,
                 message: 'Invalid or expired reset token',
@@ -777,7 +777,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
         }
 
         if (user.email !== email || user.contact !== contact) {
-            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'invalid_credentials' }, req);
+            await authLogger.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'invalid_credentials' }, req);
             return res.status(400).json({
                 code: 400,
                 message: 'Invalid credentials',
@@ -790,7 +790,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
         if (Date.now() > payload.x) {
             await userModel.reactivateUser(user.id);
-            await logModel.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'expired_token' }, req);
+            await authLogger.logAuthActivity(user.id, 'reset_password', 'fail', { contact, email, reason: 'expired_token' }, req);
             return res.status(400).json({
                 code: 400,
                 message: 'Reset token has expired',
@@ -810,14 +810,14 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 
         await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
 
-        await logModel.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
+        await authLogger.logAuthActivity(user.id, 'reset_password', 'success', {}, req);
         return res.json({
             message: 'Password updated successfully',
             status: 'success'
         });
     } catch (error) {
         logger.error('Update password error:', error);
-        await logModel.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
+        await authLogger.logAuthActivity(0, 'reset_password', 'fail', { contact, email, error: String(error), reason: 'exception' }, req);
         return res.status(500).json({
             code: 500,
             message: 'Error updating password',
@@ -846,7 +846,7 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
             secure: process.env.NODE_ENV === 'production'
         });
 
-        await logModel.logAuthActivity(userId || 0, 'logout', 'success', {}, req);
+        await authLogger.logAuthActivity(userId || 0, 'logout', 'success', {}, req);
 
         return res.status(200).json({
             message: 'Logged out successfully',
@@ -867,7 +867,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
     const token = req.header('Authorization')?.split(' ')[1];
 
     if (!token) {
-        await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'no_token' }, req);
+        await authLogger.logAuthActivity(0, 'other', 'fail', { reason: 'no_token' }, req);
         return res.status(401).json({ code: 401, message: 'No token provided', status: 'error' });
     }
 
@@ -893,14 +893,14 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
         }
 
         if (typeof decoded !== 'object' || !('userId' in decoded)) {
-            await logModel.logAuthActivity(0, 'other', 'fail', { reason: 'invalid_token' }, req);
+            await authLogger.logAuthActivity(0, 'other', 'fail', { reason: 'invalid_token' }, req);
             return res.status(401).json({ code: 401, message: 'Invalid token', status: 'error' });
         }
 
         // Verify user still exists and is active
         const user = await userModel.getUserById(decoded.userId);
         if (!user || user.status !== 1) {
-            await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'user_inactive' }, req);
+            await authLogger.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'user_inactive' }, req);
             return res.status(401).json({ code: 401, message: 'User account is inactive', status: 'error' });
         }
 
@@ -908,7 +908,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
         if (decoded.session) {
             const currentSession = await userModel.getUserSessionToken(decoded.userId);
             if (currentSession !== decoded.session) {
-                await logModel.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'session_mismatch' }, req);
+                await authLogger.logAuthActivity(decoded.userId, 'other', 'fail', { reason: 'session_mismatch' }, req);
                 return res.status(401).json({ code: 401, message: 'Session expired elsewhere', status: 'error' });
             }
         }
@@ -928,14 +928,14 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
             { algorithm: 'HS256', expiresIn: '1h' }
         );
 
-        await logModel.logAuthActivity(decoded.userId, 'other', 'success', {}, req);
+        await authLogger.logAuthActivity(decoded.userId, 'other', 'success', {}, req);
         return res.status(200).json({
             status: 'success',
             token: newToken,
         });
     } catch (error) {
         logger.error('Refresh token error:', error);
-        await logModel.logAuthActivity(0, 'other', 'fail', { error: String(error), reason: 'exception' }, req);
+        await authLogger.logAuthActivity(0, 'other', 'fail', { error: String(error), reason: 'exception' }, req);
         return res.status(401).json({ code: 401, message: 'Invalid or expired refresh token', status: 'error' });
     }
 };
@@ -1100,11 +1100,11 @@ export const deletePendingUser = async (req: Request, res: Response): Promise<Re
                 continue;
             }
             await pendingUserModel.deletePendingUser(uid);
-            await logModel.logAuthActivity(0, 'other', 'success', { action: 'delete_pending_user', pendingUserId: uid }, req);
+            await authLogger.logAuthActivity(0, 'other', 'success', { action: 'delete_pending_user', pendingUserId: uid }, req);
             results.push({ status: 'deleted', user_id: uid });
         } catch (error) {
             logger.error('Delete pending user error for id ' + uid + ':', error);
-            await logModel.logAuthActivity(0, 'other', 'fail', { action: 'delete_pending_user', error: String(error), pendingUserId: uid, reason: 'exception' }, req);
+            await authLogger.logAuthActivity(0, 'other', 'fail', { action: 'delete_pending_user', error: String(error), pendingUserId: uid, reason: 'exception' }, req);
             results.push({ error: String(error instanceof Error ? error.message : error), status: 'error', user_id: uid });
         }
     }
@@ -1144,7 +1144,7 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         // Verify user has admin role (role: 1)
         if (user.role !== 1) {
             logger.warn(`Admin pincode request failed: user ${user.id} does not have admin role (role: ${user.role})`);
-            await logModel.logAuthActivity(user.id, 'other', 'fail', { 
+            await authLogger.logAuthActivity(user.id, 'other', 'fail', { 
                 action: 'send_admin_pincode', 
                 reason: 'insufficient_role',
                 userRole: user.role
@@ -1172,7 +1172,7 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         );
 
         logger.info(`Admin pincode sent to user ${user.id} (${user.email})`);
-        await logModel.logAuthActivity(user.id, 'other', 'success', { 
+        await authLogger.logAuthActivity(user.id, 'other', 'success', { 
             action: 'send_admin_pincode' 
         }, req);
 
@@ -1186,7 +1186,7 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         });
     } catch (error) {
         logger.error('Send admin pincode error:', error);
-        await logModel.logAuthActivity(0, 'other', 'fail', { 
+        await authLogger.logAuthActivity(0, 'other', 'fail', { 
             action: 'send_admin_pincode', 
             error: String(error instanceof Error ? error.message : error)
         }, req);

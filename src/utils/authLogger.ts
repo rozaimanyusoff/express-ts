@@ -1,6 +1,6 @@
-import {pool} from '../utils/db';
-import logger from '../utils/logger';
-import { logAuthActivityToFile, getTodayAuthLogs, getUserTodayAuthLogs } from '../utils/fileAuthLogger';
+import { pool } from './db';
+import logger from './logger';
+import { logAuthActivityToFile, getTodayAuthLogs, getUserTodayAuthLogs } from './fileAuthLogger';
 
 export type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
 
@@ -23,7 +23,7 @@ export const logAuthActivity = async (
     if (reason && (typeof reason !== 'object' || Object.keys(reason).length > 0)) {
       details = JSON.stringify(reason);
     }
-    
+
     // Log to file (primary logging mechanism)
     const entry = {
       user_id: userId,
@@ -34,9 +34,9 @@ export const logAuthActivity = async (
       details,
       created_at: new Date().toISOString()
     };
-    
+
     await logAuthActivityToFile(entry);
-    
+
     // File-based logging is now the primary mechanism
     // logs_auth table is deprecated and no longer used
   } catch (error) {

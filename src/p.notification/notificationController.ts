@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 
-import * as notificationModel from '../p.admin/notificationModel';
+import * as notificationManager from '../utils/notificationManager';
 import logger from '../utils/logger';
 
 // Get notifications for current user (paginated)
@@ -32,7 +32,7 @@ export const getNotifications = async (req: Request, res: Response) => {
    const limit = Math.min(Math.max(parseInt(String(req.query.limit || '20'), 10), 1), 100);
    const offset = (page - 1) * limit;
    try {
-      const { rows, total } = await notificationModel.getNotificationsByUser(targetUserId, { limit, offset });
+      const { rows, total } = await notificationManager.getNotificationsByUser(targetUserId, { limit, offset });
       return res.json({
          data: rows,
          meta: { targetUserId },
@@ -52,7 +52,7 @@ export const markRead = async (req: Request, res: Response) => {
    const ids: any[] = Array.isArray(req.body.ids) ? req.body.ids : [];
    if (!ids.length) return res.status(400).json({ message: 'ids must be a non-empty array', status: 'error' });
    try {
-      await notificationModel.markNotificationsRead(userId, ids.map(Number).filter(n => !Number.isNaN(n)));
+      await notificationManager.markNotificationsRead(userId, ids.map(Number).filter(n => !Number.isNaN(n)));
       return res.json({ message: 'Notifications marked as read', status: 'success' });
    } catch (err) {
       logger.error('markRead error', err);
@@ -65,7 +65,7 @@ export const markAllRead = async (req: Request, res: Response) => {
    const userId = (req as any).user?.id;
    if (!userId) return res.status(401).json({ message: 'Unauthorized', status: 'error' });
    try {
-      await notificationModel.markAllRead(userId);
+      await notificationManager.markAllRead(userId);
       return res.json({ message: 'All notifications marked as read', status: 'success' });
    } catch (err) {
       logger.error('markAllRead error', err);
@@ -78,7 +78,7 @@ export const getUnreadCount = async (req: Request, res: Response) => {
    const userId = (req as any).user?.id;
    if (!userId) return res.status(401).json({ message: 'Unauthorized', status: 'error' });
    try {
-      const count = await notificationModel.getUnreadCount(userId);
+      const count = await notificationManager.getUnreadCount(userId);
       return res.json({ data: { unread: count }, status: 'success' });
    } catch (err) {
       logger.error('getUnreadCount error', err);
@@ -94,7 +94,7 @@ export const sendTestNotification = async (req: Request, res: Response) => {
    const finalMessage = message || '🔔 Test notification from backend';
    const finalType = type || 'test';
    try {
-      await notificationModel.createNotification({ message: finalMessage, type: finalType, userId });
+      await notificationManager.createNotification({ message: finalMessage, type: finalType, userId });
       return res.status(201).json({ message: 'Test notification sent', status: 'success' });
    } catch (err) {
       logger.error('sendTestNotification error', err);
