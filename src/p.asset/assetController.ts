@@ -4186,6 +4186,246 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	return res.json({ message: 'Acceptance data saved', results, status: 'success' });
 };
 
+/**
+ * Phase 2: Commit Transfer - Asset Manager finalizes accepted transfers
+ * Executed manually by Asset Manager (filtered by type_id)
+ * Performs Procedures 2-4:
+ * - Procedure 2: Insert asset_history records
+ * - Procedure 3: Update asset ownership
+ * - Procedure 4: Send notifications
+ */
+export const commitTransfer = async (req: Request, res: Response) => {
+	try {
+		const body: any = req.body || {};
+		
+		// Validate required fields
+		const type_id = Number(body.type_id);
+		const committed_by = String(body.committed_by || '');
+		const transfer_date = body.transfer_date ? new Date(body.transfer_date) : new Date();
+		
+		if (!type_id || isNaN(type_id)) {
+			return res.status(400).json({ 
+				status: 'error', 
+				message: 'type_id is required and must be a number',
+				data: null 
+			});
+		}
+		
+		if (!committed_by) {
+			return res.status(400).json({ 
+				status: 'error', 
+				message: 'committed_by (Asset Manager ramco_id) is required',
+				data: null 
+			});
+		}
+		
+		// Verify committed_by is an Asset Manager authorized for this type_id
+		const manager = await assetModel.getAssetManagerByRamcoId(committed_by);
+		if (!manager) {
+			return res.status(400).json({ 
+				status: 'error', 
+				message: 'committed_by is not a registered Asset Manager',
+				data: null 
+			});
+		}
+		
+		// Check if manager is authorized for this type_id (manager_id is the type_id)
+		if (Number(manager.manager_id) !== type_id) {
+			return res.status(403).json({ 
+				status: 'error', 
+				message: 'Asset Manager is not authorized for this asset type',
+				data: null 
+			});
+		}
+		
+		// Verify type_id exists
+		const assetType = await assetModel.getTypeById(type_id);
+		if (!assetType) {
+			return res.status(404).json({ 
+				status: 'error', 
+				message: 'Asset type not found',
+				data: null 
+			});
+		}
+		
+		// Parse optional item_ids filter
+		let item_ids: number[] = [];
+		if (body.item_ids !== undefined) {
+			if (Array.isArray(body.item_ids)) {
+				item_ids = body.item_ids.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n));
+			} else if (typeof body.item_ids === 'string') {
+				item_ids = body.item_ids
+					.split(',')
+					.map((s: string) => Number(s.trim()))
+					.filter((n: number) => Number.isFinite(n));
+			}
+		}
+		
+		// Step 2: Find uncommitted accepted items for this type_id
+		const uncommittedItemsRaw = await assetModel.getUncommittedAcceptedItems({
+			type_id,
+			item_ids: item_ids.length > 0 ? item_ids : undefined
+		});
+		
+		const uncommittedItems = Array.isArray(uncommittedItemsRaw) ? uncommittedItemsRaw : [];
+		
+		if (!uncommittedItems || uncommittedItems.length === 0) {
+			return res.json({ 
+				status: 'info', 
+				message: 'No uncommitted transfers found for this asset type',
+				data: { items_committed: 0 }
+			});
+		}
+		
+		const committedItems = Array.isArray(uncommittedItems) ? uncommittedItems : [];
+		
+		// Procedure 2: Insert asset_history records
+		const historyInserts: any[] = [];
+		for (const item of committedItems) {
+			const itemData = item as any;
+			const asset = await assetModel.getAssetById(itemData.asset_id);
+			if (!asset) continue;
+			
+			const historyResult = await assetModel.insertAssetHistory({
+				asset_id: itemData.asset_id,
+				register_number: asset.register_number,
+				type_id: asset.type_id,
+				costcenter_id: itemData.new_costcenter_id,
+				department_id: itemData.new_department_id,
+				location_id: itemData.new_location_id,
+				ramco_id: itemData.new_owner,
+				transfer_id: itemData.transfer_id,
+				effective_date: transfer_date
+			});
+			historyInserts.push(historyResult);
+		}
+		
+		// Procedure 3: Update asset ownership
+		for (const item of committedItems) {
+			const itemData = item as any;
+			await assetModel.updateAssetCurrentOwner(itemData.asset_id, {
+				ramco_id: itemData.new_owner,
+				costcenter_id: itemData.new_costcenter_id,
+				department_id: itemData.new_department_id,
+				location_id: itemData.new_location_id
+			});
+		}
+		
+		// Procedure 4: Send notifications
+		try {
+			// Fetch unique transfer IDs from committed items
+			const transferIds = new Set<number>();
+			committedItems.forEach((item: any) => {
+				if (item.transfer_id) transferIds.add(item.transfer_id);
+			});
+			
+			// Fetch all employees for email mapping
+			const employeesResult = await assetModel.getEmployees();
+			const employees = Array.isArray(employeesResult) ? employeesResult : [];
+			const employeeMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
+			
+			// Get all unique new owners
+			const newOwners = new Set<string>();
+			committedItems.forEach((item: any) => {
+				if (item.new_owner) newOwners.add(String(item.new_owner));
+			});
+			
+			// Enrich items with asset details
+			const enrichedItems: any[] = [];
+			for (const item of committedItems as any[]) {
+				const itemData = item as any;
+				const assetDetails = itemData.asset_id ? await assetModel.getAssetById(itemData.asset_id) : null;
+				enrichedItems.push({
+					...itemData,
+					asset: assetDetails ? {
+						register_number: assetDetails.register_number,
+						brand: { name: assetDetails.brand_name },
+						model: { name: assetDetails.model_name }
+					} : null
+				});
+			}
+			
+			// For each transfer, send notifications to stakeholders
+			for (const transferId of transferIds) {
+				const transferRequest = await assetModel.getAssetTransferById(transferId);
+				if (!transferRequest) continue;
+				
+				const itemsForTransfer = enrichedItems.filter((i: any) => i.transfer_id === transferId);
+				
+				// Email to requestor
+				if (transferRequest.transfer_by) {
+					const requestor = employeeMap.get(String(transferRequest.transfer_by));
+					if (requestor?.email) {
+						const { html, subject } = assetTransferAcceptedRequestorEmail({
+							acceptanceDate: transfer_date,
+							acceptanceRemarks: 'Transfer committed by Asset Manager',
+							items: itemsForTransfer,
+							newOwner: Array.from(newOwners).length > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null,
+							request: transferRequest,
+							requestor
+						});
+						await sendMail(requestor.email, subject, html).catch(err =>
+							{ console.error('Failed to send commitment email to requestor:', err); }
+						);
+					}
+				}
+				
+				// Email to new owners' HOD
+				for (const ownerId of newOwners) {
+					const newOwner = employeeMap.get(ownerId);
+					if (newOwner) {
+						const hodId = newOwner.supervisor_ramco_id || newOwner.hod || null;
+						const hod = hodId ? employeeMap.get(String(hodId)) : null;
+						
+						if (hod?.email) {
+							const itemsForOwner = itemsForTransfer.filter((i: any) => String(i.new_owner) === ownerId);
+							const { html, subject } = assetTransferAcceptedHodEmail({
+								acceptanceDate: transfer_date,
+								acceptanceRemarks: 'Transfer committed',
+								items: itemsForOwner,
+								newOwner,
+								newOwnerHod: hod,
+								request: transferRequest
+							});
+							await sendMail(hod.email, subject, html).catch(err =>
+								{ console.error(`Failed to send commitment email to HOD for ${ownerId}:`, err); }
+							);
+						}
+					}
+				}
+			}
+		} catch (emailErr) {
+			console.error('Error sending commitment notification emails:', emailErr);
+			// Don't fail the request if emails fail
+		}
+		
+		return res.json({ 
+			status: 'success', 
+			message: 'Transfer committed successfully',
+			data: {
+				type_id,
+				items_committed: committedItems.length,
+				committed_by,
+				transfer_date: transfer_date.toISOString(),
+				items: committedItems.map((item: any) => ({
+					id: item.id,
+					asset_id: item.asset_id,
+					register_number: item.asset?.register_number,
+					new_owner: item.new_owner,
+					transfer_id: item.transfer_id
+				}))
+			}
+		});
+	} catch (error: any) {
+		console.error('Error committing transfer:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error committing transfer',
+			data: null
+		});
+	}
+};
+
 /* ============ ASSET TRANSFER ITEMS (direct access) ============ */
 export const getAssetTransferItemsByTransfer = async (req: Request, res: Response) => {
 	const transferId = Number(req.params.id);

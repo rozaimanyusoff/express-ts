@@ -2237,6 +2237,48 @@ export const getAllAssetTransferItems = async () => {
   return rows;
 };
 
+/**
+ * Find uncommitted accepted transfer items for a specific asset type
+ * Returns transfer items that:
+ * - Have acceptance_by IS NOT NULL (items are accepted)
+ * - Have NO matching transfer_id in asset_history (not yet committed)
+ * - Belong to the specified type_id
+ * - Optionally filtered by specific item_ids
+ */
+export const getUncommittedAcceptedItems = async (options: {
+  type_id: number;
+  item_ids?: number[];
+}) => {
+  const { type_id, item_ids } = options;
+  
+  let sql = `
+    SELECT ti.* 
+    FROM ${assetTransferItemTable} ti
+    JOIN ${assetTable} ad ON ad.id = ti.asset_id
+    WHERE 
+      ad.type_id = ?
+      AND ti.acceptance_by IS NOT NULL
+      AND ti.id NOT IN (
+        SELECT DISTINCT transfer_id 
+        FROM ${assetHistoryTable}
+        WHERE transfer_id IS NOT NULL
+      )
+  `;
+  
+  const params: any[] = [type_id];
+  
+  // Optional: filter by specific item_ids
+  if (item_ids && item_ids.length > 0) {
+    sql += ` AND ti.id IN (${item_ids.map(() => '?').join(',')})`;
+    params.push(...item_ids);
+  }
+  
+  sql += ` ORDER BY ti.id ASC`;
+  
+  const [rows] = await pool.query(sql, params);
+  return rows;
+};
+
 export const updateAssetTransferItem = async (id: number, data: any) => {
   const allowedFields = [
     'effective_date',
