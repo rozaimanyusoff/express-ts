@@ -178,9 +178,6 @@ router.post('/transfers/:id/resend-approval-notification', asyncHandler(assetCon
 // RESEND ACCEPTANCE NOTIFICATION
 router.post('/transfers/:id/resend-acceptance-notification', asyncHandler(assetController.resendAcceptanceNotification));
 
-// COMMIT TRANSFER (Asset Manager finalizes accepted transfers - Phase 2)
-router.post('/transfer-commit', asyncHandler(assetController.commitTransfer));
-
 // ASSET TRANSFER APPROVAL (for supervisor approve/reject buttons)
 router.post('/transfer-requests/:id/approval', asyncHandler(assetController.updateAssetTransferApprovalStatusById));
 

@@ -4281,41 +4281,74 @@ export const commitTransfer = async (req: Request, res: Response) => {
 		
 		// Procedure 2: Insert asset_history records
 		const historyInserts: any[] = [];
+		const validCommittedItems: any[] = [];
+		
 		for (const item of committedItems) {
 			const itemData = item as any;
-			const asset = await assetModel.getAssetById(itemData.asset_id);
-			if (!asset) continue;
 			
-			const historyResult = await assetModel.insertAssetHistory({
-				asset_id: itemData.asset_id,
-				register_number: asset.register_number,
-				type_id: asset.type_id,
-				costcenter_id: itemData.new_costcenter_id,
-				department_id: itemData.new_department_id,
-				location_id: itemData.new_location_id,
-				ramco_id: itemData.new_owner,
-				transfer_id: itemData.transfer_id,
-				effective_date: transfer_date
+			// Validate asset_id
+			const assetId = Number(itemData.asset_id);
+			if (isNaN(assetId) || assetId <= 0) {
+				console.warn(`Skipping item ${itemData.id}: Invalid asset_id ${itemData.asset_id}`);
+				continue;
+			}
+			
+			try {
+				const asset = await assetModel.getAssetById(assetId);
+				if (!asset) {
+					console.warn(`Skipping item ${itemData.id}: Asset not found for asset_id ${assetId}`);
+					continue;
+				}
+				
+				const historyResult = await assetModel.insertAssetHistory({
+					asset_id: assetId,
+					register_number: asset.register_number,
+					type_id: asset.type_id,
+					costcenter_id: itemData.new_costcenter_id,
+					department_id: itemData.new_department_id,
+					location_id: itemData.new_location_id,
+					ramco_id: itemData.new_owner,
+					transfer_id: itemData.transfer_id,
+					effective_date: transfer_date
+				});
+				historyInserts.push(historyResult);
+				validCommittedItems.push(itemData);
+			} catch (err) {
+				console.error(`Error processing item ${itemData.id}:`, err);
+				// Continue with other items even if one fails
+			}
+		}
+		
+		// If no valid items were processed, return error
+		if (validCommittedItems.length === 0) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'No valid items to commit. All items have invalid asset IDs or assets not found.',
+				data: { items_committed: 0 }
 			});
-			historyInserts.push(historyResult);
 		}
 		
 		// Procedure 3: Update asset ownership
-		for (const item of committedItems) {
-			const itemData = item as any;
-			await assetModel.updateAssetCurrentOwner(itemData.asset_id, {
-				ramco_id: itemData.new_owner,
-				costcenter_id: itemData.new_costcenter_id,
-				department_id: itemData.new_department_id,
-				location_id: itemData.new_location_id
-			});
+		for (const itemData of validCommittedItems) {
+			const assetId = Number(itemData.asset_id);
+			try {
+				await assetModel.updateAssetCurrentOwner(assetId, {
+					ramco_id: itemData.new_owner,
+					costcenter_id: itemData.new_costcenter_id,
+					department_id: itemData.new_department_id,
+					location_id: itemData.new_location_id
+				});
+			} catch (err) {
+				console.error(`Error updating asset ownership for item ${itemData.id}:`, err);
+				// Continue with other items
+			}
 		}
 		
 		// Procedure 4: Send notifications
 		try {
-			// Fetch unique transfer IDs from committed items
+			// Fetch unique transfer IDs from valid committed items
 			const transferIds = new Set<number>();
-			committedItems.forEach((item: any) => {
+			validCommittedItems.forEach((item: any) => {
 				if (item.transfer_id) transferIds.add(item.transfer_id);
 			});
 			
@@ -4326,15 +4359,33 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			
 			// Get all unique new owners
 			const newOwners = new Set<string>();
-			committedItems.forEach((item: any) => {
+			validCommittedItems.forEach((item: any) => {
 				if (item.new_owner) newOwners.add(String(item.new_owner));
 			});
 			
-			// Enrich items with asset details
+			// Enrich items with asset details (fetch only for valid items)
 			const enrichedItems: any[] = [];
-			for (const item of committedItems as any[]) {
-				const itemData = item as any;
-				const assetDetails = itemData.asset_id ? await assetModel.getAssetById(itemData.asset_id) : null;
+			const assetDetailsMap = new Map<number, any>();
+			
+			// Collect and fetch all asset details
+			for (const itemData of validCommittedItems) {
+				const assetId = Number(itemData.asset_id);
+				if (!assetDetailsMap.has(assetId)) {
+					try {
+						const assetDetails = await assetModel.getAssetById(assetId);
+						if (assetDetails) {
+							assetDetailsMap.set(assetId, assetDetails);
+						}
+					} catch (err) {
+						console.warn(`Failed to fetch asset details for ID ${assetId}`);
+					}
+				}
+			}
+			
+			// Build enriched items list
+			for (const itemData of validCommittedItems) {
+				const assetId = Number(itemData.asset_id);
+				const assetDetails = assetDetailsMap.get(assetId);
 				enrichedItems.push({
 					...itemData,
 					asset: assetDetails ? {
@@ -4404,13 +4455,13 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			message: 'Transfer committed successfully',
 			data: {
 				type_id,
-				items_committed: committedItems.length,
+				items_committed: validCommittedItems.length,
 				committed_by,
 				transfer_date: transfer_date.toISOString(),
-				items: committedItems.map((item: any) => ({
+				items: validCommittedItems.map((item: any) => ({
 					id: item.id,
 					asset_id: item.asset_id,
-					register_number: item.asset?.register_number,
+					register_number: item.asset?.register_number || 'N/A',
 					new_owner: item.new_owner,
 					transfer_id: item.transfer_id
 				}))
