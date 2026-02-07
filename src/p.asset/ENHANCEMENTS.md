@@ -614,23 +614,28 @@ CREATE FULLTEXT INDEX ft_asset_search ON assetdata(asset_code, asset_name);
 
 ---
 
-## Asset Transfer Acceptance Process (`setAssetTransferAcceptance`)
+## Asset Transfer Acceptance & Commitment Process (Two-Phase)
 
 ### Overview
-The acceptance endpoint completes the asset transfer workflow. It records acceptance evidence (attachments, checklist confirmation), updates asset ownership, and triggers notification emails to stakeholders. The process executes 4 critical procedures:
+The asset transfer workflow is now split into two phases for better control:
 
-1. **Update Transfer Items** - Records acceptance metadata in `transfer_items` table
-2. **Insert Asset History** - Creates movement record in `asset_history` with transfer_id tracking
-3. **Update Asset Ownership** - Updates current owner in `assetdata` table for each asset
-4. **Send Notifications** - Emails new owner, current owner, HOD, and asset managers (by type)
+**Phase 1 - Acceptance** (`setAssetTransferAcceptance`):
+- Records evidence (attachments, checklist) in `transfer_items` table
+- Immediate response to new owner's "Accept Transfer" action
+- **Procedure 1 Only**: Update Transfer Items
 
-### Endpoint
+**Phase 2 - Commitment** (`commitTransfer`):
+- Asset Manager (filtered by type_id) manually commits accepted transfers
+- Finds uncommitted transfers (no `transfer_id` in `asset_history`)
+- **Procedures 2-4**: Insert asset history, update ownership, send notifications
+
+### Phase 1: Acceptance Endpoint
 ```
 PUT /api/assets/transfers/:id/acceptance
 Content-Type: multipart/form-data
 ```
 
-### Request Payload
+### Phase 1: Request Payload
 
 **JSON Fields:**
 | Field | Type | Required | Description |
@@ -648,7 +653,7 @@ Content-Type: multipart/form-data
 | `attachment2` | multipart file | 1 | Second evidence file |
 | `attachment3` | multipart file | 1 | Third evidence file |
 
-### Complete Request Example
+### Phase 1: Complete Request Example
 ```bash
 curl -X PUT http://localhost:3030/api/assets/transfers/1/acceptance \
   -F "item_ids=1" \
@@ -662,7 +667,9 @@ curl -X PUT http://localhost:3030/api/assets/transfers/1/acceptance \
   -F "attachment3=@document.pdf"
 ```
 
-### Process Flow
+### Phase 1: Process Flow
+
+#### Step 1: Request Validation & Parse Item IDs
 
 #### Step 1: Request Validation & Parse Item IDs
 ```typescript
@@ -714,7 +721,7 @@ const attachment3 = req.files?.attachment3?.[0]
   : null;
 ```
 
-#### Step 4: PROCEDURE 1 - Update transfer_items Table
+#### Step 4: PROCEDURE 1 - Update transfer_items Table (Phase 1 Only)
 ```typescript
 // For each itemId provided, update with acceptance data
 for (const itemId of item_ids) {
@@ -746,16 +753,135 @@ SET
 WHERE id = ?
 ```
 
-#### Step 5: PROCEDURE 2 - Insert Asset History with transfer_id
-```typescript
-// Fetch accepted items with full asset details
-const acceptedItems = await assetModel.getAssetTransferItems(item_ids);
+### Phase 1: Response
+```json
+{
+  "status": "success",
+  "message": "Acceptance recorded successfully",
+  "data": {
+    "transfer_id": 1,
+    "items_accepted": 2,
+    "acceptance_by": "000277",
+    "acceptance_date": "2026-01-14T10:30:00Z",
+    "pending_commit": true
+  }
+}
+```
 
-for (const item of acceptedItems) {
-  // Fetch full asset record for register_number and type_id
+**Database State After Phase 1 Acceptance:**
+
+**transfer_items Table (Updated):**
+```json
+{
+  "id": 1,
+  "transfer_id": 1,
+  "asset_id": 865,
+  "current_owner": "000475",
+  "new_owner": "000277",
+  "acceptance_by": "000277",
+  "acceptance_date": "2026-01-14 10:30:00",
+  "acceptance_remarks": "Verified and in good condition",
+  "acceptance_checklist_items": "1,2,3",
+  "attachment1": "/uploads/assets/transfers/acceptance/photo1.jpg",
+  "attachment2": "/uploads/assets/transfers/acceptance/photo2.png",
+  "attachment3": "/uploads/assets/transfers/acceptance/document.pdf",
+  "updated_at": "2026-01-14 10:30:00"
+}
+```
+
+⚠️ **Note:** `assetdata` and `asset_history` are NOT updated in Phase 1. Asset ownership remains with the previous owner until Phase 2 commitment.
+
+---
+
+## Phase 2: Asset Manager Commitment (`commitTransfer`)
+
+### Overview
+Asset Manager (filtered by type_id) manually reviews and commits accepted transfers. This endpoint:
+1. Finds all accepted items with **no `transfer_id` in `asset_history`** (uncommitted transfers)
+2. Filters by `type_id` to show only relevant asset types
+3. Executes Procedures 2-4 to finalize ownership transfer
+
+### Endpoint
+```
+POST /api/assets/transfer-commit
+Content-Type: application/json
+```
+
+### Request Payload
+```json
+{
+  "type_id": 1,                    // Asset type (required - for filtering)
+  "item_ids": [1, 2],              // Specific items to commit (optional - if empty, commit all for type)
+  "committed_by": "000277",        // ramco_id of Asset Manager (required)
+  "transfer_date": "2026-01-20"    // Effective transfer date (optional - defaults to now)
+}
+```
+
+### Complete Request Example
+```bash
+curl -X POST http://localhost:3030/api/assets/transfer-commit \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer {jwt_token}" \
+  -d '{
+    "type_id": 1,
+    "item_ids": [1, 2],
+    "committed_by": "000277",
+    "transfer_date": "2026-01-20"
+  }'
+```
+
+### Phase 2: Process Flow
+
+#### Step 1: Validation & Authorization
+```typescript
+// Verify committed_by is an Asset Manager with type_id access
+const manager = await assetModel.getAssetManagerById(committed_by);
+if (!manager || !manager.type_ids.includes(type_id)) {
+  return 400 error: "Not authorized for this asset type"
+}
+
+// Validate type_id exists
+const assetType = await assetModel.getTypeById(type_id);
+if (!assetType) return 404 error: "Asset type not found"
+```
+
+#### Step 2: Find Uncommitted Accepted Items
+```typescript
+// Query transfer_items where:
+// - No matching record in asset_history with transfer_id
+// - acceptance_by is not null (items are accepted)
+// - Asset's type_id matches requested type_id
+const uncommittedItems = await assetModel.getUncommittedAcceptedItems({
+  type_id,
+  item_ids: item_ids.length > 0 ? item_ids : undefined  // Filter if specific items provided
+});
+
+if (uncommittedItems.length === 0) {
+  return res.json({ status: 'info', message: 'No uncommitted transfers found for this type' });
+}
+```
+
+**SQL Query (Pseudocode):**
+```sql
+SELECT ti.* 
+FROM transfer_items ti
+JOIN assetdata ad ON ad.id = ti.asset_id
+WHERE 
+  ad.type_id = ?                                    -- Filter by type_id
+  AND ti.acceptance_by IS NOT NULL                 -- Must be accepted
+  AND ti.id NOT IN (
+    SELECT DISTINCT transfer_id 
+    FROM asset_history 
+    WHERE transfer_id IS NOT NULL
+  )                                                 -- No history record yet
+  AND (? IS NULL OR ti.id IN (?))                 -- Optional: filter by item_ids
+```
+
+#### Step 3: PROCEDURE 2 - Insert Asset History with transfer_id
+```typescript
+for (const item of uncommittedItems) {
   const asset = await assetModel.getAssetById(item.asset_id);
   
-  // Insert into asset_history with transfer_id for audit tracking
   await assetModel.insertAssetHistory({
     asset_id: item.asset_id,
     register_number: asset.register_number,
@@ -764,8 +890,8 @@ for (const item of acceptedItems) {
     department_id: item.new_department_id,
     location_id: item.new_location_id,
     ramco_id: item.new_owner,
-    transfer_id: requestId,      // ✅ NEW: Links movement to transfer request
-    effective_date: acceptance_date
+    transfer_id: item.transfer_id,        // ✅ Links movement to transfer request
+    effective_date: transfer_date || new Date()
   });
 }
 ```
@@ -777,23 +903,11 @@ INSERT INTO asset_history
    location_id, ramco_id, transfer_id, effective_date, created_at)
 VALUES 
   (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-
--- Example record:
--- asset_id: 865
--- register_number: "5CG7314HJW"
--- type_id: 1
--- costcenter_id: 26
--- department_id: 16
--- location_id: 2
--- ramco_id: "000277" (new owner)
--- transfer_id: 1 (links to transfer_requests table)
--- effective_date: 2026-01-14 10:30:00
 ```
 
-#### Step 6: PROCEDURE 3 - Update Asset Ownership in assetdata
+#### Step 4: PROCEDURE 3 - Update Asset Ownership
 ```typescript
-// For each accepted item, update the asset's current owner
-for (const item of acceptedItems) {
+for (const item of uncommittedItems) {
   await assetModel.updateAssetCurrentOwner({
     asset_id: item.asset_id,
     ramco_id: item.new_owner,
@@ -814,90 +928,81 @@ SET
   location_id = ?,        -- new location
   updated_at = NOW()
 WHERE id = ?
-
--- Example: Asset 865 ownership changed from 000475 to 000277
 ```
 
-#### Step 7: PROCEDURE 4 - Send Email Notifications
+#### Step 5: PROCEDURE 4 - Send Notifications
 ```typescript
-// Fetch transfer request details with asset info
-const transferRequest = await assetModel.getAssetTransferById(requestId);
+// Fetch transfer details
+const transferRequest = await assetModel.getAssetTransferById(uncommittedItems[0].transfer_id);
 
-// Email 1: To Transfer Requestor
-await sendMail(transferRequest.requested_by, 
-  assetTransferAcceptedRequestorEmail(transferRequest, acceptedItems));
+// Enrich items with asset details
+const enrichedItems = await Promise.all(
+  uncommittedItems.map(async (item) => ({
+    ...item,
+    asset: await assetModel.getAssetById(item.asset_id)
+  }))
+);
 
-// Email 2: To Current Owner (previous owner)
-await sendMail(acceptedItems[0].current_owner,
-  assetTransferAcceptedCurrentOwnerEmail(transferRequest, acceptedItems));
+// Fetch all employees for email mapping
+const employees = await assetModel.getEmployees();
+const employeeMap = new Map(employees.map((e) => [String(e.ramco_id), e]));
 
-// Email 3: To New Owner's HOD
-for (const item of acceptedItems) {
-  const hodEmail = await assetModel.getEmployeeHodEmail(item.new_owner);
-  await sendMail(hodEmail,
-    assetTransferAcceptedHodEmail(item.new_owner, transferRequest, acceptedItems));
+// Send emails to stakeholders
+const requestor = employeeMap.get(String(transferRequest.transfer_by));
+if (requestor?.email) {
+  await sendMail(requestor.email, 'Transfer Committed', 
+    getCommittedEmail(requestor, enrichedItems, transferRequest));
 }
 
-// Email 4: To Asset Managers by Asset Type (CC in all emails)
-for (const item of acceptedItems) {
-  const asset = await assetModel.getAssetById(item.asset_id);
-  const managers = await assetModel.getAssetManagersByType(asset.type_id);
-  // Asset managers CC'd in emails above
+// Email to new owners' HOD
+const newOwners = new Set(uncommittedItems.map(item => item.new_owner));
+for (const ownerId of newOwners) {
+  const owner = employeeMap.get(String(ownerId));
+  const hod = await assetModel.getEmployeeHodEmail(ownerId);
+  if (hod) {
+    await sendMail(hod, 'Assets Transferred & Committed',
+      getHodCommittedEmail(owner, enrichedItems, transferRequest));
+  }
 }
 ```
 
-**Emails Sent:**
-1. **Requestor Email** - Notifies transfer requester that assets were accepted
-2. **Current Owner Email** - Notifies previous owner that assets have been transferred out
-3. **HOD Email** - Notifies new owner's HOD that assets have been received
-4. **Asset Managers (CC)** - All relevant asset managers for the asset type receive the emails
+### Phase 2: Response
+```json
+{
+  "status": "success",
+  "message": "Transfer committed successfully",
+  "data": {
+    "type_id": 1,
+    "items_committed": 2,
+    "committed_by": "000277",
+    "transfer_date": "2026-01-20",
+    "items": [
+      {
+        "id": 1,
+        "asset_id": 865,
+        "register_number": "5CG7314HJW",
+        "new_owner": "000277",
+        "transfer_id": 1,
+        "effective_date": "2026-01-20"
+      }
+    ]
+  }
+}
+```
 
-**Email Content Includes:**
-- Register Number (e.g., "5CG7314HJW")
-- Brand name (e.g., "Dell")
-- Model name (e.g., "Latitude 7490")
-- Previous Owner (for current owner and HOD emails)
-- Accepted By (recipient name)
-- Acceptance Date
-- Location/Department info
-- Message: "Your employee has accepted assets"
-- Content: Assets received, employee details
+### Database State After Phase 2 Commitment
 
-### Database State After Acceptance
-
-**transfer_items Table (Procedure 1 - Updated):**
+**transfer_items Table (unchanged):**
 ```json
 {
   "id": 1,
   "transfer_id": 1,
-  "asset_id": 865,
-  "current_owner": "000475",
-  "new_owner": "000277",
   "acceptance_by": "000277",
-  "acceptance_date": "2026-01-14 10:30:00",
-  "acceptance_remarks": "Verified and in good condition",
-  "acceptance_checklist_items": "1,2,3",
-  "attachment1": "/uploads/assets/transfers/acceptance/photo1.jpg",
-  "attachment2": "/uploads/assets/transfers/acceptance/photo2.png",
-  "attachment3": "/uploads/assets/transfers/acceptance/document.pdf",
-  "updated_at": "2026-01-14 10:30:00"
+  "acceptance_date": "2026-01-14 10:30:00"
 }
 ```
 
-**assetdata Table (Procedure 3 - Updated):**
-```json
-{
-  "id": 865,
-  "register_number": "5CG7314HJW",
-  "ramco_id": "000277",        // Changed from 000475
-  "costcenter_id": 26,         // Updated if provided
-  "department_id": 16,         // Updated if provided
-  "location_id": 2,            // Updated if provided
-  "updated_at": "2026-01-14 10:30:00"
-}
-```
-
-**asset_history Table (Procedure 2 - New Record with transfer_id):**
+**asset_history Table (NEW - Procedure 2):**
 ```json
 {
   "id": 1234,
@@ -909,62 +1014,160 @@ for (const item of acceptedItems) {
   "location_id": 2,
   "ramco_id": "000277",        // New owner
   "transfer_id": 1,            // ✅ Links to transfer_requests.id
-  "effective_date": "2026-01-14 10:30:00",
-  "created_at": "2026-01-14 10:30:00"
+  "effective_date": "2026-01-20",
+  "created_at": "2026-01-20"
 }
+```
+
+**assetdata Table (UPDATED - Procedure 3):**
+```json
+{
+  "id": 865,
+  "register_number": "5CG7314HJW",
+  "ramco_id": "000277",        // Changed from 000475
+  "costcenter_id": 26,         // Updated
+  "department_id": 16,         // Updated
+  "location_id": 2,            // Updated
+  "updated_at": "2026-01-20"
+}
+```
+
+---
+
+## Workflow Diagram (Old vs New)
+
+### OLD Single-Phase (❌ Deprecated)
+```
+Acceptance Request
+  ↓
+Procedure 1: Update transfer_items
+Procedure 2: Insert asset_history    ← Immediate ownership change
+Procedure 3: Update assetdata        ← Risky - no asset manager review
+Procedure 4: Send Notifications
+  ↓
+Asset ownership changed immediately
+```
+
+### NEW Two-Phase (✅ Current)
+```
+═══════════════════════════════════════════════════════════════════
+PHASE 1: Employee Acceptance (setAssetTransferAcceptance)
+═══════════════════════════════════════════════════════════════════
+
+Acceptance Request (from new owner)
+  ↓
+Procedure 1: Update transfer_items table
+  - Record acceptance evidence (attachments, checklist)
+  - Set acceptance_by, acceptance_date, acceptance_remarks
+  - Save file paths
+  ↓
+Response to frontend: "Acceptance recorded, pending manager approval"
+
+⏳ Asset ownership remains with previous owner
+🔒 Locked from further acceptance until committed
+
+═══════════════════════════════════════════════════════════════════
+PHASE 2: Asset Manager Commitment (commitTransfer)
+═══════════════════════════════════════════════════════════════════
+
+Asset Manager reviews and commits (filtered by type_id)
+  ↓
+Find uncommitted items:
+  - Items with acceptance_by IS NOT NULL
+  - But NO transfer_id in asset_history (not yet committed)
+  ↓
+Procedure 2: Insert asset_history records
+Procedure 3: Update assetdata with new ownership
+Procedure 4: Send final notifications
+  ↓
+Response: "Transfer committed successfully"
+
+✅ Asset ownership now changed to new owner
+✅ Full audit trail with transfer_id tracking
 ```
 
 ### Error Handling
 
+#### Phase 1 Errors
 | Scenario | HTTP Status | Response |
 |----------|------------|----------|
 | Missing transfer ID | 400 | Invalid transfer request id |
 | Missing item_ids | 400 | At least one item_id required |
 | Transfer not found | 404 | Transfer request not found |
-| Invalid acceptance_by | 400 | (multer validation) |
+| Invalid acceptance_by | 400 | acceptance_by required |
 | File upload failure | 400 | File upload error |
 | Database Procedure 1 failure | 500 | Error updating transfer_items |
+
+#### Phase 2 Errors
+| Scenario | HTTP Status | Response |
+|----------|------------|----------|
+| Asset Manager not authorized | 400 | Not authorized for this asset type |
+| type_id not found | 404 | Asset type not found |
+| No uncommitted transfers | 200 | No uncommitted transfers found for this type |
 | Database Procedure 2 failure | 500 | Error inserting asset_history |
 | Database Procedure 3 failure | 500 | Error updating assetdata |
 | Email Procedure 4 failure | 500 | Error sending notifications (logged) |
 
-**Note:** If Procedures 1-3 fail, transaction is rolled back. Procedure 4 (email) failures are logged but don't block the acceptance response.
+**Note:** Phase 2 uses transactional rollback for Procedures 2-3. Email failures are logged but don't block response.
 
-### Acceptance Portal Integration
+### Integration Points
 
-The acceptance endpoint is used by the frontend acceptance portal after user clicks "Accept Transfer" button:
-
+#### With Frontend
+**Phase 1: Acceptance Portal**
 ```
-Portal URL: {FRONTEND_URL}/assets/transfer/acceptance/{transfer_id}
-Query params: ?new_owner={ramco_id}&_cred={credential_code}
+Portal: {FRONTEND_URL}/assets/transfer/acceptance/{transfer_id}
+Params: ?new_owner={ramco_id}&_cred={credential_code}
 
-Portal calls:
 1. GET /api/assets/transfers/:id/items?new_owner=:ramco_id
-   ↓ Returns filtered items with full enrichment
+   ↓ Returns transfer items for new owner
 2. PUT /api/assets/transfers/:id/acceptance (multipart)
-   ↓ Submits acceptance with files and checklist
+   ↓ Submits acceptance with files
+3. Response: Acceptance recorded, no ownership change yet
 ```
+
+**Phase 2: Asset Manager Portal**
+```
+Portal: {FRONTEND_URL}/assets/manager/commit-transfers
+Filter: type_id selector
+
+1. GET /api/assets/manager/uncommitted?type_id=1
+   ↓ Returns items pending commit for type
+2. POST /api/assets/transfer-commit
+   ↓ Submits commitment request
+3. Response: Transfer committed, ownership updated
+```
+
+#### With Email System
+**Phase 1:**
+- Only acceptance confirmation email to requestor (optional)
+
+**Phase 2:**
+- Commitment notification to requestor
+- Notification to new owner's HOD
+- Notification to asset managers (by type_id)
 
 ### Security Considerations
 
-1. **File Upload**
+1. **File Upload (Phase 1)**
    - Multer validates file types
    - Files saved with unique names (prevents overwrites)
    - Directory path restricted to `/mnt/winshare/uploads/assets/transfers/acceptance/`
 
-2. **Ownership Transfer**
-   - Only transfers when acceptance_by is provided
-   - Uses transaction-like pattern (insert history first, then update current)
-   - Asset history provides complete audit trail
+2. **Authorization (Phase 2)**
+   - Asset Managers verified for type_id access
+   - `committed_by` must be in assetManagers table with matching type_id
+   - JWT token required
 
-3. **Authentication**
-   - Requires valid JWT token (enforced by middleware)
-   - acceptance_by should match authenticated user or be authorized
+3. **Audit Trail**
+   - transfer_items records date of acceptance with who accepted
+   - asset_history records date of commitment with effective date
+   - Provides complete timeline of transfer lifecycle
 
 4. **Data Validation**
    - Checklist items validated as positive integers
    - Dates validated as ISO 8601 format
-   - Filenames sanitized by multer
+   - `acceptance_by` must be valid ramco_id
+   - `committed_by` must be Asset Manager for the type
 
 ---
 
