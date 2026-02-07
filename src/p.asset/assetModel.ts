@@ -2279,6 +2279,79 @@ export const getUncommittedAcceptedItems = async (options: {
   return rows;
 };
 
+/**
+ * Get all uncommitted accepted transfer items across all asset types
+ * Useful for asset manager dashboard to show pending commitment counts
+ * Returns items grouped by type_id with summary information
+ */
+export const getAllUncommittedAcceptedTransfers = async () => {
+  const sql = `
+    SELECT 
+      ad.type_id,
+      t.name as type_name,
+      COUNT(ti.id) as pending_count,
+      GROUP_CONCAT(DISTINCT ti.id) as item_ids,
+      MAX(ti.acceptance_date) as latest_acceptance_date
+    FROM ${assetTransferItemTable} ti
+    JOIN ${assetTable} ad ON ad.id = ti.asset_id
+    LEFT JOIN ${typeTable} t ON t.id = ad.type_id
+    WHERE 
+      ti.acceptance_by IS NOT NULL
+      AND ti.id NOT IN (
+        SELECT DISTINCT transfer_id 
+        FROM ${assetHistoryTable}
+        WHERE transfer_id IS NOT NULL
+      )
+    GROUP BY ad.type_id, t.name
+    ORDER BY ad.type_id ASC
+  `;
+  
+  const [rows] = await pool.query(sql);
+  return rows;
+};
+
+/**
+ * Get uncommitted accepted items summary with enriched data
+ * Returns: count per type and list of specific items for that type
+ */
+export const getUncommittedTransferSummary = async (type_id?: number) => {
+  let sql = `
+    SELECT 
+      ti.id,
+      ti.transfer_id,
+      ti.asset_id,
+      ad.register_number,
+      ad.type_id,
+      t.name as type_name,
+      ti.current_owner,
+      ti.new_owner,
+      ti.acceptance_date,
+      ti.acceptance_by
+    FROM ${assetTransferItemTable} ti
+    JOIN ${assetTable} ad ON ad.id = ti.asset_id
+    LEFT JOIN ${typeTable} t ON t.id = ad.type_id
+    WHERE 
+      ti.acceptance_by IS NOT NULL
+      AND ti.id NOT IN (
+        SELECT DISTINCT transfer_id 
+        FROM ${assetHistoryTable}
+        WHERE transfer_id IS NOT NULL
+      )
+  `;
+  
+  const params: any[] = [];
+  
+  if (type_id !== undefined && type_id !== null) {
+    sql += ` AND ad.type_id = ?`;
+    params.push(type_id);
+  }
+  
+  sql += ` ORDER BY ad.type_id ASC, ti.id ASC`;
+  
+  const [rows] = await pool.query(sql, params);
+  return rows;
+};
+
 export const updateAssetTransferItem = async (id: number, data: any) => {
   const allowedFields = [
     'effective_date',

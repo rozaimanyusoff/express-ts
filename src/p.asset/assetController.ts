@@ -4426,6 +4426,122 @@ export const commitTransfer = async (req: Request, res: Response) => {
 	}
 };
 
+/**
+ * Get uncommitted accepted transfers summary
+ * Useful for frontend dashboard to show pending commitment count per asset type
+ * Shows items that have been accepted but not yet committed
+ */
+export const getUncommittedTransfers = async (req: Request, res: Response) => {
+	try {
+		// Optional filter by type_id
+		const typeIdParam = req.query.type_id;
+		let type_id: number | undefined = undefined;
+		
+		if (typeIdParam !== undefined) {
+			type_id = Number(typeIdParam);
+			if (!isNaN(type_id) && type_id > 0) {
+				// Verify type exists
+				const assetType = await assetModel.getTypeById(type_id);
+				if (!assetType) {
+					return res.status(404).json({
+						status: 'error',
+						message: 'Asset type not found',
+						data: null
+					});
+				}
+			} else {
+				type_id = undefined;
+			}
+		}
+		
+		// Get uncommitted transfers summary
+		const summaryRaw = await assetModel.getUncommittedTransferSummary(type_id);
+		const items: any[] = Array.isArray(summaryRaw) ? summaryRaw : [];
+		
+		if (items.length === 0) {
+			return res.json({
+				status: 'success',
+				message: 'No uncommitted transfers found',
+				data: {
+					total_uncommitted: 0,
+					by_type: [],
+					items: []
+				}
+			});
+		}
+		
+		// Group items by type_id for summary
+		const byTypeMap = new Map<number, any>();
+		for (const item of items) {
+			const typeId = item.type_id;
+			if (!byTypeMap.has(typeId)) {
+				byTypeMap.set(typeId, {
+					type_id: typeId,
+					type_name: item.type_name,
+					pending_count: 0,
+					sample_items: []
+				});
+			}
+			
+			const typeGroup = byTypeMap.get(typeId)!;
+			typeGroup.pending_count += 1;
+			
+			// Keep up to 5 sample items per type
+			if (typeGroup.sample_items.length < 5) {
+				typeGroup.sample_items.push({
+					id: item.id,
+					asset_id: item.asset_id,
+					register_number: item.register_number,
+					acceptance_date: item.acceptance_date
+				});
+			}
+		}
+		
+		// Fetch asset details for enrichment
+		const enrichedItems: any[] = [];
+		const assetIds = new Set<number>();
+		for (const item of items) {
+			assetIds.add(item.asset_id);
+		}
+		
+		const assetDetailsMap = new Map<number, any>();
+		for (const assetId of assetIds) {
+			const assetDetail = await assetModel.getAssetById(assetId);
+			if (assetDetail) {
+				assetDetailsMap.set(assetId, assetDetail);
+			}
+		}
+		
+		for (const item of items) {
+			const assetDetail = assetDetailsMap.get(item.asset_id);
+			enrichedItems.push({
+				...item,
+				asset: assetDetail ? {
+					brand: assetDetail.brand_name,
+					model: assetDetail.model_name
+				} : null
+			});
+		}
+		
+		return res.json({
+			status: 'success',
+			message: `Found ${items.length} uncommitted transfer(s)`,
+			data: {
+				total_uncommitted: items.length,
+				by_type: Array.from(byTypeMap.values()),
+				items: enrichedItems
+			}
+		});
+	} catch (error: any) {
+		console.error('Error fetching uncommitted transfers:', error);
+		return res.status(500).json({
+			status: 'error',
+			message: error?.message || 'Error fetching uncommitted transfers',
+			data: null
+		});
+	}
+};
+
 /* ============ ASSET TRANSFER ITEMS (direct access) ============ */
 export const getAssetTransferItemsByTransfer = async (req: Request, res: Response) => {
 	const transferId = Number(req.params.id);
