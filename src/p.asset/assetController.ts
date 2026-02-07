@@ -4428,73 +4428,71 @@ export const commitTransfer = async (req: Request, res: Response) => {
 
 /**
  * Get uncommitted accepted transfers summary
- * Useful for frontend dashboard to show pending commitment count per asset type
- * Shows items that have been accepted but not yet committed
+ * REQUIRED: ?type_id parameter to filter by asset type
+ * Prevents asset managers from seeing transfers outside their authorized types
+ * Useful for frontend dashboard to show pending commitment count for specific type
  */
 export const getUncommittedTransfers = async (req: Request, res: Response) => {
 	try {
-		// Optional filter by type_id
+		// REQUIRED: type_id parameter (filters by asset type)
 		const typeIdParam = req.query.type_id;
-		let type_id: number | undefined = undefined;
 		
-		if (typeIdParam !== undefined) {
-			type_id = Number(typeIdParam);
-			if (!isNaN(type_id) && type_id > 0) {
-				// Verify type exists
-				const assetType = await assetModel.getTypeById(type_id);
-				if (!assetType) {
-					return res.status(404).json({
-						status: 'error',
-						message: 'Asset type not found',
-						data: null
-					});
-				}
-			} else {
-				type_id = undefined;
+		if (typeIdParam === undefined || typeIdParam === null || typeIdParam === '') {
+			return res.status(400).json({
+				status: 'error',
+				message: 'type_id parameter is required. Use ?type_id=1 to filter by asset type.',
+				data: null
+			});
+		}
+		
+		const type_id = Number(typeIdParam);
+		if (isNaN(type_id) || type_id <= 0) {
+			return res.status(400).json({
+				status: 'error',
+				message: 'type_id must be a positive number',
+				data: null
+			});
+		}
+		
+		// Verify type exists
+		const assetType = await assetModel.getTypeById(type_id);
+		if (!assetType) {
+			return res.status(404).json({
+				status: 'error',
+				message: 'Asset type not found',
+				data: null
+			});
+		}
+		
+		// Optional: If user context available, verify authorization
+		// This provides additional security layer - prevent manager from accessing types they don't manage
+		if ((req as any).user && (req as any).user.ramco_id) {
+			const userRamcoId = (req as any).user.ramco_id;
+			const manager = await assetModel.getAssetManagerByRamcoId(userRamcoId);
+			
+			if (manager && Number(manager.manager_id) !== type_id) {
+				return res.status(403).json({
+					status: 'error',
+					message: 'You are not authorized to manage this asset type',
+					data: null
+				});
 			}
 		}
 		
-		// Get uncommitted transfers summary
+		// Get uncommitted transfers filtered by type_id only
 		const summaryRaw = await assetModel.getUncommittedTransferSummary(type_id);
 		const items: any[] = Array.isArray(summaryRaw) ? summaryRaw : [];
 		
 		if (items.length === 0) {
 			return res.json({
 				status: 'success',
-				message: 'No uncommitted transfers found',
+				message: `No uncommitted transfers found for type ${type_id}`,
 				data: {
+					type_id,
 					total_uncommitted: 0,
-					by_type: [],
 					items: []
 				}
 			});
-		}
-		
-		// Group items by type_id for summary
-		const byTypeMap = new Map<number, any>();
-		for (const item of items) {
-			const typeId = item.type_id;
-			if (!byTypeMap.has(typeId)) {
-				byTypeMap.set(typeId, {
-					type_id: typeId,
-					type_name: item.type_name,
-					pending_count: 0,
-					sample_items: []
-				});
-			}
-			
-			const typeGroup = byTypeMap.get(typeId)!;
-			typeGroup.pending_count += 1;
-			
-			// Keep up to 5 sample items per type
-			if (typeGroup.sample_items.length < 5) {
-				typeGroup.sample_items.push({
-					id: item.id,
-					asset_id: item.asset_id,
-					register_number: item.register_number,
-					acceptance_date: item.acceptance_date
-				});
-			}
 		}
 		
 		// Fetch asset details for enrichment
@@ -4525,10 +4523,11 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 		
 		return res.json({
 			status: 'success',
-			message: `Found ${items.length} uncommitted transfer(s)`,
+			message: `Found ${items.length} uncommitted transfer(s) for type ${type_id}`,
 			data: {
+				type_id,
+				type_name: assetType?.name,
 				total_uncommitted: items.length,
-				by_type: Array.from(byTypeMap.values()),
 				items: enrichedItems
 			}
 		});
