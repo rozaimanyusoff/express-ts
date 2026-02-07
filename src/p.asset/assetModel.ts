@@ -2247,9 +2247,10 @@ export const getAllAssetTransferItems = async () => {
  */
 export const getUncommittedAcceptedItems = async (options: {
   type_id: number;
+  transfer_id?: number;
   item_ids?: number[];
 }) => {
-  const { type_id, item_ids } = options;
+  const { type_id, transfer_id, item_ids } = options;
   
   let sql = `
     SELECT ti.* 
@@ -2266,6 +2267,12 @@ export const getUncommittedAcceptedItems = async (options: {
   `;
   
   const params: any[] = [type_id];
+  
+  // Optional: filter by specific transfer_id
+  if (transfer_id && !isNaN(transfer_id)) {
+    sql += ` AND ti.transfer_id = ?`;
+    params.push(transfer_id);
+  }
   
   // Optional: filter by specific item_ids
   if (item_ids && item_ids.length > 0) {

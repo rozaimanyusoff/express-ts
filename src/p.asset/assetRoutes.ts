@@ -169,7 +169,7 @@ router.put('/transfers/:id', asyncHandler(assetController.updateAssetTransfer));
 router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer));
 
 // TRANSFER COMMITMENT (Phase 2)
-router.post('/transfer-commit', asyncHandler(assetController.commitTransfer)); // Asset Manager commits accepted transfers
+router.post('/transfer-commit/:transfer_id', asyncHandler(assetController.commitTransfer)); // Asset Manager commits accepted transfers (POST /transfer-commit/{transfer_id})
 router.get('/transfer-commit/pending', asyncHandler(assetController.getUncommittedTransfers)); // REQUIRED: ?type_id=1 to filter by asset type
 
 // RESEND APPROVAL NOTIFICATION

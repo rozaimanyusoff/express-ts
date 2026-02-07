@@ -4189,6 +4189,8 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 /**
  * Phase 2: Commit Transfer - Asset Manager finalizes accepted transfers
  * Executed manually by Asset Manager (filtered by type_id)
+ * Endpoint: POST /transfer-commit/{transfer_id}
+ * Body: { type_id, item_ids (single item), committed_by, transfer_date }
  * Performs Procedures 2-4:
  * - Procedure 2: Insert asset_history records
  * - Procedure 3: Update asset ownership
@@ -4197,6 +4199,17 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 export const commitTransfer = async (req: Request, res: Response) => {
 	try {
 		const body: any = req.body || {};
+		const params: any = req.params || {};
+		
+		// Get transfer_id from URL parameter
+		const transfer_id = Number(params.transfer_id);
+		if (!transfer_id || isNaN(transfer_id)) {
+			return res.status(400).json({ 
+				status: 'error', 
+				message: 'transfer_id is required in URL parameter (/transfer-commit/{transfer_id})',
+				data: null 
+			});
+		}
 		
 		// Validate required fields
 		const type_id = Number(body.type_id);
@@ -4248,22 +4261,29 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			});
 		}
 		
-		// Parse optional item_ids filter
+		// Parse item_ids from payload (single item or array)
 		let item_ids: number[] = [];
 		if (body.item_ids !== undefined) {
 			if (Array.isArray(body.item_ids)) {
 				item_ids = body.item_ids.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n));
-			} else if (typeof body.item_ids === 'string') {
-				item_ids = body.item_ids
-					.split(',')
-					.map((s: string) => Number(s.trim()))
-					.filter((n: number) => Number.isFinite(n));
+			} else if (typeof body.item_ids === 'string' || typeof body.item_ids === 'number') {
+				const itemId = Number(body.item_ids);
+				if (!isNaN(itemId)) item_ids = [itemId];
 			}
 		}
 		
-		// Step 2: Find uncommitted accepted items for this type_id
+		if (item_ids.length === 0) {
+			return res.status(400).json({ 
+				status: 'error', 
+				message: 'item_ids is required in payload',
+				data: null 
+			});
+		}
+		
+		// Step 2: Find uncommitted accepted items for this transfer_id and type_id
 		const uncommittedItemsRaw = await assetModel.getUncommittedAcceptedItems({
 			type_id,
+			transfer_id,
 			item_ids: item_ids.length > 0 ? item_ids : undefined
 		});
 		
