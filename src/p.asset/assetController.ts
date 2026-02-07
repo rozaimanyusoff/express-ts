@@ -4498,22 +4498,38 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 		// Fetch asset details for enrichment
 		const enrichedItems: any[] = [];
 		const assetIds = new Set<number>();
-		for (const item of items) {
-			assetIds.add(item.asset_id);
-		}
 		
-		const assetDetailsMap = new Map<number, any>();
-		for (const assetId of assetIds) {
-			const assetDetail = await assetModel.getAssetById(assetId);
-			if (assetDetail) {
-				assetDetailsMap.set(assetId, assetDetail);
+		// Collect valid asset IDs only
+		for (const item of items) {
+			const itemData = item as any;
+			const assetId = Number(itemData.asset_id);
+			// Only add valid asset IDs
+			if (!isNaN(assetId) && assetId > 0) {
+				assetIds.add(assetId);
 			}
 		}
 		
+		const assetDetailsMap = new Map<number, any>();
+		// Fetch asset details for valid IDs only
+		for (const assetId of assetIds) {
+			try {
+				const assetDetail = await assetModel.getAssetById(assetId);
+				if (assetDetail) {
+					assetDetailsMap.set(assetId, assetDetail);
+				}
+			} catch (err) {
+				console.warn(`Failed to fetch asset details for ID ${assetId}:`, err);
+				// Continue with other assets if one fails
+			}
+		}
+		
+		// Enrich items with asset data
 		for (const item of items) {
-			const assetDetail = assetDetailsMap.get(item.asset_id);
+			const itemData = item as any;
+			const assetId = Number(itemData.asset_id);
+			const assetDetail = assetDetailsMap.get(assetId);
 			enrichedItems.push({
-				...item,
+				...itemData,
 				asset: assetDetail ? {
 					brand: assetDetail.brand_name,
 					model: assetDetail.model_name
