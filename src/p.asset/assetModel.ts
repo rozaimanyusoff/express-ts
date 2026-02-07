@@ -2584,6 +2584,22 @@ export const insertAssetHistory = async (data: {
   return result;
 };
 
+/**
+ * Check if an asset history entry already exists for a specific transfer and asset
+ * Prevents duplicate entries when committing transfers
+ */
+export const checkAssetHistoryExists = async (options: {
+  transfer_id: number;
+  asset_id: number;
+}) => {
+  const { transfer_id, asset_id } = options;
+  const [rows] = await pool.query(
+    `SELECT id FROM ${assetHistoryTable} WHERE transfer_id = ? AND asset_id = ? LIMIT 1`,
+    [transfer_id, asset_id]
+  );
+  return (rows as RowDataPacket[]).length > 0;
+};
+
 // Update asset current ownership data in assetdata table
 export const updateAssetCurrentOwner = async (asset_id: number, data: {
   costcenter_id?: null | number;

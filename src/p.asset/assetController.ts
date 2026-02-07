@@ -4267,7 +4267,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			item_ids: item_ids.length > 0 ? item_ids : undefined
 		});
 		
-		const uncommittedItems = Array.isArray(uncommittedItemsRaw) ? uncommittedItemsRaw : [];
+		const uncommittedItems = (Array.isArray(uncommittedItemsRaw) ? uncommittedItemsRaw : []) as any[];
 		
 		if (!uncommittedItems || uncommittedItems.length === 0) {
 			return res.json({ 
@@ -4277,7 +4277,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			});
 		}
 		
-		const committedItems = Array.isArray(uncommittedItems) ? uncommittedItems : [];
+		const committedItems = uncommittedItems as any[];
 		
 		// Procedure 2: Insert asset_history records
 		const historyInserts: any[] = [];
@@ -4297,6 +4297,18 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				const asset = await assetModel.getAssetById(assetId);
 				if (!asset) {
 					console.warn(`Skipping item ${itemData.id}: Asset not found for asset_id ${assetId}`);
+					continue;
+				}
+				
+				// Check if asset history entry already exists to prevent duplicates
+				const historyExists = await assetModel.checkAssetHistoryExists({
+					transfer_id: itemData.transfer_id,
+					asset_id: assetId
+				});
+				
+				if (historyExists) {
+					console.info(`Asset history entry already exists for asset ${assetId} and transfer ${itemData.transfer_id}, skipping duplicate`);
+					validCommittedItems.push(itemData);
 					continue;
 				}
 				
