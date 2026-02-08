@@ -2259,10 +2259,22 @@ export const getUncommittedAcceptedItems = async (options: {
     WHERE 
       ad.type_id = ?
       AND ti.acceptance_by IS NOT NULL
-      AND ti.id NOT IN (
-        SELECT DISTINCT transfer_id 
-        FROM ${assetHistoryTable}
-        WHERE transfer_id IS NOT NULL
+      AND ti.acceptance_date IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${assetHistoryTable} ah
+        WHERE ah.transfer_id = ti.transfer_id
+        AND ah.effective_date = ti.effective_date
+        AND ah.asset_id = ti.asset_id
+        AND ah.type_id = ti.type_id
+        AND ah.ramco_id = ti.new_owner
+        AND ah.costcenter_id = ti.new_costcenter_id
+        AND ah.department_id = ti.new_department_id
+        AND ah.location_id = ti.new_location_id
+        AND ad.ramco_id = ti.new_owner
+        AND ad.costcenter_id = ti.new_costcenter_id
+        AND ad.department_id = ti.new_department_id
+        AND ad.location_id = ti.new_location_id
       )
   `;
   
@@ -2304,10 +2316,22 @@ export const getAllUncommittedAcceptedTransfers = async () => {
     LEFT JOIN ${typeTable} t ON t.id = ad.type_id
     WHERE 
       ti.acceptance_by IS NOT NULL
-      AND ti.id NOT IN (
-        SELECT DISTINCT transfer_id 
-        FROM ${assetHistoryTable}
-        WHERE transfer_id IS NOT NULL
+      AND ti.acceptance_date IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${assetHistoryTable} ah
+        WHERE ah.transfer_id = ti.transfer_id
+        AND ah.effective_date = ti.effective_date
+        AND ah.asset_id = ti.asset_id
+        AND ah.type_id = ti.type_id
+        AND ah.ramco_id = ti.new_owner
+        AND ah.costcenter_id = ti.new_costcenter_id
+        AND ah.department_id = ti.new_department_id
+        AND ah.location_id = ti.new_location_id
+        AND ad.ramco_id = ti.new_owner
+        AND ad.costcenter_id = ti.new_costcenter_id
+        AND ad.department_id = ti.new_department_id
+        AND ad.location_id = ti.new_location_id
       )
     GROUP BY ad.type_id, t.name
     ORDER BY ad.type_id ASC
@@ -2339,10 +2363,22 @@ export const getUncommittedTransferSummary = async (type_id?: number) => {
     LEFT JOIN ${typeTable} t ON t.id = ad.type_id
     WHERE 
       ti.acceptance_by IS NOT NULL
-      AND ti.id NOT IN (
-        SELECT DISTINCT transfer_id 
-        FROM ${assetHistoryTable}
-        WHERE transfer_id IS NOT NULL
+      AND ti.acceptance_date IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${assetHistoryTable} ah
+        WHERE ah.transfer_id = ti.transfer_id
+        AND ah.effective_date = ti.effective_date
+        AND ah.asset_id = ti.asset_id
+        AND ah.type_id = ti.type_id
+        AND ah.ramco_id = ti.new_owner
+        AND ah.costcenter_id = ti.new_costcenter_id
+        AND ah.department_id = ti.new_department_id
+        AND ah.location_id = ti.new_location_id
+        AND ad.ramco_id = ti.new_owner
+        AND ad.costcenter_id = ti.new_costcenter_id
+        AND ad.department_id = ti.new_department_id
+        AND ad.location_id = ti.new_location_id
       )
   `;
   
@@ -3044,6 +3080,90 @@ export const processAcceptedTransfers = async () => {
     console.error('❌ Error in processAcceptedTransfers:', err);
     throw err;
   }
+};
+
+export const setCommittedAtForTransferItems = async (transferId: number, itemIds: number[]) => {
+  if (!itemIds || itemIds.length === 0) {
+    return { affectedRows: 0 };
+  }
+
+  const placeholders = itemIds.map(() => '?').join(',');
+  const sql = `
+    UPDATE ${assetTransferItemTable}
+    SET committed_at = NOW()
+    WHERE transfer_id = ? AND id IN (${placeholders})
+  `;
+
+  const params = [transferId, ...itemIds];
+  const [result] = await pool.query(sql, params);
+  
+  return result;
+};
+
+export const getTransferItemCommittedStatus = async (itemId: number): Promise<'pending' | 'accepted' | 'committed'> => {
+  // Get the transfer item
+  const itemSql = `SELECT * FROM ${assetTransferItemTable} WHERE id = ?`;
+  const [itemRows] = await pool.query(itemSql, [itemId]);
+  const item = (Array.isArray(itemRows) ? itemRows[0] : null) as any;
+  
+  if (!item) {
+    return 'pending';
+  }
+
+  // Check if acceptance is pending (condition 1 & 2)
+  if (!item.acceptance_by || !item.acceptance_date) {
+    return 'pending';
+  }
+
+  // Check if already committed (committed_at is set)
+  if (item.committed_at) {
+    return 'committed';
+  }
+
+  // At this point: acceptance_by and acceptance_date are set, but committed_at is null
+  // Check if all conditions for committed are met (3-8)
+  // Get asset history and asset records
+  const historyCheckSql = `
+    SELECT 1
+    FROM ${assetHistoryTable} ah
+    JOIN ${assetTable} ad ON ad.id = ah.asset_id
+    WHERE ah.transfer_id = ?
+    AND ah.effective_date = ?
+    AND ah.asset_id = ?
+    AND ah.type_id = ?
+    AND ah.ramco_id = ?
+    AND ah.costcenter_id = ?
+    AND ah.department_id = ?
+    AND ah.location_id = ?
+    AND ad.ramco_id = ?
+    AND ad.costcenter_id = ?
+    AND ad.department_id = ?
+    AND ad.location_id = ?
+  `;
+  
+  const params = [
+    item.transfer_id,
+    item.effective_date,
+    item.asset_id,
+    item.type_id,
+    item.new_owner,
+    item.new_costcenter_id,
+    item.new_department_id,
+    item.new_location_id,
+    item.new_owner,
+    item.new_costcenter_id,
+    item.new_department_id,
+    item.new_location_id
+  ];
+
+  const [historyRows] = await pool.query(historyCheckSql, params);
+  
+  if (Array.isArray(historyRows) && historyRows.length > 0) {
+    return 'committed';
+  }
+
+  // If accepted but not committed (history/asset records don't match yet)
+  return 'accepted';
 };
 
 // Note: named exports are used throughout the codebase. No default export to normalize usage.

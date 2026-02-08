@@ -2902,6 +2902,21 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 	const modelMap = new Map<number, any>((Array.isArray(modelsRaw) ? modelsRaw : []).map((m: any) => [Number(m.id), m]));
 	const locationMap = new Map<number, any>((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
 
+	// Fetch committed statuses for all items in filtered requests
+	const allItemIds = filteredReqArr.flatMap((r: any) => (itemsMap.get(r.id) || []).map((it: any) => it.id));
+	const committedStatusMap = new Map<number, 'pending' | 'accepted' | 'committed'>();
+	await Promise.all(
+		allItemIds.map(async (itemId: number) => {
+			try {
+				const status = await assetModel.getTransferItemCommittedStatus(itemId);
+				committedStatusMap.set(itemId, status);
+			} catch (err) {
+				console.error(`Error fetching committed status for item ${itemId}:`, err);
+				committedStatusMap.set(itemId, 'pending');
+			}
+		})
+	);
+
 	const data = filteredReqArr.map((r: any) => {
 		const approval_status = (r.approved_date && r.approved_by) ? 'approved' : 'pending';
 		const emp = empMap.get(String(r.transfer_by));
@@ -2991,6 +3006,8 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 				acceptance_remarks: it.acceptance_remarks || null,
 				transfer_item: transferItem,
 				attachment: it.attachment,
+				committed_at: it.committed_at || null,
+				committed_status: committedStatusMap.get(it.id) || 'pending',
 				created_at: it.created_at,
 				current_costcenter: currCC ? { id: currCC.id, name: currCC.name || null } : (typeof it.current_costcenter_id === 'number' ? { id: it.current_costcenter_id, name: null } : null),
 				current_department: currDept ? { code: currDept.code || null, id: currDept.id } : (typeof it.current_department_id === 'number' ? { code: null, id: it.current_department_id } : null),
@@ -3099,6 +3116,20 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 	const brandMap = new Map<number, any>((Array.isArray(brandsRaw) ? brandsRaw : []).filter(Boolean).map((b: any) => [Number(b.id), b]));
 	const modelMap = new Map<number, any>((Array.isArray(modelsRaw) ? modelsRaw : []).filter(Boolean).map((m: any) => [Number(m.id), m]));
 
+	// Fetch committed statuses for all items in this transfer
+	const committedStatusMap = new Map<number, 'pending' | 'accepted' | 'committed'>();
+	await Promise.all(
+		items.map(async (item: any) => {
+			try {
+				const status = await assetModel.getTransferItemCommittedStatus(item.id);
+				committedStatusMap.set(item.id, status);
+			} catch (err) {
+				console.error(`Error fetching committed status for item ${item.id}:`, err);
+				committedStatusMap.set(item.id, 'pending');
+			}
+		})
+	);
+
 	const itemsEnriched = items.map((it: any) => {
 		const currOwner = it.current_owner ? empMap.get(String(it.current_owner)) : null;
 		const newOwner = it.new_owner ? empMap.get(String(it.new_owner)) : null;
@@ -3183,6 +3214,8 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 			acceptance_remarks: (it).acceptance_remarks ?? null,
 			transfer_item: transferItem,
 			attachment: it.attachment,
+			committed_at: it.committed_at || null,
+			committed_status: committedStatusMap.get(it.id) || 'pending',
 			created_at: it.created_at,
 			current_costcenter: currCC ? { id: Number(currCC.id), name: currCC.name || null } : (it.current_costcenter_id != null ? { id: Number(it.current_costcenter_id), name: null } : null),
 			current_department: currDept ? { code: currDept.code || null, id: Number(currDept.id) } : (it.current_department_id != null ? { code: null, id: Number(it.current_department_id) } : null),
@@ -4376,6 +4409,22 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			}
 		}
 		
+		// Procedure 3.5: Set committed_at timestamp for each transfer
+		const transferIds = new Set(validCommittedItems.map((item: any) => item.transfer_id));
+		for (const transferId of transferIds) {
+			const itemsForTransfer = validCommittedItems.filter((item: any) => item.transfer_id === transferId);
+			if (itemsForTransfer.length > 0) {
+				try {
+					const itemIds = itemsForTransfer.map((item: any) => item.id);
+					await assetModel.setCommittedAtForTransferItems(transferId, itemIds);
+					console.info(`Set committed_at timestamp for transfer ${transferId}`);
+				} catch (err) {
+					console.error(`Error setting committed_at for transfer ${transferId}:`, err);
+					// Continue with other transfers
+				}
+			}
+		}
+		
 		// Procedure 4: Send notifications
 		try {
 			// Fetch unique transfer IDs from valid committed items
@@ -4512,12 +4561,10 @@ export const commitTransfer = async (req: Request, res: Response) => {
 /**
  * Get uncommitted accepted transfers summary
  * REQUIRED: ?type_id parameter to filter by asset type
- * Prevents asset managers from seeing transfers outside their authorized types
- * Useful for frontend dashboard to show pending commitment count for specific type
+ * Returns all transfer items that have been accepted but not yet committed
  */
 export const getUncommittedTransfers = async (req: Request, res: Response) => {
 	try {
-		// REQUIRED: type_id parameter (filters by asset type)
 		const typeIdParam = req.query.type_id;
 		
 		if (typeIdParam === undefined || typeIdParam === null || typeIdParam === '') {
@@ -4547,87 +4594,20 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 			});
 		}
 		
-		// Optional: If user context available, verify authorization
-		// This provides additional security layer - prevent manager from accessing types they don't manage
-		if ((req as any).user && (req as any).user.ramco_id) {
-			const userRamcoId = (req as any).user.ramco_id;
-			const manager = await assetModel.getAssetManagerByRamcoId(userRamcoId);
-			
-			if (manager && Number(manager.manager_id) !== type_id) {
-				return res.status(403).json({
-					status: 'error',
-					message: 'You are not authorized to manage this asset type',
-					data: null
-				});
-			}
-		}
-		
-		// Get uncommitted transfers filtered by type_id only
+		// Get uncommitted (accepted but not committed) transfers filtered by type_id
 		const summaryRaw = await assetModel.getUncommittedTransferSummary(type_id);
 		const items: any[] = Array.isArray(summaryRaw) ? summaryRaw : [];
 		
-		if (items.length === 0) {
-			return res.json({
-				status: 'success',
-				message: `No uncommitted transfers found for type ${type_id}`,
-				data: {
-					type_id,
-					total_uncommitted: 0,
-					items: []
-				}
-			});
-		}
-		
-		// Fetch asset details for enrichment
-		const enrichedItems: any[] = [];
-		const assetIds = new Set<number>();
-		
-		// Collect valid asset IDs only
-		for (const item of items) {
-			const itemData = item as any;
-			const assetId = Number(itemData.asset_id);
-			// Only add valid asset IDs
-			if (!isNaN(assetId) && assetId > 0) {
-				assetIds.add(assetId);
-			}
-		}
-		
-		const assetDetailsMap = new Map<number, any>();
-		// Fetch asset details for valid IDs only
-		for (const assetId of assetIds) {
-			try {
-				const assetDetail = await assetModel.getAssetById(assetId);
-				if (assetDetail) {
-					assetDetailsMap.set(assetId, assetDetail);
-				}
-			} catch (err) {
-				console.warn(`Failed to fetch asset details for ID ${assetId}:`, err);
-				// Continue with other assets if one fails
-			}
-		}
-		
-		// Enrich items with asset data
-		for (const item of items) {
-			const itemData = item as any;
-			const assetId = Number(itemData.asset_id);
-			const assetDetail = assetDetailsMap.get(assetId);
-			enrichedItems.push({
-				...itemData,
-				asset: assetDetail ? {
-					brand: assetDetail.brand_name,
-					model: assetDetail.model_name
-				} : null
-			});
-		}
+		const total_uncommitted = items.length;
 		
 		return res.json({
 			status: 'success',
-			message: `Found ${items.length} uncommitted transfer(s) for type ${type_id}`,
+			message: `Found ${total_uncommitted} uncommitted transfer(s) for type ${type_id}`,
 			data: {
 				type_id,
 				type_name: assetType?.name,
-				total_uncommitted: items.length,
-				items: enrichedItems
+				total_uncommitted,
+				items
 			}
 		});
 	} catch (error: any) {
