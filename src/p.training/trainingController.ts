@@ -156,6 +156,7 @@ export const getTrainingById = async (req: Request, res: Response) => {
 export const createTraining = async (req: Request, res: Response) => {
    try {
       const payload = req.body ?? {};
+      const file = (req as any).file as Express.Multer.File | undefined;
 
       // Validation
       const requiredFields = ['course_title', 'course_id', 'sdate', 'edate', 'venue'];
@@ -213,6 +214,18 @@ export const createTraining = async (req: Request, res: Response) => {
             message: 'Failed to create training event',
             status: 'error'
          });
+      }
+
+      // Handle file upload if provided
+      if (file) {
+         try {
+            const sanitized = sanitizeFilename(file.originalname);
+            const dbPath = toDbPath(`trainings/${trainingId}`, sanitized);
+            await trainingModel.updateTraining(trainingId, { attendance_upload: dbPath });
+         } catch (fileError) {
+            console.error('File upload error:', fileError);
+            // Don't fail the entire creation if file upload fails
+         }
       }
 
       // Prepare costings with training_id foreign key
@@ -282,7 +295,7 @@ export const updateTraining = async (req: Request, res: Response) => {
       const flatFields = ['course_title', 'course_id', 'series', 'session', 'sdate', 'edate', 'hrs', 'days', 'venue', 'training_count', 'seat', 'event_cost'];
       
       for (const field of flatFields) {
-         if (payload.hasOwnProperty(field)) {
+         if (field in payload) {
             trainingData[field] = payload[field] ?? null;
          }
       }

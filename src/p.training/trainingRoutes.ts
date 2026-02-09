@@ -33,8 +33,8 @@ router.delete('/participants/:id', asyncHandler(trainingController.deletePartici
 // Training events
 router.get('/:id', asyncHandler(trainingController.getTrainingById));
 router.get('/', asyncHandler(trainingController.getTrainings));
-router.post('/', asyncHandler(trainingController.createTraining));
-router.put('/:id', uploadTraining.single('attendance_uploaded'), asyncHandler(trainingController.updateTraining));
+router.post('/', uploadTraining.single('attendance_upload'), asyncHandler(trainingController.createTraining));
+router.put('/:id', uploadTraining.single('attendance_upload'), asyncHandler(trainingController.updateTraining));
 router.delete('/:id', asyncHandler(trainingController.deleteTraining));
 
 
