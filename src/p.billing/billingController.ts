@@ -4519,7 +4519,7 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 	const payload = req.body || {};
 	// Optional file upload handling for creation: store uploaded file under UPLOAD_BASE_PATH/images/logo/<filename>
 	if (req.file) {
-		payload.bfcy_logo = normalizeStoredPath(req.file.path);
+		payload.logo = normalizeStoredPath(req.file.path);
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
@@ -4535,13 +4535,11 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 export const updateBeneficiary = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const payload = req.body || {};
-	// Optional bfcy_logo file upload for update
+	// Optional logo file upload for update
 	if (req.file) {
 		// Save vendor logo path normalized to a relative 'uploads/...' path
-		payload.bfcy_logo = normalizeStoredPath(req.file.path);
+		payload.logo = normalizeStoredPath(req.file.path);
 	}
-	// Remove any 'logo' key to avoid unknown column errors when using SET ?
-	if (payload.logo) delete payload.logo;
 	try {
 		await billingModel.updateBeneficiary(id, payload);
 		res.json({ message: 'Beneficiary updated successfully', status: 'success' });
