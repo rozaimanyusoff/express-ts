@@ -84,7 +84,7 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 		// Fetch maintenance requests to get owner (ramco_id) and form_upload_date
 		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-		
+
 		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
 		(mtnRequests || []).forEach((r: any) => {
@@ -98,7 +98,7 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 				ownerMap.set(ramcoId, ownerData);
 			}
 		}
-		
+
 		// Build lookup maps for fast access (support id and asset_id)
 		const assetMap = new Map();
 		for (const a of (assets || [])) {
@@ -169,7 +169,7 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 		// Fetch maintenance requests to get owner (ramco_id)
 		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-		
+
 		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
 		(mtnRequests || []).forEach((r: any) => {
@@ -245,11 +245,11 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 
 	// Build lookup maps for fast access
 	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
-	
+
 	// Fetch maintenance requests to get owner (ramco_id)
 	const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 	const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-	
+
 	// Collect all unique ramco_ids from maintenance requests for employee lookup
 	const ownerRamcoIds = new Set<string>();
 	(mtnRequests || []).forEach((r: any) => {
@@ -283,18 +283,18 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 				const rCcId = (req as any).costcenter_id ?? (req as any).cc_id;
 				const rLocId = (req as any).location_id ?? (req as any).loc_id;
 				const rWsId = (req as any).ws_id;
-				
+
 				// Build full URL for form_upload if it exists with proper URL encoding
 				const formUpload = (req as any).form_upload;
 				let formUploadUrl: null | string = null;
 				if (formUpload) {
 					let finalPath = formUpload;
-					
+
 					// If only filename is stored (no path), prepend default upload path
 					if (!formUpload.includes('/')) {
 						finalPath = `uploads/admin/vehiclemtn2/${formUpload}`;
 					}
-					
+
 					// Split path and filename to encode only the filename part
 					const pathParts = finalPath.split('/');
 					const filename = pathParts.pop();
@@ -302,7 +302,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 					const encodedPath = [...pathParts, encodedFilename].join('/');
 					formUploadUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/${encodedPath}`;
 				}
-				
+
 				svcOrderDetails = {
 					approval_date: (req as any).approval_date ?? null,
 					form_upload: formUploadUrl,
@@ -422,7 +422,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 		// Fetch maintenance requests to get owner (ramco_id)
 		const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
 		const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-		
+
 		// Collect all unique ramco_ids from maintenance requests for employee lookup
 		const ownerRamcoIds = new Set<string>();
 		(mtnRequests || []).forEach((r: any) => {
@@ -491,10 +491,10 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 			};
 		});
 
-		res.json({ 
-			data: structuredBillings, 
-			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`, 
-			status: 'success' 
+		res.json({
+			data: structuredBillings,
+			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`,
+			status: 'success'
 		});
 	} catch (err: any) {
 		logger.error(err);
@@ -511,40 +511,40 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 	const billings = await billingModel.getVehicleMtnBillingByRequestId(svc_order);
 
 	// Fetch lookups similar to list endpoint for enrichment
-			const [workshopsRaw, assetsRaw, costcentersRaw, locationsRaw] = await Promise.all([
-				billingModel.getWorkshops(),
-				assetsModel.getAssets(),
-				assetsModel.getCostcenters(),
-				assetsModel.getLocations()
-			]);
+	const [workshopsRaw, assetsRaw, costcentersRaw, locationsRaw] = await Promise.all([
+		billingModel.getWorkshops(),
+		assetsModel.getAssets(),
+		assetsModel.getCostcenters(),
+		assetsModel.getLocations()
+	]);
 
-			const workshops = Array.isArray(workshopsRaw) ? (workshopsRaw) : [];
-			const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
-			const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
-			const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
+	const workshops = Array.isArray(workshopsRaw) ? (workshopsRaw) : [];
+	const assets = Array.isArray(assetsRaw) ? (assetsRaw) : [];
+	const costcenters = Array.isArray(costcentersRaw) ? (costcentersRaw as any[]) : [];
+	const locations = Array.isArray(locationsRaw) ? (locationsRaw as any[]) : [];
 
-			// Fetch maintenance requests to get owner (ramco_id)
-			const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
-			const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
-			
-			// Collect all unique ramco_ids from maintenance requests for employee lookup
-			const ownerRamcoIds = new Set<string>();
-			(mtnRequests || []).forEach((r: any) => {
-				if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
-			});
-			// Fetch employee data for all unique ramco_ids
-			const ownerMap = new Map();
-			for (const ramcoId of ownerRamcoIds) {
-				const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
-				if (ownerData) {
-					ownerMap.set(ramcoId, ownerData);
-				}
-			}
+	// Fetch maintenance requests to get owner (ramco_id)
+	const mtnRequests = await maintenanceModel.getVehicleMtnRequests();
+	const mtnReqMap = new Map((mtnRequests || []).map((r: any) => [r.req_id, r]));
 
-			const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
-			const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
-			const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
-			const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
+	// Collect all unique ramco_ids from maintenance requests for employee lookup
+	const ownerRamcoIds = new Set<string>();
+	(mtnRequests || []).forEach((r: any) => {
+		if (r.ramco_id) ownerRamcoIds.add(r.ramco_id);
+	});
+	// Fetch employee data for all unique ramco_ids
+	const ownerMap = new Map();
+	for (const ramcoId of ownerRamcoIds) {
+		const ownerData = await userModel.getEmployeeByRamcoId(ramcoId);
+		if (ownerData) {
+			ownerMap.set(ramcoId, ownerData);
+		}
+	}
+
+	const assetMap = new Map((assets || []).map((asset: any) => [asset.id, asset]));
+	const ccMap = new Map((costcenters || []).map((cc: any) => [cc.id, cc]));
+	const locationMap = new Map((locations || []).map((d: any) => [d.id, d]));
+	const wsMap = new Map((workshops || []).map((ws: any) => [ws.ws_id, ws]));
 
 	// Fetch parts for all invoices in one go
 	const invIds = Array.from(new Set((billings || []).map((b: any) => Number(b.inv_id)).filter((n: number) => Number.isFinite(n))));
@@ -591,8 +591,8 @@ export const getVehicleMtnBillingByRequestId = async (req: Request, res: Respons
 			svc_date: b.svc_date,
 			svc_odo: b.svc_odo,
 			svc_order: b.svc_order,
-					upload_url: toPublicUrl((b).upload ?? (b).attachment ?? null),
-					workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id))?.ws_name } : null
+			upload_url: toPublicUrl((b).upload ?? (b).attachment ?? null),
+			workshop: wsMap.has(b.ws_id) ? { id: b.ws_id, name: (wsMap.get(b.ws_id))?.ws_name } : null
 		};
 	});
 
@@ -786,8 +786,8 @@ export const checkVehicleMtnInvNo = async (req: Request, res: Response) => {
 	const excludeId = req.query.exclude_id ? Number(req.query.exclude_id) : undefined;
 	const billId = req.query.bill_id ? Number(req.query.bill_id) : undefined;
 	const count = await billingModel.countVehicleMtnByInvNo(inv_no, excludeId, billId);
- 	if (count > 0) return res.json({ exists: true, message: 'inv_no already exists', status: 'exists' });
- 	return res.json({ exists: false, message: 'inv_no available', status: 'ok' });
+	if (count > 0) return res.json({ exists: true, message: 'inv_no already exists', status: 'exists' });
+	return res.json({ exists: false, message: 'inv_no available', status: 'ok' });
 };
 
 // Check if a utility bill number already exists (ubill_no)
@@ -1813,7 +1813,7 @@ export const createFuelNewBillEntry = async (req: Request, res: Response) => {
 		const cc_id = Number(body.cc_id);
 		const loc_id = Number(body.loc_id);
 		const purpose = typeof body.purpose === 'string' ? String(body.purpose) : null;
-		const stmt_date = typeof body.stmt_date === 'string' ? String(body.stmt_date).slice(0,10) : null;
+		const stmt_date = typeof body.stmt_date === 'string' ? String(body.stmt_date).slice(0, 10) : null;
 
 		if (!Number.isFinite(stmt_id) || stmt_id <= 0) return res.status(400).json({ data: null, message: 'Invalid stmt_id', status: 'error' });
 		if (!Number.isFinite(card_id) || card_id <= 0) return res.status(400).json({ data: null, message: 'card_id is required', status: 'error' });
@@ -2150,11 +2150,11 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 export const createFleetCard = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFleetCard(req.body);
-		const assignmentMsg = req.body.assignment === 'new' 
-			? ' (assignment: new)' 
-			: req.body.assignment === 'replace' 
-			? ' (assignment: replacement)' 
-			: '';
+		const assignmentMsg = req.body.assignment === 'new'
+			? ' (assignment: new)'
+			: req.body.assignment === 'replace'
+				? ' (assignment: replacement)'
+				: '';
 
 		// Send notification to updated_by user
 		if (req.body.updated_by) {
@@ -2162,11 +2162,11 @@ export const createFleetCard = async (req: Request, res: Response) => {
 				logger.info(`[FleetCard] Create: Attempting to notify user ${req.body.updated_by}`);
 				const updatedByUser = await userModel.getEmployeeByRamcoId(req.body.updated_by);
 				logger.info(`[FleetCard] Create: User lookup result:`, updatedByUser ? `Found - ${updatedByUser.email}` : 'User not found');
-				
+
 				if (updatedByUser && updatedByUser.email) {
 					const fleetCard = await billingModel.getFleetCardById(insertId);
 					const asset = req.body.asset_id ? await assetsModel.getAssetById(req.body.asset_id) : null;
-					
+
 					// Resolve costcenter name
 					let costcenterName = null;
 					if (asset?.costcenter_id) {
@@ -2178,7 +2178,7 @@ export const createFleetCard = async (req: Request, res: Response) => {
 							logger.error('Error fetching costcenters:', e);
 						}
 					}
-					
+
 					// Resolve asset owner name
 					let assetOwnerName = null;
 					if (asset?.ramco_id) {
@@ -2189,12 +2189,12 @@ export const createFleetCard = async (req: Request, res: Response) => {
 							logger.error('Error fetching asset owner:', e);
 						}
 					}
-					
+
 					const cardNo = fleetCard?.card_no || req.body.card_no;
 					const fuelType = req.body.fuel_type || (asset?.fuel_type || asset?.vfuel_type || null);
 					const regDate = fleetCard?.reg_date || req.body.reg_date;
 					const expiryDate = fleetCard?.expiry_date || req.body.expiry_date;
-					
+
 					// Send email notification using template
 					try {
 						logger.info(`[FleetCard] Create: Rendering email template for ${updatedByUser.email}`);
@@ -2209,14 +2209,14 @@ export const createFleetCard = async (req: Request, res: Response) => {
 							assetOwnerName,
 							userName: updatedByUser.full_name || updatedByUser.name
 						});
-						
+
 						logger.info(`[FleetCard] Create: Sending email to ${updatedByUser.email}`);
 						await sendMail(updatedByUser.email, 'Fleet Card Created Successfully', emailHtml);
 						logger.info(`[FleetCard] Create: Email sent successfully to ${updatedByUser.email}`);
 					} catch (emailError) {
 						logger.error('Failed to send email notification for fleet card creation:', emailError);
 					}
-					
+
 					// Emit socket notification if available
 					try {
 						const io = getSocketIOInstance();
@@ -2242,17 +2242,17 @@ export const createFleetCard = async (req: Request, res: Response) => {
 			}
 		}
 
-		res.status(201).json({ 
-			id: insertId, 
-			message: `Fleet card created successfully${assignmentMsg}`, 
-			status: 'success' 
+		res.status(201).json({
+			id: insertId,
+			message: `Fleet card created successfully${assignmentMsg}`,
+			status: 'success'
 		});
 	} catch (error: any) {
 		console.error('Create fleet card error:', error?.message || error);
-		res.status(500).json({ 
-			error: error?.message || String(error), 
-			message: 'Failed to create fleet card', 
-			status: 'error' 
+		res.status(500).json({
+			error: error?.message || String(error),
+			message: 'Failed to create fleet card',
+			status: 'error'
 		});
 	}
 };
@@ -2260,7 +2260,7 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		const body = req.body;
-		
+
 		// If status is "inactive", unset asset_id, costcenter_id, purpose, and register_number
 		if (body.status === 'inactive') {
 			body.asset_id = null;
@@ -2268,13 +2268,13 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 			body.purpose = null;
 			body.register_number = null;
 		}
-		
+
 		await billingModel.updateFleetCard(id, body);
-		const assignmentMsg = body.assignment === 'new' 
-			? ' (assignment: new)' 
-			: body.assignment === 'replace' 
-			? ' (assignment: replacement)' 
-			: '';
+		const assignmentMsg = body.assignment === 'new'
+			? ' (assignment: new)'
+			: body.assignment === 'replace'
+				? ' (assignment: replacement)'
+				: '';
 
 		// Send notification to updated_by user
 		if (body.updated_by) {
@@ -2282,11 +2282,11 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 				logger.info(`[FleetCard] Update: Attempting to notify user ${body.updated_by}`);
 				const updatedByUser = await userModel.getEmployeeByRamcoId(body.updated_by);
 				logger.info(`[FleetCard] Update: User lookup result:`, updatedByUser ? `Found - ${updatedByUser.email}` : 'User not found');
-				
+
 				if (updatedByUser && updatedByUser.email) {
 					const fleetCard = await billingModel.getFleetCardById(id);
 					const asset = body.asset_id ? await assetsModel.getAssetById(body.asset_id) : null;
-					
+
 					// Resolve costcenter name
 					let costcenterName = null;
 					if ((asset?.costcenter_id) || (fleetCard?.costcenter_id)) {
@@ -2299,7 +2299,7 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 							logger.error('Error fetching costcenters:', e);
 						}
 					}
-					
+
 					// Resolve asset owner name
 					let assetOwnerName = null;
 					const ownerRamcoId = asset?.ramco_id || fleetCard?.asset_ramco_id;
@@ -2311,12 +2311,12 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 							logger.error('Error fetching asset owner:', e);
 						}
 					}
-					
+
 					const cardNo = fleetCard?.card_no || body.card_no;
 					const fuelType = body.fuel_type || fleetCard?.fuel_type || (asset?.fuel_type || asset?.vfuel_type || null);
 					const regDate = fleetCard?.reg_date || body.reg_date;
 					const expiryDate = fleetCard?.expiry_date || body.expiry_date;
-					
+
 					// Send email notification using template
 					try {
 						logger.info(`[FleetCard] Update: Rendering email template for ${updatedByUser.email}`);
@@ -2331,14 +2331,14 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 							assetOwnerName,
 							userName: updatedByUser.full_name || updatedByUser.name
 						});
-						
+
 						logger.info(`[FleetCard] Update: Sending email to ${updatedByUser.email}`);
 						await sendMail(updatedByUser.email, 'Fleet Card Updated Successfully', emailHtml);
 						logger.info(`[FleetCard] Update: Email sent successfully to ${updatedByUser.email}`);
 					} catch (emailError) {
 						logger.error('Failed to send email notification for fleet card update:', emailError);
 					}
-					
+
 					// Emit socket notification if available
 					try {
 						const io = getSocketIOInstance();
@@ -2427,9 +2427,9 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const locations = await assetsModel.getLocations() as any[];
 	const assetMap = new Map();
-	for (const a of assets) { 
-		if (a.id) assetMap.set(a.id, a); 
-		if (a.asset_id) assetMap.set(a.asset_id, a); 
+	for (const a of assets) {
+		if (a.id) assetMap.set(a.id, a);
+		if (a.asset_id) assetMap.set(a.asset_id, a);
 	}
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const fleetCards = await billingModel.getFleetCards();
@@ -2494,9 +2494,9 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 	const costcenters = await assetsModel.getCostcenters() as any[];
 	const locations = await assetsModel.getLocations() as any[];
 	const assetMap = new Map();
-	for (const a of assets) { 
-		if (a.id) assetMap.set(a.id, a); 
-		if (a.asset_id) assetMap.set(a.asset_id, a); 
+	for (const a of assets) {
+		if (a.id) assetMap.set(a.id, a);
+		if (a.asset_id) assetMap.set(a.asset_id, a);
 	}
 	const costcenterMap = new Map(costcenters.map((cc: any) => [cc.id, cc]));
 	const fleetCards = await billingModel.getFleetCards();
