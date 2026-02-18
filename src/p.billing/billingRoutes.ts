@@ -118,8 +118,8 @@ router.delete('/util/accounts/:id', asyncHandler(billingController.deleteBilling
 router.get('/util/beneficiaries/:id', asyncHandler(billingController.getBeneficiaryById));
 router.get('/util/beneficiaries', asyncHandler(billingController.getBeneficiaries));
 // store vendor logos under /uploads/vendor_logo by default
-router.post('/util/beneficiaries', logoUploader.single('bfcy_logo'), asyncHandler(billingController.createBeneficiary));
-router.put('/util/beneficiaries/:id', logoUploader.single('bfcy_logo'), asyncHandler(billingController.updateBeneficiary));
+router.post('/util/beneficiaries', logoUploader.single('logo'), asyncHandler(billingController.createBeneficiary));
+router.put('/util/beneficiaries/:id', logoUploader.single('logo'), asyncHandler(billingController.updateBeneficiary));
 router.delete('/util/beneficiaries/:id', asyncHandler(billingController.deleteBeneficiary));
 
 // =================== UTILITIES TABLE ROUTES ===================

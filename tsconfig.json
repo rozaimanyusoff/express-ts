@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "module": "ES2022", // Align with Node.js ES module system
     "target": "ES2022", // Compile to the latest version of ECMAScript
-    "moduleResolution": "node", // Ensure compatibility with Node.js module resolution
+    "moduleResolution": "bundler", // Modern resolution strategy for ES modules
     "esModuleInterop": true, // Enable compatibility between CommonJS and ES Modules via creation of synthetic default exports
     "allowSyntheticDefaultImports": true, // Allow default imports from modules with no default export
     "strict": true, // Enable all strict type-checking options
