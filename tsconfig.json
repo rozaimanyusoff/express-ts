@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "ignoreDeprecations": "6.0",
     "module": "ES2022", // Align with Node.js ES module system
     "target": "ES2022", // Compile to the latest version of ECMAScript
     "moduleResolution": "bundler", // Modern resolution strategy for ES modules
