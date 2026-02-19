@@ -27,7 +27,7 @@ export interface TrainingEvent {
    venue: null | string;
 }
 
-const dbTraining = 'training2';
+const dbTraining = 'trainings';
 const trainingEventTable = `${dbTraining}.training_events`; //index column is training_id
 const trainerTable = `${dbTraining}.trainer`; //index column is trainer_id
 const courseTable = `${dbTraining}.course`; //index column is course_id
@@ -139,13 +139,13 @@ export const deleteTrainer = async (id: number) => {
 export const getCourses = async (searchTerm?: string) => {
    let query = `SELECT * FROM ${courseTable}`;
    const params: any[] = [];
-   
+
    if (searchTerm && searchTerm.trim() !== '') {
       query += ` WHERE course_title LIKE ? OR course_desc LIKE ?`;
       const searchPattern = `%${searchTerm.trim()}%`;
       params.push(searchPattern, searchPattern);
    }
-   
+
    query += ` ORDER BY course_id DESC LIMIT 200`;
    const [rows] = await pool.query(query, params);
    const arr = rows as any[];
