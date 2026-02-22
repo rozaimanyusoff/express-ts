@@ -53,6 +53,7 @@ CREATE TABLE `pending_users` (
   `fname` varchar(255) NOT NULL,
   `user_type` int DEFAULT '1',
   `activation_code` varchar(255) DEFAULT NULL,
+  `activation_expires_at` timestamp NULL COMMENT '24-hour expiration for activation code',
   `status` int DEFAULT '0',
   `invited_by` int DEFAULT NULL,
   `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,

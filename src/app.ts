@@ -1,6 +1,7 @@
 //import { toNodeHandler } from "better-auth/node";
 import dotenv from 'dotenv';
 import express, { Express, json, urlencoded } from 'express';
+import swaggerUi from 'swagger-ui-express';
 import fs from 'fs';
 import path from 'path';
 
@@ -46,6 +47,7 @@ import { getUploadBaseSync } from './utils/uploadUtil';
 import redis from './utils/redis';
 import redisConfig from './utils/redisConfig';
 import createCacheMiddleware from './middlewares/cacheMiddleware';
+import { swaggerSpec } from './utils/swagger';
 
 const app: Express = express();
 
@@ -103,6 +105,24 @@ app.use('/uploads', (req, res, next) => {
   app.use('/uploads', express.static(staticPath));
 })();
 
+// Swagger UI Documentation
+app.use('/api-docs', swaggerUi.serve);
+app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
+  swaggerOptions: {
+    url: '/swagger.json',
+    displayOperationId: true,
+    defaultModelsExpandDepth: 1,
+    defaultModelExpandDepth: 1,
+  },
+  customCss: '.swagger-ui .topbar { display: none }'
+}));
+
+// Swagger JSON endpoint
+app.get('/swagger.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
 app.use('/api/auth', authRoutes);
 // Health check endpoint for monitoring
 app.get('/api/health', async (req, res) => {
@@ -112,15 +132,15 @@ app.get('/api/health', async (req, res) => {
     const pool2Ok = dbHealth.pool2.connected && (!dbHealth.pool2.latency || dbHealth.pool2.latency <= 1000);
     const status = (pool1Ok && pool2Ok) ? 'healthy' : (dbHealth.pool1.connected || dbHealth.pool2.connected) ? 'degraded' : 'unhealthy';
     const isHealthy = status === 'healthy';
-    
+
     res.status(isHealthy ? 200 : 503).json({
       ...dbHealth,
       status,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      message: status === 'healthy' ? 'All systems operational' : 
-               status === 'degraded' ? 'One or more systems degraded' : 
-               'Critical system issues'
+      message: status === 'healthy' ? 'All systems operational' :
+        status === 'degraded' ? 'One or more systems degraded' :
+          'Critical system issues'
     });
   } catch (error) {
     res.status(503).json({

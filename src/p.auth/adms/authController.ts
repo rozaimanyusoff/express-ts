@@ -13,7 +13,7 @@ import * as assetModel from '../../p.asset/assetModel';
 import * as adminModel from '../../p.admin/adminModel';
 import * as pendingUserModel from '../../p.user/pendingUserModel';
 import * as userModel from '../../p.user/userModel';
-import {pool} from '../../utils/db';
+import { pool } from '../../utils/db';
 import { accountActivatedTemplate } from '../../utils/emailTemplates/accountActivated';
 import { accountActivationTemplate } from '../../utils/emailTemplates/accountActivation';
 import { adminPincodeTemplate } from '../../utils/emailTemplates/adminPincode';
@@ -33,14 +33,14 @@ const getSanitizedFrontendUrl = (): string => {
     if (sanitizedFrontendUrl !== null) {
         return sanitizedFrontendUrl;
     }
-    
+
     try {
         const rawUrl = (process.env.FRONTEND_URL ?? '').trim();
         if (!rawUrl) {
             logger.warn('FRONTEND_URL is not configured in environment variables');
             return 'http://localhost:3000'; // Safe fallback
         }
-        
+
         // Use URL constructor to normalize and validate the URL properly
         const urlObj = new URL(rawUrl);
         sanitizedFrontendUrl = urlObj.toString().replace(/\/$/, ''); // Remove trailing slash for consistency
@@ -49,13 +49,17 @@ const getSanitizedFrontendUrl = (): string => {
         // Use safe fallback instead of throwing
         sanitizedFrontendUrl = 'http://localhost:3000';
     }
-    
+
     return sanitizedFrontendUrl;
 };
 
 // Register a new user (mirrors frontend handler validation)
 export const register = async (req: Request, res: Response): Promise<Response> => {
-    const { contact = '', email = '', name = '', username = '', userType } = req.body || {};
+    const { about = '', contact = '', email = '', ip, name = '', userAgent, username = '', userType } = req.body || {};
+
+    // Use payload values if provided, otherwise extract from request context
+    const clientIp = ip || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null;
+    const clientUserAgent = userAgent || req.headers['user-agent'] || null;
 
     // Helper: company email check (configurable via COMPANY_EMAIL_DOMAINS env, comma separated)
     const companyDomains = (process.env.COMPANY_EMAIL_DOMAINS || '')
@@ -82,7 +86,7 @@ export const register = async (req: Request, res: Response): Promise<Response> =
         errors.email = 'Please enter your email.';
     } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         errors.email = 'Enter a valid email address.';
-    } else if (String(userType) === '1' && !isCompanyEmail(email)) {
+    } else if (Number(userType) === 1 && !isCompanyEmail(email)) {
         // Employee must use company email
         errors.email = 'Please use your company email for Employee registration.';
     }
@@ -94,6 +98,11 @@ export const register = async (req: Request, res: Response): Promise<Response> =
         errors.contact = 'Contact must be 8-12 digits.';
     }
 
+    // About validation (optional, max 500 characters)
+    if (about && String(about).trim().length > 500) {
+        errors.about = 'About must not exceed 500 characters.';
+    }
+
     // Optional username requirement (currently commented in frontend). Keep placeholder if future enforcement.
     // if (String(userType) === '1' && !username.trim()) {
     //     errors.username = 'Please provide your Ramco ID.';
@@ -102,6 +111,8 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     // userType basic validation
     if (userType === undefined || userType === null || String(userType).trim() === '') {
         errors.userType = 'User type is required.';
+    } else if (isNaN(Number(userType))) {
+        errors.userType = 'User type must be a number.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -113,35 +124,70 @@ export const register = async (req: Request, res: Response): Promise<Response> =
     const normalizedContact = contact;
 
     try {
-        // Duplicate check (email/contact)
+        // Detailed duplicate checks for each field
         const existingAccounts = await userModel.findUserByEmailOrContact(normalizedEmail, normalizedContact);
         const pendingAccounts = await pendingUserModel.findPendingUserByEmailOrContact(normalizedEmail, normalizedContact);
 
-        // If already an activated account -> treat as success guidance
-        if (existingAccounts.length > 0 && existingAccounts[0].activated_at) {
-            return res.status(200).json({ message: 'Account already exists. Please login.', status: 'success' });
+        // Check for email duplicates in activated users
+        const emailInActivated = existingAccounts.find(acc => acc.email?.toLowerCase() === normalizedEmail && acc.activated_at);
+        if (emailInActivated) {
+            return res.status(409).json({
+                code: 409,
+                message: 'Email already registered and activated. Please login or use a different email.',
+                status: 'error',
+                field: 'email',
+                reason: 'activated_account'
+            });
         }
 
-        // If pending exists -> idempotent behavior
-        if (pendingAccounts.length > 0) {
-            const pending = pendingAccounts[0];
+        // Check for contact duplicates in activated users
+        const contactInActivated = existingAccounts.find(acc => acc.contact === normalizedContact && acc.activated_at);
+        if (contactInActivated) {
+            return res.status(409).json({
+                code: 409,
+                message: 'Contact number already registered. Please login or use a different contact.',
+                status: 'error',
+                field: 'contact',
+                reason: 'activated_account'
+            });
+        }
+
+        // Check for email duplicates in pending users
+        const emailInPending = pendingAccounts.find(acc => acc.email?.toLowerCase() === normalizedEmail);
+        if (emailInPending) {
             if (Number(userType) === 1) {
-                // Employee: generate NEW activation_code on each resend to invalidate old codes
-                // Point 17 FIX: Always generate fresh code to prevent old codes being reused
+                // Employee: resend activation code
                 const activationCode = crypto.randomBytes(32).toString('hex');
-                const activationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24-hour expiration
-                await pool.query('UPDATE pending_users SET activation_code = ?, activation_expires_at = ?, status = 2 WHERE id = ?', [activationCode, activationExpiresAt, pending.id]);
+                const activationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                await pool.query('UPDATE pending_users SET activation_code = ?, activation_expires_at = ?, status = 2 WHERE id = ?', [activationCode, activationExpiresAt, emailInPending.id]);
                 const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
                 try {
-                    await sendMail(normalizedEmail, 'Account Activation (Resent)', accountActivationTemplate(pending.fname || name, activationLink));
+                    await sendMail(normalizedEmail, 'Account Activation (Resent)', accountActivationTemplate(emailInPending.fname || name, activationLink));
                 } catch (mailErr) {
                     logger.error('Resend activation email error:', mailErr);
                     return res.status(500).json({ code: 500, message: 'Failed to send activation email. Please try again later.', status: 'error' });
                 }
                 return res.status(200).json({ message: 'Activation email resent. Please check your inbox.', status: 'success' });
             }
-            // Non-employee pending
-            return res.status(200).json({ message: 'Registration already received and pending admin approval.', status: 'success' });
+            return res.status(409).json({
+                code: 409,
+                message: 'Email already pending approval. Please wait for admin approval or contact support.',
+                status: 'error',
+                field: 'email',
+                reason: 'pending_approval'
+            });
+        }
+
+        // Check for contact duplicates in pending users
+        const contactInPending = pendingAccounts.find(acc => acc.contact === normalizedContact);
+        if (contactInPending) {
+            return res.status(409).json({
+                code: 409,
+                message: 'Contact number already pending approval. Please wait for admin approval or contact support.',
+                status: 'error',
+                field: 'contact',
+                reason: 'pending_approval'
+            });
         }
 
         // Username required & uniqueness check only for employees (user_type = 1)
@@ -152,8 +198,25 @@ export const register = async (req: Request, res: Response): Promise<Response> =
             try {
                 const [userRows]: any[] = await pool.query('SELECT id FROM users WHERE username = ? LIMIT 1', [username.trim()]);
                 const [pendingRows]: any[] = await pool.query('SELECT id FROM pending_users WHERE username = ? LIMIT 1', [username.trim()]);
-                if ((Array.isArray(userRows) && userRows.length) || (Array.isArray(pendingRows) && pendingRows.length)) {
-                    return res.status(409).json({ code: 409, message: 'Username already in use', status: 'error' });
+
+                if (Array.isArray(userRows) && userRows.length > 0) {
+                    return res.status(409).json({
+                        code: 409,
+                        message: 'Username already registered and activated.',
+                        status: 'error',
+                        field: 'username',
+                        reason: 'activated_account'
+                    });
+                }
+
+                if (Array.isArray(pendingRows) && pendingRows.length > 0) {
+                    return res.status(409).json({
+                        code: 409,
+                        message: 'Username already pending approval.',
+                        status: 'error',
+                        field: 'username',
+                        reason: 'pending_approval'
+                    });
                 }
             } catch (unameErr) {
                 logger.error('Username duplicate check error:', unameErr);
@@ -161,81 +224,48 @@ export const register = async (req: Request, res: Response): Promise<Response> =
             }
         }
 
-        if (Number(userType) === 1) {
-            // Employee flow: immediate activation email (similar to invitation)
-            const activationCode = crypto.randomBytes(32).toString('hex');
-            await pendingUserModel.createPendingUser({
-                activation_code: activationCode,
-                contact: normalizedContact,
-                email: normalizedEmail,
-                fname: name.trim(),
-                ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
-                method: 'self-register',
-                status: 2, // auto-approved state
-                user_agent: req.headers['user-agent'] || null,
-                user_type: 1,
-                username: username.trim(),
+        // Unified registration flow: all users pending admin approval
+        // Activation code will be generated during admin approval
+        await pendingUserModel.createPendingUser({
+            about: about.trim() || null,
+            activation_code: null, // No activation code until admin approval
+            contact: normalizedContact,
+            email: normalizedEmail,
+            fname: name.trim(),
+            ip: clientIp,
+            method: 'self-register',
+            status: 1, // 1 = awaiting admin approval
+            user_agent: clientUserAgent,
+            user_type: Number(userType),
+            username: username?.trim() || null,
+        });
+
+        // Notify admins of new registration
+        try {
+            await notificationManager.createNotification({
+                message: `New user registration pending admin approval: ${name} (${normalizedEmail})`,
+                type: 'registration',
+                userId: 0,
             });
-
-            const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
-            try {
-                await sendMail(normalizedEmail, 'Account Activation', accountActivationTemplate(name.trim(), activationLink));
-            } catch (mailErr) {
-                logger.error('Employee activation email send error:', mailErr);
-                return res.status(500).json({ code: 500, message: 'Failed to send activation email', status: 'error' });
-            }
-
-            // Optional: notify admins of auto employee registration
-            try {
-                await notificationManager.createNotification({
-                    message: `Employee registration (auto activation sent): ${name} (${normalizedEmail})`,
-                    type: 'registration',
-                    userId: 0,
-                });
-            } catch (notifyErr) {
-                logger.error('Notification creation error (non-fatal):', notifyErr);
-            }
-
-            return res.status(201).json({
-                message: 'Registration successful. Please check your email to activate your account.',
-                status: 'success',
-            });
-        } else {
-            // Non-employee flow: pending admin approval (no activation code yet)
-            await pendingUserModel.createPendingUser({
-                activation_code: null,
-                contact: normalizedContact,
-                email: normalizedEmail,
-                fname: name.trim(),
-                ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || null,
-                method: 'self-register',
-                status: 1, // 1 = awaiting admin approval
-                user_agent: req.headers['user-agent'] || null,
-                user_type: Number(userType),
-                username: username?.trim() || null,
-            });
-
-            try {
-                await notificationManager.createNotification({
-                    message: `New user registration pending admin approval: ${name} (${normalizedEmail})`,
-                    type: 'registration',
-                    userId: 0,
-                });
-            } catch (notifyErr) {
-                logger.error('Notification creation error (non-fatal):', notifyErr);
-            }
-
-            try {
-                await sendMail(normalizedEmail, 'Registration Received - Pending Approval', `<p>Hi ${name},</p><p>Your registration has been received and is pending admin approval. You will receive an activation link via email once your account is approved.</p>`);
-            } catch (mailErr) {
-                logger.error('Registration acknowledgement email send error (non-fatal):', mailErr);
-            }
-
-            return res.status(201).json({
-                message: 'Registration successful. Awaiting admin approval.',
-                status: 'success',
-            });
+        } catch (notifyErr) {
+            logger.error('Notification creation error (non-fatal):', notifyErr);
         }
+
+        // Send acknowledgment email
+        try {
+            await sendMail(
+                normalizedEmail,
+                'Registration Received - Pending Approval',
+                `<p>Hi ${name},</p><p>Your registration has been received and is pending admin approval. You will receive an activation link via email once your account is approved.</p>`
+            );
+        } catch (mailErr) {
+            logger.error('Registration acknowledgement email send error (non-fatal):', mailErr);
+        }
+
+        return res.status(201).json({
+            message: 'Registration successful. Awaiting admin approval.',
+            status: 'success',
+        });
     } catch (error: unknown) {
         logger.error('Registration error:', error);
         await authLogger.logAuthActivity(0, 'register', 'fail', { error: String(error), reason: 'exception' }, req);
@@ -400,11 +430,11 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
     } catch (error: any) {
         logger.error('Activation error:', { error: error.message, stack: error.stack });
         await authLogger.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error.message), reason: 'exception' }, req);
-        return res.status(500).json({ 
-            code: 500, 
+        return res.status(500).json({
+            code: 500,
             message: 'Internal server error during activation',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined,
-            status: 'error' 
+            status: 'error'
         });
     }
 }
@@ -417,7 +447,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
 
         if (!result.success) {
             // Count only failed logins towards remaining-attempts
-            try { recordFailedAttempt(req); } catch {}
+            try { recordFailedAttempt(req); } catch { }
             // Security: do not leak remaining attempts or specific reason
             return res.status(401).json({ code: 401, message: 'Invalid credential', status: 'error' });
         }
@@ -452,12 +482,12 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         const sessionToken = uuidv4();
         await userModel.setUserSessionToken(result.user.id, sessionToken);
 
-    await userModel.updateLastLogin(result.user.id);
+        await userModel.updateLastLogin(result.user.id);
         await authLogger.logAuthActivity(result.user.id, 'login', 'success', {}, req);
 
-    // On successful login: clear any block and reset failed-attempts counter
-    try { clearClientBlock(req); } catch (_) { /* noop */ }
-    try { resetAttempts(req); } catch (_) { /* noop */ }
+        // On successful login: clear any block and reset failed-attempts counter
+        try { clearClientBlock(req); } catch (_) { /* noop */ }
+        try { resetAttempts(req); } catch (_) { /* noop */ }
 
         const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
         const userAgent = req.headers['user-agent'] || null;
@@ -470,8 +500,8 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
-    const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
-        
+        const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
+
         // Fetch navigation based on user's ID and groups
         // Point 19 FIX: Handle group fetch failures gracefully with fallback
         let navigation: any[] = [];
@@ -482,7 +512,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             logger.warn(`Warning: Could not fetch navigation for userId=${result.user.id}:`, navError);
             // Continue with empty navigation - user can still login
         }
-        
+
         const uniqueFlatNavItems = Array.from(
             new Map(
                 navigation.map((nav: any) => [nav.navId ?? nav.id, { ...nav, navId: nav.navId ?? nav.id }])
@@ -831,7 +861,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
 export const logout = async (req: Request, res: Response): Promise<Response> => {
     try {
         const userId = (req as any).user?.id;
-        
+
         // Clear session token on logout - prevents token reuse with single-session enforcement
         if (userId) {
             await userModel.setUserSessionToken(userId, null);
@@ -839,7 +869,7 @@ export const logout = async (req: Request, res: Response): Promise<Response> => 
             await userModel.updateUserLogoutAndTimeSpent(userId);
             logger.info(`User ${userId} logged out and session invalidated`);
         }
-        
+
         res.clearCookie('token', {
             httpOnly: true,
             sameSite: 'strict',
@@ -883,9 +913,9 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
         } catch (err: any) {
             if (err.name === 'TokenExpiredError') {
                 // Allow expired tokens for refresh, but verify signature
-                decoded = jwt.verify(token, process.env.JWT_SECRET, { 
-                    algorithms: ['HS256'], 
-                    ignoreExpiration: true 
+                decoded = jwt.verify(token, process.env.JWT_SECRET, {
+                    algorithms: ['HS256'],
+                    ignoreExpiration: true
                 });
             } else {
                 throw err;
@@ -918,11 +948,11 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
         await userModel.setUserSessionToken(decoded.userId, newSessionToken);
 
         const newToken = jwt.sign(
-            { 
-                contact: decoded.contact, 
-                email: decoded.email, 
+            {
+                contact: decoded.contact,
+                email: decoded.email,
                 session: newSessionToken,
-                userId: decoded.userId 
+                userId: decoded.userId
             },
             process.env.JWT_SECRET,
             { algorithm: 'HS256', expiresIn: '1h' }
@@ -1144,8 +1174,8 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         // Verify user has admin role (role: 1)
         if (user.role !== 1) {
             logger.warn(`Admin pincode request failed: user ${user.id} does not have admin role (role: ${user.role})`);
-            await authLogger.logAuthActivity(user.id, 'other', 'fail', { 
-                action: 'send_admin_pincode', 
+            await authLogger.logAuthActivity(user.id, 'other', 'fail', {
+                action: 'send_admin_pincode',
                 reason: 'insufficient_role',
                 userRole: user.role
             }, req);
@@ -1172,8 +1202,8 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         );
 
         logger.info(`Admin pincode sent to user ${user.id} (${user.email})`);
-        await authLogger.logAuthActivity(user.id, 'other', 'success', { 
-            action: 'send_admin_pincode' 
+        await authLogger.logAuthActivity(user.id, 'other', 'success', {
+            action: 'send_admin_pincode'
         }, req);
 
         return res.status(200).json({
@@ -1186,8 +1216,8 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         });
     } catch (error) {
         logger.error('Send admin pincode error:', error);
-        await authLogger.logAuthActivity(0, 'other', 'fail', { 
-            action: 'send_admin_pincode', 
+        await authLogger.logAuthActivity(0, 'other', 'fail', {
+            action: 'send_admin_pincode',
             error: String(error instanceof Error ? error.message : error)
         }, req);
 

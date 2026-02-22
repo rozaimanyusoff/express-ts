@@ -1,9 +1,10 @@
 import { ResultSetHeader } from 'mysql2';
 
-import {pool} from '../utils/db';
+import { pool } from '../utils/db';
 import logger from '../utils/logger';
 
 export interface PendingUser {
+  about?: null | string;
   activation_code?: null | string;
   contact: string;
   created_at?: Date;
@@ -23,21 +24,21 @@ export const DB_NAME = process.env.DB_NAME || 'auth';
 export const PENDING_USERS_TABLE = 'pending_users';
 
 export const getAllPendingUsers = async (): Promise<any[]> => {
-    try {
-        const [rows]: any[] = await pool.query(
-            `SELECT * FROM ${PENDING_USERS_TABLE}`
-        );
-        return rows;
-    } catch (error) {
-        logger.error(`Database error in getAllPendingUsers: ${error}`);
-        throw error;
-    }
+  try {
+    const [rows]: any[] = await pool.query(
+      `SELECT * FROM ${PENDING_USERS_TABLE}`
+    );
+    return rows;
+  } catch (error) {
+    logger.error(`Database error in getAllPendingUsers: ${error}`);
+    throw error;
+  }
 }
 
 export const createPendingUser = async (user: PendingUser): Promise<ResultSetHeader> => {
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO ${PENDING_USERS_TABLE} (fname, username, email, contact, user_type, status, activation_code, ip, user_agent, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO ${PENDING_USERS_TABLE} (fname, username, email, contact, user_type, status, activation_code, ip, user_agent, method, about) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.fname,
         user.username ?? null,
@@ -48,7 +49,8 @@ export const createPendingUser = async (user: PendingUser): Promise<ResultSetHea
         user.activation_code ?? null,
         user.ip ?? null,
         user.user_agent ?? null,
-        user.method ?? null
+        user.method ?? null,
+        user.about ?? null
       ]
     );
     return result;

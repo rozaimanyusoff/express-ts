@@ -159,6 +159,7 @@ CREATE TABLE `pending_users` (
   `contact` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `user_type` int DEFAULT NULL,
   `activation_code` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `activation_expires_at` timestamp NULL COMMENT '24-hour expiration for activation code',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `ip` varchar(64) DEFAULT NULL,
   `user_agent` varchar(255) DEFAULT NULL,

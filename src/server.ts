@@ -9,6 +9,7 @@ import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.
 import logger from './utils/logger.js';
 import { setSocketIOInstance } from './utils/socketIoInstance.js';
 import { initAssetTransferJob } from './jobs/processAssetTransfers.js';
+import { initializePendingUserCleanup } from './jobs/cleanupExpiredPendingUsers.js';
 
 dotenv.config();
 
@@ -28,18 +29,18 @@ io.use(async (socket, next) => {
   try {
     if (!process.env.JWT_SECRET) throw new Error('Missing JWT secret');
     const decoded: any = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    
+
     // Validate session token if single-session enforcement is enabled
     if (process.env.SINGLE_SESSION_ENFORCEMENT === 'true') {
       const userId = decoded.userId;
       const sessionToken = decoded.session;
-      
+
       if (!userId || !sessionToken) {
         logger.warn(`Socket auth failed: missing userId or session in token for socket ${socket.id}`);
         next(new Error('invalid_token'));
         return;
       }
-      
+
       // Check if the session token matches the stored session
       try {
         const currentSession = await userModel.getUserSessionToken(userId);
@@ -54,7 +55,7 @@ io.use(async (socket, next) => {
         return;
       }
     }
-    
+
     (socket as any).userId = decoded.userId;
     next();
   } catch (err) {
@@ -86,18 +87,21 @@ export { io }; // Export the WebSocket instance
 const startServer = async () => {
   try {
     const isConnected = await testConnection();
-    
+
     if (!isConnected) {
       logger.error('❌ Database connection test failed - unable to start server');
       console.error('❌ Database connection test failed - unable to start server');
       process.exit(1); // Exit with error code
     }
-    
+
     logger.info('✅ Database connection test successful');
-    
+
+    // Initialize cleanup of expired pending user accounts
+    initializePendingUserCleanup();
+
     // Start periodic health monitoring (every 30 seconds) and broadcast via Socket.IO
     startPeriodicHealthCheck(30000, io);
-    
+
     httpServer.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       logger.info(`Server is running on port ${PORT}`);

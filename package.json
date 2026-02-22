@@ -24,13 +24,11 @@
     "@types/multer": "^1.4.12",
     "@types/socket.io": "^3.0.1",
     "@types/uuid": "^10.0.0",
-    "axios": "^1.9.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.7",
-    "exceljs": "^4.4.0",
+    "exceljs": "^4.1.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
@@ -42,13 +40,13 @@
     "nodemailer": "^7.0.11",
     "pdfkit": "^0.17.2",
     "socket.io": "^4.8.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^11.1.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
-    "@tsconfig/node22": "^22.0.0",
-    "@types/axios": "^0.9.36",
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
@@ -58,12 +56,17 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.17",
     "@types/pdfkit": "^0.17.3",
-    "eslint": "^9.22.0",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "eslint": "^10.0.1",
     "eslint-plugin-perfectionist": "^4.10.1",
-    "nodemon": "^3.1.9",
     "prettier": "^3.5.3",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.27.0"
+  },
+  "overrides": {
+    "readdir-glob": "2.0.2",
+    "rimraf": "^6.1.3"
   }
 }
