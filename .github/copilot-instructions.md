@@ -1,210 +1,127 @@
 # GitHub Copilot Instructions
 
-This is a comprehensive Express TypeScript backend API for enterprise management systems including maintenance, billing, assets, and user management.
+Express TypeScript backend API (ESM, Node.js 22) for enterprise management — maintenance, billing, assets, telco, stock, compliance, and more.
 
-## Architecture Overview
+## Commands
 
-### Module Structure (`p.*` Pattern)
-- Each business domain is organized as `p.{domain}/` (e.g., `p.maintenance/`, `p.asset/`, `p.billing/`)
-- Every module follows MVC pattern: `{domain}Controller.ts`, `{domain}Model.ts`, `{domain}Routes.ts`
-- Services use `s.{domain}/` prefix (e.g., `s.webstock/`)
-
-### Database Architecture
-- Dual database setup: `pool` (main) and `pool2` (secondary) from `src/utils/db.ts`
-- Models use database-scoped table declarations: `const dbMaintenance = 'applications'`
-- Connection pooling via `mysql2/promise` with environment-driven configuration
-
-### Key Patterns
-- **Error Handling**: All route handlers wrapped with `asyncHandler` utility
-- **Authentication**: JWT-based with `tokenValidator` middleware, user context in `req.user`
-- **File Uploads**: Static files served from `/mnt/winshare` mounted at `/uploads`
-- **WebSocket**: Socket.IO integration with CORS configured for real-time features
-
-## Development Workflows
-
-### Running the Application
 ```bash
-npm run dev          # Development with tsx --watch
-npm run build        # TypeScript compilation
-npm start           # Production server
+npm run dev          # Development with tsx --watch (src/server.ts)
+npm run build        # tsc → dist/; postbuild injects .js extensions on imports
+npm run type-check   # Type-check without emitting
+npm run lint         # ESLint (TypeScript-ESLint strict + perfectionist)
+npm run lint:fix     # Auto-fix lint issues
+npm run format       # Prettier format
 ```
 
-### Database Management
-- SQL schema files in `src/db/` (tables defined as `.sql`)
-- Migration scripts in `db/migrations/`
-- Initialization script: `scripts/init-db.sh`
+No test suite is configured (`npm test` exits 1).
 
-## Critical Conventions
+## Architecture
+
+### Module Structure
+
+Business domains live in `src/p.{domain}/` — each is a self-contained MVC triad:
+
+```
+src/p.newmodule/
+├── newmoduleController.ts   # Request/response logic
+├── newmoduleModel.ts        # All database queries
+└── newmoduleRoutes.ts       # Router + middleware wiring
+```
+
+Active modules: `p.admin`, `p.asset`, `p.auth`, `p.billing`, `p.compliance`, `p.jobbank`, `p.maintenance`, `p.media`, `p.notification`, `p.project`, `p.purchase`, `p.stock` (subdirs: `nrw/`, `rt/`), `p.telco`, `p.training`, `p.user`. External service: `s.webstock/`.
+
+Register new module routes in `src/app.ts`.
+
+### Database
+
+Dual MySQL connection pools exported from `src/utils/db.ts`:
+- `pool` — primary DB (`DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`)
+- `pool2` — secondary DB (`DB2_*` env vars)
+
+Table references are declared at the top of each model file as fully-qualified strings:
+
+```typescript
+const dbMaintenance = 'applications';
+const vehicleTable = `${dbMaintenance}.vehicle_svc`;
+```
+
+Use `src/utils/dbHealthCheck.ts` to monitor connection health; pools don't emit `error` events directly.
+
+### ESM + Build
+
+The project uses `"type": "module"`. Source uses extensionless imports (resolved via `"moduleResolution": "bundler"`). The `postbuild` script (`scripts/add-js-extensions.js`) rewrites imports in `dist/` to add `.js` extensions for Node.js ESM compatibility.
+
+## Key Conventions
 
 ### Route Protection
+
+`tokenValidator` middleware is applied per-route in `app.ts` — it is **not** a global guard. Several routes (e.g. `/api/users`, `/api/assets`) are intentionally unprotected. Always check `app.ts` before assuming a route is protected.
+
 ```typescript
-// Default pattern: protect all /api routes except auth
-app.use('/api/auth', authRoutes);
-app.use('/api/users', tokenValidator, userRoutes);  // Protected
+app.use('/api/auth', authRoutes);                        // Public
+app.use('/api/media', tokenValidator, mediaRoutes);      // Protected
 ```
 
-### Model Data Access
-```typescript
-// Standard pattern across all models
-import { pool, pool2 } from '../utils/db';
-const table = `${database}.table_name`;
+`tokenValidator` verifies the JWT (`Authorization: Bearer <token>`), sets `req.user`, and supports optional single-session enforcement via `SINGLE_SESSION_ENFORCEMENT=true`.
 
-export const getItems = async (filters?: any) => {
-  const [rows] = await pool.query(`SELECT * FROM ${table}`);
-  return rows;
-};
-```
+### asyncHandler
 
-### Controller Response Format
-```typescript
-// Standardized API response structure
-res.json({
-  status: 'success',
-  message: 'Operation completed',
-  data: result
-});
-```
+All async route handlers must be wrapped — this forwards thrown errors to the Express error handler:
 
-### Error Handling Pattern
 ```typescript
-// Always use asyncHandler for async route handlers
 router.get('/endpoint', asyncHandler(controller.method));
-
-// Controller error responses
-return res.status(400).json({ 
-  status: 'error', 
-  message: 'Validation failed', 
-  data: null 
-});
 ```
+
+### Response Format
+
+```typescript
+// Success
+res.json({ status: 'success', message: 'Done', data: result });
+
+// Error
+res.status(400).json({ status: 'error', message: 'Validation failed', data: null });
+```
+
+### File Uploads
+
+Use `createUploader(subPath, mimeTypes?)` from `src/utils/fileUploader.ts`. Static files are served from `/uploads` → resolved path priority: `STATIC_UPLOAD_PATH` env → `/mnt/winshare` (if exists) → `getUploadBaseSync()`.
+
+### Logging
+
+Use Winston logger from `src/utils/logger.ts` (not `console.log`) for all server-side output.
+
+### Caching
+
+Optional Redis cache via `src/utils/cacheService.ts` and `createCacheMiddleware()`. Redis is opt-in: set `REDIS_ENABLED=true`. When disabled, caching is a no-op.
+
+### Socket.IO
+
+The `io` instance is set globally via `src/utils/socketIoInstance.ts` after server init. Controllers emit events via `getSocketIOInstance()`. Socket auth uses the same JWT + optional single-session check as HTTP.
+
+### Scheduled Jobs
+
+Background jobs live in `src/jobs/` (e.g., `processAssetTransfers.ts`, `cleanupExpiredPendingUsers.ts`). They are initialized in `src/server.ts` after successful DB connection.
+
+### ESLint — perfectionist
+
+The `eslint-plugin-perfectionist` enforces **natural sort order on imports**. When adding imports, keep them sorted alphabetically (natural order) — the linter will flag unsorted imports.
 
 ## Integration Points
 
-### Email System
-- SMTP configuration via environment variables
-- Email templates in `src/utils/emailTemplates/`
-- Mailer utility: `src/utils/mailer.ts`
+- **Email**: Templates in `src/utils/emailTemplates/`, sent via `src/utils/mailer.ts` (SMTP via env vars)
+- **Notifications**: `src/utils/notificationService.ts` + Socket.IO for real-time push
+- **Workflows**: Approval/recommendation flows in `src/utils/workflowService.ts` + `workflowHelper.ts`
+- **Cross-module imports**: Controllers freely import from other modules' models (e.g., `p.maintenance` imports `p.asset` and `p.billing` models)
 
-### File Management
-- Upload utilities in `src/utils/` (`fileUploader.ts`, `uploadUtil.ts`)
-- Static file serving with CORS headers for cross-origin access
-- Base upload path configurable via `UPLOAD_BASE_PATH`
+## Documentation
 
-### Cross-Module Dependencies
-- Asset management (`p.asset/`) used across maintenance, billing modules
-- User management (`p.user/`) provides authentication context
-- Navigation system (`p.nav/`) for menu structure and permissions
+All markdown files go in `/documentations` — never inside module folders or scattered across `src/`.
 
-## Security Considerations
+Each module gets exactly 4 files under `/documentations/{module}/`:
 
-### JWT Implementation
-- Token validation in `src/middlewares/tokenValidator.ts`
-- User context extraction with fallback ID mapping
-- Session management through JWT payload
+- **README.md** — overview, features, workflows, quick-start curl examples
+- **SCHEMA.md** — `CREATE TABLE` SQL, TypeScript interfaces, key queries, sample data
+- **API.md** — every endpoint with params, request body, success/error responses
+- **ENHANCEMENTS.md** — feature deep-dives, ASCII workflow diagrams, future roadmap
 
-### CORS Configuration
-- Dual CORS setup: API endpoints and static file serving
-- WebSocket CORS aligned with API configuration
-- Environment-driven origin configuration recommended
-
-### Rate Limiting & Security Headers
-- Rate limiter middleware available but commented out in `app.ts`
-- Security headers via Helmet middleware
-- RSA decryption middleware for sensitive data
-
-## Module Development Guidelines
-
-When creating new modules:
-1. Follow `p.{domain}/` naming convention
-2. Implement standard MVC triad: Controller, Model, Routes
-3. Add module routes to `src/app.ts` with appropriate middleware
-4. Use `asyncHandler` for all async route handlers
-5. Follow standardized response format for consistency
-6. Import shared utilities from `src/utils/`
-7. Implement proper error handling and validation
-
-Example new module structure:
-```
-src/p.newmodule/
-├── newmoduleController.ts  # Business logic
-├── newmoduleModel.ts      # Database operations  
-└── newmoduleRoutes.ts     # Route definitions
-```
-
-## Module Documentation Standards
-
-### 4-File Markdown Template
-
-Each module should have exactly 4 markdown files for consistency and maintainability:
-
-#### 1. **README.md** - Module Overview
-- Brief module description (1-2 sentences)
-- Key features (bullet list)
-- Architecture section with MVC structure and database design
-- Main workflows (numbered list with steps)
-- Quick start examples (bash curl commands)
-- Module dependencies table
-- Technologies used
-- Access control description
-- Key metrics (table count, endpoint count, etc.)
-- Common error scenarios
-- Next steps (links to other 3 markdown files)
-
-#### 2. **SCHEMA.md** - Database Schema
-- For each table:
-  - SQL CREATE TABLE definition
-  - TypeScript Interface
-  - Key Queries (common operations)
-- Database relationships diagram
-- Performance considerations (indexes, optimization)
-- Sample data (JSON examples)
-
-#### 3. **API.md** - Complete API Reference
-- Base URL, authentication, content-type headers
-- For each endpoint:
-  - Endpoint method/path
-  - Path/query parameters table
-  - Request body (with example)
-  - Success response (200) with example
-  - Error responses (4xx/5xx scenarios)
-- Standard response format (success/error structure)
-- Error codes reference table
-- Testing checklist
-
-#### 4. **ENHANCEMENTS.md** - Features & Improvements
-- Feature descriptions with workflow diagrams (ASCII)
-- Implementation patterns with code examples
-- Detailed feature explanations
-- Error handling & validation patterns
-- Database optimization details
-- Security considerations
-- Integration points with other modules
-- Future enhancements (short-term, medium-term, long-term)
-
-### Implementation Checklist
-
-When consolidating or documenting a module:
-- [ ] Read all existing code files (Model, Controller, Routes)
-- [ ] Extract database tables and create SCHEMA.md
-- [ ] Document all endpoints with examples in API.md
-- [ ] Create comprehensive README.md with quick start
-- [ ] Write feature descriptions in ENHANCEMENTS.md
-- [ ] Verify all 4 files are consistent and complete
-- [ ] Delete any old/redundant markdown files from module
-- [ ] Link between markdown files (e.g., "See SCHEMA.md for database structure")
-
-### Documentation Examples
-
-**Completed modules following this template**:
-- `src/p.maintenance/` - 4 files, vehicle maintenance & forms
-- `src/p.compliance/` - 4 files, assessments & summons
-- `src/p.billing/` - 4 files, invoices, fuel, fleet cards, utilities
-- `src/p.purchase/` - 4 files, purchase orders & asset registry
-
-### Benefits
-
-- **Consistency**: All modules documented in identical structure
-- **Discoverability**: Developers know where to find specific information
-- **Maintainability**: Centralized documentation reduces file sprawl
-- **Scalability**: Easy to apply same template to new modules
-- **Reference**: Clear patterns for future module development
+**Do not create multiple markdown files covering the same topic, issue, or enhancement.** If content already exists in one of the 4 files, update it in place rather than creating a new file. Consolidate any existing stray markdowns into the appropriate file within `/documentations/{module}/`.
