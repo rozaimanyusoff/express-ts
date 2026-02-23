@@ -5,6 +5,7 @@ import { pool, pool2 } from "../utils/db";
 
 // Database and table declarations for easy swapping/testing
 const db = 'assets';
+const authDb = process.env.DB_NAME || 'auth';
 const companyDb = 'companies';
 const applicationsDb = 'applications';
 const assetTable = `${db}.assetdata`;
@@ -1700,47 +1701,47 @@ export const createEmployee = async (data: any) => {
 };
 
 export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
-  let query = `SELECT * FROM ${employeeTable}`;
+  let query = `SELECT e.*, IF(u.id IS NOT NULL, 'registered', 'unregistered') AS account FROM ${employeeTable} e LEFT JOIN ${authDb}.users u ON u.username = e.ramco_id`;
   const params: any[] = [];
   const conditions: string[] = [];
   if (status) {
-    conditions.push('employment_status = ?');
+    conditions.push('e.employment_status = ?');
     params.push(status);
   }
-  // cost center filter (assuming column name costcenter_id)
+  // cost center filter
   if (Array.isArray(cc) && cc.length > 0) {
     const ph = cc.map(() => '?').join(',');
-    conditions.push(`costcenter_id IN (${ph})`);
+    conditions.push(`e.costcenter_id IN (${ph})`);
     params.push(...cc);
   }
   // department filter
   if (Array.isArray(dept) && dept.length > 0) {
     const ph = dept.map(() => '?').join(',');
-    conditions.push(`department_id IN (${ph})`);
+    conditions.push(`e.department_id IN (${ph})`);
     params.push(...dept);
   }
   // location filter
   if (Array.isArray(loc) && loc.length > 0) {
     const ph = loc.map(() => '?').join(',');
-    conditions.push(`location_id IN (${ph})`);
+    conditions.push(`e.location_id IN (${ph})`);
     params.push(...loc);
   }
   // supervisor filter (match supervisor_id column to ramco_id(s))
   if (Array.isArray(supervisor) && supervisor.length > 0) {
     const ph = supervisor.map(() => '?').join(',');
-    conditions.push(`supervisor_id IN (${ph})`);
+    conditions.push(`e.supervisor_id IN (${ph})`);
     params.push(...supervisor);
   }
   // ramco filter (match ramco_id column)
   if (Array.isArray(ramco) && ramco.length > 0) {
     const ph = ramco.map(() => '?').join(',');
-    conditions.push(`ramco_id IN (${ph})`);
+    conditions.push(`e.ramco_id IN (${ph})`);
     params.push(...ramco);
   }
   // position filter (position_id)
   if (Array.isArray(pos) && pos.length > 0) {
     const ph = pos.map(() => '?').join(',');
-    conditions.push(`position_id IN (${ph})`);
+    conditions.push(`e.position_id IN (${ph})`);
     params.push(...pos);
   }
 
@@ -1798,6 +1799,15 @@ export const updateEmployee = async (id: number, data: any) => {
 export const deleteEmployee = async (id: number) => {
   const [result] = await pool.query(`DELETE FROM ${employeeTable} WHERE id = ?`, [id]);
   return result;
+};
+
+export const suspendUserByRamcoId = async (ramcoId: string) => {
+  const usersTable = `${authDb}.users`;
+  const [result] = await pool.query(
+    `UPDATE ${usersTable} SET status = 2 WHERE username = ?`,
+    [ramcoId]
+  );
+  return result as ResultSetHeader;
 };
 
 // Bulk update resignation details by ramco_id array

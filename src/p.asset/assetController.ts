@@ -2138,6 +2138,7 @@ export const getEmployees = async (req: Request, res: Response) => {
 	}
 
 	const data = (employees as any[]).map(emp => ({
+		account: emp.account as 'registered' | 'unregistered',
 		avatar: emp.avatar
 			? (emp.avatar.startsWith('http')
 				? emp.avatar
@@ -2480,6 +2481,19 @@ export const updateEmployee = async (req: Request, res: Response) => {
 		ramco_id,
 		resignation_date
 	});
+
+	// If resignation_date is set, immediately suspend the linked user account
+	if (resignation_date) {
+		let effectiveRamcoId = ramco_id;
+		if (!effectiveRamcoId) {
+			const emp = await assetModel.getEmployeeById(Number(req.params.id));
+			effectiveRamcoId = emp?.ramco_id;
+		}
+		if (effectiveRamcoId) {
+			await assetModel.suspendUserByRamcoId(effectiveRamcoId);
+		}
+	}
+
 	res.json({
 		message: 'Employee updated successfully',
 		result,
