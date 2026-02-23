@@ -45,8 +45,8 @@ function formatDateFields(obj: any, dateFieldNames: string[]): any {
 	for (const field of dateFieldNames) {
 		if (formatted[field] && formatted[field] !== null) {
 			// Convert to Date if it's a string, then extract just the date part
-			const date = typeof formatted[field] === 'string' 
-				? new Date(formatted[field]) 
+			const date = typeof formatted[field] === 'string'
+				? new Date(formatted[field])
 				: formatted[field];
 			if (date instanceof Date && !isNaN(date.getTime())) {
 				formatted[field] = date.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -223,13 +223,13 @@ export const getAssets = async (req: Request, res: Response) => {
 	const employeesRaw = await assetModel.getEmployees();
 
 	const assets = Array.isArray(assetsRaw) ? assetsRaw : [];
-	
+
 	// Apply category filter if specified (for chain filtering with type)
 	let filteredAssets = assets;
 	if (categoryId !== undefined) {
 		filteredAssets = assets.filter((asset: any) => asset.category_id === categoryId);
 	}
-	
+
 	// Update total count to reflect filtered results
 	const filteredTotal = filteredAssets.length;
 
@@ -250,7 +250,7 @@ export const getAssets = async (req: Request, res: Response) => {
 				try {
 					const specRows = await assetModel.getSpecsForAsset(asset.type_id, asset.id);
 					let specs: any = {};
-					
+
 					// Extract the first row as the spec data (tables store one row per asset)
 					if (Array.isArray(specRows) && specRows.length > 0) {
 						const specData = specRows[0];
@@ -259,7 +259,7 @@ export const getAssets = async (req: Request, res: Response) => {
 						const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
 						specs = filteredSpec;
 					}
-					
+
 					// For vehicles (type_id = 2), add insurance and roadtax expiry as fields in the specs object
 					if (asset.type_id === 2) {
 						try {
@@ -272,7 +272,7 @@ export const getAssets = async (req: Request, res: Response) => {
 							// Silently fail if expiry data can't be fetched
 						}
 					}
-					
+
 					specsMap.set(asset.id, specs);
 				} catch (err) {
 					specsMap.set(asset.id, {});
@@ -280,7 +280,7 @@ export const getAssets = async (req: Request, res: Response) => {
 			}
 		}
 	}
-	
+
 	const types = Array.isArray(typesRaw) ? typesRaw : [];
 	const categories = Array.isArray(categoriesRaw) ? categoriesRaw : [];
 	const brands = Array.isArray(brandsRaw) ? brandsRaw : [];
@@ -398,7 +398,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 	if (!asset) return res.status(404).json({ message: 'Asset not found', status: 'error' });
 
 	// Enrich with unit_price from purchase items
-	const purchaseItem = (asset as any).purchase_id 
+	const purchaseItem = (asset as any).purchase_id
 		? (await assetModel.getPurchaseItemsByAssetIds([(asset as any).purchase_id]) as any[])[0]
 		: null;
 	if (purchaseItem) {
@@ -479,7 +479,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 				// Only include the per-type spec fields; categories/brands/models are already present above
 				// Remove duplicate fields that are already at the top level
 				const { type_id, category_id, brand_id, model_id, entry_code, asset_code, register_number, ...filteredSpec } = specData;
-				
+
 				// Format date fields from ISO timestamps to YYYY-MM-DD
 				const dateFields = ['avls_install_date', 'avls_removal_date', 'avls_transfer_date'];
 				specs = formatDateFields(filteredSpec, dateFields);
@@ -505,33 +505,33 @@ export const getAssetById = async (req: Request, res: Response) => {
 		}
 	}
 
-		const effectivePurchaseDate = purchaseDetails?.do_date || asset.purchase_date;
-		const effectivePurchaseYear = effectivePurchaseDate 
-			? new Date(effectivePurchaseDate).getFullYear() 
-			: asset.purchase_year;
+	const effectivePurchaseDate = purchaseDetails?.do_date || asset.purchase_date;
+	const effectivePurchaseYear = effectivePurchaseDate
+		? new Date(effectivePurchaseDate).getFullYear()
+		: asset.purchase_year;
 
-		const assetWithNested = {
-			id: asset.id,
-			entry_code: asset.entry_code,
-			classification: asset.classification,
-			status: asset.record_status,
-			condition: asset.condition_status,
-			register_number: asset.register_number,
-			type: type ? {
-				id: type.id,
-				name: type.name
-			} : null,
-			category: asset.category_id && categoryMap.has(asset.category_id)
-				? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
-				: null,
-			brand: asset.brand_id && brandMap.has(asset.brand_id)
-				? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
-				: null,
-			model: asset.model_id && modelMap.has(asset.model_id)
-				? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
-				: null,
-			purchase_date: effectivePurchaseDate,
-			purchase_year: effectivePurchaseYear,
+	const assetWithNested = {
+		id: asset.id,
+		entry_code: asset.entry_code,
+		classification: asset.classification,
+		status: asset.record_status,
+		condition: asset.condition_status,
+		register_number: asset.register_number,
+		type: type ? {
+			id: type.id,
+			name: type.name
+		} : null,
+		category: asset.category_id && categoryMap.has(asset.category_id)
+			? { id: asset.category_id, name: categoryMap.get(asset.category_id)?.name || null }
+			: null,
+		brand: asset.brand_id && brandMap.has(asset.brand_id)
+			? { id: asset.brand_id, name: brandMap.get(asset.brand_id)?.name || null }
+			: null,
+		model: asset.model_id && modelMap.has(asset.model_id)
+			? { id: asset.model_id, name: modelMap.get(asset.model_id)?.name || null }
+			: null,
+		purchase_date: effectivePurchaseDate,
+		purchase_year: effectivePurchaseYear,
 		costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)
 			? { id: asset.costcenter_id, name: costcenterMap.get(asset.costcenter_id)?.name || null }
 			: null,
@@ -617,9 +617,9 @@ export const updateAssetBasicSpecs = async (req: Request, res: Response) => {
 	try {
 		const asset_id = Number(req.params.asset_id);
 		if (!asset_id) return res.status(400).json({ message: 'asset_id is required', status: 'error' });
-		
+
 		const result = await assetModel.updateAssetBasicSpecs(asset_id, req.body);
-		
+
 		res.json({
 			message: result.message,
 			data: result,
@@ -800,16 +800,16 @@ export const createSpecProperty = async (req: Request, res: Response) => {
 		const payload = req.body;
 		// payload: { type_id, name, label, data_type, nullable, default_value, options }
 		const result: any = await assetModel.createSpecProperty(payload);
-		
+
 		// If apply failed, return error instead of success
 		if (!result.applied && result.applyError) {
-			return res.status(400).json({ 
-				data: result, 
-				message: `Spec property created but failed to apply: ${result.applyError}`, 
-				status: 'warning' 
+			return res.status(400).json({
+				data: result,
+				message: `Spec property created but failed to apply: ${result.applyError}`,
+				status: 'warning'
 			});
 		}
-		
+
 		res.status(201).json({ data: result, message: 'Spec property created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
@@ -835,10 +835,10 @@ export const updateSpecProperty = async (req: Request, res: Response) => {
 	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const result = await assetModel.updateSpecProperty(id, req.body);
 	const hasErrors = result.alterResult && !result.alterResult.success;
-	res.status(hasErrors ? 207 : 200).json({ 
-		data: result, 
-		message: hasErrors ? 'Spec property updated but table alteration failed' : 'Spec property updated', 
-		status: hasErrors ? 'partial' : 'success' 
+	res.status(hasErrors ? 207 : 200).json({
+		data: result,
+		message: hasErrors ? 'Spec property updated but table alteration failed' : 'Spec property updated',
+		status: hasErrors ? 'partial' : 'success'
 	});
 };
 
@@ -895,7 +895,7 @@ export const getTypes = async (req: Request, res: Response) => {
 	// Enhance: fetch all employees for manager lookup
 	const employees = await assetModel.getEmployees();
 	const employeeMap = new Map((Array.isArray(employees) ? employees : []).map((e: any) => [e.ramco_id, e]));
-	
+
 	// Fetch all categories once to avoid N+1 queries
 	const allCategories = await assetModel.getCategories();
 	const categoriesByTypeId = new Map<number, any[]>();
@@ -912,7 +912,7 @@ export const getTypes = async (req: Request, res: Response) => {
 			});
 		}
 	});
-	
+
 	const data = (rows as any[]).map((type) => {
 		let manager = null;
 		if (type.manager && employeeMap.has(type.manager)) {
@@ -951,7 +951,7 @@ export const getTypeById = async (req: Request, res: Response) => {
 		const emp = employeeMap.get(row.ramco_id);
 		manager = { full_name: emp.full_name, ramco_id: emp.ramco_id };
 	}
-	
+
 	// Fetch categories for this type
 	const typeCategories = await assetModel.getCategories();
 	const categories = (Array.isArray(typeCategories) ? typeCategories : [])
@@ -962,7 +962,7 @@ export const getTypeById = async (req: Request, res: Response) => {
 			code: cat.code,
 			image: cat.image ? `https://${req.get('host')}/uploads/categories/${cat.image}` : null
 		}));
-	
+
 	const data = { ...row, manager, categories };
 	res.json({
 		data,
@@ -1208,7 +1208,7 @@ export const getBrands = async (req: Request, res: Response) => {
 						};
 					}
 				}
-				
+
 				return {
 					id: model.id.toString(),
 					name: model.name,
@@ -1472,7 +1472,7 @@ export const updateModel = async (req: Request, res: Response) => {
 
 export const deleteModel = async (req: Request, res: Response) => {
 	const modelId = Number(req.params.id);
-	
+
 	// Check if model exists in assets table
 	const assetCount = await assetModel.checkModelInAssets(modelId);
 	if (assetCount > 0) {
@@ -1482,7 +1482,7 @@ export const deleteModel = async (req: Request, res: Response) => {
 			data: null
 		});
 	}
-	
+
 	const result = await assetModel.deleteModel(modelId);
 	res.json({
 		status: 'success',
@@ -1756,7 +1756,7 @@ export const getLocationById = async (req: Request, res: Response) => {
 	try {
 		const { id } = req.params;
 		const location = await assetModel.getLocationById(Number(id));
-		
+
 		if (!location) {
 			return res.status(404).json({
 				status: 'error',
@@ -2353,6 +2353,63 @@ export const createEmployee = async (req: Request, res: Response) => {
 			});
 		}
 
+		// Validate gender if provided
+		const validGenders = ['M', 'F', 'O'];
+		if (gender && !validGenders.includes(gender.toUpperCase())) {
+			return res.status(400).json({
+				message: 'Gender must be one of: M (Male), F (Female), O (Other)',
+				status: 'error'
+			});
+		}
+
+		// Check for duplicate email
+		const existingByEmail = await assetModel.getEmployeeByEmail(email);
+		if (existingByEmail) {
+			return res.status(409).json({
+				message: `Employee with email "${email}" already exists (ID: ${existingByEmail.id})`,
+				status: 'error',
+				data: {
+					field: 'email',
+					value: email,
+					existingId: existingByEmail.id
+				}
+			});
+		}
+
+		// Check for duplicate ramco_id if provided
+		if (ramco_id) {
+			const existingByRamco = await assetModel.getEmployeeByRamco(ramco_id);
+			if (existingByRamco) {
+				return res.status(409).json({
+					message: `Employee with ramco_id "${ramco_id}" already exists (ID: ${existingByRamco.id}, Name: ${existingByRamco.full_name})`,
+					status: 'error',
+					data: {
+						field: 'ramco_id',
+						value: ramco_id,
+						existingId: existingByRamco.id,
+						existingName: existingByRamco.full_name
+					}
+				});
+			}
+		}
+
+		// Check for duplicate contact if provided
+		if (contact) {
+			const existingByContact = await assetModel.getEmployeeByContact(contact);
+			if (existingByContact) {
+				return res.status(409).json({
+					message: `Employee with contact "${contact}" already exists (ID: ${existingByContact.id}, Name: ${existingByContact.full_name})`,
+					status: 'error',
+					data: {
+						field: 'contact',
+						value: contact,
+						existingId: existingByContact.id,
+						existingName: existingByContact.full_name
+					}
+				});
+			}
+		}
+
 		const result = await assetModel.createEmployee({
 			avatar,
 			contact,
@@ -2539,9 +2596,9 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 		? { id: costcenter.id, name: costcenter.name ?? null }
 		: null;
 	const locationResp = location
-		? { 
-			code: (location as any).code ?? null, 
-			id: (location as any).id, 
+		? {
+			code: (location as any).code ?? null,
+			id: (location as any).id,
 			name: (location as any).name ?? null,
 			department: (location as any).department ?? null
 		}
@@ -2947,7 +3004,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 			// Lookups - resolve asset_id based on transfer_type
 			let transferItem = null;
 			const transferTypeNorm = String(it.transfer_type || '').toLowerCase();
-			
+
 			if (transferTypeNorm === 'asset') {
 				// For asset transfers: resolve as asset object
 				// asset_id can be string or number, so convert to number for lookup
@@ -3139,11 +3196,11 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 		const newDept = it.new_department_id != null ? departmentMap.get(Number(it.new_department_id)) : null;
 		const currLoc = it.current_location_id != null ? locationMap.get(Number(it.current_location_id)) : null;
 		const newLoc = it.new_location_id != null ? locationMap.get(Number(it.new_location_id)) : null;
-		
+
 		// Resolve transfer_item based on transfer_type
 		let transferItem = null;
 		const transferTypeNorm = String(it.transfer_type || '').toLowerCase();
-		
+
 		if (transferTypeNorm === 'asset') {
 			// For asset transfers: resolve as asset object
 			// asset_id can be string or number, so convert to number for lookup
@@ -3409,13 +3466,13 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		const deptIdForApproval = department_id != null
 			? Number(department_id)
 			: (requestorObj?.department_id != null ? Number(requestorObj.department_id) : null);
-		
+
 		console.log('DEBUG: Attempting to resolve approver. deptIdForApproval:', deptIdForApproval, 'requestorObj?.department_id:', requestorObj?.department_id);
-		
+
 		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
 			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
 			console.log('DEBUG: Workflow approver result for asset transfer/approver/dept', deptIdForApproval, ':', supervisorObj);
-			
+
 			// Ensure email is resolved from employees table by ramco_id
 			if (supervisorObj?.ramco_id && !supervisorObj?.email) {
 				try {
@@ -3500,7 +3557,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 					console.log('DEBUG: Skipping New Asset Owner HOD notification for dept', newDeptId, 'as it is the same as Current Asset Owner HOD');
 					continue;
 				}
-				
+
 				try {
 					const newOwnerHod = await getWorkflowPicByDepartment('asset transfer', 'approver', newDeptId);
 					if (newOwnerHod?.ramco_id) {
@@ -3515,7 +3572,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 								console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
 							}
 						}
-						
+
 						if (newOwnerHod.email) {
 							newOwnerHodEmails.add(newOwnerHod.email);
 							console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
@@ -3601,7 +3658,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 					if (currentOwnerEmployee?.email) {
 						// Filter items for this current owner
 						const ownerItems = items.filter((item: any) => String(item.current_owner || '').trim() === currentOwnerRamco);
-						
+
 						const { html, subject } = assetTransferCurrentOwnerEmail({
 							items: ownerItems,
 							request,
@@ -3873,12 +3930,12 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 							try {
 								// Generate credential code for acceptance portal
 								const credentialCode = generateAcceptanceCredentialCode(Number(request.id), newOwnerRamco);
-								const { html, subject } = assetTransferApprovedNewOwnerEmail({ 
-									approver: approverEmp, 
+								const { html, subject } = assetTransferApprovedNewOwnerEmail({
+									approver: approverEmp,
 									credentialCode,
-									itemsForNewOwner: ownerItems, 
-									newOwner: newOwnerEmp, 
-									request, 
+									itemsForNewOwner: ownerItems,
+									newOwner: newOwnerEmp,
+									request,
 									requestor: requestorEmp,
 									transferId: Number(request.id)
 								});
@@ -3917,7 +3974,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 											console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
 										}
 									}
-									
+
 									if (newOwnerHod.email) {
 										newOwnerHodEmails.add(newOwnerHod.email);
 										console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
@@ -3982,7 +4039,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 		return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	}
 	const body: any = req.body || {};
-	
+
 	// Parse item_ids (array of transfer item IDs to accept)
 	let itemIds: number[] = [];
 	if (body['item_ids'] !== undefined) {
@@ -3995,11 +4052,11 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 				.filter((n: number) => Number.isFinite(n));
 		}
 	}
-	
+
 	if (itemIds.length === 0) {
 		return res.status(400).json({ message: 'No item_ids provided', status: 'error' });
 	}
-	
+
 	// Parse checklist items (comma-separated or array)
 	let checklistIds: number[] | undefined = undefined;
 	if (body['checklist-items'] !== undefined) {
@@ -4021,7 +4078,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	const filesObj: any = (req as any).files || {};
 	const uploadUtil = await import('../utils/uploadUtil.js');
 	const ensureDbPath = (filename: string) => uploadUtil.toDbPath('assets/transfers/acceptance', filename);
-	
+
 	const attachments: (string | null)[] = [null, null, null]; // [attachment1, attachment2, attachment3]
 	for (let i = 1; i <= 3; i++) {
 		const fieldName = `attachment${i}`;
@@ -4029,7 +4086,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 			attachments[i - 1] = ensureDbPath(filesObj[fieldName][0].filename);
 		}
 	}
-	
+
 	// Build filePaths array with non-null values
 	filePaths = attachments.filter(f => f !== null) as string[];
 
@@ -4053,7 +4110,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 	// Fetch all transfer items to update ownership for accepted ones
 	const itemsResult = await assetModel.getAssetTransferItemByRequestId(requestId);
 	const allItems = Array.isArray(itemsResult) ? itemsResult : [];
-	
+
 	// Filter to only the items that were just accepted
 	const acceptedItems = allItems.filter((item: any) => itemIds.includes(item.id));
 
@@ -4122,8 +4179,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 				request,
 				requestor
 			});
-			await sendMail(requestor.email, subject, html).catch(err =>
-				{ console.error('Failed to send acceptance email to requestor:', err); }
+			await sendMail(requestor.email, subject, html).catch(err => { console.error('Failed to send acceptance email to requestor:', err); }
 			);
 		}
 
@@ -4141,8 +4197,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 					newOwner: newOwnerForEmail,
 					request
 				});
-				await sendMail(currentOwner.email, subject, html).catch(err =>
-					{ console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err); }
+				await sendMail(currentOwner.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err); }
 				);
 			}
 		}
@@ -4165,8 +4220,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 						newOwnerHod: hod,
 						request
 					});
-					await sendMail(hod.email, subject, html).catch(err =>
-						{ console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err); }
+					await sendMail(hod.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err); }
 					);
 				}
 			}
@@ -4200,8 +4254,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 									newOwner: Array.from(newOwners).length > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null,
 									request
 								});
-								await sendMail(managerEmployee.email, subject, html).catch(err =>
-									{ console.error(`Failed to send acceptance email to asset manager ${manager.ramco_id}:`, err); }
+								await sendMail(managerEmployee.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to asset manager ${manager.ramco_id}:`, err); }
 								);
 							}
 						}
@@ -4233,67 +4286,67 @@ export const commitTransfer = async (req: Request, res: Response) => {
 	try {
 		const body: any = req.body || {};
 		const params: any = req.params || {};
-		
+
 		// Get transfer_id from URL parameter
 		const transfer_id = Number(params.transfer_id);
 		if (!transfer_id || isNaN(transfer_id)) {
-			return res.status(400).json({ 
-				status: 'error', 
+			return res.status(400).json({
+				status: 'error',
 				message: 'transfer_id is required in URL parameter (/transfer-commit/{transfer_id})',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Validate required fields
 		const type_id = Number(body.type_id);
 		const committed_by = String(body.committed_by || '');
 		const transfer_date = body.transfer_date ? new Date(body.transfer_date) : new Date();
-		
+
 		if (!type_id || isNaN(type_id)) {
-			return res.status(400).json({ 
-				status: 'error', 
+			return res.status(400).json({
+				status: 'error',
 				message: 'type_id is required and must be a number',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		if (!committed_by) {
-			return res.status(400).json({ 
-				status: 'error', 
+			return res.status(400).json({
+				status: 'error',
 				message: 'committed_by (Asset Manager ramco_id) is required',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Verify committed_by is an Asset Manager authorized for this type_id
 		const manager = await assetModel.getAssetManagerByRamcoId(committed_by);
 		if (!manager) {
-			return res.status(400).json({ 
-				status: 'error', 
+			return res.status(400).json({
+				status: 'error',
 				message: 'committed_by is not a registered Asset Manager',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Check if manager is authorized for this type_id (manager_id is the type_id)
 		if (Number(manager.manager_id) !== type_id) {
-			return res.status(403).json({ 
-				status: 'error', 
+			return res.status(403).json({
+				status: 'error',
 				message: 'Asset Manager is not authorized for this asset type',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Verify type_id exists
 		const assetType = await assetModel.getTypeById(type_id);
 		if (!assetType) {
-			return res.status(404).json({ 
-				status: 'error', 
+			return res.status(404).json({
+				status: 'error',
 				message: 'Asset type not found',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Parse item_ids from payload (single item or array)
 		let item_ids: number[] = [];
 		if (body.item_ids !== undefined) {
@@ -4304,67 +4357,67 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				if (!isNaN(itemId)) item_ids = [itemId];
 			}
 		}
-		
+
 		if (item_ids.length === 0) {
-			return res.status(400).json({ 
-				status: 'error', 
+			return res.status(400).json({
+				status: 'error',
 				message: 'item_ids is required in payload',
-				data: null 
+				data: null
 			});
 		}
-		
+
 		// Step 2: Find uncommitted accepted items for this transfer_id and type_id
 		const uncommittedItemsRaw = await assetModel.getUncommittedAcceptedItems({
 			type_id,
 			transfer_id,
 			item_ids: item_ids.length > 0 ? item_ids : undefined
 		});
-		
+
 		const uncommittedItems = (Array.isArray(uncommittedItemsRaw) ? uncommittedItemsRaw : []) as any[];
-		
+
 		if (!uncommittedItems || uncommittedItems.length === 0) {
-			return res.json({ 
-				status: 'info', 
+			return res.json({
+				status: 'info',
 				message: 'No uncommitted transfers found for this asset type',
 				data: { items_committed: 0 }
 			});
 		}
-		
+
 		const committedItems = uncommittedItems as any[];
-		
+
 		// Procedure 2: Insert asset_history records
 		const historyInserts: any[] = [];
 		const validCommittedItems: any[] = [];
-		
+
 		for (const item of committedItems) {
 			const itemData = item as any;
-			
+
 			// Validate asset_id
 			const assetId = Number(itemData.asset_id);
 			if (isNaN(assetId) || assetId <= 0) {
 				console.warn(`Skipping item ${itemData.id}: Invalid asset_id ${itemData.asset_id}`);
 				continue;
 			}
-			
+
 			try {
 				const asset = await assetModel.getAssetById(assetId);
 				if (!asset) {
 					console.warn(`Skipping item ${itemData.id}: Asset not found for asset_id ${assetId}`);
 					continue;
 				}
-				
+
 				// Check if asset history entry already exists to prevent duplicates
 				const historyExists = await assetModel.checkAssetHistoryExists({
 					transfer_id: itemData.transfer_id,
 					asset_id: assetId
 				});
-				
+
 				if (historyExists) {
 					console.info(`Asset history entry already exists for asset ${assetId} and transfer ${itemData.transfer_id}, skipping duplicate`);
 					validCommittedItems.push(itemData);
 					continue;
 				}
-				
+
 				const historyResult = await assetModel.insertAssetHistory({
 					asset_id: assetId,
 					register_number: asset.register_number,
@@ -4383,7 +4436,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				// Continue with other items even if one fails
 			}
 		}
-		
+
 		// If no valid items were processed, return error
 		if (validCommittedItems.length === 0) {
 			return res.status(400).json({
@@ -4392,7 +4445,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				data: { items_committed: 0 }
 			});
 		}
-		
+
 		// Procedure 3: Update asset ownership
 		for (const itemData of validCommittedItems) {
 			const assetId = Number(itemData.asset_id);
@@ -4408,7 +4461,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				// Continue with other items
 			}
 		}
-		
+
 		// Procedure 3.5: Set committed_at timestamp for each transfer
 		const transferIds = new Set(validCommittedItems.map((item: any) => item.transfer_id));
 		for (const transferId of transferIds) {
@@ -4424,7 +4477,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				}
 			}
 		}
-		
+
 		// Procedure 4: Send notifications
 		try {
 			// Fetch unique transfer IDs from valid committed items
@@ -4432,22 +4485,22 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			validCommittedItems.forEach((item: any) => {
 				if (item.transfer_id) transferIds.add(item.transfer_id);
 			});
-			
+
 			// Fetch all employees for email mapping
 			const employeesResult = await assetModel.getEmployees();
 			const employees = Array.isArray(employeesResult) ? employeesResult : [];
 			const employeeMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
-			
+
 			// Get all unique new owners
 			const newOwners = new Set<string>();
 			validCommittedItems.forEach((item: any) => {
 				if (item.new_owner) newOwners.add(String(item.new_owner));
 			});
-			
+
 			// Enrich items with asset details (fetch only for valid items)
 			const enrichedItems: any[] = [];
 			const assetDetailsMap = new Map<number, any>();
-			
+
 			// Collect and fetch all asset details
 			for (const itemData of validCommittedItems) {
 				const assetId = Number(itemData.asset_id);
@@ -4462,7 +4515,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 					}
 				}
 			}
-			
+
 			// Build enriched items list
 			for (const itemData of validCommittedItems) {
 				const assetId = Number(itemData.asset_id);
@@ -4476,14 +4529,14 @@ export const commitTransfer = async (req: Request, res: Response) => {
 					} : null
 				});
 			}
-			
+
 			// For each transfer, send notifications to stakeholders
 			for (const transferId of transferIds) {
 				const transferRequest = await assetModel.getAssetTransferById(transferId);
 				if (!transferRequest) continue;
-				
+
 				const itemsForTransfer = enrichedItems.filter((i: any) => i.transfer_id === transferId);
-				
+
 				// Email to requestor
 				if (transferRequest.transfer_by) {
 					const requestor = employeeMap.get(String(transferRequest.transfer_by));
@@ -4496,19 +4549,18 @@ export const commitTransfer = async (req: Request, res: Response) => {
 							request: transferRequest,
 							requestor
 						});
-						await sendMail(requestor.email, subject, html).catch(err =>
-							{ console.error('Failed to send commitment email to requestor:', err); }
+						await sendMail(requestor.email, subject, html).catch(err => { console.error('Failed to send commitment email to requestor:', err); }
 						);
 					}
 				}
-				
+
 				// Email to new owners' HOD
 				for (const ownerId of newOwners) {
 					const newOwner = employeeMap.get(ownerId);
 					if (newOwner) {
 						const hodId = newOwner.supervisor_ramco_id || newOwner.hod || null;
 						const hod = hodId ? employeeMap.get(String(hodId)) : null;
-						
+
 						if (hod?.email) {
 							const itemsForOwner = itemsForTransfer.filter((i: any) => String(i.new_owner) === ownerId);
 							const { html, subject } = assetTransferAcceptedHodEmail({
@@ -4519,8 +4571,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 								newOwnerHod: hod,
 								request: transferRequest
 							});
-							await sendMail(hod.email, subject, html).catch(err =>
-								{ console.error(`Failed to send commitment email to HOD for ${ownerId}:`, err); }
+							await sendMail(hod.email, subject, html).catch(err => { console.error(`Failed to send commitment email to HOD for ${ownerId}:`, err); }
 							);
 						}
 					}
@@ -4530,9 +4581,9 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			console.error('Error sending commitment notification emails:', emailErr);
 			// Don't fail the request if emails fail
 		}
-		
-		return res.json({ 
-			status: 'success', 
+
+		return res.json({
+			status: 'success',
 			message: 'Transfer committed successfully',
 			data: {
 				type_id,
@@ -4566,7 +4617,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 export const getUncommittedTransfers = async (req: Request, res: Response) => {
 	try {
 		const typeIdParam = req.query.type_id;
-		
+
 		if (typeIdParam === undefined || typeIdParam === null || typeIdParam === '') {
 			return res.status(400).json({
 				status: 'error',
@@ -4574,7 +4625,7 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 				data: null
 			});
 		}
-		
+
 		const type_id = Number(typeIdParam);
 		if (isNaN(type_id) || type_id <= 0) {
 			return res.status(400).json({
@@ -4583,7 +4634,7 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 				data: null
 			});
 		}
-		
+
 		// Verify type exists
 		const assetType = await assetModel.getTypeById(type_id);
 		if (!assetType) {
@@ -4593,13 +4644,13 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 				data: null
 			});
 		}
-		
+
 		// Get uncommitted (accepted but not committed) transfers filtered by type_id
 		const summaryRaw = await assetModel.getUncommittedTransferSummary(type_id);
 		const items: any[] = Array.isArray(summaryRaw) ? summaryRaw : [];
-		
+
 		const total_uncommitted = items.length;
-		
+
 		return res.json({
 			status: 'success',
 			message: `Found ${total_uncommitted} uncommitted transfer(s) for type ${type_id}`,
@@ -4629,13 +4680,13 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 	if (!request) return res.status(404).json({ message: 'Transfer request not found', status: 'error' });
 	const itemsRaw = await assetModel.getAssetTransferItemByRequestId(transferId);
 	const items: any[] = Array.isArray(itemsRaw) ? itemsRaw : [];
-	
+
 	// Filter to only include pending acceptance items (acceptance_date IS NULL and acceptance_by IS NULL)
 	let filteredItems = items.filter((item: any) => item.acceptance_date === null && item.acceptance_by === null);
-	
+
 	// Optional filter by new_owner query parameter
 	const newOwnerParam = req.query.new_owner;
-	
+
 	if (newOwnerParam && typeof newOwnerParam === 'string' && newOwnerParam.trim() !== '') {
 		const newOwnerRamco = newOwnerParam.trim();
 		filteredItems = filteredItems.filter((item: any) => item.new_owner === newOwnerRamco);
@@ -5228,9 +5279,9 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 	const { id } = req.params;
 
 	if (!id) {
-		return res.status(400).json({ 
-			message: 'Transfer ID is required', 
-			status: 'error' 
+		return res.status(400).json({
+			message: 'Transfer ID is required',
+			status: 'error'
 		});
 	}
 
@@ -5264,7 +5315,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 		const assetIds = items
 			.map((item: any) => Number(item.asset_id))
 			.filter((id: any) => Number.isFinite(id) && id > 0);
-		
+
 		const [employees, types, costcenters, departments, districts, assetsData] = await Promise.all([
 			assetModel.getEmployees(),
 			assetModel.getTypes(),
@@ -5295,36 +5346,36 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 			const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
 			const newOwnerEmp = item.new_owner && empMap.has(item.new_owner) ? empMap.get(item.new_owner) : null;
 			const newOwnerName = newOwnerEmp && typeof newOwnerEmp === 'object' && 'full_name' in newOwnerEmp ? newOwnerEmp.full_name : item.new_owner || '-';
-			
+
 			const currCostcenterKey = Number(item.current_costcenter_id);
 			const currCostcenterObj = Number.isFinite(currCostcenterKey) && costcenterMap.has(currCostcenterKey) ? costcenterMap.get(currCostcenterKey) : null;
 			const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj).name : (item.current_costcenter_id ?? '-');
 			const newCostcenterKey = Number(item.new_costcenter_id);
 			const newCostcenterObj = Number.isFinite(newCostcenterKey) && costcenterMap.has(newCostcenterKey) ? costcenterMap.get(newCostcenterKey) : null;
 			const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj).name : (item.new_costcenter_id ?? '-');
-			
+
 			const currDepartmentKey = Number(item.current_department_id);
 			const currDepartmentObj = Number.isFinite(currDepartmentKey) && departmentMap.has(currDepartmentKey) ? departmentMap.get(currDepartmentKey) : null;
 			const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj).code : (item.current_department_id ?? '-');
 			const newDepartmentKey = Number(item.new_department_id);
 			const newDepartmentObj = Number.isFinite(newDepartmentKey) && departmentMap.has(newDepartmentKey) ? departmentMap.get(newDepartmentKey) : null;
 			const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj).code : (item.new_department_id ?? '-');
-			
+
 			const currLocationKey = Number(item.current_location_id);
 			const currDistrictObj = Number.isFinite(currLocationKey) && districtMap.has(currLocationKey) ? districtMap.get(currLocationKey) : null;
 			const currDistrictCode = currDistrictObj ? ((currDistrictObj).code || (currDistrictObj).name || item.current_location_id || '-') : (item.current_location_id || '-');
 			const newLocationKey = Number(item.new_location_id);
 			const newDistrictObj = Number.isFinite(newLocationKey) && districtMap.has(newLocationKey) ? districtMap.get(newLocationKey) : null;
 			const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
-			
+
 			const typeObj = item.type_id ? typeMap.get(Number(item.type_id)) : null;
 			const typeName = typeObj ? (typeObj.name || '') : (item.transfer_type || '');
-			
+
 			// Fetch asset register_number from assets table
 			const assetKey = Number(item.asset_id);
 			const assetObj = Number.isFinite(assetKey) && assetMap.has(assetKey) ? assetMap.get(assetKey) : null;
 			const registerNumber = assetObj ? (assetObj.register_number || assetObj.identifier || assetObj.asset_code || '-') : (item.register_number || item.identifier || item.asset_code || '-');
-			
+
 			return {
 				...item,
 				currCostcenterName,
@@ -5345,10 +5396,10 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 		// Get supervisor from workflow (same as createAssetTransfer)
 		const deptIdForApproval = requestor?.department_id ?? request.department_id;
 		let supervisorObj = null;
-		
+
 		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
 			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
-			
+
 			// Ensure email is resolved from employees table by ramco_id
 			if (supervisorObj?.ramco_id && !supervisorObj?.email) {
 				try {
@@ -5407,7 +5458,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 		if (requestor?.supervisor_ramco_id || requestor?.hod_ramco_id) {
 			const hodId = requestor.supervisor_ramco_id || requestor.hod_ramco_id;
 			const hodObj = await assetModel.getEmployeeByRamco(hodId);
-			
+
 			if (hodObj?.email && hodObj.email !== supervisorObj?.email) { // Don't duplicate if same person
 				try {
 					const { html, subject } = assetTransferT2HodApprovalRequestEmail({
@@ -5455,9 +5506,9 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 	const { id } = req.params;
 
 	if (!id) {
-		return res.status(400).json({ 
-			message: 'Transfer ID is required', 
-			status: 'error' 
+		return res.status(400).json({
+			message: 'Transfer ID is required',
+			status: 'error'
 		});
 	}
 
@@ -5480,7 +5531,7 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 		const assetIds = items
 			.map((item: any) => Number(item.asset_id))
 			.filter((id: any) => Number.isFinite(id) && id > 0);
-		
+
 		const [employees, types, costcenters, departments, districts, assetsData] = await Promise.all([
 			assetModel.getEmployees(),
 			assetModel.getTypes(),
@@ -5504,36 +5555,36 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 			const currOwnerName = currOwnerEmp && typeof currOwnerEmp === 'object' && 'full_name' in currOwnerEmp ? currOwnerEmp.full_name : item.current_owner || '-';
 			const newOwnerEmp = item.new_owner && empMap.has(item.new_owner) ? empMap.get(item.new_owner) : null;
 			const newOwnerName = newOwnerEmp && typeof newOwnerEmp === 'object' && 'full_name' in newOwnerEmp ? newOwnerEmp.full_name : item.new_owner || '-';
-			
+
 			const currCostcenterKey = Number(item.current_costcenter_id);
 			const currCostcenterObj = Number.isFinite(currCostcenterKey) && costcenterMap.has(currCostcenterKey) ? costcenterMap.get(currCostcenterKey) : null;
 			const currCostcenterName = currCostcenterObj && typeof currCostcenterObj === 'object' && 'name' in currCostcenterObj ? (currCostcenterObj).name : (item.current_costcenter_id ?? '-');
 			const newCostcenterKey = Number(item.new_costcenter_id);
 			const newCostcenterObj = Number.isFinite(newCostcenterKey) && costcenterMap.has(newCostcenterKey) ? costcenterMap.get(newCostcenterKey) : null;
 			const newCostcenterName = newCostcenterObj && typeof newCostcenterObj === 'object' && 'name' in newCostcenterObj ? (newCostcenterObj).name : (item.new_costcenter_id ?? '-');
-			
+
 			const currDepartmentKey = Number(item.current_department_id);
 			const currDepartmentObj = Number.isFinite(currDepartmentKey) && departmentMap.has(currDepartmentKey) ? departmentMap.get(currDepartmentKey) : null;
 			const currDepartmentCode = currDepartmentObj && typeof currDepartmentObj === 'object' && 'code' in currDepartmentObj ? (currDepartmentObj).code : (item.current_department_id ?? '-');
 			const newDepartmentKey = Number(item.new_department_id);
 			const newDepartmentObj = Number.isFinite(newDepartmentKey) && departmentMap.has(newDepartmentKey) ? departmentMap.get(newDepartmentKey) : null;
 			const newDepartmentCode = newDepartmentObj && typeof newDepartmentObj === 'object' && 'code' in newDepartmentObj ? (newDepartmentObj).code : (item.new_department_id ?? '-');
-			
+
 			const currLocationKey = Number(item.current_location_id);
 			const currDistrictObj = Number.isFinite(currLocationKey) && districtMap.has(currLocationKey) ? districtMap.get(currLocationKey) : null;
 			const currDistrictCode = currDistrictObj ? ((currDistrictObj).code || (currDistrictObj).name || item.current_location_id || '-') : (item.current_location_id || '-');
 			const newLocationKey = Number(item.new_location_id);
 			const newDistrictObj = Number.isFinite(newLocationKey) && districtMap.has(newLocationKey) ? districtMap.get(newLocationKey) : null;
 			const newDistrictCode = newDistrictObj ? ((newDistrictObj).code || (newDistrictObj).name || item.new_location_id || '-') : (item.new_location_id || '-');
-			
+
 			const typeObj = item.type_id ? typeMap.get(Number(item.type_id)) : null;
 			const typeName = typeObj ? (typeObj.name || '') : (item.transfer_type || '');
-			
+
 			// Fetch asset register_number from assets table
 			const assetKey = Number(item.asset_id);
 			const assetObj = Number.isFinite(assetKey) && assetMap.has(assetKey) ? assetMap.get(assetKey) : null;
 			const registerNumber = assetObj ? (assetObj.register_number || assetObj.identifier || assetObj.asset_code || '-') : (item.register_number || item.identifier || item.asset_code || '-');
-			
+
 			return {
 				...item,
 				currCostcenterName,

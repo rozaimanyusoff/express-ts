@@ -50,14 +50,14 @@ const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || path.join(process.cwd()
 // Returns formatted string with 2 decimal places
 export const calculateNBV = (unitPrice: null | number | undefined, purchaseYear: null | number | undefined): null | string => {
   if (!unitPrice || unitPrice <= 0 || !purchaseYear) return null;
-  
+
   const currentYear = new Date().getFullYear();
   const yearsOld = currentYear - purchaseYear;
-  
+
   // Cap at 5 years maximum depreciation
   const depreciationYears = Math.min(yearsOld, 5);
   const remainingPercentage = Math.max(0, 1 - (depreciationYears * 0.2));
-  
+
   const nbv = unitPrice * remainingPercentage;
   return nbv.toFixed(2);
 };
@@ -370,7 +370,7 @@ export const updateAsset = async (id: number, data: any) => {
     }
   } catch (err) {
     // do not fail the update if history insertion fails; log and continue
-     
+
     console.error('Failed to insert asset history for asset', id, err);
   }
 
@@ -598,32 +598,32 @@ export const getSpecsForAsset = async (type_id: number, asset_id: number) => {
  */
 export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => {
   const { type_id, ...otherFields } = specData;
-  
+
   if (!type_id || !Number.isFinite(type_id)) {
     throw new Error('type_id is required and must be a valid number');
   }
-  
+
   const tableName = getPrimarySpecTableName(type_id);
   if (!tableName) {
     throw new Error(`No spec table mapped for type_id ${type_id}`);
   }
-  
+
   // Ensure the spec table exists
   await ensureSpecTableExists(tableName);
-  
+
   const qTable = quoteFullTableName(tableName);
-  
+
   // Check if record exists for this asset_id
   const [existingRows] = await pool.query(
     `SELECT id FROM ${qTable} WHERE asset_id = ? LIMIT 1`,
     [asset_id]
   );
-  
+
   const exists = Array.isArray(existingRows) && (existingRows as any[]).length > 0;
-  
+
   // Type-specific allowed columns
   let allowedColumns: string[] = [];
-  
+
   if (type_id === 1) {
     // Computer (1_specs) fields
     allowedColumns = [
@@ -652,12 +652,12 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     // For other types, allow common fields only
     allowedColumns = ['brand_id', 'model_id', 'category_id', 'entry_code', 'asset_code'];
   }
-  
+
   if (exists) {
     // UPDATE existing record matching asset_id in 1_specs or 2_specs table
     const updates: string[] = [];
     const params: any[] = [];
-    
+
     // Build dynamic UPDATE statement with only allowed fields
     for (const [key, value] of Object.entries(otherFields)) {
       if (allowedColumns.includes(key) && value !== undefined) {
@@ -665,28 +665,28 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
         params.push(value);
       }
     }
-    
+
     if (updates.length === 0) {
-      return { 
+      return {
         message: 'No fields to update (all fields filtered)',
-        asset_id, 
+        asset_id,
         type_id,
         operation: 'update-skip'
       };
     }
-    
+
     updates.push('updated_at = NOW()');
     params.push(asset_id);
-    
+
     const sql = `UPDATE ${qTable} SET ${updates.join(', ')} WHERE asset_id = ?`;
     const [result] = await pool.query(sql, params);
-    
+
     const updatedFields = Object.keys(otherFields).filter(k => allowedColumns.includes(k));
-    
-    return { 
+
+    return {
       message: 'Asset specs updated successfully',
-      asset_id, 
-      type_id, 
+      asset_id,
+      type_id,
       operation: 'update-success',
       affectedRows: (result as any).affectedRows,
       updatedFieldCount: updatedFields.length,
@@ -697,7 +697,7 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
     const columns = ['asset_id', 'type_id'];
     const values = ['?', '?'];
     const params = [asset_id, type_id];
-    
+
     // Add provided fields to INSERT (only allowed columns)
     const insertedFields: string[] = [];
     for (const [key, value] of Object.entries(otherFields)) {
@@ -708,20 +708,20 @@ export const updateAssetBasicSpecs = async (asset_id: number, specData: any) => 
         insertedFields.push(key);
       }
     }
-    
+
     // Add updated_at with NOW() function (NOT parameterized since it's a function call)
     // This must come AFTER all field values to maintain correct parameter binding order
     columns.push('updated_at');
     values.push('NOW()');
-    
+
     const insertSql = `INSERT INTO ${qTable} (${columns.join(', ')}) VALUES (${values.join(', ')})`;
     const [result] = await pool.query(insertSql, params);
-    
-    return { 
+
+    return {
       message: 'Asset specs created successfully',
-      asset_id, 
+      asset_id,
       type_id,
-      operation: 'insert-success', 
+      operation: 'insert-success',
       insertId: (result as any).insertId,
       createdFieldCount: insertedFields.length,
       createdFields: insertedFields
@@ -748,7 +748,7 @@ export const getVehicleRoadtaxAndInsuranceExpiry = async (asset_id: number) => {
       WHERE vi.asset_id = ?
       LIMIT 1
     `, [asset_id]);
-    
+
     // Fallback: try by register_number if no result found
     if ((!rows || (rows as any[]).length === 0)) {
       const [rows2] = await pool.query(`
@@ -764,7 +764,7 @@ export const getVehicleRoadtaxAndInsuranceExpiry = async (asset_id: number) => {
       `, [asset_id]);
       rows = rows2;
     }
-    
+
     const result = (rows as any[])?.[0];
     if (result) {
       return {
@@ -911,13 +911,13 @@ export const updateSpecProperty = async (id: number, data: any) => {
   // Fetch updated row
   const updated = await getSpecPropertyById(id);
   const alterResult = { success: true, errors: [] as string[] };
-  
+
   try {
     const tableName = getPrimarySpecTableName(Number(updated.type_id));
     if (tableName) {
       // Ensure the spec table exists first
       await ensureSpecTableExists(tableName);
-      
+
       const qTable = quoteFullTableName(tableName);
       // If column name changed and the column existed before, rename it
       const oldCol = existing.column_name;
@@ -1140,14 +1140,14 @@ export const createBrand = async (data: any) => {
     type_id ? [name, logo, type_id] : [name, logo]
   );
   const insertId = (result as any).insertId as number | undefined;
-  
+
   // Handle brand-category associations
   if (insertId && Array.isArray(category_ids) && category_ids.length > 0) {
     // Fetch the newly created brand to get its code
     const [brandRows] = await pool.query(`SELECT code FROM ${brandTable} WHERE id = ?`, [insertId]);
     const brand = (brandRows as RowDataPacket[])[0];
     const brandCode = brand?.code || String(insertId); // Use brand code or fallback to ID
-    
+
     // Fetch category codes for the provided category IDs
     const placeholders = category_ids.map(() => '?').join(',');
     const [categoryRows] = await pool.query(
@@ -1155,7 +1155,7 @@ export const createBrand = async (data: any) => {
       category_ids
     );
     const categoryMap = new Map((categoryRows as RowDataPacket[]).map((c: any) => [c.id, c.code]));
-    
+
     // Insert into brand_category table with codes
     for (const category_id of category_ids) {
       const categoryCode = categoryMap.get(category_id) || String(category_id);
@@ -1196,10 +1196,10 @@ export const updateBrand = async (id: number, data: any) => {
     const [brandRows] = await pool.query(`SELECT code FROM ${brandTable} WHERE id = ?`, [id]);
     const brand = (brandRows as RowDataPacket[])[0];
     const brandCode = brand?.code || String(id);
-    
+
     // Delete old associations
     await pool.query(`DELETE FROM ${brandCategoryTable} WHERE brand_id = ?`, [id]);
-    
+
     if (category_ids.length > 0) {
       // Fetch category codes for the provided category IDs
       const placeholders = category_ids.map(() => '?').join(',');
@@ -1208,7 +1208,7 @@ export const updateBrand = async (id: number, data: any) => {
         category_ids
       );
       const categoryMap = new Map((categoryRows as RowDataPacket[]).map((c: any) => [c.id, c.code]));
-      
+
       // Insert new associations with codes
       for (const category_id of category_ids) {
         const categoryCode = categoryMap.get(category_id) || String(category_id);
@@ -1335,11 +1335,11 @@ export const deleteCostcenter = async (id: number) => {
 /* =========== DEPARTMENTS =========== */
 export const createDepartment = async (data: any) => {
   const { code, name, ramco_name, dept_desc_malay, status } = data;
-  
+
   if (!name) {
     throw new Error('Department name is required');
   }
-  
+
   const [result] = await pool.query(
     `INSERT INTO ${departmentTable} (code, name, ramco_name, dept_desc_malay, status) VALUES (?, ?, ?, ?, ?)`,
     [code || null, name, ramco_name || null, dept_desc_malay || null, status !== undefined ? status : 1]
@@ -1359,11 +1359,11 @@ export const getDepartmentById = async (id: number) => {
 
 export const updateDepartment = async (id: number, data: any) => {
   const { code, name, ramco_name, dept_desc_malay, status } = data;
-  
+
   if (!name) {
     throw new Error('Department name is required');
   }
-  
+
   const [result] = await pool.query(
     `UPDATE ${departmentTable} SET code = ?, name = ?, ramco_name = ?, dept_desc_malay = ?, status = ? WHERE id = ?`,
     [code || null, name, ramco_name || null, dept_desc_malay || null, status !== undefined ? status : 1, id]
@@ -1408,11 +1408,11 @@ export const deleteSection = async (id: number) => {
 /* =========== LOCATIONS =========== */
 export const createLocation = async (data: any) => {
   const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = data;
-  
+
   if (!name) {
     throw new Error('Location name is required');
   }
-  
+
   // Check for duplicate location by code
   if (code) {
     const [existingByCode] = await pool.query(
@@ -1423,7 +1423,7 @@ export const createLocation = async (data: any) => {
       throw new Error(`Location with code "${code}" already exists`);
     }
   }
-  
+
   // Check for duplicate location by name
   const [existingByName] = await pool.query(
     `SELECT id FROM ${locationTable} WHERE name = ?`,
@@ -1432,7 +1432,7 @@ export const createLocation = async (data: any) => {
   if ((existingByName as RowDataPacket[]).length > 0) {
     throw new Error(`Location with name "${name}" already exists`);
   }
-  
+
   const [result] = await pool.query(
     `INSERT INTO ${locationTable} (code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat) 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1446,7 +1446,7 @@ export const getLocations = async () => {
     SELECT *
     FROM ${locationTable}
   `);
-  
+
   return rows as RowDataPacket[];
 };
 
@@ -1460,10 +1460,10 @@ export const getLocationById = async (id: number) => {
     LEFT JOIN ${departmentTable} d ON l.department_id = d.id
     WHERE l.id = ?
   `, [id]);
-  
+
   const row = (rows as RowDataPacket[])[0];
   if (!row) return null;
-  
+
   const { dept_id, dept_name, ...locationData } = row as any;
   return {
     ...locationData,
@@ -1473,11 +1473,11 @@ export const getLocationById = async (id: number) => {
 
 export const updateLocation = async (id: number, data: any) => {
   const { code, name, ramco_name, loc_add, loc_ctc, loc_pic, department_id, loc_stat } = data;
-  
+
   if (!name) {
     throw new Error('Location name is required');
   }
-  
+
   const [result] = await pool.query(
     `UPDATE ${locationTable} SET code = ?, name = ?, ramco_name = ?, loc_add = ?, loc_ctc = ?, loc_pic = ?, department_id = ?, loc_stat = ? WHERE id = ?`,
     [code || null, name, ramco_name || null, loc_add || null, loc_ctc || null, loc_pic || null, department_id || null, loc_stat ? 1 : 0, id]
@@ -1666,37 +1666,37 @@ export const removeAllDistrictsFromZone = async (zone_id: number) => {
 
 /* =========== EMPLOYEES =========== */
 export const createEmployee = async (data: any) => {
-	// Map incoming fields to database columns
-	const {
-		avatar,
-		contact,
-		costcenter_id,
-		department_id,
-		dob,
-		email,
-		employment_status,
-		employment_type,
-		full_name,
-		gender,
-		grade,
-		hire_date,
-		location_id,
-		position_id,
-		ramco_id,
-		resignation_date
-	} = data;
+  // Map incoming fields to database columns
+  const {
+    avatar,
+    contact,
+    costcenter_id,
+    department_id,
+    dob,
+    email,
+    employment_status,
+    employment_type,
+    full_name,
+    gender,
+    grade,
+    hire_date,
+    location_id,
+    position_id,
+    ramco_id,
+    resignation_date
+  } = data;
 
-	const [result] = await pool.query(
-		`INSERT INTO ${employeeTable} 
+  const [result] = await pool.query(
+    `INSERT INTO ${employeeTable} 
 		(ramco_id, full_name, email, contact, gender, dob, avatar, hire_date, 
 		 resignation_date, employment_type, employment_status, grade, 
 		 position_id, department_id, costcenter_id, location_id) 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		[ramco_id, full_name, email, contact, gender, dob, avatar, hire_date,
-		 resignation_date, employment_type, employment_status, grade,
-		 position_id, department_id, costcenter_id, location_id]
-	);
-	return result;
+    [ramco_id, full_name, email, contact, gender, dob, avatar, hire_date,
+      resignation_date, employment_type, employment_status, grade,
+      position_id, department_id, costcenter_id, location_id]
+  );
+  return result;
 };
 
 export const getEmployees = async (status?: string, cc?: string[], dept?: string[], loc?: string[], supervisor?: string[], ramco?: string[], pos?: string[]) => {
@@ -1781,7 +1781,7 @@ export const getEmployeeByEmail = async (email: string) => {
   return (rows as RowDataPacket[])[0];
 };
 
-export const getEmployeeByContact = async (contact: number) => {
+export const getEmployeeByContact = async (contact: string | number) => {
   const [rows] = await pool.query(`SELECT * FROM ${employeeTable} WHERE contact = ?`, [contact]);
   return (rows as RowDataPacket[])[0];
 };
@@ -1819,11 +1819,11 @@ export const updateEmployeesResignation = async (
 /* =========== POSITIONS =========== */
 export const createPosition = async (data: any) => {
   const { name, ramco_name, status } = data;
-  
+
   if (!name) {
     throw new Error('Position name is required');
   }
-  
+
   const [result] = await pool.query(
     `INSERT INTO ${positionTable} (name, ramco_name, status) VALUES (?, ?, ?)`,
     [name, ramco_name || null, status !== undefined ? status : null]
@@ -1843,11 +1843,11 @@ export const getPositionById = async (id: number) => {
 
 export const updatePosition = async (id: number, data: any) => {
   const { name, ramco_name, status } = data;
-  
+
   if (!name) {
     throw new Error('Position name is required');
   }
-  
+
   const [result] = await pool.query(
     `UPDATE ${positionTable} SET name = ?, ramco_name = ?, status = ? WHERE id = ?`,
     [name, ramco_name || null, status !== undefined ? status : null, id]
@@ -2251,7 +2251,7 @@ export const getUncommittedAcceptedItems = async (options: {
   item_ids?: number[];
 }) => {
   const { type_id, transfer_id, item_ids } = options;
-  
+
   let sql = `
     SELECT ti.* 
     FROM ${assetTransferItemTable} ti
@@ -2277,23 +2277,23 @@ export const getUncommittedAcceptedItems = async (options: {
         AND ad.location_id = ti.new_location_id
       )
   `;
-  
+
   const params: any[] = [type_id];
-  
+
   // Optional: filter by specific transfer_id
   if (transfer_id && !isNaN(transfer_id)) {
     sql += ` AND ti.transfer_id = ?`;
     params.push(transfer_id);
   }
-  
+
   // Optional: filter by specific item_ids
   if (item_ids && item_ids.length > 0) {
     sql += ` AND ti.id IN (${item_ids.map(() => '?').join(',')})`;
     params.push(...item_ids);
   }
-  
+
   sql += ` ORDER BY ti.id ASC`;
-  
+
   const [rows] = await pool.query(sql, params);
   return rows;
 };
@@ -2336,7 +2336,7 @@ export const getAllUncommittedAcceptedTransfers = async () => {
     GROUP BY ad.type_id, t.name
     ORDER BY ad.type_id ASC
   `;
-  
+
   const [rows] = await pool.query(sql);
   return rows;
 };
@@ -2381,16 +2381,16 @@ export const getUncommittedTransferSummary = async (type_id?: number) => {
         AND ad.location_id = ti.new_location_id
       )
   `;
-  
+
   const params: any[] = [];
-  
+
   if (type_id !== undefined && type_id !== null) {
     sql += ` AND ad.type_id = ?`;
     params.push(type_id);
   }
-  
+
   sql += ` ORDER BY ad.type_id ASC, ti.id ASC`;
-  
+
   const [rows] = await pool.query(sql, params);
   return rows;
 };
@@ -2579,7 +2579,7 @@ export const hasAssetHistoryChanged = async (data: {
 
     // Return true if ANY value changed, false if all are the same
     const hasChanged = costcenterChanged || departmentChanged || locationChanged || ramcoChanged;
-    
+
     return {
       hasChanged,
       latestRecord,
@@ -2652,17 +2652,17 @@ export const updateAssetCurrentOwner = async (asset_id: number, data: {
 }) => {
   const sets: string[] = [];
   const params: any[] = [];
-  
+
   if (data.ramco_id !== undefined) { sets.push('ramco_id = ?'); params.push(data.ramco_id); }
   if (data.costcenter_id !== undefined) { sets.push('costcenter_id = ?'); params.push(data.costcenter_id); }
   if (data.department_id !== undefined) { sets.push('department_id = ?'); params.push(data.department_id); }
   if (data.location_id !== undefined) { sets.push('location_id = ?'); params.push(data.location_id); }
-  
+
   if (!sets.length) return { affectedRows: 0 } as any;
-  
+
   const sql = `UPDATE ${assetTable} SET ${sets.join(', ')} WHERE id = ?`;
   params.push(asset_id);
-  
+
   const [result] = await pool.query(sql, params);
   return result;
 };
@@ -2987,7 +2987,7 @@ export const getAssetTransferStatus = async (asset_id: number): Promise<string |
        LIMIT 1`,
       [asset_id]
     );
-    
+
     if (Array.isArray(rows) && rows.length > 0) {
       return 'pending acceptance';
     }
@@ -3025,7 +3025,7 @@ export const processAcceptedTransfers = async () => {
 
     for (const item of items) {
       const itemData = item as any;
-      
+
       try {
         // Fetch current asset data
         const asset = await getAssetById(itemData.asset_id);
@@ -3096,7 +3096,7 @@ export const setCommittedAtForTransferItems = async (transferId: number, itemIds
 
   const params = [transferId, ...itemIds];
   const [result] = await pool.query(sql, params);
-  
+
   return result;
 };
 
@@ -3105,7 +3105,7 @@ export const getTransferItemCommittedStatus = async (itemId: number): Promise<'p
   const itemSql = `SELECT * FROM ${assetTransferItemTable} WHERE id = ?`;
   const [itemRows] = await pool.query(itemSql, [itemId]);
   const item = (Array.isArray(itemRows) ? itemRows[0] : null) as any;
-  
+
   if (!item) {
     return 'pending';
   }
@@ -3140,7 +3140,7 @@ export const getTransferItemCommittedStatus = async (itemId: number): Promise<'p
     AND ad.department_id = ?
     AND ad.location_id = ?
   `;
-  
+
   const params = [
     item.transfer_id,
     item.effective_date,
@@ -3157,7 +3157,7 @@ export const getTransferItemCommittedStatus = async (itemId: number): Promise<'p
   ];
 
   const [historyRows] = await pool.query(historyCheckSql, params);
-  
+
   if (Array.isArray(historyRows) && historyRows.length > 0) {
     return 'committed';
   }
