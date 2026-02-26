@@ -108,14 +108,7 @@ router.get('/:id/stream', asyncHandler(mediaController.streamMedia));
 /* ============ CORRESPONDENCE ============ */
 
 const correspondenceUploader = createUploader('media/correspondence', [
-	'application/pdf',
-	'application/msword',
-	'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-	'application/vnd.ms-excel',
-	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-	'image/jpeg',
-	'image/png',
-	'image/webp',
+	'application/pdf'
 ]);
 
 /**
@@ -140,9 +133,9 @@ router.get('/correspondence/:id', asyncHandler(mediaController.getCorrespondence
 
 /**
  * PUT /api/media/correspondence/:id
- * Partial update — JSON body.
+ * Partial update — multipart/form-data (same shape as create). File field optional.
  */
-router.put('/correspondence/:id', asyncHandler(mediaController.updateCorrespondence));
+router.put('/correspondence/:id', correspondenceUploader.single('file'), asyncHandler(mediaController.updateCorrespondence));
 
 /**
  * PATCH /api/media/correspondence/:id/attachment

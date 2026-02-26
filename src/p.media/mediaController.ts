@@ -585,7 +585,8 @@ export const streamMedia = async (req: Request, res: Response) => {
 
 function normaliseAttachmentPath(record: any) {
   if (record?.attachment_file_path && !record.attachment_file_path.startsWith('http')) {
-    return { ...record, attachment_file_path: `${BACKEND_URL}${record.attachment_file_path}` };
+    // Stored without leading slash — join with /
+    return { ...record, attachment_file_path: `${BACKEND_URL}/${record.attachment_file_path}` };
   }
   return record;
 }
@@ -599,10 +600,8 @@ export const createCorrespondence = async (req: Request, res: Response) => {
   const body = req.body as Record<string, string>;
   const file = req.file as Express.Multer.File | undefined;
 
-  const requiredFields = [
-    'reference_no', 'sender', 'subject', 'correspondent', 'direction', 'department', 'priority',
-  ] as const;
-
+  // Only truly required fields for creation
+  const requiredFields = ['sender', 'subject', 'direction', 'priority'] as const;
   for (const field of requiredFields) {
     if (!body[field]) {
       return res.status(400).json({ status: 'error', message: `Missing required field: ${field}`, data: null });
@@ -614,50 +613,54 @@ export const createCorrespondence = async (req: Request, res: Response) => {
     return res.status(400).json({ status: 'error', message: 'direction must be "incoming" or "outgoing"', data: null });
   }
 
-  const priority = (body.priority ?? 'normal') as 'low' | 'normal' | 'high';
+  // Auto-generate reference_no: RTSB/{IN|OUT}/{00001}/{YYYY}
+  const dirCode = direction === 'incoming' ? 'IN' : 'OUT';
+  const year = new Date().getFullYear();
+  const seq = await mediaModel.getNextCorrespondenceSequence(direction);
+  const referenceNo = `RTSB/${dirCode}/${String(seq).padStart(5, '0')}/${year}`;
+
+  const priority = (body.priority || 'normal') as 'low' | 'normal' | 'high';
   if (!['low', 'normal', 'high'].includes(priority)) {
     return res.status(400).json({ status: 'error', message: 'priority must be "low", "normal", or "high"', data: null });
   }
 
-  let attachmentFilename: string | null = null;
-  let attachmentMimeType: string | null = null;
-  let attachmentSize: number | null = null;
-  let attachmentFilePath: string | null = null;
+  // Helper: treat empty string as null for optional fields
+  const orNull = (v: string | undefined): string | null => (v && v.trim() !== '' ? v.trim() : null);
+  const parseBool = (v: string | undefined): boolean => v === 'true' || v === '1';
 
-  if (file) {
-    attachmentFilename = file.originalname;
-    attachmentMimeType = file.mimetype;
-    attachmentSize = file.size;
-    attachmentFilePath = `/uploads/media/correspondence/${file.filename}`;
-  }
+  // File upload takes priority; body attachment fields serve as metadata fallback
+  let attachmentFilename: string | null = file ? file.originalname : orNull(body.attachment_filename);
+  let attachmentMimeType: string | null = file ? file.mimetype : orNull(body.attachment_mime_type);
+  let attachmentSize: number | null = file ? file.size : (body.attachment_size ? Number(body.attachment_size) : null);
+  let attachmentFilePath: string | null = file ? `uploads/media/correspondence/${file.filename}` : orNull(body.attachment_file_path);
 
   const payload: mediaModel.CorrespondenceCreatePayload = {
-    reference_no: body.reference_no,
+    reference_no: referenceNo,
     sender: body.sender,
-    sender_ref: body.sender_ref ?? null,
-    document_cover_page: body.document_cover_page === 'true' || body.document_cover_page === '1',
-    document_full_letters: body.document_full_letters === 'true' || body.document_full_letters === '1',
-    document_claim_attachment: body.document_claim_attachment === 'true' || body.document_claim_attachment === '1',
-    document_others: body.document_others === 'true' || body.document_others === '1',
-    document_others_specify: body.document_others_specify ?? null,
+    sender_ref: orNull(body.sender_ref),
+    document_cover_page: parseBool(body.document_cover_page),
+    document_full_letters: parseBool(body.document_full_letters),
+    document_claim_attachment: parseBool(body.document_claim_attachment),
+    document_others: parseBool(body.document_others),
+    document_others_specify: orNull(body.document_others_specify),
     subject: body.subject,
-    correspondent: body.correspondent,
+    correspondent: body.correspondent || '',
     direction,
-    department: body.department,
-    letter_type: body.letter_type ?? null,
-    category: body.category ?? null,
+    department: body.department || '',
+    letter_type: orNull(body.letter_type),
+    category: orNull(body.category),
     priority,
-    date_received: body.date_received ?? null,
-    remarks: body.remarks ?? null,
-    registered_at: body.registered_at ?? null,
-    registered_by: body.registered_by ?? null,
-    disseminated_at: body.disseminated_at ?? null,
-    disseminated_by: body.disseminated_by ?? null,
-    attachment_filename: body.attachment_filename ?? attachmentFilename,
-    attachment_mime_type: body.attachment_mime_type ?? attachmentMimeType,
-    attachment_size: body.attachment_size ? Number(body.attachment_size) : attachmentSize,
+    date_received: orNull(body.date_received),
+    remarks: orNull(body.remarks),
+    registered_at: orNull(body.registered_at),
+    registered_by: orNull(body.registered_by),
+    disseminated_at: orNull(body.disseminated_at),
+    disseminated_by: orNull(body.disseminated_by),
+    attachment_filename: attachmentFilename,
+    attachment_mime_type: attachmentMimeType,
+    attachment_size: attachmentSize,
     attachment_pdf_page_count: body.attachment_pdf_page_count ? Number(body.attachment_pdf_page_count) : null,
-    attachment_file_path: body.attachment_file_path ?? attachmentFilePath,
+    attachment_file_path: attachmentFilePath,
   };
 
   const id = await mediaModel.createCorrespondence(payload);
@@ -720,7 +723,8 @@ export const getCorrespondence = async (req: Request, res: Response) => {
 
 /**
  * PUT /api/media/correspondence/:id
- * Partial update — only provided fields are changed. Send as JSON body.
+ * Partial update — accepts multipart/form-data (same shape as create).
+ * reference_no is immutable and will never be changed.
  */
 export const updateCorrespondence = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
@@ -728,8 +732,65 @@ export const updateCorrespondence = async (req: Request, res: Response) => {
     return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
   }
 
-  const body = req.body as Partial<mediaModel.CorrespondenceCreatePayload>;
-  const updated = await mediaModel.updateCorrespondence(id, body);
+  const body = req.body as Record<string, string>;
+  const file = req.file as Express.Multer.File | undefined;
+
+  // Helper: treat empty string as undefined so the model skips the field (no-change)
+  const orUndef = (v: string | undefined): string | undefined => (v && v.trim() !== '' ? v.trim() : undefined);
+  const orNull = (v: string | undefined): string | null | undefined =>
+    v === undefined ? undefined : v.trim() !== '' ? v.trim() : null;
+  const parseBoolOrUndef = (v: string | undefined): boolean | undefined =>
+    v !== undefined ? (v === 'true' || v === '1') : undefined;
+
+  // Build patch payload — only include fields that are present in the form submission
+  const patch: Partial<mediaModel.CorrespondenceCreatePayload> = {
+    // reference_no intentionally omitted — immutable after creation
+    sender: orUndef(body.sender),
+    sender_ref: orNull(body.sender_ref),
+    document_cover_page: parseBoolOrUndef(body.document_cover_page),
+    document_full_letters: parseBoolOrUndef(body.document_full_letters),
+    document_claim_attachment: parseBoolOrUndef(body.document_claim_attachment),
+    document_others: parseBoolOrUndef(body.document_others),
+    document_others_specify: orNull(body.document_others_specify),
+    subject: orUndef(body.subject),
+    correspondent: orUndef(body.correspondent),
+    direction: (orUndef(body.direction) as 'incoming' | 'outgoing' | undefined),
+    department: orUndef(body.department),
+    letter_type: orNull(body.letter_type),
+    category: orNull(body.category),
+    priority: (orUndef(body.priority) as 'low' | 'normal' | 'high' | undefined),
+    date_received: orNull(body.date_received),
+    remarks: orNull(body.remarks),
+    registered_at: orNull(body.registered_at),
+    registered_by: orNull(body.registered_by),
+    disseminated_at: orNull(body.disseminated_at),
+    disseminated_by: orNull(body.disseminated_by),
+  };
+
+  // If a new file is attached, overwrite attachment metadata
+  if (file) {
+    patch.attachment_filename = file.originalname;
+    patch.attachment_mime_type = file.mimetype;
+    patch.attachment_size = file.size;
+    patch.attachment_file_path = `uploads/media/correspondence/${file.filename}`;
+    patch.attachment_pdf_page_count = body.attachment_pdf_page_count
+      ? Number(body.attachment_pdf_page_count)
+      : null;
+  } else {
+    // Allow updating attachment metadata fields without re-uploading the binary
+    if (body.attachment_filename !== undefined) patch.attachment_filename = orNull(body.attachment_filename) ?? undefined;
+    if (body.attachment_mime_type !== undefined) patch.attachment_mime_type = orNull(body.attachment_mime_type) ?? undefined;
+    if (body.attachment_size !== undefined) patch.attachment_size = body.attachment_size ? Number(body.attachment_size) : null;
+    if (body.attachment_pdf_page_count !== undefined) patch.attachment_pdf_page_count = body.attachment_pdf_page_count ? Number(body.attachment_pdf_page_count) : null;
+    if (body.attachment_file_path !== undefined) patch.attachment_file_path = orNull(body.attachment_file_path) ?? undefined;
+  }
+
+  // Strip undefined keys so the model only updates provided fields
+  const cleanPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined)
+  ) as Partial<mediaModel.CorrespondenceCreatePayload>;
+
+  const updated = await mediaModel.updateCorrespondence(id, cleanPatch);
 
   if (!updated) {
     return res.status(404).json({ status: 'error', message: 'Correspondence not found or no changes applied', data: null });
@@ -760,7 +821,7 @@ export const uploadCorrespondenceAttachment = async (req: Request, res: Response
     return res.status(404).json({ status: 'error', message: 'Correspondence not found', data: null });
   }
 
-  const filePath = `/uploads/media/correspondence/${file.filename}`;
+  const filePath = `uploads/media/correspondence/${file.filename}`;
   const pdfPageCount: number | null = req.body?.pdf_page_count ? Number(req.body.pdf_page_count) : null;
 
   const updated = await mediaModel.updateCorrespondenceAttachment(id, {
@@ -780,7 +841,7 @@ export const uploadCorrespondenceAttachment = async (req: Request, res: Response
     message: 'Attachment uploaded and linked',
     data: {
       id,
-      attachment_file_path: `${BACKEND_URL}${filePath}`,
+      attachment_file_path: `${BACKEND_URL}/${filePath}`,
       attachment_filename: file.originalname,
       attachment_mime_type: file.mimetype,
       attachment_size: file.size,

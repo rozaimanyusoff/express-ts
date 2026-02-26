@@ -439,7 +439,7 @@ export interface CorrespondenceRecord extends RowDataPacket {
 }
 
 export interface CorrespondenceCreatePayload {
-  reference_no: string;
+  reference_no?: string | null;
   sender: string;
   sender_ref: string | null;
   document_cover_page: boolean;
@@ -480,6 +480,21 @@ export interface CorrespondenceListFilters {
   limit?: number;
   offset?: number;
 }
+
+/**
+ * Get the next sequence number for a correspondence direction in the current year.
+ * Counts ALL records (including soft-deleted) for that direction + year to avoid reusing numbers.
+ */
+export const getNextCorrespondenceSequence = async (
+  direction: 'incoming' | 'outgoing'
+): Promise<number> => {
+  const [rows] = await pool.execute<RowDataPacket[]>(
+    `SELECT COUNT(*) AS cnt FROM ${correspondenceTable}
+     WHERE direction = ? AND YEAR(created_at) = YEAR(NOW())`,
+    [direction]
+  );
+  return (rows[0].cnt as number) + 1;
+};
 
 /**
  * Insert a new correspondence record. Returns the auto-incremented id.
