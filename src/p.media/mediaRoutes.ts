@@ -105,4 +105,61 @@ router.post('/:id/thumbnail', asyncHandler(mediaController.generateThumbnail));
  */
 router.get('/:id/stream', asyncHandler(mediaController.streamMedia));
 
+/* ============ CORRESPONDENCE ============ */
+
+const correspondenceUploader = createUploader('media/correspondence', [
+	'application/pdf',
+	'application/msword',
+	'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	'application/vnd.ms-excel',
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+]);
+
+/**
+ * POST /api/media/correspondence
+ * Create a new correspondence record.
+ * Accepts multipart/form-data — include an optional "file" field to attach a document.
+ */
+router.post('/correspondence', correspondenceUploader.single('file'), asyncHandler(mediaController.createCorrespondence));
+
+/**
+ * GET /api/media/correspondence
+ * List correspondences — query: direction, priority, category, letter_type, department,
+ * search, date_from, date_to, limit (max 200), offset
+ */
+router.get('/correspondence', asyncHandler(mediaController.listCorrespondences));
+
+/**
+ * GET /api/media/correspondence/:id
+ * Get a single correspondence by id.
+ */
+router.get('/correspondence/:id', asyncHandler(mediaController.getCorrespondence));
+
+/**
+ * PUT /api/media/correspondence/:id
+ * Partial update — JSON body.
+ */
+router.put('/correspondence/:id', asyncHandler(mediaController.updateCorrespondence));
+
+/**
+ * PATCH /api/media/correspondence/:id/attachment
+ * Upload or replace attachment — multipart/form-data "file" field.
+ * Optional body field: pdf_page_count (integer)
+ */
+router.patch(
+	'/correspondence/:id/attachment',
+	correspondenceUploader.single('file'),
+	validateUploadedFile,
+	asyncHandler(mediaController.uploadCorrespondenceAttachment)
+);
+
+/**
+ * DELETE /api/media/correspondence/:id
+ * Soft-delete a correspondence.
+ */
+router.delete('/correspondence/:id', asyncHandler(mediaController.deleteCorrespondence));
+
 export default router;
