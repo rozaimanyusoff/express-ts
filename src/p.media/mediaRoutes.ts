@@ -67,24 +67,6 @@ router.post('/', asyncHandler(mediaController.createMedia));
  */
 router.get('/', asyncHandler(mediaController.listMedia));
 
-/**
- * GET /api/media/:id
- * Get a specific media by ID
- */
-router.get('/:id', asyncHandler(mediaController.getMedia));
-
-/**
- * PUT /api/media/:id
- * Update media metadata
- */
-router.put('/:id', asyncHandler(mediaController.updateMedia));
-
-/**
- * DELETE /api/media/:id
- * Delete media (soft delete)
- */
-router.delete('/:id', asyncHandler(mediaController.deleteMedia));
-
 /* ============ UTILITY ENDPOINTS ============ */
 
 /**
@@ -92,18 +74,6 @@ router.delete('/:id', asyncHandler(mediaController.deleteMedia));
  * Get media statistics
  */
 router.get('/stats/overview', asyncHandler(mediaController.getMediaStats));
-
-/**
- * POST /api/media/:id/thumbnail
- * Generate thumbnail for media
- */
-router.post('/:id/thumbnail', asyncHandler(mediaController.generateThumbnail));
-
-/**
- * GET /api/media/:id/stream
- * Stream media with range request support
- */
-router.get('/:id/stream', asyncHandler(mediaController.streamMedia));
 
 /* ============ CORRESPONDENCE ============ */
 
@@ -154,5 +124,35 @@ router.patch(
  * Soft-delete a correspondence.
  */
 router.delete('/correspondence/:id', asyncHandler(mediaController.deleteCorrespondence));
+
+/**
+ * GET /api/media/:id
+ * Get a specific media by ID
+ */
+router.get('/:id', asyncHandler(mediaController.getMedia));
+
+/**
+ * PUT /api/media/:id
+ * Update media metadata
+ */
+router.put('/:id', asyncHandler(mediaController.updateMedia));
+
+/**
+ * DELETE /api/media/:id
+ * Delete media (soft delete)
+ */
+router.delete('/:id', asyncHandler(mediaController.deleteMedia));
+
+/**
+ * POST /api/media/:id/thumbnail
+ * Generate thumbnail for media
+ */
+router.post('/:id/thumbnail', asyncHandler(mediaController.generateThumbnail));
+
+/**
+ * GET /api/media/:id/stream
+ * Stream media with range request support
+ */
+router.get('/:id/stream', asyncHandler(mediaController.streamMedia));
 
 export default router;

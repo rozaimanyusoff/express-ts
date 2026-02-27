@@ -488,7 +488,7 @@ export interface CorrespondenceListFilters {
 export const getNextCorrespondenceSequence = async (
   direction: 'incoming' | 'outgoing'
 ): Promise<number> => {
-  const [rows] = await pool.execute<RowDataPacket[]>(
+  const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT COUNT(*) AS cnt FROM ${correspondenceTable}
      WHERE direction = ? AND YEAR(created_at) = YEAR(NOW())`,
     [direction]
@@ -555,7 +555,7 @@ export const createCorrespondence = async (
     payload.attachment_file_path ?? null,
   ];
 
-  const [result] = await pool.execute<ResultSetHeader>(sql, params);
+  const [result] = await pool.query<ResultSetHeader>(sql, params);
   return result.insertId;
 };
 
@@ -588,7 +588,7 @@ export const getCorrespondences = async (
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
-  const [countRows] = await pool.execute<RowDataPacket[]>(
+  const [countRows] = await pool.query<RowDataPacket[]>(
     `SELECT COUNT(*) AS total FROM ${correspondenceTable} ${where}`,
     params
   );
@@ -597,7 +597,7 @@ export const getCorrespondences = async (
   const limit = filters.limit ?? 20;
   const offset = filters.offset ?? 0;
 
-  const [rows] = await pool.execute<CorrespondenceRecord[]>(
+  const [rows] = await pool.query<CorrespondenceRecord[]>(
     `SELECT * FROM ${correspondenceTable} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
@@ -611,7 +611,7 @@ export const getCorrespondences = async (
 export const getCorrespondenceById = async (
   id: number
 ): Promise<CorrespondenceRecord | null> => {
-  const [rows] = await pool.execute<CorrespondenceRecord[]>(
+  const [rows] = await pool.query<CorrespondenceRecord[]>(
     `SELECT * FROM ${correspondenceTable} WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
     [id]
   );
@@ -666,7 +666,7 @@ export const updateCorrespondence = async (
   setClauses.push('updated_at = NOW()');
   params.push(id);
 
-  const [result] = await pool.execute<ResultSetHeader>(
+  const [result] = await pool.query<ResultSetHeader>(
     `UPDATE ${correspondenceTable} SET ${setClauses.join(', ')} WHERE id = ? AND deleted_at IS NULL`,
     params
   );
@@ -686,7 +686,7 @@ export const updateCorrespondenceAttachment = async (
     attachment_file_path: string;
   }
 ): Promise<boolean> => {
-  const [result] = await pool.execute<ResultSetHeader>(
+  const [result] = await pool.query<ResultSetHeader>(
     `UPDATE ${correspondenceTable}
      SET attachment_filename = ?, attachment_mime_type = ?, attachment_size = ?,
          attachment_pdf_page_count = ?, attachment_file_path = ?, updated_at = NOW()
@@ -707,7 +707,7 @@ export const updateCorrespondenceAttachment = async (
  * Soft-delete a correspondence by setting deleted_at.
  */
 export const deleteCorrespondence = async (id: number): Promise<boolean> => {
-  const [result] = await pool.execute<ResultSetHeader>(
+  const [result] = await pool.query<ResultSetHeader>(
     `UPDATE ${correspondenceTable} SET deleted_at = NOW(), updated_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
     [id]
   );
