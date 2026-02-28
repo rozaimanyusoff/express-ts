@@ -70,7 +70,7 @@ export const getNavigation = async (): Promise<Navigation[]> => {
     const [result] = await pool.query<Navigation[]>(`SELECT * FROM auth.navigation`);
     return result;
   } catch (error) {
-    console.error('Error fetching navigation data:', error);
+    logger.error('Error fetching navigation data:', error);
     throw error;
   }
 };
@@ -87,7 +87,7 @@ export const getNavigationById = async (id: number): Promise<Navigation[]> => {
     );
     return result;
   } catch (error) {
-    console.error('Error fetching navigation data by id:', error);
+    logger.error('Error fetching navigation data by id:', error);
     throw error;
   }
 };
@@ -107,19 +107,19 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
     const [result]: any = await Promise.race([queryPromise, timeoutPromise]);
     
     if (result.affectedRows === 0) {
-      console.warn(`Route tracking: No user found with id: ${userId}`);
+      logger.warn(`Route tracking: No user found with id: ${userId}`);
     }
   } catch (error: any) {
     if (error.message === 'Route tracking timeout') {
-      console.error('Route tracking timeout - database may be slow or unresponsive');
+      logger.error('Route tracking timeout - database may be slow or unresponsive');
     } else if (error.code === 'ETIMEDOUT' || error.errno === -110) {
-      console.error('Route tracking database timeout (ETIMEDOUT):', {
+      logger.error('Route tracking database timeout (ETIMEDOUT):', {
         path,
         timestamp: new Date().toISOString(),
         userId
       });
     } else {
-      console.error('Error tracking route:', error);
+      logger.error('Error tracking route:', error);
     }
   }
 };
@@ -169,7 +169,7 @@ export const getNavigationPermissions = async (): Promise<GroupNavPermission[]> 
     );
     return result;
   } catch (error) {
-    console.error('Error fetching navigation permission data:', error);
+    logger.error('Error fetching navigation permission data:', error);
     throw error;
   }
 };
@@ -190,7 +190,7 @@ export const updateNavigationPermission = async (permissions: GroupNavPermission
     const [result]: any = await pool.query(query, values);
     return result.affectedRows;
   } catch (error) {
-    console.error('Error updating navigation permissions:', error);
+    logger.error('Error updating navigation permissions:', error);
     throw error;
   }
 };
@@ -207,7 +207,7 @@ export const removeNavigationPermissions = async (permissions: GroupNavPermissio
 
     return result.affectedRows;
   } catch (error) {
-    console.error('Error removing navigation permissions:', error);
+    logger.error('Error removing navigation permissions:', error);
     throw error;
   }
 };
@@ -220,7 +220,7 @@ export const toggleStatus = async (id: number, status: number): Promise<number> 
     );
     return result.affectedRows;
   } catch (error) {
-    console.error('Error toggling navigation status:', error);
+    logger.error('Error toggling navigation status:', error);
     throw error;
   }
 };
@@ -240,7 +240,7 @@ export const getNavigationByGroups = async (groupIds: number[]): Promise<Navigat
     const [result] = await pool.query<Navigation[]>(query, groupIds);
     return result;
   } catch (error) {
-    console.error('Error fetching navigation data by group IDs:', error);
+    logger.error('Error fetching navigation data by group IDs:', error);
     throw error;
   }
 };
@@ -259,7 +259,7 @@ export const getNavigationByUserId = async (userId: number): Promise<Navigation[
     const [result] = await pool.query<Navigation[]>(query, [userId]);
     return result;
   } catch (error) {
-    console.error('Error fetching navigation data by user ID:', error);
+    logger.error('Error fetching navigation data by user ID:', error);
     throw error;
   }
 };
@@ -283,7 +283,7 @@ export const removeNavigationPermissionsNotIn = async (id: number, permittedGrou
     const [result]: any = await pool.query(query, values);
     return result.affectedRows;
   } catch (error) {
-    console.error('Error removing navigation permissions not in permittedGroups:', error);
+    logger.error('Error removing navigation permissions not in permittedGroups:', error);
     throw error;
   }
 };
@@ -301,7 +301,7 @@ export const getAllRoles = async (): Promise<Role[]> => {
     const [rows]: any[] = await pool.query('SELECT * FROM auth.roles');
     return rows;
   } catch (error) {
-    console.error('Error getting all roles:', error);
+    logger.error('Error getting all roles:', error);
     throw error;
   }
 };
@@ -311,7 +311,7 @@ export const getRoleById = async (id: number): Promise<Role> => {
     const [rows]: any[] = await pool.query('SELECT * FROM auth.roles WHERE id = ?', [id]);
     return rows[0];
   } catch (error) {
-    console.error('Error getting role by id:', error);
+    logger.error('Error getting role by id:', error);
     throw error;
   }
 };
@@ -347,7 +347,7 @@ export const getUsersByRoleIds = async (roleIds: number[]): Promise<any[]> => {
     const [rows]: any[] = await pool.query(query, roleIds);
     return rows;
   } catch (error) {
-    console.error('Error getting users by role IDs:', error);
+    logger.error('Error getting users by role IDs:', error);
     throw error;
   }
 };
@@ -362,7 +362,7 @@ export const deleteRoles = async (roleIds: number[]): Promise<number> => {
     
     return result.affectedRows;
   } catch (error) {
-    console.error('Error deleting roles:', error);
+    logger.error('Error deleting roles:', error);
     throw error;
   }
 };
@@ -374,7 +374,7 @@ export const getAllGroups = async (): Promise<Group[]> => {
     const [rows]: any[] = await pool.query('SELECT * FROM auth.groups');
     return rows;
   } catch (error) {
-    console.error('Error getting all groups:', error);
+    logger.error('Error getting all groups:', error);
     throw error;
   }
 };
@@ -384,7 +384,7 @@ export const getGroupById = async (id: number): Promise<Group> => {
     const [rows]: any[] = await pool.query('SELECT * FROM auth.groups WHERE id = ?', [id]);
     return rows[0];
   } catch (error) {
-    console.error('Error getting group by id:', error);
+    logger.error('Error getting group by id:', error);
     throw error;
   }
 };

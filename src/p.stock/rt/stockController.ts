@@ -5,7 +5,7 @@ import * as stockModel from './stockModel';
 
 export const createStockPurchase = async (req: Request, res: Response) => {
   const result = await stockModel.createStockPurchase(req.body);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock purchase created successfully',
     status: 'success'
@@ -48,7 +48,7 @@ export const getStockPurchases = async (req: Request, res: Response) => {
   // Remove supplier_id from each purchase object
   const formattedData = data.map(({ supplier_id, ...rest }) => rest);
 
-  res.json({
+  return res.json({
     data: formattedData,
     message: 'Stock purchases retrieved successfully',
     status: 'success'
@@ -60,7 +60,7 @@ export const getStockPurchaseById = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const row = await stockModel.getStockPurchaseById(id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json({
+  return res.json({
     data: row,
     message: 'Stock purchase retrieved successfully',
     status: 'success'
@@ -71,7 +71,7 @@ export const updateStockPurchase = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockPurchase(id, req.body);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock purchase updated successfully',
     status: 'success'
@@ -82,19 +82,19 @@ export const deleteStockPurchase = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockPurchase(id);
-  res.json(result);
+  return res.json(result);
 };
 
 export const createStockPurchaseItem = async (req: Request, res: Response) => {
   const result = await stockModel.createStockPurchaseItem(req.body);
-  res.status(201).json(result);
+  return res.status(201).json(result);
 };
 
 export const getStockPurchaseItems = async (req: Request, res: Response) => {
   const purchase_id = Number(req.params.purchase_id);
   if (isNaN(purchase_id)) return res.status(400).json({ error: 'Invalid purchase_id' });
   const rows = await stockModel.getStockPurchaseItems(purchase_id);
-  res.json(rows);
+  return res.json(rows);
 };
 
 export const getStockPurchaseItemById = async (req: Request, res: Response) => {
@@ -102,71 +102,71 @@ export const getStockPurchaseItemById = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const row = await stockModel.getStockPurchaseItemById(id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(row);
+  return res.json(row);
 };
 
 export const updateStockPurchaseItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockPurchaseItem(id, req.body);
-  res.json(result);
+  return res.json(result);
 };
 
 export const deleteStockPurchaseItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockPurchaseItem(id);
-  res.json(result);
+  return res.json(result);
 };
 
 // ---- SUPPLIERS ----
 export const createSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.createSupplier(req.body);
-  res.status(201).json({ data: result, message: 'Supplier created', status: 'success' });
+  return res.status(201).json({ data: result, message: 'Supplier created', status: 'success' });
 };
 export const getSuppliers = async (_req: Request, res: Response) => {
   const data = await stockModel.getSuppliers();
-  res.json({ data, message: 'Suppliers retrieved', status: 'success' });
+  return res.json({ data, message: 'Suppliers retrieved', status: 'success' });
 };
 export const getSupplierById = async (req: Request, res: Response) => {
   const data = await stockModel.getSupplierById(Number(req.params.id));
-  res.json({ data, message: 'Supplier retrieved', status: 'success' });
+  return res.json({ data, message: 'Supplier retrieved', status: 'success' });
 };
 export const updateSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.updateSupplier(Number(req.params.id), req.body);
-  res.json({ data: result, message: 'Supplier updated', status: 'success' });
+  return res.json({ data: result, message: 'Supplier updated', status: 'success' });
 };
 export const deleteSupplier = async (req: Request, res: Response) => {
   const result = await stockModel.deleteSupplier(Number(req.params.id));
-  res.json({ data: result, message: 'Supplier deleted', status: 'success' });
+  return res.json({ data: result, message: 'Supplier deleted', status: 'success' });
 };
 
 // ---- TEAM ----
 export const createTeam = async (req: Request, res: Response) => {
   const result = await stockModel.createTeam(req.body);
-  res.status(201).json({ data: result, message: 'Team created', status: 'success' });
+  return res.status(201).json({ data: result, message: 'Team created', status: 'success' });
 };
 export const getTeams = async (_req: Request, res: Response) => {
   const data = await stockModel.getTeams();
-  res.json({ data, message: 'Teams retrieved', status: 'success' });
+  return res.json({ data, message: 'Teams retrieved', status: 'success' });
 };
 export const getTeamById = async (req: Request, res: Response) => {
   const data = await stockModel.getTeamById(Number(req.params.id));
-  res.json({ data, message: 'Team retrieved', status: 'success' });
+  return res.json({ data, message: 'Team retrieved', status: 'success' });
 };
 export const updateTeam = async (req: Request, res: Response) => {
   const result = await stockModel.updateTeam(Number(req.params.id), req.body);
-  res.json({ data: result, message: 'Team updated', status: 'success' });
+  return res.json({ data: result, message: 'Team updated', status: 'success' });
 };
 export const deleteTeam = async (req: Request, res: Response) => {
   const result = await stockModel.deleteTeam(Number(req.params.id));
-  res.json({ data: result, message: 'Team deleted', status: 'success' });
+  return res.json({ data: result, message: 'Team deleted', status: 'success' });
 };
 
 // ---- STOCK ITEMS ----
 export const createStockItem = async (req: Request, res: Response) => {
   const result = await stockModel.createStockItem(req.body);
-  res.status(201).json({ data: result, message: 'Stock item created', status: 'success' });
+  return res.status(201).json({ data: result, message: 'Stock item created', status: 'success' });
 };
 export const getStockItems = async (_req: Request, res: Response) => {
   const items = await stockModel.getStockItems();
@@ -188,7 +188,7 @@ export const getStockItems = async (_req: Request, res: Response) => {
       }))
     : [];
 
-  res.json({ data, message: 'Stock items retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock items retrieved', status: 'success' });
 };
 
 export const getStockItemById = async (req: Request, res: Response) => {
@@ -213,7 +213,7 @@ export const getStockItemById = async (req: Request, res: Response) => {
     total_out: hasCardFields(card) ? card.total_out : null,
   };
 
-  res.json({ data, message: 'Stock item retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock item retrieved', status: 'success' });
 };
 
 // ---- STOCK CARD ----
@@ -237,7 +237,7 @@ export const getStockCards = async (_req: Request, res: Response) => {
       }))
     : [];
 
-  res.json({ data, message: 'Stock cards retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock cards retrieved', status: 'success' });
 };
 
 export const getStockCardByItemId = async (req: Request, res: Response) => {
@@ -260,26 +260,26 @@ export const getStockCardByItemId = async (req: Request, res: Response) => {
     item_name: hasItemCodeAndName(item) ? item.item_name : null,
   }));
 
-  res.json({ data, message: 'Stock card(s) retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock card(s) retrieved', status: 'success' });
 };
 
 export const createStockCard = async (req: Request, res: Response) => {
   const result = await stockModel.createStockCard(req.body);
-  res.status(201).json({ data: result, message: 'Stock card created', status: 'success' });
+  return res.status(201).json({ data: result, message: 'Stock card created', status: 'success' });
 };
 
 export const updateStockCard = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockCard(id, req.body);
-  res.json({ data: result, message: 'Stock card updated', status: 'success' });
+  return res.json({ data: result, message: 'Stock card updated', status: 'success' });
 };
 
 export const deleteStockCard = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockCard(id);
-  res.json({ data: result, message: 'Stock card deleted', status: 'success' });
+  return res.json({ data: result, message: 'Stock card deleted', status: 'success' });
 };
 
 // ---- ADDITIONAL STOCK ITEM FUNCTIONS ----
@@ -287,14 +287,14 @@ export const updateStockItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.updateStockItem(id, req.body);
-  res.json({ data: result, message: 'Stock item updated', status: 'success' });
+  return res.json({ data: result, message: 'Stock item updated', status: 'success' });
 };
 
 export const deleteStockItem = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   const result = await stockModel.deleteStockItem(id);
-  res.json({ data: result, message: 'Stock item deleted', status: 'success' });
+  return res.json({ data: result, message: 'Stock item deleted', status: 'success' });
 };
 
 function isRowDataPacket(obj: any): obj is { id: number } {
@@ -313,7 +313,7 @@ function isUser(obj: any): obj is { fname?: string; id: number; username?: strin
 
 export const createStockTracking = async (req: Request, res: Response) => {
   const result = await stockModel.createStockTracking(req.body);
-  res.status(201).json({ data: result, message: 'Stock tracking created', status: 'success' });
+  return res.status(201).json({ data: result, message: 'Stock tracking created', status: 'success' });
 };
 
 export const getStockTrackings = async (_req: Request, res: Response) => {
@@ -407,7 +407,7 @@ export const getStockTrackings = async (_req: Request, res: Response) => {
     };
   });
 
-  res.json({ data, message: 'Stock trackings retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock trackings retrieved', status: 'success' });
 };
 
 export const getStockTrackingById = async (req: Request, res: Response) => {
@@ -481,7 +481,7 @@ export const getStockTrackingById = async (req: Request, res: Response) => {
     updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null
   };
 
-  res.json({ data, message: 'Stock tracking retrieved', status: 'success' });
+  return res.json({ data, message: 'Stock tracking retrieved', status: 'success' });
 };
 
 export const updateStockTracking = async (req: Request, res: Response) => {
@@ -561,14 +561,14 @@ export const updateStockTracking = async (req: Request, res: Response) => {
     updated_by: updatedBy ? (updatedBy.fname || updatedBy.username) : null
   };
 
-  res.json({ data, message: 'Stock tracking updated', status: 'success' });
+  return res.json({ data, message: 'Stock tracking updated', status: 'success' });
 };
 
 export const deleteStockTracking = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
   await stockModel.deleteStockTracking(id);
-  res.json({ message: 'Stock tracking deleted', status: 'success' });
+  return res.json({ message: 'Stock tracking deleted', status: 'success' });
 };
 
 // ---- STOCK ANALYSIS ----
@@ -639,20 +639,20 @@ export const getStockAnalysis = async (_req: Request, res: Response) => {
 
   // Generate analysis from minimal data
   const analysis = generateStockAnalysis(analysisData);
-  res.json({ analysis, message: 'Stock analysis generated', status: 'success' });
+  return res.json({ analysis, message: 'Stock analysis generated', status: 'success' });
 };
 
 // ---- STOCK REQUESTS ----
 export const createStockRequest = async (req: Request, res: Response) => {
   try {
     const result = await stockModel.createStockRequest(req.body);
-    res.status(201).json({
+    return res.status(201).json({
       data: result,
       message: 'Stock request created successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to create stock request', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to create stock request', status: 'error' });
   }
 };
 
@@ -690,13 +690,13 @@ export const getStockRequests = async (_req: Request, res: Response) => {
           : null
       };
     });
-    res.json({
+    return res.json({
       data,
       message: 'Stock requests retrieved successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to retrieve stock requests', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to retrieve stock requests', status: 'error' });
   }
 };
 
@@ -714,7 +714,7 @@ export const getStockRequestById = async (req: Request, res: Response) => {
     ...row,
     items: Array.isArray(row.items) ? row.items : []
   };
-  res.json({
+  return res.json({
     data,
     message: 'Stock request retrieved successfully',
     status: 'success'
@@ -726,13 +726,13 @@ export const updateStockRequest = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.updateStockRequest(id, req.body);
-    res.json({
+    return res.json({
       data: result,
       message: 'Stock request updated successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to update stock request', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to update stock request', status: 'error' });
   }
 };
 
@@ -741,13 +741,13 @@ export const deleteStockRequest = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.deleteStockRequest(id);
-    res.json({
+    return res.json({
       data: result,
       message: 'Stock request deleted successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request', status: 'error' });
   }
 };
 
@@ -755,13 +755,13 @@ export const addStockRequestItem = async (req: Request, res: Response) => {
   const { stock_out_id, ...item } = req.body;
   try {
     const result = await stockModel.addStockRequestItem(stock_out_id, item);
-    res.status(201).json({
+    return res.status(201).json({
       data: result,
       message: 'Stock request item added successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to add stock request item', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to add stock request item', status: 'error' });
   }
 };
 
@@ -770,13 +770,13 @@ export const updateStockRequestItem = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.updateStockRequestItem(id, req.body);
-    res.json({
+    return res.json({
       data: result,
       message: 'Stock request item updated successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to update stock request item', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to update stock request item', status: 'error' });
   }
 };
 
@@ -785,13 +785,13 @@ export const deleteStockRequestItem = async (req: Request, res: Response) => {
   if (isNaN(id)) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
   try {
     const result = await stockModel.deleteStockRequestItem(id);
-    res.json({
+    return res.json({
       data: result,
       message: 'Stock request item deleted successfully',
       status: 'success'
     });
   } catch (err: any) {
-    res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request item', status: 'error' });
+    return res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request item', status: 'error' });
   }
 };
 
@@ -799,7 +799,7 @@ export const getStockTransactionsByItemId = async (req: Request, res: Response) 
   const itemId = Number(req.params.id);
   if (isNaN(itemId)) return res.status(400).json({ message: 'Invalid item id', status: 'error' });
   const rows = await stockModel.getStockTransactionsByItemId(itemId);
-  res.json({
+  return res.json({
     data: rows,
     message: 'Stock transactions retrieved successfully',
     status: 'success'
@@ -818,7 +818,7 @@ export const getStockInStockByItemId = async (req: Request, res: Response) => {
     ? rows.filter((row: any) => row.status === 'in_stock' || row.status === 'IN_STOCK' || row.status === 'available')
     : [];
   // Return all in-stock records, including serial_no
-  res.json({
+  return res.json({
     data: inStockRows.map((row: any) => ({
       id: row.id,
       item_id: row.item_id,

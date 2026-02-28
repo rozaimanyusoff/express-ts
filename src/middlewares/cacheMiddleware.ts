@@ -26,7 +26,7 @@ export const createCacheMiddleware = (
       if (cached) {
         logger.debug(`Cache hit: ${cacheKey}`);
         res.set('X-Cache', 'HIT');
-        res.json(JSON.parse(cached));
+        return res.json(JSON.parse(cached));
         return;
       }
 

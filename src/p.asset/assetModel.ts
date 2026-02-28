@@ -1,5 +1,6 @@
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import path from 'path';
+import logger from '../utils/logger';
 
 import { pool, pool2 } from "../utils/db";
 
@@ -372,7 +373,7 @@ export const updateAsset = async (id: number, data: any) => {
   } catch (err) {
     // do not fail the update if history insertion fails; log and continue
 
-    console.error('Failed to insert asset history for asset', id, err);
+    logger.error('Failed to insert asset history for asset', id, err);
   }
 
   return result;
@@ -776,7 +777,7 @@ export const getVehicleRoadtaxAndInsuranceExpiry = async (asset_id: number) => {
     return { roadtax_expiry: null, insurance_expiry: null };
   } catch (err) {
     // If query fails (table may not exist or wrong vehicle_id), return nulls
-    console.warn(`Failed to fetch roadtax/insurance expiry for asset ${asset_id}:`, err);
+    logger.warn(`Failed to fetch roadtax/insurance expiry for asset ${asset_id}:`, err);
     return { roadtax_expiry: null, insurance_expiry: null };
   }
 };
@@ -2601,7 +2602,7 @@ export const hasAssetHistoryChanged = async (data: {
       }
     };
   } catch (err) {
-    console.error('Error checking asset_history changes:', err);
+    logger.error('Error checking asset_history changes:', err);
     // If check fails, default to inserting (safe assumption: unknown state = likely changed)
     return { hasChanged: true, latestRecord: null, changes: {} };
   }
@@ -2757,7 +2758,7 @@ export const checkAndInsertAssetHistory = async (payload: {
       message: 'No changes detected - asset history not updated'
     };
   } catch (err) {
-    console.error('Error checking/inserting asset_history:', err);
+    logger.error('Error checking/inserting asset_history:', err);
     // On error, return false to allow assessment to continue
     return {
       inserted: false,
@@ -2851,7 +2852,7 @@ export const updateAssetDataFromAssessment = async (asset_id: number, data: {
       message: `No records found to update for asset_id=${asset_id}`
     };
   } catch (err) {
-    console.error('Error updating assetdata from assessment:', err);
+    logger.error('Error updating assetdata from assessment:', err);
     return {
       updated: false,
       error: true,
@@ -2916,7 +2917,7 @@ export const updateAssetStatus = async (
       message: affectedRows > 0 ? 'Asset status updated successfully' : 'No records updated'
     };
   } catch (err) {
-    console.error('Error updating asset status:', err);
+    logger.error('Error updating asset status:', err);
     throw err;
   }
 };
@@ -2974,7 +2975,7 @@ export const createStatusHistory = async (
       message: insertId > 0 ? 'Status history record created' : 'Failed to create history record'
     };
   } catch (err) {
-    console.error('Error creating status history:', err);
+    logger.error('Error creating status history:', err);
     throw err;
   }
 };
@@ -3003,7 +3004,7 @@ export const getAssetTransferStatus = async (asset_id: number): Promise<string |
     }
     return null;
   } catch (err) {
-    console.warn(`Error checking asset transfer status for asset ${asset_id}:`, err);
+    logger.warn(`Error checking asset transfer status for asset ${asset_id}:`, err);
     return null;
   }
 };
@@ -3027,7 +3028,7 @@ export const processAcceptedTransfers = async () => {
     );
 
     if (!Array.isArray(items) || items.length === 0) {
-      console.log('No pending transfers to process');
+      logger.info('No pending transfers to process');
       return 0;
     }
 
@@ -3040,7 +3041,7 @@ export const processAcceptedTransfers = async () => {
         // Fetch current asset data
         const asset = await getAssetById(itemData.asset_id);
         if (!asset) {
-          console.warn(`Asset ${itemData.asset_id} not found, skipping`);
+          logger.warn(`Asset ${itemData.asset_id} not found, skipping`);
           continue;
         }
 
@@ -3077,17 +3078,17 @@ export const processAcceptedTransfers = async () => {
         );
 
         processedCount++;
-        console.log(`✓ Processed transfer item ${itemData.id} for asset ${itemData.asset_id}`);
+        logger.info(`✓ Processed transfer item ${itemData.id} for asset ${itemData.asset_id}`);
       } catch (itemErr) {
-        console.error(`✗ Error processing transfer item ${itemData.id}:`, itemErr);
+        logger.error(`✗ Error processing transfer item ${itemData.id}:`, itemErr);
         // Continue with next item instead of failing entire batch
       }
     }
 
-    console.log(`✅ Asset transfer processing complete. Processed: ${processedCount}/${items.length}`);
+    logger.info(`✅ Asset transfer processing complete. Processed: ${processedCount}/${items.length}`);
     return processedCount;
   } catch (err) {
-    console.error('❌ Error in processAcceptedTransfers:', err);
+    logger.error('❌ Error in processAcceptedTransfers:', err);
     throw err;
   }
 };

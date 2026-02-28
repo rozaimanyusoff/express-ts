@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { RowDataPacket } from 'mysql2';
+import logger from '../utils/logger';
 
 import { pool } from '../utils/db';
 import * as assetModel from '../p.asset/assetModel';
@@ -67,15 +68,15 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
     try {
         // Get status query parameter for filtering
         const statusFilter = req.query.status ? String(req.query.status).toLowerCase() : null;
-        
+
         // Get all sim cards from telco_sims table
         const allSimCards = await telcoModel.getSimCards();
         // Get sim cards linked to subscribers for enrichment
         const simCardsWithSubs = await (telcoModel.getSimCardBySubscriber ? telcoModel.getSimCardBySubscriber() : []);
-        
+
         // Create a map of sim cards with subscriber info for quick lookup
         const simWithSubsMap = Object.fromEntries((Array.isArray(simCardsWithSubs) ? simCardsWithSubs : []).map((sim: any) => [sim.sim_id, sim]));
-        
+
         // Get all subscribers to map sub_no_id to sub_no
         const subscribers = await telcoModel.getSubscribers();
         const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
@@ -85,23 +86,23 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
         // Get all accounts for account details
         const accounts = await telcoModel.getAccounts();
         const accountMap = Object.fromEntries((Array.isArray(accounts) ? accounts : []).map((acc: any) => [acc.id, acc]));
-        
+
         // Filter by status if provided
-        const filteredSimCards = statusFilter 
+        const filteredSimCards = statusFilter
             ? (Array.isArray(allSimCards) ? allSimCards.filter((sim: any) => sim.status && sim.status.toLowerCase() === statusFilter) : [])
             : allSimCards;
-        
+
         const formatted = Array.isArray(filteredSimCards)
             ? await Promise.all(filteredSimCards.map(async (sim: any) => {
                 // Get enriched data from simWithSubsMap if available
                 const enrichedSim = simWithSubsMap[sim.id] || {};
                 const sub_no_id = enrichedSim.sub_no_id || null;
                 const account_sub = enrichedSim.account_sub || null;
-                
+
                 const accountSubData = sub_no_id ? accountSubMap[sub_no_id] : null;
                 const accountId = accountSubData ? accountSubData.account_id : null;
                 const account = accountId ? accountMap[accountId] : null;
-                
+
                 // Get replacement SIM details if replacement_sim_id exists
                 let replacementSim = null;
                 if (sim.replacement_sim_id) {
@@ -113,14 +114,14 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                         replacementSim = replacementRows[0];
                     }
                 }
-                
+
                 // Get sim card history for this subscriber
                 const simHistory = sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sub_no_id) : [];
                 // Get user history for this sim
                 const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.id);
                 // Get asset history for this sim
                 const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.id);
-                
+
                 return {
                     id: sim.id,
                     sim_sn: sim.sim_sn,
@@ -132,8 +133,8 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                     } : null,
                     activated_at: sim.activated_at || null,
                     deactivated_at: sim.deactivated_at || null,
-                    subs: sub_no_id ? { 
-                        id: sub_no_id, 
+                    subs: sub_no_id ? {
+                        id: sub_no_id,
                         sub_no: subNoMap[sub_no_id] || null,
                         account_sub: account_sub || null
                     } : null,
@@ -205,7 +206,7 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
                 };
             }))
             : [];
-        res.status(200).json({ data: formatted, message: 'Fetched sim card data successfully', status: 'success' });
+        return res.status(200).json({ data: formatted, message: 'Fetched sim card data successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -214,7 +215,7 @@ export const getSimCards = async (req: Request, res: Response, next: NextFunctio
 export const getSimCardById = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const simId = Number(req.params.id);
-        
+
         // Get single sim card with subscriber info
         const [simCardRows] = await pool.query<RowDataPacket[]>(`
             SELECT s.id as sim_id, s.sim_sn, s.status, s.reason, s.activated_at, s.deactivated_at, s.replacement_sim_id, scs.sub_no_id, ts.account_sub
@@ -223,7 +224,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
             LEFT JOIN billings.telco_subs ts ON scs.sub_no_id = ts.id
             WHERE s.id = ?
         `, [simId]);
-        
+
         if (!simCardRows || simCardRows.length === 0) {
             return res.status(404).json({
                 status: 'error',
@@ -231,32 +232,32 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                 data: null
             });
         }
-        
+
         const sim = simCardRows[0] as any;
-        
+
         // Get all subscribers to map sub_no_id to sub_no
         const subscribers = await telcoModel.getSubscribers();
         const subNoMap = Object.fromEntries((Array.isArray(subscribers) ? subscribers : []).map((sub: any) => [sub.id, sub.sub_no]));
-        
+
         // Get account-subscriber mappings
         const accountSubs = await telcoModel.getAccountSubs();
         const accountSubMap = Object.fromEntries((Array.isArray(accountSubs) ? accountSubs : []).map((as: any) => [as.sub_no_id, { account_id: as.account_id, account_sub: as.account_sub }]));
-        
+
         // Get all accounts
         const accounts = await telcoModel.getAccounts();
         const accountMap = Object.fromEntries((Array.isArray(accounts) ? accounts : []).map((acc: any) => [acc.id, acc]));
-        
+
         // Get sim card history for this subscriber
         const simHistory = sim.sub_no_id ? await telcoModel.getSimCardHistoryBySubscriber(sim.sub_no_id) : [];
         // Get user history for this sim
         const simUserHistory = await telcoModel.getSimUserHistoryBySimId(sim.sim_id);
         // Get asset history for this sim
         const simAssetHistory = await telcoModel.getSimAssetHistoryBySimId(sim.sim_id);
-        
+
         const accountSubData = sim.sub_no_id ? accountSubMap[sim.sub_no_id] : null;
         const accountId = accountSubData ? accountSubData.account_id : null;
         const account = accountId ? accountMap[accountId] : null;
-        
+
         // Get replacement SIM details if replacement_sim_id exists
         let replacementSim = null;
         if (sim.replacement_sim_id) {
@@ -268,7 +269,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                 replacementSim = replacementRows[0];
             }
         }
-        
+
         const enrichedData = {
             id: sim.sim_id || sim.id,
             sim_sn: sim.sim_sn || sim.sim_no,
@@ -280,8 +281,8 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
             } : null,
             activated_at: sim.activated_at || null,
             deactivated_at: sim.deactivated_at || null,
-            subs: sim.sub_no_id ? { 
-                id: sim.sub_no_id, 
+            subs: sim.sub_no_id ? {
+                id: sim.sub_no_id,
                 sub_no: subNoMap[sim.sub_no_id] || null,
                 account_sub: sim.account_sub || null
             } : null,
@@ -351,8 +352,8 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
                 };
             }) : null
         };
-        
-        res.status(200).json({ data: enrichedData, message: 'Sim card retrieved successfully', status: 'success' });
+
+        return res.status(200).json({ data: enrichedData, message: 'Sim card retrieved successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -362,7 +363,7 @@ export const getSimCardById = async (req: Request, res: Response, next: NextFunc
 export const createSimCard = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { sim_sn, status, reason, replacement_sim, sub_no_id, asset_id, effective_date } = req.body;
-        
+
         // Validate required field
         if (!sim_sn) {
             return res.status(400).json({
@@ -371,28 +372,28 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
                 data: null
             });
         }
-        
+
         const effDate = effective_date || new Date().toISOString().split('T')[0];
-        
+
         // Create the new sim card in telco_sims table
-        const simCardData = { 
-            sim_sn, 
+        const simCardData = {
+            sim_sn,
             status: 'active', // Always set new SIM as active
             reason: reason || 'new',
             replacement_sim_id: null, // Will be set after replacement_sim is deactivated
             activated_at: new Date()
         };
         const newSimCardId = await telcoModel.createSimCard(simCardData);
-        
+
         // If replacement_sim is provided (replacing an old SIM)
         if (replacement_sim) {
             // 1. Deactivate the old SIM with status='deactivated', reason='broken', deactivated_at=effective_date
             await telcoModel.deactivateSimCard(replacement_sim, 'broken', effDate);
-            
+
             // 2. Link the new SIM to the old SIM (set replacement_sim_id on old SIM)
             await telcoModel.linkReplacementSim(replacement_sim, newSimCardId);
         }
-        
+
         // 3. Insert new record in telco_sims_subs: sim_id, sub_no_id, effective_date
         if (sub_no_id) {
             await telcoModel.createSimSubsMapping({
@@ -401,7 +402,7 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
                 effective_date: effDate
             });
         }
-        
+
         // 4. Insert new record in telco_subs_devices: sub_no_id, asset_id, effective_date
         if (sub_no_id && asset_id) {
             await telcoModel.createSubsDeviceMapping({
@@ -410,9 +411,9 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
                 effective_date: effDate
             });
         }
-        
-        res.status(201).json({ 
-            id: newSimCardId, 
+
+        return res.status(201).json({
+            id: newSimCardId,
             message: 'Sim card created successfully',
             status: 'success'
         });
@@ -425,7 +426,7 @@ export const updateSimCard = async (req: Request, res: Response, next: NextFunct
     try {
         const simId = Number(req.params.id);
         const { sim_sn, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
-        
+
         // Validate required fields
         if (!simId) {
             return res.status(400).json({
@@ -434,12 +435,12 @@ export const updateSimCard = async (req: Request, res: Response, next: NextFunct
                 data: null
             });
         }
-        
+
         // Update sim_sn in telco_sims if provided
         if (sim_sn) {
             await pool.query(`UPDATE billings.telco_sims SET sim_sn = ? WHERE id = ?`, [sim_sn, simId]);
         }
-        
+
         // Create new history record in telco_sims_history
         await telcoModel.createSimHistory({
             sim_id: simId,
@@ -448,8 +449,8 @@ export const updateSimCard = async (req: Request, res: Response, next: NextFunct
             asset_id: asset_id || null,
             effective_date: effective_date || new Date().toISOString().split('T')[0]
         });
-        
-        res.status(200).json({ 
+
+        return res.status(200).json({
             id: simId,
             message: 'Sim card updated with history record',
             status: 'success'
@@ -489,7 +490,7 @@ export const getSubscriberWithSimsById = async (req: Request, res: Response, nex
             status: subscriber.status,
             sub_no: subscriber.sub_no,
         };
-        res.status(200).json({ data: formattedData, message: 'Show subscriber with historical sims by ID', status: 'success' });
+        return res.status(200).json({ data: formattedData, message: 'Show subscriber with historical sims by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -499,16 +500,16 @@ export const getSubscriberWithSimsById = async (req: Request, res: Response, nex
 export const getSubscriberById = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const id = Number(req.params.id);
-        
+
         // Fetch subscriber with full history
         const subWithHistory = await telcoModel.getSubscriberByIdWithHistory(id);
         if (!subWithHistory) {
             return res.status(404).json({ message: 'Subscriber not found', status: 'error' });
         }
-        
+
         const subscriber = subWithHistory.subscriber;
         const history = subWithHistory.history;
-        
+
         // Fetch all reference data in parallel
         const [accounts, simCards, employees, assets, brands, models, categories, costcenters, departments, districts] = await Promise.all([
             telcoModel.getAccounts(),
@@ -522,7 +523,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
             assetModel.getDepartments ? assetModel.getDepartments() : [],
             assetModel.getDistricts ? assetModel.getDistricts() : [],
         ]);
-        
+
         // Build lookup maps
         const accountMap = Object.fromEntries(accounts.map((a: any) => [a.id, a]));
         const simCardMap = Object.fromEntries((Array.isArray(simCards) ? simCards : []).map((s: any) => [s.id, s]));
@@ -534,7 +535,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
         const costcenterMap = Object.fromEntries((Array.isArray(costcenters) ? costcenters : []).map((c: any) => [c.id, c]));
         const departmentMap = Object.fromEntries((Array.isArray(departments) ? departments : []).map((d: any) => [d.id, d]));
         const districtMap = Object.fromEntries((Array.isArray(districts) ? districts : []).map((d: any) => [d.id, d]));
-        
+
         // Build enriched current data (latest from history)
         const latestAccount = history.account.length > 0 ? accountMap[history.account[0].account_id] : null;
         const latestSimId = history.sim.length > 0 ? history.sim[0].sim_id : null;
@@ -543,7 +544,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
         const latestUser = latestRamcoId ? employeeMap[latestRamcoId] : null;
         const latestAssetId = history.asset.length > 0 ? history.asset[0].asset_id : null;
         const latestAsset = latestAssetId ? assetMap[latestAssetId] : null;
-        
+
         // Format enriched asset data
         let assetData = null;
         if (latestAsset) {
@@ -558,7 +559,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 register_number: latestAsset.register_number
             };
         }
-        
+
         // Format enriched user data
         let userData = null;
         if (latestUser) {
@@ -570,7 +571,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 location: latestUser.location_id ? { id: latestUser.location_id, name: districtMap[latestUser.location_id]?.name || null } : null,
             };
         }
-        
+
         // Build account history with enriched data
         const accountHistoryEnriched = history.account.map((acc: any) => ({
             id: acc.id,
@@ -585,7 +586,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
             status: acc.status,
             updated_by: acc.updated_by
         }));
-        
+
         // Build SIM history with enriched data
         const simHistoryEnriched = history.sim.map((sim: any) => {
             const simData = simCardMap[sim.sim_id];
@@ -601,7 +602,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 created_at: sim.created_at
             };
         });
-        
+
         // Build user history with enriched data
         const userHistoryEnriched = history.user.map((usr: any) => {
             const emp = employeeMap[usr.ramco_id];
@@ -620,7 +621,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 updated_by: usr.updated_by
             };
         });
-        
+
         // Build asset history with enriched data
         const assetHistoryEnriched = history.asset.map((ast: any) => {
             const assetData = assetMap[ast.asset_id];
@@ -645,7 +646,7 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 created_at: ast.created_at
             };
         });
-        
+
         // Build response
         const enriched = {
             id: subscriber.id,
@@ -664,8 +665,8 @@ export const getSubscriberById = async (req: Request, res: Response, next: NextF
                 asset: assetHistoryEnriched
             }
         };
-        
-        res.status(200).json({ data: enriched, message: 'Show subscriber by id with history', status: 'success' });
+
+        return res.status(200).json({ data: enriched, message: 'Show subscriber by id with history', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -764,7 +765,7 @@ export const getSubscribers = async (req: Request, res: Response, next: NextFunc
             };
         });
 
-        res.status(200).json({ data: formatted, message: 'Show all subscribers', status: 'success' });
+        return res.status(200).json({ data: formatted, message: 'Show all subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -828,7 +829,7 @@ export const getSubscribersFullData = async (req: Request, res: Response, next: 
         if (!result.length) {
             return res.status(404).json({ data: [], message: 'No subscribers found', status: 'error' });
         }
-        res.status(200).json({ data: result, message: 'Subscribers full data', status: 'success' });
+        return res.status(200).json({ data: result, message: 'Subscribers full data', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -839,7 +840,7 @@ export const createSubscriber = async (req: Request, res: Response, next: NextFu
     try {
         const subscriber = req.body;
         const id = await telcoModel.createSubscriber(subscriber);
-        res.status(201).json({ id, message: 'Subscriber created' });
+        return res.status(201).json({ id, message: 'Subscriber created' });
     } catch (error) {
         next(error);
     }
@@ -851,10 +852,10 @@ export const updateSubscriber = async (req: Request, res: Response, next: NextFu
         const id = Number(req.params.id);
         const subscriber = req.body;
         const { updated_by } = subscriber;
-        
+
         // Update subscriber in database
         await telcoModel.updateSubscriber(id, subscriber);
-        
+
         // Send notification email to updated_by user if provided
         if (updated_by) {
             try {
@@ -874,18 +875,18 @@ export const updateSubscriber = async (req: Request, res: Response, next: NextFu
                         <p><strong>Updated by:</strong> ${updater.full_name || updated_by}</p>
                         <p>Please log in to the system to review the changes.</p>
                     `;
-                    
+
                     await sendMail(updater.email, emailSubject, emailBody);
                 } else {
-                    console.warn(`Could not send notification email: User ${updated_by} not found or has no email`);
+                    logger.warn(`Could not send notification email: User ${updated_by} not found or has no email`);
                 }
             } catch (emailErr) {
-                console.error('Error sending subscriber update notification email:', emailErr);
+                logger.error('Error sending subscriber update notification email:', emailErr);
                 // Don't fail the main request if email fails
             }
         }
-        
-        res.status(200).json({ message: 'Subscriber updated successfully', status: 'success' });
+
+        return res.status(200).json({ message: 'Subscriber updated successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -896,7 +897,7 @@ export const deleteSubscriber = async (req: Request, res: Response, next: NextFu
     try {
         const id = Number(req.params.id);
         await telcoModel.deleteSubscriber(id);
-        res.status(200).json({ message: 'Subscriber deleted' });
+        return res.status(200).json({ message: 'Subscriber deleted' });
     } catch (error) {
         next(error);
     }
@@ -911,7 +912,7 @@ export const moveSubscriberToAccount = async (req: Request, res: Response, next:
             return res.status(400).json({ message: 'Invalid subscriber or account ID', status: 'error' });
         }
         await telcoModel.moveSubscriberToAccount(subscriberId, account_id, old_account_id, updated_by);
-        res.status(200).json({ message: 'Subscriber moved to new account', status: 'success' });
+        return res.status(200).json({ message: 'Subscriber moved to new account', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -933,7 +934,7 @@ export const getAccounts = async (req: Request, res: Response, next: NextFunctio
             ...acc,
             total_subs: subsCountMap[acc.id] || 0
         }));
-        res.status(200).json({ data: enriched, message: 'Show all accounts', status: 'success' });
+        return res.status(200).json({ data: enriched, message: 'Show all accounts', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -944,7 +945,7 @@ export const createAccount = async (req: Request, res: Response, next: NextFunct
     try {
         const account = req.body;
         const id = await telcoModel.createAccount(account);
-        res.status(201).json({ id, message: 'Account created' });
+        return res.status(201).json({ id, message: 'Account created' });
     } catch (error) {
         next(error);
     }
@@ -1029,7 +1030,7 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
             ...account,
             subs,
         };
-        res.status(200).json({ data: formattedData, message: 'Show specific account with its subscribers', status: 'success' });
+        return res.status(200).json({ data: formattedData, message: 'Show specific account with its subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1092,7 +1093,7 @@ export const getAccountsWithSubscribers = async (req: Request, res: Response, ne
         if (!result.length) {
             return res.status(404).json({ data: [], message: 'Data not found', status: 'error' });
         }
-        res.status(200).json({ data: result, message: 'Show all accounts with their subscribers', status: 'success' });
+        return res.status(200).json({ data: result, message: 'Show all accounts with their subscribers', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1106,7 +1107,7 @@ export const updateAccount = async (req: Request, res: Response, next: NextFunct
     try {
         const accountData = req.body;
         await telcoModel.updateAccount(accountId, accountData);
-        res.status(200).json({ message: 'Account updated successfully', status: 'success' });
+        return res.status(200).json({ message: 'Account updated successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1119,7 +1120,7 @@ export const deleteAccount = async (req: Request, res: Response, next: NextFunct
     }
     try {
         await telcoModel.deleteAccount(accountId);
-        res.status(200).json({ message: 'Account deleted successfully', status: 'success' });
+        return res.status(200).json({ message: 'Account deleted successfully', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1130,7 +1131,7 @@ export const deleteAccount = async (req: Request, res: Response, next: NextFunct
 export const getContracts = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const contracts = await telcoModel.getContracts();
-        res.status(200).json(contracts);
+        return res.status(200).json(contracts);
     } catch (error) {
         next(error);
     }
@@ -1165,7 +1166,7 @@ export const getContractById = async (req: Request, res: Response, next: NextFun
             vendor_id: contract.vendor_id,
         };
 
-        res.status(200).json({ data: formattedData, message: 'Show contract by ID', status: 'success' });
+        return res.status(200).json({ data: formattedData, message: 'Show contract by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1200,7 +1201,7 @@ export const getContractWithAccountsAndSubsById = async (req: Request, res: Resp
             accounts: account ? [{ ...account, subs }] : [],
             vendor,
         };
-        res.status(200).json({ data: formattedData, message: 'Show contract with accounts and subscribers by ID', status: 'success' });
+        return res.status(200).json({ data: formattedData, message: 'Show contract with accounts and subscribers by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1211,7 +1212,7 @@ export const createContract = async (req: Request, res: Response, next: NextFunc
     try {
         const contract = req.body;
         const id = await telcoModel.createContract(contract);
-        res.status(201).json({ id, message: 'Contract created' });
+        return res.status(201).json({ id, message: 'Contract created' });
     } catch (error) {
         next(error);
     }
@@ -1222,7 +1223,7 @@ export const createContract = async (req: Request, res: Response, next: NextFunc
 export const getVendors = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const vendors = await telcoModel.getVendors();
-        res.status(200).json({ data: vendors, message: 'Vendors data retrieved succesfully', status: 'Success' });
+        return res.status(200).json({ data: vendors, message: 'Vendors data retrieved succesfully', status: 'Success' });
     } catch (error) {
         next(error);
     }
@@ -1255,7 +1256,7 @@ export const getVendorById = async (req: Request, res: Response, next: NextFunct
             status: vendor.status,
         };
 
-        res.status(200).json({ data: formattedData, message: 'Show vendor by ID', status: 'success' });
+        return res.status(200).json({ data: formattedData, message: 'Show vendor by ID', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1266,7 +1267,7 @@ export const createVendor = async (req: Request, res: Response, next: NextFuncti
     try {
         const vendor = req.body;
         const id = await telcoModel.createVendor(vendor);
-        res.status(201).json({ id, message: 'Vendor created' });
+        return res.status(201).json({ id, message: 'Vendor created' });
     } catch (error) {
         next(error);
     }
@@ -1278,7 +1279,7 @@ export const updateVendor = async (req: Request, res: Response, next: NextFuncti
         const vendorId = Number(req.params.id); // Ensure vendorId is a number
         const vendor = req.body;
         await telcoModel.updateVendor(vendorId, vendor);
-        res.status(200).json({ message: 'Vendor updated' });
+        return res.status(200).json({ message: 'Vendor updated' });
     } catch (error) {
         next(error);
     }
@@ -1289,7 +1290,7 @@ export const deleteVendor = async (req: Request, res: Response, next: NextFuncti
     try {
         const vendorId = Number(req.params.id); // Ensure vendorId is a number
         await telcoModel.deleteVendor(vendorId);
-        res.status(200).json({ message: 'Vendor deleted' });
+        return res.status(200).json({ message: 'Vendor deleted' });
     } catch (error) {
         next(error);
     }
@@ -1300,7 +1301,7 @@ export const deleteVendor = async (req: Request, res: Response, next: NextFuncti
 export const getAccountSubs = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const accountSubs = await telcoModel.getAccountSubs();
-        res.status(200).json(accountSubs);
+        return res.status(200).json(accountSubs);
     } catch (error) {
         next(error);
     }
@@ -1311,7 +1312,7 @@ export const createAccountSub = async (req: Request, res: Response, next: NextFu
     try {
         const accountSub = req.body;
         const id = await telcoModel.createAccountSub(accountSub);
-        res.status(201).json({ id, message: 'Account subscription created' });
+        return res.status(201).json({ id, message: 'Account subscription created' });
     } catch (error) {
         next(error);
     }
@@ -1434,7 +1435,7 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
             cc_summary_across_bills: billSummarySummary,
             total_tax_across_bills: parseFloat(billSummaryTax.toFixed(2))
         };
-        res.status(200).json({
+        return res.status(200).json({
             bill_summary: billSummary,
             data: formatted,
             message: `Telco billings retrieved (${formatted.length} entries)`,
@@ -1481,7 +1482,7 @@ export const getTelcoBillings = async (req: Request, res: Response, next: NextFu
                 tax: b.tax || 0
             };
         });
-        res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
+        return res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1584,7 +1585,7 @@ export const getTelcoBillingById = async (req: Request, res: Response, next: Nex
             summary,
             tax: billing.tax
         };
-        res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
+        return res.status(200).json({ data: formatted, message: 'Telco billing retrieved', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -1730,7 +1731,7 @@ export const getTelcoBillingByAccountId = async (req: Request, res: Response, ne
         }));
 
         // Build response
-        res.status(200).json({
+        return res.status(200).json({
             account: accountInfo,
             data,
             from_date: fromDate ? fromDate.toISOString() : null,
@@ -1748,22 +1749,22 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
     try {
         // Parse cost center IDs from query parameter
         const { cc, from, to, provider, account } = req.query;
-        
+
         if (!cc) {
             return res.status(400).json({ message: 'Cost center IDs (cc) parameter is required', status: 'error' });
         }
-        
+
         let costcenterIds: number[] = [];
         if (Array.isArray(cc)) {
             costcenterIds = cc.map((v: any) => Number(v)).filter((id: number) => !isNaN(id));
         } else if (typeof cc === 'string') {
             costcenterIds = cc.split(',').map((v: string) => Number(v.trim())).filter((id: number) => !isNaN(id));
         }
-        
+
         if (!costcenterIds.length) {
             return res.status(400).json({ message: 'No valid cost center IDs provided', status: 'error' });
         }
-        
+
         // Parse provider filter from query parameter
         let providerFilter: string[] = [];
         if (provider) {
@@ -1773,7 +1774,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
                 providerFilter = provider.split(',').map((v: string) => v.trim().toLowerCase());
             }
         }
-        
+
         // Parse account filter from query parameter
         let accountFilter: number[] = [];
         if (account) {
@@ -1783,7 +1784,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
                 accountFilter = account.split(',').map((v: string) => Number(v.trim())).filter((id: number) => !isNaN(id));
             }
         }
-        
+
         let fromDate: Date | null = null;
         let toDate: Date | null = null;
         if (from && typeof from === 'string') {
@@ -1864,7 +1865,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
                     }
                     return true;
                 });
-                
+
                 if (detailsAgg.length > 0) {
                     matchedBills.push({
                         bill_date: bill.bill_date,
@@ -1877,7 +1878,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
 
         // Group bills by costcenter, then year/month, aggregate accounts and total_amount
         const costcenterGroupMap: Record<number, Record<number, Record<number, { accounts: any[]; name: string, total_amount: string, }>>> = {};
-        
+
         for (const bill of matchedBills) {
             const date = bill.bill_date ? new Date(bill.bill_date) : null;
             if (!date || isNaN(date.getTime())) continue;
@@ -1892,7 +1893,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
             for (const detail of bill.details) {
                 const ccid = detail.costcenter?.id;
                 if (!ccid) continue;
-                
+
                 if (!costcenterGroupMap[ccid]) costcenterGroupMap[ccid] = {};
                 if (!costcenterGroupMap[ccid][year]) costcenterGroupMap[ccid][year] = {};
                 if (!costcenterGroupMap[ccid][year][monthNum]) {
@@ -1920,13 +1921,13 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
 
                 // Add to month total
                 const amt = parseFloat(detail.amount) || 0;
-                costcenterGroupMap[ccid][year][monthNum].total_amount = 
+                costcenterGroupMap[ccid][year][monthNum].total_amount =
                     (parseFloat(costcenterGroupMap[ccid][year][monthNum].total_amount) + amt).toFixed(2);
             }
         }
 
         // Prepare costcenters info for multiple cost centers
-        const costcentersInfo = costcenterIds.map((ccid: number) => 
+        const costcentersInfo = costcenterIds.map((ccid: number) =>
             costcenterMap[ccid] ? { id: ccid, name: costcenterMap[ccid].name } : { id: ccid, name: null }
         );
 
@@ -1948,7 +1949,7 @@ export const getTelcoBillingByCostcenterId = async (req: Request, res: Response,
         });
 
         // Build response
-        res.status(200).json({
+        return res.status(200).json({
             data: responseArray,
             message: `Telco account summary by cost centers (${costcenterIds.join(', ')}) retrieved successfully`,
             status: 'success'
@@ -2009,13 +2010,11 @@ export const createTelcoBilling = async (req: Request, res: Response, next: Next
                 ...detail,
                 bill_id: insertId
             }));
-            // Insert each detail
-            for (const detail of detailsWithBillId) {
-                await telcoModel.createTelcoBillingDetail(detail);
-            }
+            // Insert all details in parallel
+            await Promise.all(detailsWithBillId.map((detail: any) => telcoModel.createTelcoBillingDetail(detail)));
         }
 
-        res.status(201).json({
+        return res.status(201).json({
             data: { id: insertId },
             message: 'Telco billing created successfully',
             status: 'success'
@@ -2039,13 +2038,10 @@ export const updateTelcoBilling = async (req: Request, res: Response, next: Next
                 ...detail,
                 util_id: id
             }));
-            // Update each detail (assumes upsert or update logic in model)
-            for (const detail of detailsWithUtilId) {
-                // Use util2_id or another unique id for detail row
-                await telcoModel.updateTelcoBillingDetail(detail.util2_id, detail);
-            }
+            // Update all details in parallel
+            await Promise.all(detailsWithUtilId.map((detail: any) => telcoModel.updateTelcoBillingDetail(detail.util2_id, detail)));
         }
-        res.status(200).json({ message: 'Telco billing updated', status: 'success' });
+        return res.status(200).json({ message: 'Telco billing updated', status: 'success' });
     } catch (error) {
         next(error);
     }
@@ -2056,7 +2052,7 @@ export const deleteTelcoBilling = async (req: Request, res: Response, next: Next
     try {
         const id = Number(req.params.id);
         await telcoModel.deleteTelcoBilling(id);
-        res.status(200).json({ message: 'Telco billing deleted', status: 'success' });
+        return res.status(200).json({ message: 'Telco billing deleted', status: 'success' });
     } catch (error) {
         next(error);
     }

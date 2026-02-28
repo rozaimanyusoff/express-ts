@@ -3,8 +3,8 @@ import fs from 'fs';
 // src/utils/fileUploader.ts
 import multer, { FileFilterCallback } from 'multer';
 import path from 'path';
+import logger from '../utils/logger';
 
-import logger from './logger';
 import { getUploadBaseSync } from './uploadUtil';
 
 // Define allowed mime types for broad compatibility

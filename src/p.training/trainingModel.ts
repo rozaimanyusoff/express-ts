@@ -1,6 +1,7 @@
 // src/p.training/trainingModel.ts
 import { pool, pool2 } from '../utils/db';
 import { toPublicUrl } from '../utils/uploadUtil';
+import logger from '../utils/logger';
 
 // Interface definitions live in the model per convention
 export interface TrainingEvent {
@@ -241,7 +242,7 @@ export const createMultipleCostings = async (costings: any[]) => {
          const result: any = await createCosting(costing);
          if (result?.insertId) insertIds.push(result.insertId);
       } catch (error) {
-         console.error('Error inserting costing:', error);
+         logger.error('Error inserting costing:', error);
       }
    }
    return { insertedCount: insertIds.length, insertIds };
@@ -257,7 +258,7 @@ export const createMultipleParticipants = async (participants: any[]) => {
          const result: any = await createParticipant(participant);
          if (result?.insertId) insertIds.push(result.insertId);
       } catch (error) {
-         console.error('Error inserting participant:', error);
+         logger.error('Error inserting participant:', error);
       }
    }
    return { insertedCount: insertIds.length, insertIds };

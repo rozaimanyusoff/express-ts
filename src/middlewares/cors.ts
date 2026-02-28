@@ -1,4 +1,5 @@
 import cors from 'cors';
+import logger from '../utils/logger';
 
 // Lazy-load allowed origins to ensure .env is loaded before evaluation
 let cachedOrigins: string[] | null = null;
@@ -32,7 +33,7 @@ const getallowedOrigins = (): string[] => {
   }
   
   // Production: require explicit configuration
-  console.warn('[CORS] No CORS_ALLOWED_ORIGINS configured and not in development mode. CORS will be restrictive.');
+  logger.warn('[CORS] No CORS_ALLOWED_ORIGINS configured and not in development mode. CORS will be restrictive.');
   cachedOrigins = [];
   return cachedOrigins;
 };

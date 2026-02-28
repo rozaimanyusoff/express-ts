@@ -5,6 +5,7 @@
 
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 import { getSocketIOInstance } from './socketIoInstance';
+import logger from '../utils/logger';
 
 /**
  * Emit event when a new maintenance request is created
@@ -17,7 +18,7 @@ export const notifyNewMtnRequest = async (requestId: number, ramcoId?: null | st
 	try {
 		const io = getSocketIOInstance();
 		if (!io) {
-			console.warn('notifyNewMtnRequest: Socket.IO not initialized');
+			logger.warn('notifyNewMtnRequest: Socket.IO not initialized');
 			return;
 		}
 
@@ -39,9 +40,9 @@ export const notifyNewMtnRequest = async (requestId: number, ramcoId?: null | st
 			type: 'new-request'
 	});
 
-		console.log(`notifyNewMtnRequest: Emitted for request ${requestId}, current badge count: ${count}`);
+		logger.info(`notifyNewMtnRequest: Emitted for request ${requestId}, current badge count: ${count}`);
 	} catch (error) {
-		console.error('notifyNewMtnRequest failed:', error);
+		logger.error('notifyNewMtnRequest failed:', error);
 		// Don't throw - socket emit failure shouldn't crash request creation
 	}
 };
@@ -58,7 +59,7 @@ export const notifyMtnRequestUpdate = async (requestId: number, action: 'approve
 	try {
 		const io = getSocketIOInstance();
 		if (!io) {
-			console.warn('notifyMtnRequestUpdate: Socket.IO not initialized');
+			logger.warn('notifyMtnRequestUpdate: Socket.IO not initialized');
 			return;
 		}
 
@@ -82,9 +83,9 @@ export const notifyMtnRequestUpdate = async (requestId: number, action: 'approve
 			type: 'request-updated'
 		});
 
-		console.log(`notifyMtnRequestUpdate: Emitted for request ${requestId}, action: ${action}, current badge count: ${count}`);
+		logger.info(`notifyMtnRequestUpdate: Emitted for request ${requestId}, action: ${action}, current badge count: ${count}`);
 	} catch (error) {
-		console.error('notifyMtnRequestUpdate failed:', error);
+		logger.error('notifyMtnRequestUpdate failed:', error);
 		// Don't throw - socket emit failure shouldn't crash request update
 	}
 };
@@ -97,7 +98,7 @@ export const broadcastBadgeCount = async (): Promise<void> => {
 	try {
 		const io = getSocketIOInstance();
 		if (!io) {
-			console.warn('broadcastBadgeCount: Socket.IO not initialized');
+			logger.warn('broadcastBadgeCount: Socket.IO not initialized');
 			return;
 		}
 
@@ -109,9 +110,9 @@ export const broadcastBadgeCount = async (): Promise<void> => {
 			type: 'broadcast'
 		});
 
-		console.log(`broadcastBadgeCount: Emitted count ${count}`);
+		logger.info(`broadcastBadgeCount: Emitted count ${count}`);
 	} catch (error) {
-		console.error('broadcastBadgeCount failed:', error);
+		logger.error('broadcastBadgeCount failed:', error);
 	}
 };
 

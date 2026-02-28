@@ -1,4 +1,5 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
+import logger from '../utils/logger';
 
 import * as assetModel from '../p.asset/assetModel';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
@@ -29,7 +30,7 @@ export async function sendApprovalEmail(reqId: number) {
     || (await getWorkflowPic('maintenance', 'Approval'));
   if (!approverPic) {
      
-    console.warn('sendApprovalEmail: No workflow approver configured for module vehicle maintenance/maintenance');
+    logger.warn('sendApprovalEmail: No workflow approver configured for module vehicle maintenance/maintenance');
     return;
   }
 
@@ -48,7 +49,7 @@ export async function sendApprovalEmail(reqId: number) {
   }
   if (!to) {
      
-    console.warn('sendApprovalEmail: Unable to resolve email for approver', approverPic.ramco_id);
+    logger.warn('sendApprovalEmail: Unable to resolve email for approver', approverPic.ramco_id);
     return;
   }
 
@@ -75,35 +76,35 @@ export async function sendApprovalEmail(reqId: number) {
 export async function sendRecommendationEmail(reqId: number) {
   const rec = await resolveVehicleMtnRecord(reqId);
   if (!rec) {
-    console.warn(`sendRecommendationEmail: record not found for reqId ${reqId}`);
+    logger.warn(`sendRecommendationEmail: record not found for reqId ${reqId}`);
     return;
   }
 
   const nextPic = await getWorkflowPic('vehicle maintenance', 'recommender');
-  console.log(`sendRecommendationEmail: nextPic for reqId ${reqId}:`, JSON.stringify(nextPic));
+  logger.info(`sendRecommendationEmail: nextPic for reqId ${reqId}:`, JSON.stringify(nextPic));
   
   const isValidEmail = (v: any) => typeof v === 'string' && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(v);
   let to: null | string = nextPic?.email && isValidEmail(nextPic.email) ? nextPic.email : null;
-  console.log(`sendRecommendationEmail: initial to check - email: ${nextPic?.email}, valid: ${isValidEmail(nextPic?.email)}, to: ${to}`);
+  logger.info(`sendRecommendationEmail: initial to check - email: ${nextPic?.email}, valid: ${isValidEmail(nextPic?.email)}, to: ${to}`);
   
   if (!to && nextPic?.ramco_id) {
     try {
       const emp = await assetModel.getEmployeeByRamco(String(nextPic.ramco_id));
-      console.log(`sendRecommendationEmail: employee lookup for ramco ${nextPic.ramco_id}:`, JSON.stringify(emp));
+      logger.info(`sendRecommendationEmail: employee lookup for ramco ${nextPic.ramco_id}:`, JSON.stringify(emp));
       if (emp && isValidEmail((emp as any).email)) to = String((emp as any).email);
       if (!to) {
         const all = await assetModel.getEmployees();
         const found = (Array.isArray(all) ? (all as any[]) : []).find(e => String(e.ramco_id) === String(nextPic.ramco_id));
-        console.log(`sendRecommendationEmail: fallback employee search found:`, JSON.stringify(found));
+        logger.info(`sendRecommendationEmail: fallback employee search found:`, JSON.stringify(found));
         if (found && isValidEmail(found.email)) to = String(found.email);
       }
     } catch (err) {
-      console.error(`sendRecommendationEmail: error resolving employee email:`, err);
+      logger.error(`sendRecommendationEmail: error resolving employee email:`, err);
     }
   }
   
   if (!to) {
-    console.warn(`sendRecommendationEmail: no recipient email found for reqId ${reqId}, nextPic: ${JSON.stringify(nextPic)}`);
+    logger.warn(`sendRecommendationEmail: no recipient email found for reqId ${reqId}, nextPic: ${JSON.stringify(nextPic)}`);
     return;
   }
 
@@ -124,9 +125,9 @@ export async function sendRecommendationEmail(reqId: number) {
     vehicleInfo
   });
   const subject = `Vehicle Maintenance Request Pending Recommendation - Service Order: ${reqId}`;
-  console.log(`sendRecommendationEmail: sending email for reqId ${reqId} to: ${to}, subject: ${subject}`);
+  logger.info(`sendRecommendationEmail: sending email for reqId ${reqId} to: ${to}, subject: ${subject}`);
   await mailer.sendMail(to, subject, emailBody);
-  console.log(`sendRecommendationEmail: email sent successfully for reqId ${reqId} to: ${to}`);
+  logger.info(`sendRecommendationEmail: email sent successfully for reqId ${reqId} to: ${to}`);
 }
 
 // Notify requester that their application has been approved (or rejected)
@@ -151,7 +152,7 @@ export async function sendRequesterApprovalEmail(reqId: number, approvalStatus: 
     const to = requester && isValidEmail((requester).email) ? String((requester).email) : null;
     if (!to) {
        
-      console.warn('sendRequesterApprovalEmail: requester email not found for ramco', requesterRamco);
+      logger.warn('sendRequesterApprovalEmail: requester email not found for ramco', requesterRamco);
       return;
     }
 
@@ -184,7 +185,7 @@ export async function sendRequesterApprovalEmail(reqId: number, approvalStatus: 
     await mailer.sendMail(to, subject, emailBody);
   } catch (e) {
      
-    console.warn('sendRequesterApprovalEmail failed', e);
+    logger.warn('sendRequesterApprovalEmail failed', e);
   }
 }
 

@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { pool, pool2 } from './db';
+import logger from '../utils/logger';
 
 interface HealthCheckResult {
   pool1: {
@@ -53,7 +54,7 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
   const pool1Result = await queryWithTimeout(pool, 'pool1');
   if ('error' in pool1Result) {
     result.pool1 = { connected: false, error: pool1Result.error };
-    console.error('Database pool1 health check failed:', pool1Result.error);
+    logger.error('Database pool1 health check failed:', pool1Result.error);
   } else {
     result.pool1 = { connected: true, latency: pool1Result.latency };
   }
@@ -62,7 +63,7 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
   const pool2Result = await queryWithTimeout(pool2, 'pool2');
   if ('error' in pool2Result) {
     result.pool2 = { connected: false, error: pool2Result.error };
-    console.error('Database pool2 health check failed:', pool2Result.error);
+    logger.error('Database pool2 health check failed:', pool2Result.error);
   } else {
     result.pool2 = { connected: true, latency: pool2Result.latency };
   }
@@ -88,7 +89,7 @@ const determineHealthStatus = (health: HealthCheckResult): 'healthy' | 'degraded
  * @param io - Socket.IO server instance for broadcasting health status
  */
 export const startPeriodicHealthCheck = (intervalMs = 30000, io?: Server): NodeJS.Timeout => {
-  console.log(`Starting database health monitoring (interval: ${intervalMs}ms)`);
+  logger.info(`Starting database health monitoring (interval: ${intervalMs}ms)`);
   
   return setInterval(async () => {
     const health = await checkDatabaseHealth();
@@ -112,21 +113,21 @@ export const startPeriodicHealthCheck = (intervalMs = 30000, io?: Server): NodeJ
     
     // Log warnings for any issues
     if (!health.pool1.connected) {
-      console.error('⚠️ Database pool1 is DISCONNECTED:', health.pool1.error);
+      logger.error('⚠️ Database pool1 is DISCONNECTED:', health.pool1.error);
     } else if (health.pool1.latency && health.pool1.latency > 1000) {
-      console.warn(`⚠️ Database pool1 latency is HIGH: ${health.pool1.latency}ms`);
+      logger.warn(`⚠️ Database pool1 latency is HIGH: ${health.pool1.latency}ms`);
     }
     
     if (!health.pool2.connected) {
-      console.error('⚠️ Database pool2 is DISCONNECTED:', health.pool2.error);
+      logger.error('⚠️ Database pool2 is DISCONNECTED:', health.pool2.error);
     } else if (health.pool2.latency && health.pool2.latency > 1000) {
-      console.warn(`⚠️ Database pool2 latency is HIGH: ${health.pool2.latency}ms`);
+      logger.warn(`⚠️ Database pool2 latency is HIGH: ${health.pool2.latency}ms`);
     }
 
     // Log healthy status periodically (every 5 minutes = 10 checks at 30s interval)
     const checkCount = Math.floor(Date.now() / intervalMs) % 10;
     if (checkCount === 0 && health.pool1.connected && health.pool2.connected) {
-      console.log(`✅ Database health OK - Pool1: ${health.pool1.latency}ms, Pool2: ${health.pool2.latency}ms`);
+      logger.info(`✅ Database health OK - Pool1: ${health.pool1.latency}ms, Pool2: ${health.pool2.latency}ms`);
     }
   }, intervalMs);
 };
@@ -147,7 +148,7 @@ export const testConnection = async (timeoutMs = 5000): Promise<boolean> => {
     
     return true;
   } catch (error: any) {
-    console.error('Database connection test failed:', error.message);
+    logger.error('Database connection test failed:', error.message);
     return false;
   }
 };

@@ -1,7 +1,7 @@
 import { getSocketIOInstance } from './socketIoInstance';
 import { pool } from './db';
-import logger from './logger';
 import { sendWebhook } from './webhook';
+import logger from '../utils/logger';
 
 // Import dynamically to avoid circular dependencies
 const getAdminUserIds = async () => {

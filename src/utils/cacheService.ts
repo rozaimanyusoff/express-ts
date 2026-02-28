@@ -1,6 +1,6 @@
 import redis from './redis';
-import logger from './logger';
 import redisConfig from './redisConfig';
+import logger from '../utils/logger';
 
 export const cacheService = {
   // Check if caching is enabled

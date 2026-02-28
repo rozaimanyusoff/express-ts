@@ -1,5 +1,5 @@
 import { pool } from '../utils/db.js';
-import logger from '../utils/logger.js';
+import logger from '../utils/logger';
 
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // Run every hour
 const PENDING_USERS_TABLE = 'pending_users';

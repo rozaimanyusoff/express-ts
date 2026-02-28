@@ -1,8 +1,8 @@
 import { promises as fsPromises } from 'fs';
 import fs from 'fs';
 import path from 'path';
+import logger from '../utils/logger';
 
-import logger from './logger';
 
 // Return the base directory where uploads are stored on disk.
 // Prefers UPLOAD_BASE_PATH; falls back to <project>/uploads.

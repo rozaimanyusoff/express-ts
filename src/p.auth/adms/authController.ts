@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import os from 'os';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../../utils/logger';
 
 import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../middlewares/rateLimiter';
 import * as authLogger from '../../utils/authLogger';
@@ -19,7 +20,6 @@ import { accountActivationTemplate } from '../../utils/emailTemplates/accountAct
 import { adminPincodeTemplate } from '../../utils/emailTemplates/adminPincode';
 import { passwordChangedTemplate } from '../../utils/emailTemplates/passwordChanged';
 import { resetPasswordTemplate } from '../../utils/emailTemplates/resetPassword';
-import logger from '../../utils/logger';
 import { sendMail } from '../../utils/mailer';
 import buildNavigationTree from '../../utils/navBuilder';
 import { toPublicUrl } from '../../utils/uploadUtil';

@@ -78,8 +78,8 @@ export const generatePresignedUrl = async (
 
   // Build upload URL - in production, this would be S3/GCS presigned URL
   // For now, we use a temporary endpoint that the client will PUT to
-  const uploadUrl = `${process.env.API_BASE_URL || 'http://localhost:3000'}/api/media/upload/${presignId}`;
-  const fileUrl = `${process.env.API_BASE_URL || 'http://localhost:3000'}/uploads/media/${kind}/${Date.now()}_${filename}`;
+  const uploadUrl = `${process.env.API_BASE_URL || 'http://localhost:3030'}/api/media/upload/${presignId}`;
+  const fileUrl = `${process.env.API_BASE_URL || 'http://localhost:3030'}/uploads/media/${kind}/${Date.now()}_${filename}`;
 
   // Optional: Generate checksum for integrity verification
   const checksum = `chk_${Date.now()}`;
@@ -118,8 +118,8 @@ export const generatePresignedUrlBatch = async (
     const maxBytes = sizeLimit[file.kind];
     const expiresIn = 600;
     const presignId = `presign_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const uploadUrl = `${process.env.API_BASE_URL || 'http://localhost:3000'}/api/media/upload/${presignId}`;
-    const fileUrl = `${process.env.API_BASE_URL || 'http://localhost:3000'}/uploads/media/${file.kind}/${Date.now()}_${file.filename}`;
+    const uploadUrl = `${process.env.API_BASE_URL || 'http://localhost:3030'}/api/media/upload/${presignId}`;
+    const fileUrl = `${process.env.API_BASE_URL || 'http://localhost:3030'}/uploads/media/${file.kind}/${Date.now()}_${file.filename}`;
 
     return {
       filename: file.filename,

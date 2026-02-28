@@ -1,4 +1,5 @@
 import { cacheService } from './cacheService';
+import logger from '../utils/logger';
 
 /**
  * Invalidate all asset-related cache keys
@@ -8,7 +9,7 @@ export const invalidateAssetCache = async () => {
   try {
     await cacheService.delPattern('assets:*');
   } catch (error) {
-    console.error('Failed to invalidate asset cache:', error);
+    logger.error('Failed to invalidate asset cache:', error);
   }
 };
 

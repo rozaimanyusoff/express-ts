@@ -85,7 +85,7 @@ router.get('/requests/:request_id/items', asyncHandler(async (req, res) => {
   const request_id = Number(req.params.request_id);
   if (isNaN(request_id)) return res.status(400).json({ data: null, message: 'Invalid request_id', status: 'error' });
   const request = await stockModel.getStockRequestById(request_id);
-  res.json({
+  return res.json({
     data: request && Array.isArray(request.items) ? request.items : [],
     message: 'Stock request items retrieved',
     status: 'success'
@@ -99,7 +99,7 @@ router.get('/requests/items/:id', asyncHandler(async (req, res) => {
   const [rows] = await pool.query('SELECT * FROM stock.rt_stock_request_items WHERE id = ?', [id]);
   const item = Array.isArray(rows) && rows.length ? rows[0] : null;
   if (!item) return res.status(404).json({ data: null, message: 'Not found', status: 'error' });
-  res.json({
+  return res.json({
     data: item,
     message: 'Stock request item retrieved',
     status: 'success'

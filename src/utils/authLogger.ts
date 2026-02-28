@@ -1,6 +1,6 @@
 import { pool } from './db';
-import logger from './logger';
 import { logAuthActivityToFile, getTodayAuthLogs, getUserTodayAuthLogs } from './fileAuthLogger';
+import logger from '../utils/logger';
 
 export type AuthAction = 'activate' | 'login' | 'logout' | 'other' | 'register' | 'request_reset' | 'reset_password';
 

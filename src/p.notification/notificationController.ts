@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
+import logger from '../utils/logger';
 
 import * as notificationManager from '../utils/notificationManager';
-import logger from '../utils/logger';
 
 // Get notifications for current user (paginated)
 export const getNotifications = async (req: Request, res: Response) => {

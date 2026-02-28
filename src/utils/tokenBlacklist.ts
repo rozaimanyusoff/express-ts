@@ -6,6 +6,8 @@
  * For distributed systems, use Redis or database-backed blacklist.
  */
 
+import logger from './logger';
+
 interface BlacklistEntry {
   expiresAt: number;
   addedAt: number;
@@ -30,13 +32,13 @@ export const addToBlacklist = (token: string, expiresAt?: number): void => {
 export const isTokenBlacklisted = (token: string): boolean => {
   const entry = tokenBlacklist.get(token);
   if (!entry) return false;
-  
+
   // Remove if expired
   if (Date.now() > entry.expiresAt) {
     tokenBlacklist.delete(token);
     return false;
   }
-  
+
   return true;
 };
 
@@ -56,16 +58,16 @@ export const getBlacklistStats = () => {
 const cleanupInterval = setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
-  
+
   for (const [token, entry] of tokenBlacklist.entries()) {
     if (now > entry.expiresAt) {
       tokenBlacklist.delete(token);
       cleaned++;
     }
   }
-  
+
   if (cleaned > 0) {
-    console.log(`[TokenBlacklist] Cleaned up ${cleaned} expired tokens`);
+    logger.info(`[TokenBlacklist] Cleaned up ${cleaned} expired tokens`);
   }
 }, 5 * 60 * 1000);
 

@@ -9,9 +9,9 @@ export const importTempTable = async (req: Request, res: Response) => {
   }
   try {
     const result = await importerModel.importTempTable(tableName, headers, data);
-    res.json({ message: result.message, rows: result.rows, status: 'success', table: result.table });
+    return res.json({ message: result.message, rows: result.rows, status: 'success', table: result.table });
   } catch (err: any) {
-    res.status(500).json({ message: err.message, status: 'error' });
+    return res.status(500).json({ message: err.message, status: 'error' });
   }
 };
 
@@ -52,9 +52,9 @@ export const getTempTables = async (req: Request, res: Response) => {
     }
     // If only one table, return as object, else as array
     const data = result.length === 1 ? result[0] : result;
-    res.json({ data, message: 'Data processed successfully', status: 'success' });
+    return res.json({ data, message: 'Data processed successfully', status: 'success' });
   } catch (err: any) {
-    res.status(500).json({ message: err.message, status: 'error' });
+    return res.status(500).json({ message: err.message, status: 'error' });
   }
 };
 

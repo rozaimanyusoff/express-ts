@@ -1,8 +1,9 @@
 import { NextFunction, Request, Response } from 'express';
+import logger from '../utils/logger';
 
 const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
   // Log full error on the server for diagnosis
-  console.error('Global error handler:', {
+  logger.error('Global error handler:', {
     code: err?.code,
     message: err?.message,
     method: req.method,
@@ -70,7 +71,7 @@ const errorHandler = (err: any, req: Request, res: Response, next: NextFunction)
       : userMessage;
   }
 
-  res.status(statusCode).json({
+  return res.status(statusCode).json({
     message: userMessage,
     status: false,
     ...(isDevelopment && { 

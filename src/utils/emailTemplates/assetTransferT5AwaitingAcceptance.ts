@@ -2,6 +2,7 @@
 // Usage: assetTransferApprovedNewOwnerEmail({ request, itemsForNewOwner, newOwner, requestor, approver, transferId, credentialCode })
 
 import { generateTransferItemCard, ItemFormatConfig } from './assetTransferItemFormat';
+import logger from '../../utils/logger';
 
 interface AssetTransferT5AwaitingAcceptanceParams {
   approver?: any; // approver
@@ -66,7 +67,7 @@ export function assetTransferApprovedNewOwnerEmail({ approver, credentialCode, i
   }
   
   // Log for debugging
-  console.log('DEBUG: assetTransferApprovedNewOwnerEmail - Building button:', {
+  logger.info('DEBUG: assetTransferApprovedNewOwnerEmail - Building button:', {
     transferId: tId,
     transferIdType: typeof transferId,
     credentialCode: credCode,

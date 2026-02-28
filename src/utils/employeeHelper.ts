@@ -1,4 +1,5 @@
 import * as assetModel from '../p.asset/assetModel';
+import logger from '../utils/logger';
 
 /**
  * Get supervisor information by subordinate's ramco_id
@@ -24,7 +25,7 @@ export const getSupervisorBySubordinate = async (subordinateRamcoId: string): Pr
       full_name: supervisor.full_name || supervisor.name || ''
     };
   } catch (error) {
-    console.error('Error getting supervisor by subordinate:', error);
+    logger.error('Error getting supervisor by subordinate:', error);
     return null;
   }
 };

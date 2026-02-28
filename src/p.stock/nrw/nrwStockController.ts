@@ -8,7 +8,7 @@ import * as nrwStockModel from './nrwStockModel';
 export const createTeam = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createTeam(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Team created',
     status: 'success'
@@ -17,7 +17,7 @@ export const createTeam = async (req: Request, res: Response) => {
 
 export const getTeams = async (req: Request, res: Response) => {
   const teams = await nrwStockModel.getTeams();
-  res.json({
+  return res.json({
     data: teams,
     message: 'Teams retrieved',
     status: 'success'
@@ -36,7 +36,7 @@ export const getTeamById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: team,
     message: 'Team retrieved',
     status: 'success'
@@ -47,7 +47,7 @@ export const updateTeam = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateTeam(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Team updated',
     status: 'success'
@@ -57,7 +57,7 @@ export const updateTeam = async (req: Request, res: Response) => {
 export const deleteTeam = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteTeam(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Team deleted',
     status: 'success'
@@ -81,7 +81,7 @@ export const createStockCard = async (req: Request, res: Response) => {
     item: item ? { id: (item as any).id, name: (item as any).name } : null
   };
   
-  res.status(201).json({
+  return res.status(201).json({
     data: enrichedResult,
     message: 'Stock card created',
     status: 'success'
@@ -112,7 +112,7 @@ export const getStockCards = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({
+  return res.json({
     data: enrichedCards,
     message: 'Stock cards retrieved',
     status: 'success'
@@ -136,13 +136,13 @@ export const updateStockCard = async (req: Request, res: Response) => {
       item: item ? { id: (item as any).id, name: (item as any).name } : null
     };
     
-    res.json({
+    return res.json({
       data: enrichedResult,
       message: 'Stock card updated',
       status: 'success'
     });
   } else {
-    res.json({
+    return res.json({
       data: result,
       message: 'Stock card updated',
       status: 'success'
@@ -153,7 +153,7 @@ export const updateStockCard = async (req: Request, res: Response) => {
 export const deleteStockCard = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockCard(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock card deleted',
     status: 'success'
@@ -171,13 +171,13 @@ export const getStockCardByItemId = async (req: Request, res: Response) => {
       ...cardWithoutItemId,
       item: item ? { id: (item as any).id, name: (item as any).name } : null
     };
-    res.json({
+    return res.json({
       data: enrichedCard,
       message: 'Stock card retrieved',
       status: 'success'
     });
   } else {
-    res.json({
+    return res.json({
       data: null,
       message: 'No stock card found',
       status: 'success'
@@ -209,7 +209,7 @@ export const getStockCardsWithItems = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({
+  return res.json({
     data: enrichedCards,
     message: 'Stock cards with items retrieved',
     status: 'success'
@@ -221,7 +221,7 @@ export const getStockCardsWithItems = async (req: Request, res: Response) => {
 export const createStockTracking = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStockTracking(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock tracking created',
     status: 'success'
@@ -230,7 +230,7 @@ export const createStockTracking = async (req: Request, res: Response) => {
 
 export const getStockTrackings = async (req: Request, res: Response) => {
   const trackings = await nrwStockModel.getStockTrackings();
-  res.json({
+  return res.json({
     data: trackings,
     message: 'Stock trackings retrieved',
     status: 'success'
@@ -249,7 +249,7 @@ export const getStockTrackingById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: tracking,
     message: 'Stock tracking retrieved',
     status: 'success'
@@ -260,7 +260,7 @@ export const updateStockTracking = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockTracking(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock tracking updated',
     status: 'success'
@@ -270,7 +270,7 @@ export const updateStockTracking = async (req: Request, res: Response) => {
 export const deleteStockTracking = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockTracking(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock tracking deleted',
     status: 'success'
@@ -282,7 +282,7 @@ export const deleteStockTracking = async (req: Request, res: Response) => {
 export const createStockRequest = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStockRequest(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock request created',
     status: 'success'
@@ -291,7 +291,7 @@ export const createStockRequest = async (req: Request, res: Response) => {
 
 export const getStockRequests = async (req: Request, res: Response) => {
   const requests = await nrwStockModel.getStockRequests();
-  res.json({
+  return res.json({
     data: requests,
     message: 'Stock requests retrieved',
     status: 'success'
@@ -310,7 +310,7 @@ export const getStockRequestById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: request,
     message: 'Stock request retrieved',
     status: 'success'
@@ -321,7 +321,7 @@ export const updateStockRequest = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockRequest(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock request updated',
     status: 'success'
@@ -331,7 +331,7 @@ export const updateStockRequest = async (req: Request, res: Response) => {
 export const deleteStockRequest = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockRequest(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock request deleted',
     status: 'success'
@@ -343,7 +343,7 @@ export const deleteStockRequest = async (req: Request, res: Response) => {
 export const addStockRequestItem = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.addStockRequestItem(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock request item added',
     status: 'success'
@@ -353,7 +353,7 @@ export const addStockRequestItem = async (req: Request, res: Response) => {
 export const getStockRequestItems = async (req: Request, res: Response) => {
   const { requestId } = req.params;
   const items = await nrwStockModel.getStockRequestItems(Number(requestId));
-  res.json({
+  return res.json({
     data: items,
     message: 'Stock request items retrieved',
     status: 'success'
@@ -364,7 +364,7 @@ export const updateStockRequestItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockRequestItem(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock request item updated',
     status: 'success'
@@ -374,7 +374,7 @@ export const updateStockRequestItem = async (req: Request, res: Response) => {
 export const deleteStockRequestItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockRequestItem(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock request item deleted',
     status: 'success'
@@ -407,7 +407,7 @@ export const generateStockAnalysis = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({
+  return res.json({
     data: analysis,
     message: 'Stock analysis generated',
     status: 'success'
@@ -423,7 +423,7 @@ export const generateStockAnalysis = async (req: Request, res: Response) => {
 export const createStockPurchaseItem = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStockPurchaseItem(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock purchase item created',
     status: 'success'
@@ -433,7 +433,7 @@ export const createStockPurchaseItem = async (req: Request, res: Response) => {
 export const getStockPurchaseItems = async (req: Request, res: Response) => {
   const { purchaseId } = req.params;
   const items = await nrwStockModel.getStockPurchaseItems(Number(purchaseId));
-  res.json({
+  return res.json({
     data: items,
     message: 'Stock purchase items retrieved',
     status: 'success'
@@ -444,7 +444,7 @@ export const updateStockPurchaseItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockPurchaseItem(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock purchase item updated',
     status: 'success'
@@ -454,7 +454,7 @@ export const updateStockPurchaseItem = async (req: Request, res: Response) => {
 export const deleteStockPurchaseItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockPurchaseItem(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock purchase item deleted',
     status: 'success'
@@ -466,7 +466,7 @@ export const deleteStockPurchaseItem = async (req: Request, res: Response) => {
 export const createManufacturer = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createManufacturer(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Manufacturer created',
     status: 'success'
@@ -475,7 +475,7 @@ export const createManufacturer = async (req: Request, res: Response) => {
 
 export const getManufacturers = async (req: Request, res: Response) => {
   const manufacturers = await nrwStockModel.getManufacturers();
-  res.json({
+  return res.json({
     data: manufacturers,
     message: 'Manufacturers retrieved',
     status: 'success'
@@ -494,7 +494,7 @@ export const getManufacturerById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: manufacturer,
     message: 'Manufacturer retrieved',
     status: 'success'
@@ -505,7 +505,7 @@ export const getManufacturerById = async (req: Request, res: Response) => {
 export const getManufacturersByIds = async (req: Request, res: Response) => {
   const { ids } = req.body; // expecting { ids: number[] }
   const manufacturers = await nrwStockModel.getManufacturersByIds(ids);
-  res.json({
+  return res.json({
     data: manufacturers,
     message: 'Manufacturers retrieved',
     status: 'success'
@@ -516,7 +516,7 @@ export const updateManufacturer = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateManufacturer(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Manufacturer updated',
     status: 'success'
@@ -526,7 +526,7 @@ export const updateManufacturer = async (req: Request, res: Response) => {
 export const deleteManufacturer = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteManufacturer(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Manufacturer deleted',
     status: 'success'
@@ -589,7 +589,7 @@ export const getItemById = async (req: Request, res: Response) => {
     return mfgWithoutStatus;
   })() : null;
 
-  res.json({
+  return res.json({
     data: {
       ...itemWithoutMfgId,
       manufacturer: manufacturerData,
@@ -698,7 +698,7 @@ export const getItemsByIds = async (req: Request, res: Response) => {
     };
   });
   
-  res.json({
+  return res.json({
     data: enrichedItems,
     message: 'Items retrieved',
     status: 'success'
@@ -802,7 +802,7 @@ export const getItems = async (req: Request, res: Response) => {
     };
   });
   
-  res.json({
+  return res.json({
     data: enrichedItems,
     message: 'Items retrieved',
     status: 'success'
@@ -812,7 +812,7 @@ export const getItems = async (req: Request, res: Response) => {
 export const createItem = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createItem(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Item created',
     status: 'success'
@@ -823,7 +823,7 @@ export const updateItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateItem(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Item updated',
     status: 'success'
@@ -833,7 +833,7 @@ export const updateItem = async (req: Request, res: Response) => {
 export const deleteItem = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteItem(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Item deleted',
     status: 'success'
@@ -846,7 +846,7 @@ export const deleteItem = async (req: Request, res: Response) => {
 export const createStock = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStock(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock item created',
     status: 'success'
@@ -855,7 +855,7 @@ export const createStock = async (req: Request, res: Response) => {
 
 export const getStocks = async (req: Request, res: Response) => {
   const items = await nrwStockModel.getStocks();
-  res.json({
+  return res.json({
     data: items,
     message: 'Stock items retrieved',
     status: 'success'
@@ -874,7 +874,7 @@ export const getStockById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: item,
     message: 'Stock item retrieved',
     status: 'success'
@@ -884,7 +884,7 @@ export const getStockById = async (req: Request, res: Response) => {
 export const getStockInStock = async (req: Request, res: Response) => {
   const { id } = req.params;
   const stockCard = await nrwStockModel.getStockCardByItemId(Number(id));
-  res.json({
+  return res.json({
     data: stockCard,
     message: 'Stock in-stock retrieved',
     status: 'success'
@@ -895,7 +895,7 @@ export const updateStock = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStock(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock updated',
     status: 'success'
@@ -905,7 +905,7 @@ export const updateStock = async (req: Request, res: Response) => {
 export const deleteStock = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStock(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock deleted',
     status: 'success'
@@ -916,7 +916,7 @@ export const deleteStock = async (req: Request, res: Response) => {
 export const createSupplier = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createSupplier(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Supplier created',
     status: 'success'
@@ -925,7 +925,7 @@ export const createSupplier = async (req: Request, res: Response) => {
 
 export const getSuppliers = async (req: Request, res: Response) => {
   const suppliers = await nrwStockModel.getSuppliers();
-  res.json({
+  return res.json({
     data: suppliers,
     message: 'Suppliers retrieved',
     status: 'success'
@@ -944,7 +944,7 @@ export const getSupplierById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: supplier,
     message: 'Supplier retrieved',
     status: 'success'
@@ -955,7 +955,7 @@ export const getSupplierById = async (req: Request, res: Response) => {
 export const getSuppliersByIds = async (req: Request, res: Response) => {
   const { ids } = req.body; // expecting { ids: number[] }
   const suppliers = await nrwStockModel.getSuppliersByIds(ids);
-  res.json({
+  return res.json({
     data: suppliers,
     message: 'Suppliers retrieved',
     status: 'success'
@@ -966,7 +966,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateSupplier(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Supplier updated',
     status: 'success'
@@ -976,7 +976,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
 export const deleteSupplier = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteSupplier(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Supplier deleted',
     status: 'success'
@@ -987,7 +987,7 @@ export const deleteSupplier = async (req: Request, res: Response) => {
 /* ======= SIZES ======= */
 export const getSizes = async (req: Request, res: Response) => {
   const sizes = await nrwStockModel.getSizes();
-  res.json({
+  return res.json({
     data: sizes,
     message: 'Item sizes retrieved',
     status: 'success'
@@ -1006,7 +1006,7 @@ export const getSizeById = async (req: Request, res: Response) => {
     });
   }
 
-  res.json({
+  return res.json({
     data: size,
     message: 'Item size retrieved',
     status: 'success'
@@ -1016,7 +1016,7 @@ export const getSizeById = async (req: Request, res: Response) => {
 export const createSize = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createSize(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Item size created',
     status: 'success'
@@ -1027,7 +1027,7 @@ export const updateSize = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateSize(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Item size updated',
     status: 'success'
@@ -1037,7 +1037,7 @@ export const updateSize = async (req: Request, res: Response) => {
 export const deleteSize = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteSize(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Item size deleted',
     status: 'success'
@@ -1057,7 +1057,7 @@ export const createStockPurchase = async (req: Request, res: Response) => {
   }
 
   const result = await nrwStockModel.createStockPurchase(purchase, items);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock purchase with items created',
     status: 'success'
@@ -1111,7 +1111,7 @@ export const getStockPurchases = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({
+  return res.json({
     data: enrichedPurchases,
     message: 'Stock purchases retrieved',
     status: 'success'
@@ -1199,7 +1199,7 @@ export const getStockPurchaseById = async (req: Request, res: Response) => {
     requestedByUser: usersById[purchase.requested_by] || null
   };
 
-  res.json({
+  return res.json({
     data: enrichedPurchase,
     message: 'Stock purchase retrieved',
     status: 'success'
@@ -1210,7 +1210,7 @@ export const updateStockPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockPurchase(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock purchase updated',
     status: 'success'
@@ -1220,7 +1220,7 @@ export const updateStockPurchase = async (req: Request, res: Response) => {
 export const deleteStockPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockPurchase(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock purchase deleted',
     status: 'success'
@@ -1231,7 +1231,7 @@ export const deleteStockPurchase = async (req: Request, res: Response) => {
 export const createStockTransaction = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwStockModel.createStockTransaction(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Stock transaction created',
     status: 'success'
@@ -1240,7 +1240,7 @@ export const createStockTransaction = async (req: Request, res: Response) => {
 
 export const getStockTransactions = async (req: Request, res: Response) => {
   const transactions = await nrwStockModel.getStockTransactions();
-  res.json({
+  return res.json({
     data: transactions,
     message: 'Stock transactions retrieved',
     status: 'success'
@@ -1250,7 +1250,7 @@ export const getStockTransactions = async (req: Request, res: Response) => {
 export const getStockTransactionById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const transaction = await nrwStockModel.getStockTransactionById(Number(id));
-  res.json({
+  return res.json({
     data: transaction,
     message: 'Stock transaction retrieved',
     status: 'success'
@@ -1260,7 +1260,7 @@ export const getStockTransactionById = async (req: Request, res: Response) => {
 export const getStockTransactionsByItemId = async (req: Request, res: Response) => {
   const { itemId } = req.params;
   const transactions = await nrwStockModel.getStockTransactionsByItemId(Number(itemId));
-  res.json({
+  return res.json({
     data: transactions,
     message: 'Stock transactions retrieved',
     status: 'success'
@@ -1271,7 +1271,7 @@ export const updateStockTransaction = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwStockModel.updateStockTransaction(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock transaction updated',
     status: 'success'
@@ -1281,7 +1281,7 @@ export const updateStockTransaction = async (req: Request, res: Response) => {
 export const deleteStockTransaction = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwStockModel.deleteStockTransaction(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Stock transaction deleted',
     status: 'success'

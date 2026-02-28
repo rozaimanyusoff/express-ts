@@ -7,7 +7,7 @@ import * as nrwEmployeeModel from './nrwEmployeeModel';
 export const createEmployee = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwEmployeeModel.createEmployee(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Employee created',
     status: 'success'
@@ -62,7 +62,7 @@ export const getEmployees = async (req: Request, res: Response) => {
     };
   });
 
-  res.json({
+  return res.json({
     data: enrichedEmployees,
     message: 'Employees retrieved',
     status: 'success'
@@ -91,13 +91,13 @@ export const getEmployeeById = async (req: Request, res: Response) => {
       location: locationData ? { id: (locationData as any).id, name: (locationData as any).name } : null
     };
 
-    res.json({
+    return res.json({
       data: enrichedEmployee,
       message: 'Employee retrieved',
       status: 'success'
     });
   } else {
-    res.status(404).json({
+    return res.status(404).json({
       data: null,
       message: 'Employee not found',
       status: 'error'
@@ -109,7 +109,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwEmployeeModel.updateEmployee(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Employee updated',
     status: 'success'
@@ -119,7 +119,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 export const deleteEmployee = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwEmployeeModel.deleteEmployee(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Employee deleted',
     status: 'success'
@@ -130,7 +130,7 @@ export const deleteEmployee = async (req: Request, res: Response) => {
 export const createLevel = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwEmployeeModel.createLevel(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Level created',
     status: 'success'
@@ -139,7 +139,7 @@ export const createLevel = async (req: Request, res: Response) => {
 
 export const getLevels = async (req: Request, res: Response) => {
   const levels = await nrwEmployeeModel.getLevels();
-  res.json({
+  return res.json({
     data: levels,
     message: 'Levels retrieved',
     status: 'success'
@@ -149,7 +149,7 @@ export const getLevels = async (req: Request, res: Response) => {
 export const getLevelById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const level = await nrwEmployeeModel.getLevelById(Number(id));
-  res.json({
+  return res.json({
     data: level || null,
     message: level ? 'Level retrieved' : 'Level not found',
     status: 'success'
@@ -160,7 +160,7 @@ export const updateLevel = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwEmployeeModel.updateLevel(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Level updated',
     status: 'success'
@@ -170,7 +170,7 @@ export const updateLevel = async (req: Request, res: Response) => {
 export const deleteLevel = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwEmployeeModel.deleteLevel(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Level deleted',
     status: 'success'
@@ -181,7 +181,7 @@ export const deleteLevel = async (req: Request, res: Response) => {
 export const createDepartment = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwEmployeeModel.createDepartment(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Department created',
     status: 'success'
@@ -190,7 +190,7 @@ export const createDepartment = async (req: Request, res: Response) => {
 
 export const getDepartments = async (req: Request, res: Response) => {
   const departments = await nrwEmployeeModel.getDepartments();
-  res.json({
+  return res.json({
     data: departments,
     message: 'Departments retrieved',
     status: 'success'
@@ -200,7 +200,7 @@ export const getDepartments = async (req: Request, res: Response) => {
 export const getDepartmentById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const department = await nrwEmployeeModel.getDepartmentById(Number(id));
-  res.json({
+  return res.json({
     data: department || null,
     message: department ? 'Department retrieved' : 'Department not found',
     status: 'success'
@@ -211,7 +211,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwEmployeeModel.updateDepartment(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Department updated',
     status: 'success'
@@ -221,7 +221,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
 export const deleteDepartment = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwEmployeeModel.deleteDepartment(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Department deleted',
     status: 'success'
@@ -232,7 +232,7 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 export const createCostcenter = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwEmployeeModel.createCostcenter(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Costcenter created',
     status: 'success'
@@ -241,7 +241,7 @@ export const createCostcenter = async (req: Request, res: Response) => {
 
 export const getCostcenters = async (req: Request, res: Response) => {
   const costcenters = await nrwEmployeeModel.getCostcenters();
-  res.json({
+  return res.json({
     data: costcenters,
     message: 'Costcenters retrieved',
     status: 'success'
@@ -251,7 +251,7 @@ export const getCostcenters = async (req: Request, res: Response) => {
 export const getCostcenterById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const costcenter = await nrwEmployeeModel.getCostcenterById(Number(id));
-  res.json({
+  return res.json({
     data: costcenter || null,
     message: costcenter ? 'Costcenter retrieved' : 'Costcenter not found',
     status: 'success'
@@ -262,7 +262,7 @@ export const updateCostcenter = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwEmployeeModel.updateCostcenter(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Costcenter updated',
     status: 'success'
@@ -272,7 +272,7 @@ export const updateCostcenter = async (req: Request, res: Response) => {
 export const deleteCostcenter = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwEmployeeModel.deleteCostcenter(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Costcenter deleted',
     status: 'success'
@@ -283,7 +283,7 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 export const createLocation = async (req: Request, res: Response) => {
   const data = req.body;
   const result = await nrwEmployeeModel.createLocation(data);
-  res.status(201).json({
+  return res.status(201).json({
     data: result,
     message: 'Location created',
     status: 'success'
@@ -292,7 +292,7 @@ export const createLocation = async (req: Request, res: Response) => {
 
 export const getLocations = async (req: Request, res: Response) => {
   const locations = await nrwEmployeeModel.getLocations();
-  res.json({
+  return res.json({
     data: locations,
     message: 'Locations retrieved',
     status: 'success'
@@ -302,7 +302,7 @@ export const getLocations = async (req: Request, res: Response) => {
 export const getLocationById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const location = await nrwEmployeeModel.getLocationById(Number(id));
-  res.json({
+  return res.json({
     data: location || null,
     message: location ? 'Location retrieved' : 'Location not found',
     status: 'success'
@@ -313,7 +313,7 @@ export const updateLocation = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
   const result = await nrwEmployeeModel.updateLocation(Number(id), data);
-  res.json({
+  return res.json({
     data: result,
     message: 'Location updated',
     status: 'success'
@@ -323,7 +323,7 @@ export const updateLocation = async (req: Request, res: Response) => {
 export const deleteLocation = async (req: Request, res: Response) => {
   const { id } = req.params;
   const result = await nrwEmployeeModel.deleteLocation(Number(id));
-  res.json({
+  return res.json({
     data: result,
     message: 'Location deleted',
     status: 'success'

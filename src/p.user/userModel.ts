@@ -3,10 +3,10 @@ import fs from 'fs';
 import { ResultSetHeader } from "mysql2";
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger';
 
 // Purpose: Model for user operations.
 import {pool} from '../utils/db';
-import logger from '../utils/logger';
 const { compare, hash } = bcrypt;
 
 // DB and table variables for easier maintenance

@@ -1,10 +1,10 @@
 import dotenv from 'dotenv';
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import logger from '../utils/logger';
 
 import * as userModel from '../p.user/userModel';
 import { isTokenBlacklisted } from '../utils/tokenBlacklist';
-import logger from '../utils/logger';
 
 dotenv.config();
 
@@ -15,21 +15,21 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
   const token = authHeader?.split(' ')[1];
 
   if (!token) {
-    res.status(401).json({ message: 'Access denied. No token provided.' });
+    void res.status(401).json({ message: 'Access denied. No token provided.' });
     return;
   }
 
   // Point 21 FIX: Check if token is blacklisted (logged out)
   if (isTokenBlacklisted(token)) {
     logger.warn('Access attempt with blacklisted token');
-    res.status(401).json({ message: 'Token has been invalidated. Please login again.' });
+    void res.status(401).json({ message: 'Token has been invalidated. Please login again.' });
     return;
   }
 
   try {
     if (!JWT_SECRET) {
       logger.error('JWT_SECRET is not configured in environment variables');
-      res.status(500).json({ message: 'Server configuration error: JWT secret not set' });
+      void res.status(500).json({ message: 'Server configuration error: JWT secret not set' });
       return;
     }
 
@@ -51,12 +51,12 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
         try {
           const current = await userModel.getUserSessionToken(Number(uid));
           if (!current || current !== sess) {
-            res.status(401).json({ message: 'Session expired or invalidated' });
+            void res.status(401).json({ message: 'Session expired or invalidated' });
             return;
           }
         } catch (error) {
           logger.error('Session validation database error:', error);
-          res.status(401).json({ message: 'Session validation failed' });
+          void res.status(401).json({ message: 'Session validation failed' });
           return;
         }
       }
@@ -65,7 +65,8 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
     next();
   } catch (error) {
     logger.error('Token validation error:', error);
-    res.status(401).json({ message: 'Invalid or expired token.' });
+    void res.status(401).json({ message: 'Invalid or expired token.' });
+    return;
   }
 };
 

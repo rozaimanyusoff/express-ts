@@ -1,5 +1,6 @@
 import e from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import logger from '../utils/logger';
 
 import * as assetModel from '../p.asset/assetModel';
 import { pool, pool2 } from '../utils/db';
@@ -577,7 +578,7 @@ export const createPurchaseAssetRegistryBatch = async (
     } catch (e) {
       // Continue inserting others; caller can check returned ids length
       // Optional: log error
-      // console.error('createPurchaseAssetRegistryBatch: insert failed for', rec, e);
+      // logger.error('createPurchaseAssetRegistryBatch: insert failed for', rec, e);
     }
   }
   return insertIds;
@@ -958,7 +959,7 @@ export const logRegistryAudit = async (
     );
   } catch (err) {
     // Log audit failures but don't fail the main operation
-    console.warn(`Failed to log audit for registry ${registryId}:`, err);
+    logger.warn(`Failed to log audit for registry ${registryId}:`, err);
   }
 };
 
@@ -1002,7 +1003,7 @@ export const logRegistryAuditBatch = async (
     );
   } catch (err) {
     // Log audit failures but don't fail the main operation
-    console.warn(`Failed to log audit batch for registry ${registryId}:`, err);
+    logger.warn(`Failed to log audit batch for registry ${registryId}:`, err);
   }
 };
 
@@ -1230,7 +1231,7 @@ export const importPurchaseRequests = async (
             [existingId, prNo]
           );
         } catch (updateErr) {
-          console.warn(`Failed to update purchase_items for duplicate pr_no ${prNo}:`, updateErr);
+          logger.warn(`Failed to update purchase_items for duplicate pr_no ${prNo}:`, updateErr);
           // Don't fail the import if update fails
         }
         

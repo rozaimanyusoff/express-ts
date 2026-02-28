@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
+import logger from '../utils/logger';
 
 import * as notificationManager from '../utils/notificationManager';
 import * as assetModel from '../p.asset/assetModel';
@@ -230,9 +231,9 @@ export const getSummons = async (req: Request, res: Response) => {
       return { ...rest, asset, attachment_url, employee, summon_receipt, summon_upl };
     });
 
-    res.json({ data, message: 'Summons retrieved', status: 'success' });
+    return res.json({ data, message: 'Summons retrieved', status: 'success' });
   } catch (err) {
-    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summons', status: 'error' });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summons', status: 'error' });
   }
 };
 
@@ -308,9 +309,9 @@ export const getSummonById = async (req: Request, res: Response) => {
     if ((data).summon_time) (data).summon_time = fmtTimeOnly((data).summon_time);
     if ((data).summon_dt) (data).summon_dt = fmtDatetimeMySQL((data).summon_dt);
 
-    res.json({ data, message: 'Summon retrieved', status: 'success' });
+    return res.json({ data, message: 'Summon retrieved', status: 'success' });
   } catch (err) {
-    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summon', status: 'error' });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch summon', status: 'error' });
   }
 };
 
@@ -373,16 +374,16 @@ export const createSummon = async (req: Request, res: Response) => {
           await sendMail(toEmail, `Summon notification #${r?.smn_id || id}`, html, mailOpts);
           await complianceModel.updateSummon(id, { emailStat: 1 }).catch(() => { });
         } catch (mailErr) {
-          console.error('createSummon: mail send error', mailErr, 'to', toEmail);
+          logger.error('createSummon: mail send error', mailErr, 'to', toEmail);
         }
       } catch (e) {
         // non-blocking
       }
     })();
 
-    res.status(201).json({ data: { id, smn_id: id }, message: 'Summon created', status: 'success' });
+    return res.status(201).json({ data: { id, smn_id: id }, message: 'Summon created', status: 'success' });
   } catch (err) {
-    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to create summon', status: 'error' });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to create summon', status: 'error' });
   }
 };
 
@@ -433,9 +434,9 @@ export const updateSummon = async (req: Request, res: Response) => {
       await complianceModel.updateSummon(id, { summon_upl: stored });
     }
 
-    res.json({ message: 'Updated', status: 'success' });
+    return res.json({ message: 'Updated', status: 'success' });
   } catch (err) {
-    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to update summon', status: 'error' });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to update summon', status: 'error' });
   }
 };
 
@@ -493,16 +494,16 @@ export const uploadSummonPayment = async (req: Request, res: Response) => {
             summon_loc: r?.summon_loc || null,
             summon_no: r?.summon_no || null,
           });
-          try { await sendMail(ADMIN_EMAIL, `Summon payment received #${r?.smn_id || id}`, html); } catch (e) { console.error('admin email send failed', e); }
+          try { await sendMail(ADMIN_EMAIL, `Summon payment received #${r?.smn_id || id}`, html); } catch (e) { logger.error('admin email send failed', e); }
         }
       } catch (e) {
         // silent
       }
     })();
 
-    res.json({ data: { id }, message: 'Payment receipt uploaded', status: 'success' });
+    return res.json({ data: { id }, message: 'Payment receipt uploaded', status: 'success' });
   } catch (err) {
-    res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to upload payment receipt', status: 'error' });
+    return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to upload payment receipt', status: 'error' });
   }
 };
 
@@ -552,7 +553,7 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
       return res.json({ data: { id, sentTo: toEmail, testMode: !!localTestEmail }, message: 'Notification sent', status: 'success' });
     } catch (mailErr) {
       // don't expose mail errors, but return failure status
-      console.error('resendSummonNotification: mailer error', mailErr);
+      logger.error('resendSummonNotification: mailer error', mailErr);
       return res.status(500).json({ data: null, message: 'Failed to send email', status: 'error' });
     }
   } catch (err) {
@@ -573,12 +574,12 @@ export const deleteSummon = async (req: Request, res: Response) => {
       await fsPromises.unlink(full).catch(() => { });
     }
     await complianceModel.deleteSummon(id);
-    res.json({ data: null, message: 'Summon deleted', status: 'success' });
+    return res.json({ data: null, message: 'Summon deleted', status: 'success' });
   } catch (err) {
     if (err instanceof Error && err.message === 'Summon record not found') {
-      res.status(404).json({ data: null, message: err.message, status: 'error' });
+      return res.status(404).json({ data: null, message: err.message, status: 'error' });
     } else {
-      res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to delete summon', status: 'error' });
+      return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to delete summon', status: 'error' });
     }
   }
 };
@@ -1368,7 +1369,7 @@ export const createAssessment = async (req: Request, res: Response) => {
           const stored = path.posix.join('uploads', 'compliance', 'assessment', filename);
           parentUpdate[fieldName] = stored;
         } catch (err) {
-          console.error(`Failed to process file for ${fieldName}:`, err);
+          logger.error(`Failed to process file for ${fieldName}:`, err);
           // Continue processing others; skip failures
         }
       }
@@ -1407,7 +1408,7 @@ export const createAssessment = async (req: Request, res: Response) => {
         await safeMove(tempPath, destPath);
         return path.posix.join('uploads', 'compliance', 'assessment', String(assessId), filename);
       } catch (err) {
-        console.error('persistDetailFile error:', err);
+        logger.error('persistDetailFile error:', err);
         return null;
       }
     };
@@ -1543,7 +1544,7 @@ export const createAssessment = async (req: Request, res: Response) => {
             text
           });
         } catch (mailErr) {
-          console.error('createAssessment: mail send error', mailErr);
+          logger.error('createAssessment: mail send error', mailErr);
         }
       } catch (e) {
         // ignore email errors
@@ -2275,14 +2276,14 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         
         // Log the operation (update vs insert) for monitoring
         if (specsResult.operation === 'update-success') {
-          console.log(`✓ Computer specs UPDATED for asset_id=${data.asset_id}: ${specsResult.updatedFieldCount} fields modified`);
+          logger.info(`✓ Computer specs UPDATED for asset_id=${data.asset_id}: ${specsResult.updatedFieldCount} fields modified`);
         } else if (specsResult.operation === 'insert-success') {
-          console.log(`✓ Computer specs INSERTED for asset_id=${data.asset_id}: ${specsResult.createdFieldCount} fields created (1_specs id: ${specsResult.insertId})`);
+          logger.info(`✓ Computer specs INSERTED for asset_id=${data.asset_id}: ${specsResult.createdFieldCount} fields created (1_specs id: ${specsResult.insertId})`);
         }
       }
     } catch (specsErr) {
       // Log error but don't fail the assessment creation
-      console.error('Error updating computer specs:', specsErr);
+      logger.error('Error updating computer specs:', specsErr);
     }
 
     // Step 4: Check Asset History and insert record only if data changed
@@ -2300,16 +2301,16 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         
         if (historyResult.inserted) {
           const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
-          console.log(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
+          logger.info(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
         } else if (!historyResult.error) {
-          console.log(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
+          logger.info(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
         } else {
-          console.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
+          logger.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
         }
       }
     } catch (historyErr) {
       // Log error but don't fail the assessment creation
-      console.error('Error checking/updating asset history:', historyErr);
+      logger.error('Error checking/updating asset history:', historyErr);
     }
 
     // Step 5: Update assetdata with category, brand, model, and ownership details
@@ -2335,16 +2336,16 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
         
         if (assetDataResult.updated) {
-          console.log(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
+          logger.info(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
         } else if (!assetDataResult.error) {
-          console.log(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
+          logger.info(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
         } else {
-          console.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
+          logger.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
         }
       }
     } catch (assetDataErr) {
       // Log error but don't fail the assessment creation
-      console.error('Error updating assetdata:', assetDataErr);
+      logger.error('Error updating assetdata:', assetDataErr);
     }
 
     // Handle attachment files if present
@@ -2379,7 +2380,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
             const attachmentNum = i + 1;
             attachmentUpdates[`attachment_${attachmentNum}`] = stored;
           } catch (err) {
-            console.error(`Failed to process attachment ${i}:`, err);
+            logger.error(`Failed to process attachment ${i}:`, err);
           }
         }
       }
@@ -2484,12 +2485,12 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           });
           
           await sendMail(technician.email, subject, html);
-          console.log(`✓ Email notification sent to ${technician.email} for assessment ID: ${id}`);
+          logger.info(`✓ Email notification sent to ${technician.email} for assessment ID: ${id}`);
         }
       }
     } catch (emailErr) {
       // Log email error but don't fail the assessment creation
-      console.error('Error sending IT assessment notification email:', emailErr);
+      logger.error('Error sending IT assessment notification email:', emailErr);
     }
 
     return res.status(201).json({
@@ -2544,7 +2545,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
             const attachmentNum = i + 1;
             (data as any)[`attachment_${attachmentNum}`] = stored;
           } catch (err) {
-            console.error(`Failed to process attachment ${i}:`, err);
+            logger.error(`Failed to process attachment ${i}:`, err);
           }
         }
       }
@@ -2652,7 +2653,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
       }
     } catch (specsErr) {
       // Log error but don't fail the assessment update
-      console.error('Error updating computer specs:', specsErr);
+      logger.error('Error updating computer specs:', specsErr);
     }
 
     // Step 4: Check Asset History and insert record only if data changed
@@ -2670,16 +2671,16 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
         
         if (historyResult.inserted) {
           const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
-          console.log(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
+          logger.info(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
         } else if (!historyResult.error) {
-          console.log(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
+          logger.info(`✓ Asset history check completed for asset_id=${data.asset_id}: ${historyResult.message}`);
         } else {
-          console.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
+          logger.warn(`⚠ Asset history check encountered an error for asset_id=${data.asset_id}`);
         }
       }
     } catch (historyErr) {
       // Log error but don't fail the assessment update
-      console.error('Error checking/updating asset history:', historyErr);
+      logger.error('Error checking/updating asset history:', historyErr);
     }
 
     // Step 5: Update assetdata with category, brand, model, and ownership details
@@ -2705,16 +2706,16 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
         const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
         
         if (assetDataResult.updated) {
-          console.log(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
+          logger.info(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
         } else if (!assetDataResult.error) {
-          console.log(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
+          logger.info(`✓ assetdata check completed for asset_id=${data.asset_id}: ${assetDataResult.message}`);
         } else {
-          console.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
+          logger.warn(`⚠ assetdata update encountered an error for asset_id=${data.asset_id}`);
         }
       }
     } catch (assetDataErr) {
       // Log error but don't fail the assessment update
-      console.error('Error updating assetdata:', assetDataErr);
+      logger.error('Error updating assetdata:', assetDataErr);
     }
 
     const updated = await complianceModel.getComputerAssessmentById(id);
@@ -2894,7 +2895,7 @@ export const resendComputerAssessmentEmail = async (req: Request, res: Response)
 
     // Send email
     await sendMail(technician.email, subject, html);
-    console.log(`✓ Assessment email resent to ${technician.email} for assessment ID: ${id}`);
+    logger.info(`✓ Assessment email resent to ${technician.email} for assessment ID: ${id}`);
 
     return res.json({
       status: 'success',

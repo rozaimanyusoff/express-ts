@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import logger from '../utils/logger';
 
 dotenv.config();
 
@@ -38,5 +39,5 @@ export const sendMail = async (to: string, subject: string, html: string, option
   }
   const info = await transporter.sendMail(mail);
    
-  console.log('Message sent: %s', info.messageId);
+  logger.info('Message sent: %s', info.messageId);
 };

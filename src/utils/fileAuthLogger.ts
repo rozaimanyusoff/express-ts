@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import logger from './logger';
+import logger from '../utils/logger';
 
 const UPLOAD_BASE_PATH = process.env.UPLOAD_BASE_PATH || './uploads';
 const AUTH_LOGS_DIR = path.join(UPLOAD_BASE_PATH, 'logs', 'auth');

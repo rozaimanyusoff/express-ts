@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import jwt, { SignOptions } from 'jsonwebtoken';
+import logger from '../utils/logger';
 
 import * as billingModel from '../p.billing/billingModel';
 import * as purchaseModel from '../p.purchase/purchaseModel';
@@ -30,7 +31,7 @@ function generateAcceptanceCredentialCode(transferId: number, ramcoId: string): 
 		// Return first 16 characters of hash for URL-safe credential code
 		return hash.substring(0, 16);
 	} catch (err) {
-		console.warn('Failed to generate credential code:', err);
+		logger.warn('Failed to generate credential code:', err);
 		return '';
 	}
 }
@@ -384,7 +385,7 @@ export const getAssets = async (req: Request, res: Response) => {
 	});
 
 	const meta = { page, pageSize, total: filteredTotal, totalPages: Math.max(1, Math.ceil(filteredTotal / (pageSize || 1))) };
-	res.json({
+	return res.json({
 		data,
 		message: `Assets data retrieved successfully (${data.length} entries${usePaged ? ` of ${filteredTotal} total` : ''})`,
 		meta,
@@ -501,7 +502,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 			}
 		} catch (_err) {
 			// Log but don't fail if specs fetch fails
-			console.warn(`Failed to fetch specs for asset ${asset.id}:`, _err);
+			logger.warn(`Failed to fetch specs for asset ${asset.id}:`, _err);
 		}
 	}
 
@@ -581,7 +582,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 		} : null,
 	};
 
-	res.json({
+	return res.json({
 		data: assetWithNested,
 		message: `Asset data with id: ${asset.id} retrieved successfully`,
 		status: 'success'
@@ -591,7 +592,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 export const createAsset = async (req: Request, res: Response) => {
 	const assetData = req.body;
 	const result = await assetModel.createAsset(assetData);
-	res.status(201).json({
+	return res.status(201).json({
 		message: 'Asset created successfully',
 		result,
 		status: 'success'
@@ -602,7 +603,7 @@ export const updateAsset = async (req: Request, res: Response) => {
 	const { id } = req.params;
 	const data = req.body;
 	const result = await assetModel.updateAsset(Number(id), data);
-	res.json({
+	return res.json({
 		message: 'Asset updated successfully',
 		result,
 		status: 'success'
@@ -620,13 +621,13 @@ export const updateAssetBasicSpecs = async (req: Request, res: Response) => {
 
 		const result = await assetModel.updateAssetBasicSpecs(asset_id, req.body);
 
-		res.json({
+		return res.json({
 			message: result.message,
 			data: result,
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(400).json({
+		return res.status(400).json({
 			message: error instanceof Error ? error.message : 'Failed to update asset specs',
 			status: 'error'
 		});
@@ -636,7 +637,7 @@ export const updateAssetBasicSpecs = async (req: Request, res: Response) => {
 export const deleteAsset = async (req: Request, res: Response) => {
 	const { id } = req.params;
 	const result = await assetModel.deleteAsset(Number(id));
-	res.json({
+	return res.json({
 		message: 'Asset deleted successfully',
 		result,
 		status: 'success'
@@ -687,7 +688,7 @@ export const getAssetManagers = async (req: Request, res: Response) => {
 	if (ramco) {
 		enrichedManagers = enrichedManagers.filter((mgr: any) => String(mgr.ramco_id) === ramco);
 	}
-	res.json({ data: enrichedManagers, message: 'Asset managers retrieved successfully', status: 'success' });
+	return res.json({ data: enrichedManagers, message: 'Asset managers retrieved successfully', status: 'success' });
 }
 
 export const getAssetManagerById = async (req: Request, res: Response) => {
@@ -719,14 +720,14 @@ export const getAssetManagerById = async (req: Request, res: Response) => {
 			ramco_id: emp.ramco_id
 		};
 	}
-	res.json({ data: { ...manager, employee }, message: 'Asset manager retrieved successfully', status: 'success' });
+	return res.json({ data: { ...manager, employee }, message: 'Asset manager retrieved successfully', status: 'success' });
 }
 
 export const createAssetManager = async (req: Request, res: Response) => {
 	const data = req.body;
 	// Create the asset manager
 	const insertId = await assetModel.createAssetManager(data);
-	res.status(201).json({ data: { id: insertId }, message: 'Asset manager created successfully', status: 'success' });
+	return res.status(201).json({ data: { id: insertId }, message: 'Asset manager created successfully', status: 'success' });
 }
 
 export const updateAssetManager = async (req: Request, res: Response) => {
@@ -737,7 +738,7 @@ export const updateAssetManager = async (req: Request, res: Response) => {
 	if ((result as any).affectedRows === 0) {
 		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
-	res.json({ message: 'Asset manager updated successfully', status: 'success' });
+	return res.json({ message: 'Asset manager updated successfully', status: 'success' });
 }
 
 export const deleteAssetManager = async (req: Request, res: Response) => {
@@ -755,7 +756,7 @@ export const deleteAssetManager = async (req: Request, res: Response) => {
 	if ((result as any).affectedRows === 0) {
 		return res.status(404).json({ message: 'Asset manager not found', status: 'error' });
 	}
-	res.json({ message: 'Asset manager deleted successfully', status: 'success' });
+	return res.json({ message: 'Asset manager deleted successfully', status: 'success' });
 }
 
 /* ============ SPEC PROPERTIES ============= */
@@ -792,7 +793,7 @@ export const getSpecProperties = async (req: Request, res: Response) => {
 	const typeId = Number(typeParam);
 	if (!typeId || isNaN(typeId)) return res.status(400).json({ message: 'type_id is invalid', status: 'error' });
 	const rows = await assetModel.getSpecPropertiesByType(typeId);
-	res.json({ data: rows, message: 'Spec properties retrieved', status: 'success' });
+	return res.json({ data: rows, message: 'Spec properties retrieved', status: 'success' });
 };
 
 export const createSpecProperty = async (req: Request, res: Response) => {
@@ -810,10 +811,10 @@ export const createSpecProperty = async (req: Request, res: Response) => {
 			});
 		}
 
-		res.status(201).json({ data: result, message: 'Spec property created', status: 'success' });
+		return res.status(201).json({ data: result, message: 'Spec property created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ data: null, message, status: 'error' });
+		return res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
@@ -824,9 +825,9 @@ export const applySpecProperty = async (req: Request, res: Response) => {
 	if (!spec) return res.status(404).json({ message: 'Spec property not found', status: 'error' });
 	const result: any = await assetModel.applySpecPropertyToType(spec);
 	if (result.ok) {
-		res.json({ data: null, message: 'Spec applied to type table', status: 'success' });
+		return res.json({ data: null, message: 'Spec applied to type table', status: 'success' });
 	} else {
-		res.status(500).json({ data: result.error, message: 'Failed to apply spec', status: 'error' });
+		return res.status(500).json({ data: result.error, message: 'Failed to apply spec', status: 'error' });
 	}
 };
 
@@ -835,7 +836,7 @@ export const updateSpecProperty = async (req: Request, res: Response) => {
 	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const result = await assetModel.updateSpecProperty(id, req.body);
 	const hasErrors = result.alterResult && !result.alterResult.success;
-	res.status(hasErrors ? 207 : 200).json({
+	return res.status(hasErrors ? 207 : 200).json({
 		data: result,
 		message: hasErrors ? 'Spec property updated but table alteration failed' : 'Spec property updated',
 		status: hasErrors ? 'partial' : 'success'
@@ -847,7 +848,7 @@ export const deleteSpecProperty = async (req: Request, res: Response) => {
 	if (!id) return res.status(400).json({ message: 'id is required', status: 'error' });
 	const drop = req.query.drop === '1' || req.query.drop === 'true';
 	const result = await assetModel.deleteSpecProperty(id, drop);
-	res.json({ data: result, message: 'Spec property deleted', status: 'success' });
+	return res.json({ data: result, message: 'Spec property deleted', status: 'success' });
 };
 
 export const applyPendingSpecProperties = async (req: Request, res: Response) => {
@@ -858,7 +859,7 @@ export const applyPendingSpecProperties = async (req: Request, res: Response) =>
 		if (isNaN(typeId)) return res.status(400).json({ message: 'type_id is invalid', status: 'error' });
 	}
 	const results = await assetModel.applyPendingSpecProperties(typeId);
-	res.json({ data: results, message: 'Apply results', status: 'success' });
+	return res.json({ data: results, message: 'Apply results', status: 'success' });
 };
 
 
@@ -931,7 +932,7 @@ export const getTypes = async (req: Request, res: Response) => {
 			categories: categoriesByTypeId.get(type.id) || []
 		};
 	});
-	res.json({
+	return res.json({
 		data,
 		message: 'Asset type retrieved successfully',
 		status: 'success'
@@ -964,7 +965,7 @@ export const getTypeById = async (req: Request, res: Response) => {
 		}));
 
 	const data = { ...row, manager, categories };
-	res.json({
+	return res.json({
 		data,
 		message: 'Asset type retrieved successfully',
 		status: 'success'
@@ -984,10 +985,10 @@ export const createType = async (req: Request, res: Response) => {
 		if (type.image) {
 			type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
 		}
-		res.status(201).json({ data: type, message: 'Type created', status: 'success' });
+		return res.status(201).json({ data: type, message: 'Type created', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ data: null, message, status: 'error' });
+		return res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
@@ -1003,16 +1004,16 @@ export const updateType = async (req: Request, res: Response) => {
 		if (type.image) {
 			type.image = `https://${req.get('host')}/uploads/types/${type.image}`;
 		}
-		res.json({ data: type, message: 'Type updated', status: 'success' });
+		return res.json({ data: type, message: 'Type updated', status: 'success' });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Unknown error';
-		res.status(500).json({ data: null, message, status: 'error' });
+		return res.status(500).json({ data: null, message, status: 'error' });
 	}
 };
 
 export const deleteType = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteType(Number(req.params.id));
-	res.json(result);
+	return res.json(result);
 };
 
 /* =========== CATEGORIES =========== */
@@ -1049,7 +1050,7 @@ export const getCategories = async (req: Request, res: Response) => {
 			brands: brandsForCategory
 		});
 	}
-	res.json({
+	return res.json({
 		data,
 		message: 'Categories data retrieved successfully',
 		status: 'success'
@@ -1058,7 +1059,7 @@ export const getCategories = async (req: Request, res: Response) => {
 
 export const getCategoryById = async (req: Request, res: Response) => {
 	const row = await assetModel.getCategoryById(Number(req.params.id));
-	res.json(row);
+	return res.json(row);
 };
 
 export const createCategory = async (req: Request, res: Response) => {
@@ -1070,7 +1071,7 @@ export const createCategory = async (req: Request, res: Response) => {
 		name,
 		type_id: type_id ?? typeId
 	});
-	res.json({
+	return res.json({
 		message: 'Category created successfully',
 		result,
 		status: 'success'
@@ -1079,12 +1080,12 @@ export const createCategory = async (req: Request, res: Response) => {
 
 export const updateCategory = async (req: Request, res: Response) => {
 	const result = await assetModel.updateCategory(Number(req.params.id), req.body);
-	res.json(result);
+	return res.json(result);
 };
 
 export const deleteCategory = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteCategory(Number(req.params.id));
-	res.json(result);
+	return res.json(result);
 };
 
 /* =========== BRANDS =========== */
@@ -1226,7 +1227,7 @@ export const getBrands = async (req: Request, res: Response) => {
 		});
 	}
 
-	res.json({
+	return res.json({
 		data,
 		message: 'Models data retrieved successfully',
 		status: 'success'
@@ -1235,13 +1236,13 @@ export const getBrands = async (req: Request, res: Response) => {
 
 export const getBrandById = async (req: Request, res: Response) => {
 	const row = await assetModel.getBrandById(Number(req.params.id));
-	res.json(row);
+	return res.json(row);
 };
 
 export const createBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.createBrand(req.body);
-	res.json({
+	return res.json({
 		message: 'Brand created successfully',
 		result,
 		status: 'success'
@@ -1251,7 +1252,7 @@ export const createBrand = async (req: Request, res: Response) => {
 export const updateBrand = async (req: Request, res: Response) => {
 	// Accept frontend payload as-is (type_id, category_id)
 	const result = await assetModel.updateBrand(Number(req.params.id), req.body);
-	res.json({
+	return res.json({
 		message: 'Brand updated successfully',
 		result,
 		status: 'success'
@@ -1260,7 +1261,7 @@ export const updateBrand = async (req: Request, res: Response) => {
 
 export const deleteBrand = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteBrand(Number(req.params.id));
-	res.json(result);
+	return res.json(result);
 };
 
 
@@ -1268,25 +1269,25 @@ export const deleteBrand = async (req: Request, res: Response) => {
 export const assignCategoryToBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
 	await assetModel.addBrandCategory(brand_code as string, category_code as string);
-	res.json({ message: 'Category assigned to brand', status: 'success' });
+	return res.json({ message: 'Category assigned to brand', status: 'success' });
 };
 
 export const unassignCategoryFromBrand = async (req: Request, res: Response) => {
 	const { brand_code, category_code } = req.params;
 	await assetModel.removeBrandCategory(brand_code as string, category_code as string);
-	res.json({ message: 'Category unassigned from brand', status: 'success' });
+	return res.json({ message: 'Category unassigned from brand', status: 'success' });
 };
 
 export const getCategoriesForBrand = async (req: Request, res: Response) => {
 	const { brand_code } = req.params;
 	const categories = await assetModel.getCategoriesByBrand(brand_code as string);
-	res.json({ data: categories, status: 'success' });
+	return res.json({ data: categories, status: 'success' });
 };
 
 export const getBrandsForCategory = async (req: Request, res: Response) => {
 	const { category_code } = req.params;
 	const brands = await assetModel.getBrandsByCategory(category_code as string);
-	res.json({ data: brands, status: 'success' });
+	return res.json({ data: brands, status: 'success' });
 };
 
 export const getAllBrandCategoryMappings = async (req: Request, res: Response) => {
@@ -1326,7 +1327,7 @@ export const getAllBrandCategoryMappings = async (req: Request, res: Response) =
 			});
 		}
 	}
-	res.json({ data: mappings, status: 'success' });
+	return res.json({ data: mappings, status: 'success' });
 };
 
 /* =========== MODELS =========== */
@@ -1379,7 +1380,7 @@ export const getModels = async (req: Request, res: Response) => {
 		};
 	});
 
-	res.json({
+	return res.json({
 		data,
 		message: 'Models data retrieved successfully',
 		status: 'success'
@@ -1406,7 +1407,7 @@ export const getModelById = async (req: Request, res: Response) => {
 		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
 		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.json({ data, message: 'Model retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Model retrieved successfully', status: 'success' });
 };
 
 export const createModel = async (req: Request, res: Response) => {
@@ -1438,7 +1439,7 @@ export const createModel = async (req: Request, res: Response) => {
 		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
 		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.status(201).json({ data: { id: insertId, ...mapped }, message: 'Model created successfully', status: 'success' });
+	return res.status(201).json({ data: { id: insertId, ...mapped }, message: 'Model created successfully', status: 'success' });
 };
 
 export const updateModel = async (req: Request, res: Response) => {
@@ -1467,7 +1468,7 @@ export const updateModel = async (req: Request, res: Response) => {
 		category: category_id && categoryMap.has(category_id) ? categoryMap.get(category_id) : null,
 		type: type_id && typeMap.has(type_id) ? typeMap.get(type_id) : null
 	};
-	res.json({ data: { id: Number(id), ...mapped }, message: 'Model updated successfully', status: 'success' });
+	return res.json({ data: { id: Number(id), ...mapped }, message: 'Model updated successfully', status: 'success' });
 };
 
 export const deleteModel = async (req: Request, res: Response) => {
@@ -1484,7 +1485,7 @@ export const deleteModel = async (req: Request, res: Response) => {
 	}
 
 	const result = await assetModel.deleteModel(modelId);
-	res.json({
+	return res.json({
 		status: 'success',
 		message: 'Model deleted successfully',
 		data: result
@@ -1502,7 +1503,7 @@ function isOwnershipRow(obj: any): obj is { asset_id: number; effective_date?: s
 /* =========== COSTCENTERS =========== */
 export const getCostcenters = async (req: Request, res: Response) => {
 	const rows = await assetModel.getCostcenters();
-	res.json({
+	return res.json({
 		data: rows,
 		message: 'Costcenters data retrieved successfully',
 		status: 'success'
@@ -1511,7 +1512,7 @@ export const getCostcenters = async (req: Request, res: Response) => {
 
 export const getCostcenterById = async (req: Request, res: Response) => {
 	const row = await assetModel.getCostcenterById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Costcenter data retrieved successfully',
 		status: 'success'
@@ -1520,7 +1521,7 @@ export const getCostcenterById = async (req: Request, res: Response) => {
 
 export const createCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.createCostcenter(req.body);
-	res.json({
+	return res.json({
 		message: 'Costcenter created successfully',
 		result,
 		status: 'success'
@@ -1529,7 +1530,7 @@ export const createCostcenter = async (req: Request, res: Response) => {
 
 export const updateCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.updateCostcenter(Number(req.params.id), req.body);
-	res.json({
+	return res.json({
 		message: 'Costcenter updated successfully',
 		result,
 		status: 'success'
@@ -1538,7 +1539,7 @@ export const updateCostcenter = async (req: Request, res: Response) => {
 
 export const deleteCostcenter = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteCostcenter(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Costcenter deleted successfully',
 		result,
 		status: 'success'
@@ -1549,7 +1550,7 @@ export const deleteCostcenter = async (req: Request, res: Response) => {
 /* =========== DEPARTMENTS =========== */
 export const getDepartments = async (req: Request, res: Response) => {
 	const rows = await assetModel.getDepartments();
-	res.json({
+	return res.json({
 		data: rows,
 		message: 'Departments data retrieved successfully',
 		status: 'success'
@@ -1558,7 +1559,7 @@ export const getDepartments = async (req: Request, res: Response) => {
 
 export const getDepartmentById = async (req: Request, res: Response) => {
 	const row = await assetModel.getDepartmentById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Department data retrieved successfully',
 		status: 'success'
@@ -1595,7 +1596,7 @@ export const createDepartment = async (req: Request, res: Response) => {
 			data: createdDepartment
 		});
 	} catch (error: any) {
-		console.error('Error creating department:', error);
+		logger.error('Error creating department:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error creating department',
@@ -1645,7 +1646,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
 			data: updatedDepartment
 		});
 	} catch (error: any) {
-		console.error('Error updating department:', error);
+		logger.error('Error updating department:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error updating department',
@@ -1656,7 +1657,7 @@ export const updateDepartment = async (req: Request, res: Response) => {
 
 export const deleteDepartment = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteDepartment(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Department deleted successfully',
 		result,
 		status: 'success'
@@ -1677,7 +1678,7 @@ export const getSections = async (req: Request, res: Response) => {
 		id: section.id,
 		name: section.name
 	}));
-	res.json({
+	return res.json({
 		data,
 		message: 'Sections data retrieved successfully',
 		status: 'success'
@@ -1694,7 +1695,7 @@ export const getSectionById = async (req: Request, res: Response) => {
 		const dep = await assetModel.getDepartmentById(section.department_id);
 		if (dep) department = { id: dep.id, name: dep.name };
 	}
-	res.json({
+	return res.json({
 		data: {
 			department,
 			id: section.id,
@@ -1712,7 +1713,7 @@ export const createSection = async (req: Request, res: Response) => {
 		department_id: departmentId,
 		name
 	});
-	res.json({
+	return res.json({
 		message: 'Section created successfully',
 		result,
 		status: 'success'
@@ -1726,7 +1727,7 @@ export const updateSection = async (req: Request, res: Response) => {
 		department_id: departmentId,
 		name
 	});
-	res.json({
+	return res.json({
 		message: 'Section updated successfully',
 		result,
 		status: 'success'
@@ -1735,7 +1736,7 @@ export const updateSection = async (req: Request, res: Response) => {
 
 export const deleteSection = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSection(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Section deleted successfully',
 		result,
 		status: 'success'
@@ -1749,7 +1750,7 @@ export const getLocations = async (req: Request, res: Response) => {
 	if (!Array.isArray(locations)) {
 		return res.status(500).json({ message: 'Failed to fetch locations', status: 'error' });
 	}
-	res.json({ data: locations, message: 'Locations retrieved successfully', status: 'success' });
+	return res.json({ data: locations, message: 'Locations retrieved successfully', status: 'success' });
 }
 
 export const getLocationById = async (req: Request, res: Response) => {
@@ -1771,7 +1772,7 @@ export const getLocationById = async (req: Request, res: Response) => {
 			data: location
 		});
 	} catch (error: any) {
-		console.error('Error retrieving location:', error);
+		logger.error('Error retrieving location:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error retrieving location',
@@ -1802,7 +1803,7 @@ export const deleteLocation = async (req: Request, res: Response) => {
 			data: { id: Number(id) }
 		});
 	} catch (error: any) {
-		console.error('Error deleting location:', error);
+		logger.error('Error deleting location:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error deleting location',
@@ -1831,12 +1832,12 @@ export const getDistricts = async (req: Request, res: Response) => {
 		name: d.name,
 		zone: zoneMap.get(districtToZone.get(d.id)!) || null
 	}));
-	res.json({ data, message: 'Districts data retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Districts data retrieved successfully', status: 'success' });
 };
 
 export const getDistrictById = async (req: Request, res: Response) => {
 	const row = await assetModel.getDistrictById(Number(req.params.id));
-	res.json({ data: row, message: 'District data retrieved successfully', status: 'success' });
+	return res.json({ data: row, message: 'District data retrieved successfully', status: 'success' });
 };
 
 export const createDistrict = async (req: Request, res: Response) => {
@@ -1849,7 +1850,7 @@ export const createDistrict = async (req: Request, res: Response) => {
 	if (zone_id) {
 		await assetModel.addDistrictToZone(zone_id, districtId);
 	}
-	res.json({ message: 'District created successfully', result, status: 'success' });
+	return res.json({ message: 'District created successfully', result, status: 'success' });
 };
 
 export const updateDistrict = async (req: Request, res: Response) => {
@@ -1863,7 +1864,7 @@ export const updateDistrict = async (req: Request, res: Response) => {
 	if (zone_id) {
 		await assetModel.addDistrictToZone(zone_id, districtId);
 	}
-	res.json({ message: 'District updated successfully', result, status: 'success' });
+	return res.json({ message: 'District updated successfully', result, status: 'success' });
 };
 
 export const deleteDistrict = async (req: Request, res: Response) => {
@@ -1872,7 +1873,7 @@ export const deleteDistrict = async (req: Request, res: Response) => {
 	await assetModel.removeAllZonesFromDistrict(districtId);
 	// Delete the district
 	const result = await assetModel.deleteDistrict(districtId);
-	res.json({ message: 'District deleted successfully', result, status: 'success' });
+	return res.json({ message: 'District deleted successfully', result, status: 'success' });
 };
 
 
@@ -1971,7 +1972,7 @@ export const getSites = async (req: Request, res: Response) => {
 			wss_group: site.wss_group
 		};
 	});
-	res.json({
+	return res.json({
 		data,
 		message: 'Sites data retrieved successfully',
 		status: 'success'
@@ -1980,7 +1981,7 @@ export const getSites = async (req: Request, res: Response) => {
 
 export const getSiteById = async (req: Request, res: Response) => {
 	const row = await assetModel.getSiteById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Site data retrieved successfully',
 		status: 'success'
@@ -1989,7 +1990,7 @@ export const getSiteById = async (req: Request, res: Response) => {
 
 export const createSite = async (req: Request, res: Response) => {
 	const result = await assetModel.createSite(req.body);
-	res.json({
+	return res.json({
 		message: 'Site created successfully',
 		result,
 		status: 'success'
@@ -1998,7 +1999,7 @@ export const createSite = async (req: Request, res: Response) => {
 
 export const updateSite = async (req: Request, res: Response) => {
 	const result = await assetModel.updateSite(Number(req.params.id), req.body);
-	res.json({
+	return res.json({
 		message: 'Site updated successfully',
 		result,
 		status: 'success'
@@ -2007,7 +2008,7 @@ export const updateSite = async (req: Request, res: Response) => {
 
 export const deleteSite = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSite(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Site deleted successfully',
 		result,
 		status: 'success'
@@ -2042,12 +2043,12 @@ export const getZones = async (req: Request, res: Response) => {
 		id: z.id,
 		name: z.name
 	}));
-	res.json({ data, message: 'Zones data retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Zones data retrieved successfully', status: 'success' });
 };
 
 export const getZoneById = async (req: Request, res: Response) => {
 	const row = await assetModel.getZoneById(Number(req.params.id));
-	res.json({ data: row, message: 'Zone data retrieved successfully', status: 'success' });
+	return res.json({ data: row, message: 'Zone data retrieved successfully', status: 'success' });
 };
 
 export const createZone = async (req: Request, res: Response) => {
@@ -2061,7 +2062,7 @@ export const createZone = async (req: Request, res: Response) => {
 			await assetModel.addDistrictToZone(zoneId, districtId);
 		}
 	}
-	res.json({ message: 'Zone created successfully', result, status: 'success' });
+	return res.json({ message: 'Zone created successfully', result, status: 'success' });
 };
 
 export const updateZone = async (req: Request, res: Response) => {
@@ -2077,12 +2078,12 @@ export const updateZone = async (req: Request, res: Response) => {
 			await assetModel.addDistrictToZone(zoneId, districtId);
 		}
 	}
-	res.json({ message: 'Zone updated successfully', result, status: 'success' });
+	return res.json({ message: 'Zone updated successfully', result, status: 'success' });
 };
 
 export const deleteZone = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteZone(Number(req.params.id));
-	res.json({ message: 'Zone deleted successfully', result, status: 'success' });
+	return res.json({ message: 'Zone deleted successfully', result, status: 'success' });
 };
 
 
@@ -2162,7 +2163,7 @@ export const getEmployees = async (req: Request, res: Response) => {
 		resignation_date: emp.resignation_date
 	}));
 
-	res.json({
+	return res.json({
 		data,
 		message: 'Employees data retrieved successfully',
 		status: 'success'
@@ -2179,7 +2180,7 @@ export const getEmployeeById = async (req: Request, res: Response) => {
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
 
-	res.json({
+	return res.json({
 		data: {
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
@@ -2218,7 +2219,7 @@ export const getEmployeeByRamco = async (req: Request, res: Response) => {
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
-	res.json({
+	return res.json({
 		data: {
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
@@ -2257,7 +2258,7 @@ export const getEmployeeByEmail = async (req: Request, res: Response) => {
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
-	res.json({
+	return res.json({
 		data: {
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
@@ -2296,7 +2297,7 @@ export const getEmployeeByContact = async (req: Request, res: Response) => {
 	const position = emp.position_id ? await assetModel.getPositionById(emp.position_id) : null;
 	const costcenter = emp.costcenter_id ? await assetModel.getCostcenterById(emp.costcenter_id) : null;
 	const district = emp.district_id ? await assetModel.getDistrictById(emp.district_id) : null;
-	res.json({
+	return res.json({
 		data: {
 			avatar: emp.avatar
 				? (emp.avatar.startsWith('http')
@@ -2429,13 +2430,13 @@ export const createEmployee = async (req: Request, res: Response) => {
 			ramco_id,
 			resignation_date
 		});
-		res.json({
+		return res.json({
 			message: 'Employee created successfully',
 			result,
 			status: 'success'
 		});
 	} catch (error) {
-		console.error('createEmployee error:', error);
+		logger.error('createEmployee error:', error);
 		return res.status(500).json({
 			error: process.env.NODE_ENV === 'development' ? error : undefined,
 			message: error instanceof Error ? error.message : 'Failed to create employee',
@@ -2494,7 +2495,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 		}
 	}
 
-	res.json({
+	return res.json({
 		message: 'Employee updated successfully',
 		result,
 		status: 'success'
@@ -2503,7 +2504,7 @@ export const updateEmployee = async (req: Request, res: Response) => {
 
 export const deleteEmployee = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteEmployee(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Employee deleted successfully',
 		result,
 		status: 'success'
@@ -2535,7 +2536,7 @@ export const updateEmployeeResignation = async (req: Request, res: Response) => 
 
 	const result = await (assetModel as any).updateEmployeesResignation(ids, resignation_date, status);
 	const affected = (result && typeof result === 'object' && 'affectedRows' in result) ? (result).affectedRows : 0;
-	res.json({
+	return res.json({
 		data: { affected },
 		message: `Updated resignation details for ${affected} employee(s)`,
 		status: 'success'
@@ -2575,7 +2576,7 @@ export const searchEmployees = async (req: Request, res: Response) => {
 			})
 			.filter(Boolean)
 		: [];
-	res.json({ data, message: 'Employee search results', status: 'success' });
+	return res.json({ data, message: 'Employee search results', status: 'success' });
 };
 
 // Lookup employee by ramco_id, email, or contact
@@ -2617,7 +2618,7 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 			department: (location as any).department ?? null
 		}
 		: null;
-	res.json({
+	return res.json({
 		data: {
 			avatar: emp.avatar,
 			contact: emp.contact,
@@ -2646,7 +2647,7 @@ export const getEmployeeByUsername = async (req: Request, res: Response) => {
 /* =========== POSITIONS =========== */
 export const getPositions = async (req: Request, res: Response) => {
 	const rows = await assetModel.getPositions();
-	res.json({
+	return res.json({
 		data: rows,
 		message: 'Positions data retrieved successfully',
 		status: 'success'
@@ -2655,7 +2656,7 @@ export const getPositions = async (req: Request, res: Response) => {
 
 export const getPositionById = async (req: Request, res: Response) => {
 	const row = await assetModel.getPositionById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Position data retrieved successfully',
 		status: 'success'
@@ -2690,7 +2691,7 @@ export const createPosition = async (req: Request, res: Response) => {
 			data: createdPosition
 		});
 	} catch (error: any) {
-		console.error('Error creating position:', error);
+		logger.error('Error creating position:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error creating position',
@@ -2738,7 +2739,7 @@ export const updatePosition = async (req: Request, res: Response) => {
 			data: updatedPosition
 		});
 	} catch (error: any) {
-		console.error('Error updating position:', error);
+		logger.error('Error updating position:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error updating position',
@@ -2749,7 +2750,7 @@ export const updatePosition = async (req: Request, res: Response) => {
 
 export const deletePosition = async (req: Request, res: Response) => {
 	const result = await assetModel.deletePosition(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Position deleted successfully',
 		result,
 		status: 'success'
@@ -2762,7 +2763,7 @@ export const deletePosition = async (req: Request, res: Response) => {
 // MODULES
 export const getModules = async (req: Request, res: Response) => {
 	const rows = await assetModel.getModules();
-	res.json({
+	return res.json({
 		data: rows,
 		message: 'Modules data retrieved successfully',
 		status: 'success'
@@ -2770,7 +2771,7 @@ export const getModules = async (req: Request, res: Response) => {
 };
 export const getModuleById = async (req: Request, res: Response) => {
 	const row = await assetModel.getModuleById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Module data retrieved successfully',
 		status: 'success'
@@ -2779,7 +2780,7 @@ export const getModuleById = async (req: Request, res: Response) => {
 export const createModule = async (req: Request, res: Response) => {
 	const { code, name } = req.body;
 	const result = await assetModel.createModule({ code, name });
-	res.json({
+	return res.json({
 		message: 'Module created successfully',
 		result,
 		status: 'success'
@@ -2788,7 +2789,7 @@ export const createModule = async (req: Request, res: Response) => {
 export const updateModule = async (req: Request, res: Response) => {
 	const { code, name } = req.body;
 	const result = await assetModel.updateModule(Number(req.params.id), { code, name });
-	res.json({
+	return res.json({
 		message: 'Module updated successfully',
 		result,
 		status: 'success'
@@ -2796,7 +2797,7 @@ export const updateModule = async (req: Request, res: Response) => {
 };
 export const deleteModule = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteModule(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Module deleted successfully',
 		result,
 		status: 'success'
@@ -2807,7 +2808,7 @@ export const deleteModule = async (req: Request, res: Response) => {
 // SOFTWARES
 export const getSoftwares = async (req: Request, res: Response) => {
 	const rows = await assetModel.getSoftwares();
-	res.json({
+	return res.json({
 		data: rows,
 		message: 'Softwares data retrieved successfully',
 		status: 'success'
@@ -2816,7 +2817,7 @@ export const getSoftwares = async (req: Request, res: Response) => {
 
 export const getSoftwareById = async (req: Request, res: Response) => {
 	const row = await assetModel.getSoftwareById(Number(req.params.id));
-	res.json({
+	return res.json({
 		data: row,
 		message: 'Software data retrieved successfully',
 		status: 'success'
@@ -2826,7 +2827,7 @@ export const getSoftwareById = async (req: Request, res: Response) => {
 export const createSoftware = async (req: Request, res: Response) => {
 	const { name } = req.body;
 	const result = await assetModel.createSoftware({ name });
-	res.status(201).json({
+	return res.status(201).json({
 		message: 'Software created successfully',
 		result,
 		status: 'success'
@@ -2836,7 +2837,7 @@ export const createSoftware = async (req: Request, res: Response) => {
 export const updateSoftware = async (req: Request, res: Response) => {
 	const { name } = req.body;
 	const result = await assetModel.updateSoftware(Number(req.params.id), { name });
-	res.json({
+	return res.json({
 		message: 'Software updated successfully',
 		result,
 		status: 'success'
@@ -2845,7 +2846,7 @@ export const updateSoftware = async (req: Request, res: Response) => {
 
 export const deleteSoftware = async (req: Request, res: Response) => {
 	const result = await assetModel.deleteSoftware(Number(req.params.id));
-	res.json({
+	return res.json({
 		message: 'Software deleted successfully',
 		result,
 		status: 'success'
@@ -2982,7 +2983,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 				const status = await assetModel.getTransferItemCommittedStatus(itemId);
 				committedStatusMap.set(itemId, status);
 			} catch (err) {
-				console.error(`Error fetching committed status for item ${itemId}:`, err);
+				logger.error(`Error fetching committed status for item ${itemId}:`, err);
 				committedStatusMap.set(itemId, 'pending');
 			}
 		})
@@ -3116,7 +3117,7 @@ export const getAssetTransfers = async (req: Request, res: Response) => {
 		};
 	});
 
-	res.json({
+	return res.json({
 		data,
 		message: 'Asset transfer requests retrieved successfully',
 		status: 'success'
@@ -3195,7 +3196,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 				const status = await assetModel.getTransferItemCommittedStatus(item.id);
 				committedStatusMap.set(item.id, status);
 			} catch (err) {
-				console.error(`Error fetching committed status for item ${item.id}:`, err);
+				logger.error(`Error fetching committed status for item ${item.id}:`, err);
 				committedStatusMap.set(item.id, 'pending');
 			}
 		})
@@ -3316,7 +3317,7 @@ export const getAssetTransferById = async (req: Request, res: Response) => {
 		transfer_by_user,
 	};
 
-	res.json({
+	return res.json({
 		data,
 		message: 'Asset transfer request data retrieved successfully',
 		status: 'success'
@@ -3481,27 +3482,27 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			? Number(department_id)
 			: (requestorObj?.department_id != null ? Number(requestorObj.department_id) : null);
 
-		console.log('DEBUG: Attempting to resolve approver. deptIdForApproval:', deptIdForApproval, 'requestorObj?.department_id:', requestorObj?.department_id);
+		logger.info('DEBUG: Attempting to resolve approver. deptIdForApproval:', deptIdForApproval, 'requestorObj?.department_id:', requestorObj?.department_id);
 
 		if (deptIdForApproval != null && Number.isFinite(deptIdForApproval)) {
 			supervisorObj = await getWorkflowPicByDepartment('asset transfer', 'approver', deptIdForApproval);
-			console.log('DEBUG: Workflow approver result for asset transfer/approver/dept', deptIdForApproval, ':', supervisorObj);
+			logger.info('DEBUG: Workflow approver result for asset transfer/approver/dept', deptIdForApproval, ':', supervisorObj);
 
 			// Ensure email is resolved from employees table by ramco_id
 			if (supervisorObj?.ramco_id && !supervisorObj?.email) {
 				try {
-					console.log('DEBUG: Email not populated in workflow result, resolving from employees table for ramco_id:', supervisorObj.ramco_id);
+					logger.info('DEBUG: Email not populated in workflow result, resolving from employees table for ramco_id:', supervisorObj.ramco_id);
 					const empData = await assetModel.getEmployeeByRamco(String(supervisorObj.ramco_id));
 					if (empData?.email) {
 						supervisorObj.email = empData.email;
-						console.log('DEBUG: Resolved email from employees table:', supervisorObj.email);
+						logger.info('DEBUG: Resolved email from employees table:', supervisorObj.email);
 					}
 				} catch (err) {
-					console.log('DEBUG: Failed to resolve email from employees table:', err);
+					logger.info('DEBUG: Failed to resolve email from employees table:', err);
 				}
 			}
 		} else {
-			console.log('DEBUG: deptIdForApproval is null/invalid, cannot resolve workflow approver');
+			logger.info('DEBUG: deptIdForApproval is null/invalid, cannot resolve workflow approver');
 		}
 		// Generate action token and base URL for supervisor email (legacy buttons)
 		const crypto = await import('crypto');
@@ -3546,12 +3547,12 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 		}
 		// Send to supervisor (with action buttons + portal link) — even if same email as requestor (for testing and single-mailbox cases)
 		if (supervisorObj?.email) {
-			console.log('DEBUG: Sending approval email to approver:', supervisorObj.ramco_id, 'email:', supervisorObj.email);
+			logger.info('DEBUG: Sending approval email to approver:', supervisorObj.ramco_id, 'email:', supervisorObj.email);
 			const { html, subject } = assetTransferT2HodApprovalRequestEmail({ ...supervisorEmailData, portalUrl });
 			await sendMail(supervisorObj.email, subject, html);
-			console.log('DEBUG: Email sent successfully to approver');
+			logger.info('DEBUG: Email sent successfully to approver');
 		} else {
-			console.warn(`createAssetTransfer: No approver found. deptIdForApproval=${deptIdForApproval}, supervisorObj.ramco_id=${supervisorObj?.ramco_id}, supervisorObj.email=${supervisorObj?.email}. Ensure workflow record exists with module_name='asset transfer', level_name='approver', department_id=${deptIdForApproval}`);
+			logger.warn(`createAssetTransfer: No approver found. deptIdForApproval=${deptIdForApproval}, supervisorObj.ramco_id=${supervisorObj?.ramco_id}, supervisorObj.email=${supervisorObj?.email}. Ensure workflow record exists with module_name='asset transfer', level_name='approver', department_id=${deptIdForApproval}`);
 		}
 
 		// Send notification to New Asset Owner's HOD (if different from Current Asset Owner's HOD)
@@ -3568,7 +3569,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 			for (const newDeptId of newDepartmentIds) {
 				// Skip if it's the same as the approval department (to avoid duplicate emails)
 				if (newDeptId === deptIdForApproval) {
-					console.log('DEBUG: Skipping New Asset Owner HOD notification for dept', newDeptId, 'as it is the same as Current Asset Owner HOD');
+					logger.info('DEBUG: Skipping New Asset Owner HOD notification for dept', newDeptId, 'as it is the same as Current Asset Owner HOD');
 					continue;
 				}
 
@@ -3583,17 +3584,17 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 									newOwnerHod.email = empData.email;
 								}
 							} catch (err) {
-								console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
+								logger.info('DEBUG: Failed to resolve email for new owner HOD:', err);
 							}
 						}
 
 						if (newOwnerHod.email) {
 							newOwnerHodEmails.add(newOwnerHod.email);
-							console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
+							logger.info('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
 						}
 					}
 				} catch (err) {
-					console.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
+					logger.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
 				}
 			}
 
@@ -3603,14 +3604,14 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 					try {
 						const { html, subject } = assetTransferT2HodApprovalRequestEmail({ ...supervisorEmailData, portalUrl });
 						await sendMail(hodEmail, subject, html);
-						console.log('DEBUG: New Asset Owner HOD notification sent to:', hodEmail);
+						logger.info('DEBUG: New Asset Owner HOD notification sent to:', hodEmail);
 					} catch (err) {
-						console.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
+						logger.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
 					}
 				}
 			}
 		} catch (err) {
-			console.error('New Asset Owner HOD notification failed:', err);
+			logger.error('New Asset Owner HOD notification failed:', err);
 		}
 
 		// Send notification to asset managers based on type_id
@@ -3644,7 +3645,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 										typeNames
 									});
 									await sendMail(managerEmployee.email, subject, html);
-									console.log('DEBUG: Asset manager notification sent to:', manager.ramco_id, 'email:', managerEmployee.email);
+									logger.info('DEBUG: Asset manager notification sent to:', manager.ramco_id, 'email:', managerEmployee.email);
 								}
 							}
 						}
@@ -3652,7 +3653,7 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 				}
 			}
 		} catch (err) {
-			console.error('Asset manager notification failed:', err);
+			logger.error('Asset manager notification failed:', err);
 		}
 
 		// Send notification to all unique current owners
@@ -3680,20 +3681,20 @@ export const createAssetTransfer = async (req: Request, res: Response) => {
 							currentOwner: currentOwnerEmployee
 						});
 						await sendMail(currentOwnerEmployee.email, subject, html);
-						console.log('DEBUG: Current owner notification sent to:', currentOwnerRamco, 'email:', currentOwnerEmployee.email, 'for', ownerItems.length, 'item(s)');
+						logger.info('DEBUG: Current owner notification sent to:', currentOwnerRamco, 'email:', currentOwnerEmployee.email, 'for', ownerItems.length, 'item(s)');
 					}
 				}
 			}
 		} catch (err) {
-			console.error('Current owner notification failed:', err);
+			logger.error('Current owner notification failed:', err);
 		}
 	} catch (err) {
 		// Log but do not block the response
-		console.error('Asset transfer email notification failed:', err);
+		logger.error('Asset transfer email notification failed:', err);
 	}
 	// --- END EMAIL LOGIC ---
 
-	res.status(201).json({
+	return res.status(201).json({
 		message: 'Asset transfer request created successfully',
 		request_id: insertId,
 		status: 'success'
@@ -3734,7 +3735,7 @@ export const updateAssetTransfer = async (req: Request, res: Response) => {
 	}
 	// Update the transfer request
 	const result = await assetModel.updateAssetTransfer(requestId, items);
-	res.json({
+	return res.json({
 		message: 'Asset transfer request updated successfully',
 		result,
 		status: 'success'
@@ -3753,7 +3754,7 @@ export const deleteAssetTransfer = async (req: Request, res: Response) => {
 	}
 	// Delete the transfer request
 	await assetModel.deleteAssetTransfer(requestId);
-	res.json({
+	return res.json({
 		message: 'Asset transfer request deleted successfully',
 		status: 'success'
 	});
@@ -3911,7 +3912,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 							}
 						}
 					} catch (err) {
-						console.warn('Failed to fetch asset managers for type', typeId, err);
+						logger.warn('Failed to fetch asset managers for type', typeId, err);
 					}
 				}
 
@@ -3925,7 +3926,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 							mailOptions.cc = ccArray.join(', ');
 						}
 						await sendMail(requestorEmp.email, subject, html, mailOptions);
-					} catch (e) { console.warn('Failed to send requestor approval email', e); }
+					} catch (e) { logger.warn('Failed to send requestor approval email', e); }
 				}
 
 				// New owner emails (group items per new_owner) with CC to asset managers
@@ -3959,7 +3960,7 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 									mailOptions.cc = ccArray.join(', ');
 								}
 								await sendMail(newOwnerEmp.email, subject, html, mailOptions);
-							} catch (e) { console.warn('Failed to send new owner approval email', e); }
+							} catch (e) { logger.warn('Failed to send new owner approval email', e); }
 						}
 					}
 
@@ -3985,17 +3986,17 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 												newOwnerHod.email = empData.email;
 											}
 										} catch (err) {
-											console.log('DEBUG: Failed to resolve email for new owner HOD:', err);
+											logger.info('DEBUG: Failed to resolve email for new owner HOD:', err);
 										}
 									}
 
 									if (newOwnerHod.email) {
 										newOwnerHodEmails.add(newOwnerHod.email);
-										console.log('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
+										logger.info('DEBUG: Added New Asset Owner HOD email to notify:', newOwnerHod.ramco_id, 'email:', newOwnerHod.email);
 									}
 								}
 							} catch (err) {
-								console.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
+								logger.warn('Failed to fetch New Asset Owner HOD for department', newDeptId, err);
 							}
 						}
 
@@ -4010,14 +4011,14 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 										mailOptions.cc = ccArray.join(', ');
 									}
 									await sendMail(hodEmail, subject, html, mailOptions);
-									console.log('DEBUG: New Asset Owner HOD approval notification sent to:', hodEmail);
+									logger.info('DEBUG: New Asset Owner HOD approval notification sent to:', hodEmail);
 								} catch (err) {
-									console.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
+									logger.error('Failed to send New Asset Owner HOD notification to', hodEmail, ':', err);
 								}
 							}
 						}
 					} catch (err) {
-						console.error('New Asset Owner HOD approval notification failed:', err);
+						logger.error('New Asset Owner HOD approval notification failed:', err);
 					}
 				}
 			} // end for each request
@@ -4027,10 +4028,10 @@ export const updateAssetTransfersApproval = async (req: Request, res: Response) 
 				try {
 					const { html, subject } = assetTransferApprovalSummaryEmail({ approvedDate: dateVal, approver: (approverEmp as any), requestIds: ids });
 					await sendMail((approverEmp as any).email, subject, html);
-				} catch (e) { console.warn('Failed to send approver summary email', e); }
+				} catch (e) { logger.warn('Failed to send approver summary email', e); }
 			}
 		} catch (err) {
-			console.error('updateAssetTransfersApproval: email notifications failed', err);
+			logger.error('updateAssetTransfersApproval: email notifications failed', err);
 		}
 	})();
 
@@ -4193,7 +4194,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 				request,
 				requestor
 			});
-			await sendMail(requestor.email, subject, html).catch(err => { console.error('Failed to send acceptance email to requestor:', err); }
+			await sendMail(requestor.email, subject, html).catch(err => { logger.error('Failed to send acceptance email to requestor:', err); }
 			);
 		}
 
@@ -4211,7 +4212,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 					newOwner: newOwnerForEmail,
 					request
 				});
-				await sendMail(currentOwner.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to current owner ${ownerId}:`, err); }
+				await sendMail(currentOwner.email, subject, html).catch(err => { logger.error(`Failed to send acceptance email to current owner ${ownerId}:`, err); }
 				);
 			}
 		}
@@ -4234,7 +4235,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 						newOwnerHod: hod,
 						request
 					});
-					await sendMail(hod.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err); }
+					await sendMail(hod.email, subject, html).catch(err => { logger.error(`Failed to send acceptance email to HOD for new owner ${ownerId}:`, err); }
 					);
 				}
 			}
@@ -4268,7 +4269,7 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 									newOwner: Array.from(newOwners).length > 0 ? employeeMap.get(Array.from(newOwners)[0]) : null,
 									request
 								});
-								await sendMail(managerEmployee.email, subject, html).catch(err => { console.error(`Failed to send acceptance email to asset manager ${manager.ramco_id}:`, err); }
+								await sendMail(managerEmployee.email, subject, html).catch(err => { logger.error(`Failed to send acceptance email to asset manager ${manager.ramco_id}:`, err); }
 								);
 							}
 						}
@@ -4276,10 +4277,10 @@ export const setAssetTransferAcceptance = async (req: Request, res: Response) =>
 				}
 			}
 		} catch (managerErr) {
-			console.error('Error sending acceptance email to asset managers:', managerErr);
+			logger.error('Error sending acceptance email to asset managers:', managerErr);
 		}
 	} catch (emailErr) {
-		console.error('Error sending acceptance notification emails:', emailErr);
+		logger.error('Error sending acceptance notification emails:', emailErr);
 		// Don't fail the request if emails fail
 	}
 
@@ -4409,14 +4410,14 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			// Validate asset_id
 			const assetId = Number(itemData.asset_id);
 			if (isNaN(assetId) || assetId <= 0) {
-				console.warn(`Skipping item ${itemData.id}: Invalid asset_id ${itemData.asset_id}`);
+				logger.warn(`Skipping item ${itemData.id}: Invalid asset_id ${itemData.asset_id}`);
 				continue;
 			}
 
 			try {
 				const asset = await assetModel.getAssetById(assetId);
 				if (!asset) {
-					console.warn(`Skipping item ${itemData.id}: Asset not found for asset_id ${assetId}`);
+					logger.warn(`Skipping item ${itemData.id}: Asset not found for asset_id ${assetId}`);
 					continue;
 				}
 
@@ -4427,7 +4428,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				});
 
 				if (historyExists) {
-					console.info(`Asset history entry already exists for asset ${assetId} and transfer ${itemData.transfer_id}, skipping duplicate`);
+					logger.info(`Asset history entry already exists for asset ${assetId} and transfer ${itemData.transfer_id}, skipping duplicate`);
 					validCommittedItems.push(itemData);
 					continue;
 				}
@@ -4446,7 +4447,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				historyInserts.push(historyResult);
 				validCommittedItems.push(itemData);
 			} catch (err) {
-				console.error(`Error processing item ${itemData.id}:`, err);
+				logger.error(`Error processing item ${itemData.id}:`, err);
 				// Continue with other items even if one fails
 			}
 		}
@@ -4471,7 +4472,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 					location_id: itemData.new_location_id
 				});
 			} catch (err) {
-				console.error(`Error updating asset ownership for item ${itemData.id}:`, err);
+				logger.error(`Error updating asset ownership for item ${itemData.id}:`, err);
 				// Continue with other items
 			}
 		}
@@ -4484,9 +4485,9 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				try {
 					const itemIds = itemsForTransfer.map((item: any) => item.id);
 					await assetModel.setCommittedAtForTransferItems(transferId, itemIds);
-					console.info(`Set committed_at timestamp for transfer ${transferId}`);
+					logger.info(`Set committed_at timestamp for transfer ${transferId}`);
 				} catch (err) {
-					console.error(`Error setting committed_at for transfer ${transferId}:`, err);
+					logger.error(`Error setting committed_at for transfer ${transferId}:`, err);
 					// Continue with other transfers
 				}
 			}
@@ -4525,7 +4526,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 							assetDetailsMap.set(assetId, assetDetails);
 						}
 					} catch (err) {
-						console.warn(`Failed to fetch asset details for ID ${assetId}`);
+						logger.warn(`Failed to fetch asset details for ID ${assetId}`);
 					}
 				}
 			}
@@ -4563,7 +4564,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 							request: transferRequest,
 							requestor
 						});
-						await sendMail(requestor.email, subject, html).catch(err => { console.error('Failed to send commitment email to requestor:', err); }
+						await sendMail(requestor.email, subject, html).catch(err => { logger.error('Failed to send commitment email to requestor:', err); }
 						);
 					}
 				}
@@ -4585,14 +4586,14 @@ export const commitTransfer = async (req: Request, res: Response) => {
 								newOwnerHod: hod,
 								request: transferRequest
 							});
-							await sendMail(hod.email, subject, html).catch(err => { console.error(`Failed to send commitment email to HOD for ${ownerId}:`, err); }
+							await sendMail(hod.email, subject, html).catch(err => { logger.error(`Failed to send commitment email to HOD for ${ownerId}:`, err); }
 							);
 						}
 					}
 				}
 			}
 		} catch (emailErr) {
-			console.error('Error sending commitment notification emails:', emailErr);
+			logger.error('Error sending commitment notification emails:', emailErr);
 			// Don't fail the request if emails fail
 		}
 
@@ -4614,7 +4615,7 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			}
 		});
 	} catch (error: any) {
-		console.error('Error committing transfer:', error);
+		logger.error('Error committing transfer:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error committing transfer',
@@ -4676,7 +4677,7 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 			}
 		});
 	} catch (error: any) {
-		console.error('Error fetching uncommitted transfers:', error);
+		logger.error('Error fetching uncommitted transfers:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error fetching uncommitted transfers',
@@ -5240,7 +5241,7 @@ export const updateAssetTransferApprovalStatusById = async (req: Request, res: R
 			}
 		}
 	}
-	res.json({ message: `Asset transfer request ${status}. Notifications sent.`, status: 'success' });
+	return res.json({ message: `Asset transfer request ${status}. Notifications sent.`, status: 'success' });
 };
 
 // --- EMAIL APPROVAL/REJECTION HANDLERS FOR EMAIL LINKS ---
@@ -5422,7 +5423,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 						supervisorObj.email = empData.email;
 					}
 				} catch (err) {
-					console.error('Error resolving supervisor email:', err);
+					logger.error('Error resolving supervisor email:', err);
 				}
 			}
 		}
@@ -5464,7 +5465,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 				await sendMail(supervisorObj.email, subject, html);
 				sentTo.push({ type: 'Supervisor', name: supervisorObj.full_name, email: supervisorObj.email });
 			} catch (err) {
-				console.error('Failed to send notification to supervisor:', err);
+				logger.error('Failed to send notification to supervisor:', err);
 			}
 		}
 
@@ -5485,7 +5486,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 					await sendMail(hodObj.email, subject, html);
 					sentTo.push({ type: 'HOD', name: hodObj.full_name, email: hodObj.email });
 				} catch (err) {
-					console.error('Failed to send notification to HOD:', err);
+					logger.error('Failed to send notification to HOD:', err);
 				}
 			}
 		}
@@ -5507,7 +5508,7 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 			}
 		});
 	} catch (error: any) {
-		console.error('Error resending approval notification:', error);
+		logger.error('Error resending approval notification:', error);
 		return res.status(500).json({
 			message: 'Failed to resend approval notification',
 			status: 'error',
@@ -5667,7 +5668,7 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 					itemCount: itemsForNewOwner.length
 				});
 			} catch (err) {
-				console.error(`Failed to send acceptance notification to ${newOwnerId}:`, err);
+				logger.error(`Failed to send acceptance notification to ${newOwnerId}:`, err);
 			}
 		}
 
@@ -5688,7 +5689,7 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 			}
 		});
 	} catch (error: any) {
-		console.error('Error resending acceptance notification:', error);
+		logger.error('Error resending acceptance notification:', error);
 		return res.status(500).json({
 			message: 'Failed to resend acceptance notification',
 			status: 'error',
@@ -5723,7 +5724,7 @@ export const getTransferChecklist = async (req: Request, res: Response) => {
 			: { id: item.type_id, name: null }
 	}));
 
-	res.json({ data: enrichedChecklistItems, message: 'Transfer checklist items retrieved successfully', status: 'success' });
+	return res.json({ data: enrichedChecklistItems, message: 'Transfer checklist items retrieved successfully', status: 'success' });
 }
 
 export const getTransferChecklistById = async (req: Request, res: Response) => {
@@ -5745,7 +5746,7 @@ export const getTransferChecklistById = async (req: Request, res: Response) => {
 		? typeMap.get(checklistItem.type_id)
 		: { id: checklistItem.type_id, name: null };
 
-	res.json({ data: checklistItem, message: 'Transfer checklist item retrieved successfully', status: 'success' });
+	return res.json({ data: checklistItem, message: 'Transfer checklist item retrieved successfully', status: 'success' });
 }
 
 
@@ -5756,7 +5757,7 @@ export const createTransferChecklist = async (req: Request, res: Response) => {
 	}
 	// Create the checklist item
 	const insertId = await assetModel.createTransferChecklist({ created_by, is_required, item, type_id });
-	res.status(201).json({ data: { id: insertId }, message: 'Transfer checklist item created successfully', status: 'success' });
+	return res.status(201).json({ data: { id: insertId }, message: 'Transfer checklist item created successfully', status: 'success' });
 }
 
 export const updateTransferChecklist = async (req: Request, res: Response) => {
@@ -5770,7 +5771,7 @@ export const updateTransferChecklist = async (req: Request, res: Response) => {
 	if ((result as any).affectedRows === 0) {
 		return res.status(404).json({ message: 'Checklist item not found', status: 'error' });
 	}
-	res.json({ message: 'Transfer checklist item updated successfully', status: 'success' });
+	return res.json({ message: 'Transfer checklist item updated successfully', status: 'success' });
 }
 
 export const deleteTransferChecklist = async (req: Request, res: Response) => {
@@ -5783,7 +5784,7 @@ export const deleteTransferChecklist = async (req: Request, res: Response) => {
 	if ((result as any).affectedRows === 0) {
 		return res.status(404).json({ message: 'Checklist item not found', status: 'error' });
 	}
-	res.json({ message: 'Transfer checklist item deleted successfully', status: 'success' });
+	return res.json({ message: 'Transfer checklist item deleted successfully', status: 'success' });
 }
 
 /* ========== ASSET STATUS UPDATE ========== */
@@ -5876,7 +5877,7 @@ export const updateAssetStatus = async (req: Request, res: Response) => {
 			}
 		});
 	} catch (error) {
-		console.error('Error updating asset status:', error);
+		logger.error('Error updating asset status:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: 'Error updating asset status',
@@ -5920,7 +5921,7 @@ export const createLocation = async (req: Request, res: Response) => {
 			data: createdLocation
 		});
 	} catch (error: any) {
-		console.error('Error creating location:', error);
+		logger.error('Error creating location:', error);
 		// Check for duplicate error
 		if (error?.message?.includes('already exists')) {
 			return res.status(409).json({
@@ -5981,7 +5982,7 @@ export const updateLocation = async (req: Request, res: Response) => {
 			data: updatedLocation
 		});
 	} catch (error: any) {
-		console.error('Error updating location:', error);
+		logger.error('Error updating location:', error);
 		return res.status(500).json({
 			status: 'error',
 			message: error?.message || 'Error updating location',

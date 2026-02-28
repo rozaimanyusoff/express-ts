@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { pool } from '../utils/db.js';
 import * as assetModel from '../p.asset/assetModel.js';
-import logger from '../utils/logger.js';
+import logger from '../utils/logger';
 
 const LOCK_NAME = 'asset_transfer_processing';
 const LOCK_TIMEOUT = 10; // seconds, should be less than cron interval

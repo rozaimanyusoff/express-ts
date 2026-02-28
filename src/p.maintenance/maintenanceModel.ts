@@ -1,4 +1,5 @@
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import logger from '../utils/logger';
 
 import { pool, pool2 } from '../utils/db';
 
@@ -585,7 +586,7 @@ export const updateRoadTaxByAssets = async (insuranceId: number, assetIds: numbe
                 ) as ResultSetHeader[];
                 if (insertResult.affectedRows > 0) insertedCount++;
             } catch (error) {
-                console.error(`Error inserting roadtax record for asset_id ${assetId}:`, error);
+                logger.error(`Error inserting roadtax record for asset_id ${assetId}:`, error);
                 // Continue with other inserts even if one fails
             }
         }
@@ -850,7 +851,7 @@ export const getUnseenBillsCount = async (ramcoId?: number): Promise<number> => 
         const result = rows?.[0];
         return result?.count ?? 0;
     } catch (error) {
-        console.error('Error getting unseen bills count:', error);
+        logger.error('Error getting unseen bills count:', error);
         throw error;
     }
 };

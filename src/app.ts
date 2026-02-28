@@ -4,6 +4,7 @@ import express, { Express, json, urlencoded } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import fs from 'fs';
 import path from 'path';
+import logger from './utils/logger';
 
 // Load environment variables early
 dotenv.config();
@@ -42,7 +43,6 @@ import userRoutes from './p.user/userRoutes';
 import webstockRoutes from './s.webstock/webstockRoutes';
 //import { pgPool } from './utils/db';
 import { checkDatabaseHealth } from './utils/dbHealthCheck';
-import logger from './utils/logger';
 import { getUploadBaseSync } from './utils/uploadUtil';
 import redis from './utils/redis';
 import redisConfig from './utils/redisConfig';
@@ -120,7 +120,7 @@ app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
 // Swagger JSON endpoint
 app.get('/swagger.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
+  return res.send(swaggerSpec);
 });
 
 app.use('/api/auth', authRoutes);
@@ -133,7 +133,7 @@ app.get('/api/health', async (req, res) => {
     const status = (pool1Ok && pool2Ok) ? 'healthy' : (dbHealth.pool1.connected || dbHealth.pool2.connected) ? 'degraded' : 'unhealthy';
     const isHealthy = status === 'healthy';
 
-    res.status(isHealthy ? 200 : 503).json({
+    return res.status(isHealthy ? 200 : 503).json({
       ...dbHealth,
       status,
       timestamp: new Date().toISOString(),
@@ -143,7 +143,7 @@ app.get('/api/health', async (req, res) => {
           'Critical system issues'
     });
   } catch (error) {
-    res.status(503).json({
+    return res.status(503).json({
       error: (error as Error).message,
       message: 'Health check failed',
       status: 'error'

@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
 import path from 'path';
 import * as mediaModel from './mediaModel';
+import logger from '../utils/logger';
 
 // Get base URL from environment, default to localhost
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3030';
 
 /**
  * Helper function to ensure file_url is a full URL with BACKEND_URL
@@ -70,8 +71,8 @@ export const uploadDocument = async (req: Request, res: Response) => {
     });
   } catch (error) {
     const errorMessage = (error as Error).message || 'Unknown error occurred';
-    console.error('Document upload error:', errorMessage);
-    console.error('Error details:', error);
+    logger.error('Document upload error:', errorMessage);
+    logger.error('Error details:', error);
     return res.status(500).json({
       status: 'error',
       message: `Upload failed: ${errorMessage}`,
@@ -123,8 +124,8 @@ export const uploadImage = async (req: Request, res: Response) => {
     });
   } catch (error) {
     const errorMessage = (error as Error).message || 'Unknown error occurred';
-    console.error('Image upload error:', errorMessage);
-    console.error('Error details:', error);
+    logger.error('Image upload error:', errorMessage);
+    logger.error('Error details:', error);
     return res.status(500).json({
       status: 'error',
       message: `Upload failed: ${errorMessage}`,
@@ -176,8 +177,8 @@ export const uploadVideo = async (req: Request, res: Response) => {
     });
   } catch (error) {
     const errorMessage = (error as Error).message || 'Unknown error occurred';
-    console.error('Video upload error:', errorMessage);
-    console.error('Error details:', error);
+    logger.error('Video upload error:', errorMessage);
+    logger.error('Error details:', error);
     return res.status(500).json({
       status: 'error',
       message: `Upload failed: ${errorMessage}`,

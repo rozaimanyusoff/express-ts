@@ -1,4 +1,5 @@
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
+import logger from '../utils/logger';
 
 import { pool, pool2 } from '../utils/db';
 
@@ -148,7 +149,7 @@ export const getVehicleMtnBillingById = async (id: number): Promise<null | Vehic
           .filter((st: any) => st !== null);
       }
     } catch (error) {
-      console.error(`Error fetching service types for billing ${id}:`, error);
+      logger.error(`Error fetching service types for billing ${id}:`, error);
     }
   }
   

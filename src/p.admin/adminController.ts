@@ -33,6 +33,7 @@ import {
   updateNavigationPermission,
   updateRole
 } from './adminModel';
+import logger from '../utils/logger';
 
 // ==================== NAVIGATION HANDLERS ====================
 
@@ -85,7 +86,7 @@ export const trackRoute = async (req: Request, res: Response): Promise<Response>
   }
 
   routeTracker(path, userId).catch((error) => {
-    console.error('Background route tracking failed:', error);
+    logger.error('Background route tracking failed:', error);
   });
 
   return res.status(200).json({
@@ -111,7 +112,7 @@ export const getNavigations = async (req: Request, res: Response): Promise<Respo
       status: 'success'
     });
   } catch (error) {
-    console.error('Error processing navigation:', error);
+    logger.error('Error processing navigation:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error processing navigation data',
@@ -151,7 +152,7 @@ export const createNavigationHandler = async (req: Request<{}, {}, CreateNavigat
       status: 'success'
     });
   } catch (error) {
-    console.error('Error creating navigation:', error);
+    logger.error('Error creating navigation:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error creating navigation',
@@ -224,7 +225,7 @@ export const updateNavigationHandler = async (req: Request, res: Response): Prom
       status: 'success'
     });
   } catch (error) {
-    console.error('Error updating navigation:', error);
+    logger.error('Error updating navigation:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error updating navigation',
@@ -252,7 +253,7 @@ export const getNavigationPermissionsHandler = async (req: Request, res: Respons
       status: 'success'
     });
   } catch (error) {
-    console.error('Error fetching navigation permissions:', error);
+    logger.error('Error fetching navigation permissions:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error fetching navigation permissions',
@@ -279,7 +280,7 @@ export const updateNavigationPermissionsHandler = async (req: Request<{}, {}, { 
       status: 'success'
     });
   } catch (error) {
-    console.error('Error updating navigation permissions:', error);
+    logger.error('Error updating navigation permissions:', error);
     return res.status(500).json({
       code: 500,
       message: (error as Error).message,
@@ -306,7 +307,7 @@ export const removeNavigationPermissionsHandler = async (req: Request<{}, {}, { 
       status: 'success'
     });
   } catch (error) {
-    console.error('Error removing navigation permissions:', error);
+    logger.error('Error removing navigation permissions:', error);
     return res.status(500).json({
       code: 500,
       message: (error as Error).message,
@@ -326,7 +327,7 @@ export const toggleStatusHandler = async (req: Request, res: Response): Promise<
       status: 'success'
     });
   } catch (error) {
-    console.error('Error toggling status:', error);
+    logger.error('Error toggling status:', error);
     return res.status(500).json({
       code: 500,
       message: (error as Error).message,
@@ -357,7 +358,7 @@ export const getNavigationByUserIdHandler = async (req: Request, res: Response):
       status: 'success'
     });
   } catch (error) {
-    console.error('Error fetching navigation by user ID:', error);
+    logger.error('Error fetching navigation by user ID:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error fetching navigation by user ID',
@@ -383,7 +384,7 @@ export const deleteNavigationHandler = async (req: Request, res: Response): Prom
       status: 'success'
     });
   } catch (error) {
-    console.error('Error deleting navigation:', error);
+    logger.error('Error deleting navigation:', error);
     return res.status(500).json({
       code: 500,
       message: 'Error deleting navigation',
@@ -416,7 +417,7 @@ export const reorderNavigationHandler = async (req: Request, res: Response): Pro
     }
     return res.status(200).json({ message: 'Navigation reordered successfully', status: 'success' });
   } catch (error) {
-    console.error('Error reordering navigation:', error);
+    logger.error('Error reordering navigation:', error);
     return res.status(500).json({ message: 'Error reordering navigation', status: 'error' });
   }
 };
@@ -457,7 +458,7 @@ export const getAllRole = async (_req: Request, res: Response): Promise<Response
       success: true
     });
   } catch (error) {
-    console.error('Error getting all roles:', error);
+    logger.error('Error getting all roles:', error);
     return res.status(500).json({ error: (error as Error).message, message: 'Internal server error', success: false });
   }
 };
@@ -469,7 +470,7 @@ export const getRole = async (req: Request, res: Response): Promise<Response> =>
     const role = await getRoleById(Number(id));
     return res.status(200).json({ role });
   } catch (error) {
-    console.error('Error getting role by id:', error);
+    logger.error('Error getting role by id:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -493,7 +494,7 @@ export const createNewRole = async (req: Request, res: Response): Promise<Respon
     }
     return res.status(201).json({ id: newRoleId, message: 'Role created successfully', success: true });
   } catch (error) {
-    console.error('Error creating role:', error);
+    logger.error('Error creating role:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -517,7 +518,7 @@ export const updateRoleById = async (req: Request, res: Response): Promise<Respo
     }
     return res.status(200).json({ id: Number(id), message: 'Role updated successfully', success: true });
   } catch (error) {
-    console.error('Error updating role:', error);
+    logger.error('Error updating role:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -568,7 +569,7 @@ export const deleteRolesByIds = async (req: Request, res: Response): Promise<Res
       success: true
     });
   } catch (error) {
-    console.error('Error deleting roles:', error);
+    logger.error('Error deleting roles:', error);
     return res.status(500).json({
       data: null,
       error: (error as Error).message,
@@ -585,7 +586,7 @@ export const getAllGroups1 = async (_req: Request, res: Response): Promise<Respo
     const groups = await getAllGroups();
     return res.status(200).json({ groups, success: true });
   } catch (error) {
-    console.error('Error getting all groups:', error);
+    logger.error('Error getting all groups:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -597,7 +598,7 @@ export const getGroupById1 = async (req: Request, res: Response): Promise<Respon
     const group = await getGroupById(Number(id));
     return res.status(200).json(group);
   } catch (error) {
-    console.error('Error getting group by id:', error);
+    logger.error('Error getting group by id:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -623,7 +624,7 @@ export const createGroup1 = async (req: Request, res: Response): Promise<Respons
       groupId
     });
   } catch (error) {
-    console.error('Error creating group:', error);
+    logger.error('Error creating group:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -645,7 +646,7 @@ export const updateGroup1 = async (req: Request, res: Response): Promise<Respons
 
     return res.status(200).json({ message: 'Group updated successfully', success: true });
   } catch (error) {
-    console.error('Error updating group:', error);
+    logger.error('Error updating group:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -691,7 +692,7 @@ export const getAllGroupsStructured = async (_req: Request, res: Response): Prom
       success: true
     });
   } catch (error) {
-    console.error('Error getting all groups:', error);
+    logger.error('Error getting all groups:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -731,7 +732,7 @@ export const getMaintenanceStatus = async (req: Request, res: Response): Promise
 
     return res.json({ status: 'success', data: maintenanceStatus });
   } catch (error) {
-    console.error('Error reading maintenance status:', error);
+    logger.error('Error reading maintenance status:', error);
     return res.status(500).json({
       status: 'error',
       message: 'Failed to read maintenance status',
@@ -771,7 +772,7 @@ export const updateMaintenanceStatus = async (req: Request, res: Response): Prom
 
     // Verify admin role (role: 1)
     if (currentUser.role !== 1) {
-      console.warn(`Unauthorized maintenance update attempt by user ${userId} with role ${currentUser.role}`);
+      logger.warn(`Unauthorized maintenance update attempt by user ${userId} with role ${currentUser.role}`);
       return res.status(403).json({
         status: 'error',
         message: 'Admin access required',
@@ -810,17 +811,17 @@ export const updateMaintenanceStatus = async (req: Request, res: Response): Prom
     // Write to file
     fs.writeFileSync(MAINTENANCE_FILE_PATH, JSON.stringify(maintenanceStatus, null, 2), 'utf-8');
 
-    console.log(`Maintenance status updated by user ${userId}: active=${active}`);
+    logger.info(`Maintenance status updated by user ${userId}: active=${active}`);
 
     // Broadcast to all connected Socket.IO clients
     try {
       const io = getSocketIOInstance();
       if (io) {
         io.emit('backend:maintenance', maintenanceStatus);
-        console.log('Maintenance status broadcasted via Socket.IO');
+        logger.info('Maintenance status broadcasted via Socket.IO');
       }
     } catch (socketError) {
-      console.warn('Failed to broadcast maintenance status via Socket.IO:', socketError);
+      logger.warn('Failed to broadcast maintenance status via Socket.IO:', socketError);
       // Don't fail the request if Socket.IO broadcast fails
     }
 
@@ -830,7 +831,7 @@ export const updateMaintenanceStatus = async (req: Request, res: Response): Prom
       data: maintenanceStatus
     });
   } catch (error) {
-    console.error('Error updating maintenance status:', error);
+    logger.error('Error updating maintenance status:', error);
     return res.status(500).json({
       status: 'error',
       message: 'Failed to update maintenance status',

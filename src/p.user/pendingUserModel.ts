@@ -1,7 +1,7 @@
 import { ResultSetHeader } from 'mysql2';
+import logger from '../utils/logger';
 
 import { pool } from '../utils/db';
-import logger from '../utils/logger';
 
 export interface PendingUser {
   about?: null | string;

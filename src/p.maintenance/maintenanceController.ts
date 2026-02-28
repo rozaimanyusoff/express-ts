@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import * as path from 'path';
+import logger from '../utils/logger';
 
 import * as assetModel from '../p.asset/assetModel';
 import * as billingModel from '../p.billing/billingModel';
@@ -43,7 +44,7 @@ async function invalidateMaintenanceCaches(): Promise<void> {
 		await cacheService.delPattern('maintenance:requests:*');
 		await cacheService.delPattern('maintenance:request:asset:*');
 	} catch (error) {
-		console.error('Failed to invalidate maintenance caches:', error);
+		logger.error('Failed to invalidate maintenance caches:', error);
 	}
 }
 
@@ -57,7 +58,7 @@ export const getUnseenBillsCount = async (req: Request, res: Response) => {
 	try {
 		// Get current user ID from auth context (optional)
 		const userId = (req as any).user?.userId ?? (req as any).userId;
-		
+
 		// Query count - scoped to current user if provided, otherwise global count
 		const count = await maintenanceModel.getUnseenBillsCount(userId || undefined);
 
@@ -67,7 +68,7 @@ export const getUnseenBillsCount = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		console.error('Error getting unseen bills count:', error);
+		logger.error('Error getting unseen bills count:', error);
 		return res.status(500).json({
 			data: { count: 0 },
 			message: error instanceof Error ? error.message : 'Failed to get unseen bills count',
@@ -82,11 +83,11 @@ export const getInsurances = async (req: Request, res: Response) => {
 		const insurances = await maintenanceModel.getInsurances();
 		const insArray = Array.isArray(insurances) ? insurances : (insurances ? [insurances] : []);
 
-		res.json({ data: insurances, message: `Insurances fetched successfully with ${insArray.length} entries`, status: 'success' });
+		return res.json({ data: insurances, message: `Insurances fetched successfully with ${insArray.length} entries`, status: 'success' });
 	} catch (error) {
 		// include error from backend
-		console.error('Error fetching insurances:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error fetching insurances:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -95,7 +96,7 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 	try {
 		const insurance = await maintenanceModel.getInsuranceById(Number(id));
 		if (!insurance) {
-			res.status(404).json({ error: 'Insurance not found' });
+			return res.status(404).json({ error: 'Insurance not found' });
 			return;
 		}
 
@@ -128,10 +129,10 @@ export const getInsuranceById = async (req: Request, res: Response) => {
 		}
 
 		const data = { ...(insurance as any), assets: assetsArr };
-		res.json({ data, message: 'Insurance fetched successfully', status: 'success' });
+		return res.json({ data, message: 'Insurance fetched successfully', status: 'success' });
 	} catch (error) {
-		console.error('Error fetching insurance by ID:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error fetching insurance by ID:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -142,8 +143,8 @@ export const createInsurance = async (req: Request, res: Response) => {
 		const insurer = body.insurer ?? body.company ?? body.name ?? null;
 		const policy = body.policy ?? body.policy_no ?? body.ins_policy ?? null;
 		const expiry = body.expiry ?? body.expiry_date ?? body.exp_date ?? null;
-	const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
-	const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
 
 		// Create insurance
 		const insertId = await maintenanceModel.createInsurance({ expiry, insurer, policy });
@@ -154,7 +155,7 @@ export const createInsurance = async (req: Request, res: Response) => {
 			updateResult = await maintenanceModel.updateRoadTaxByAssets(Number(insertId), assetIds);
 		}
 
-		res.status(201).json({
+		return res.status(201).json({
 			data: {
 				assets: assetIds,
 				expiry,
@@ -167,8 +168,8 @@ export const createInsurance = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		console.error('Error creating insurance:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error creating insurance:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -180,8 +181,8 @@ export const updateInsurance = async (req: Request, res: Response) => {
 		const insurer = (body.insurer ?? body.company ?? body.name) as string | undefined;
 		const policy = (body.policy ?? body.policy_no ?? body.ins_policy) as string | undefined;
 		const expiry = (body.expiry ?? body.expiry_date ?? body.exp_date) as string | undefined;
-	const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
-	const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
+		const assetsRaw = Array.isArray(body.assets) ? body.assets : [];
+		const assetIds: number[] = Array.from(new Set<number>(assetsRaw.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)));
 
 		// Build update object only with provided fields
 		const payload: any = {};
@@ -199,7 +200,7 @@ export const updateInsurance = async (req: Request, res: Response) => {
 			updateResult = await maintenanceModel.updateRoadTaxByAssets(Number(id), assetIds);
 		}
 
-		res.json({
+		return res.json({
 			data: {
 				id: Number(id),
 				...payload,
@@ -211,8 +212,8 @@ export const updateInsurance = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		console.error('Error updating insurance:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error updating insurance:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -222,13 +223,13 @@ export const deleteInsurance = async (req: Request, res: Response) => {
 		const deleted = await maintenanceModel.deleteInsurance(Number(id));
 		if (deleted) {
 			// Return message on successful deletion
-			res.status(204).send({ message: 'Insurance deleted successfully' });
+			return res.status(204).send({ message: 'Insurance deleted successfully' });
 		} else {
-			res.status(404).json({ error: 'Insurance not found' });
+			return res.status(404).json({ error: 'Insurance not found' });
 		}
 	} catch (error) {
-		console.error('Error deleting insurance:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error deleting insurance:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -285,11 +286,11 @@ export const getRoadTaxes = async (req: Request, res: Response) => {
 			};
 		});
 
-		res.json({ data, message: `Road taxes fetched successfully with ${data.length} entries`, status: 'success' });
+		return res.json({ data, message: `Road taxes fetched successfully with ${data.length} entries`, status: 'success' });
 	} catch (error) {
 		// include error from backend
-		console.error('Error fetching road taxes:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error fetching road taxes:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -298,7 +299,7 @@ export const getRoadTaxById = async (req: Request, res: Response) => {
 	try {
 		const r = await maintenanceModel.getRoadTaxById(Number(id));
 		if (!r) {
-			res.status(404).json({ error: 'Road tax not found' });
+			return res.status(404).json({ error: 'Road tax not found' });
 			return;
 		}
 		// Enrich single record
@@ -342,10 +343,10 @@ export const getRoadTaxById = async (req: Request, res: Response) => {
 			rt_id: Number((r as any).rt_id ?? (r as any).id ?? 0) || (r as any).rt_id
 		};
 
-		res.json({ data, message: 'Road tax fetched successfully', status: 'success' });
+		return res.json({ data, message: 'Road tax fetched successfully', status: 'success' });
 	} catch (error) {
-		console.error('Error fetching road tax by ID:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error fetching road tax by ID:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -368,10 +369,10 @@ export const createRoadTax = async (req: Request, res: Response) => {
 
 		// Fallback: create a single roadtax row if full data provided
 		const newRoadTax = await maintenanceModel.createRoadTax(body);
-		res.status(201).json({ data: newRoadTax, message: 'Road tax created successfully', status: 'success' });
+		return res.status(201).json({ data: newRoadTax, message: 'Road tax created successfully', status: 'success' });
 	} catch (error) {
-		console.error('Error creating road tax:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error creating road tax:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -395,13 +396,13 @@ export const updateRoadTax = async (req: Request, res: Response) => {
 
 		const updatedRoadTax = await maintenanceModel.updateRoadTax(Number(id), body);
 		if (updatedRoadTax) {
-			res.json({ data: updatedRoadTax, message: 'Road tax updated successfully', status: 'success' });
+			return res.json({ data: updatedRoadTax, message: 'Road tax updated successfully', status: 'success' });
 		} else {
-			res.status(404).json({ error: 'Road tax not found' });
+			return res.status(404).json({ error: 'Road tax not found' });
 		}
 	} catch (error) {
-		console.error('Error updating road tax:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error updating road tax:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -411,13 +412,13 @@ export const deleteRoadTax = async (req: Request, res: Response) => {
 		const deleted = await maintenanceModel.deleteRoadTax(Number(id));
 		if (deleted) {
 			// Return message on successful deletion
-			res.status(204).send({ message: 'Road tax deleted successfully' });
+			return res.status(204).send({ message: 'Road tax deleted successfully' });
 		} else {
-			res.status(404).json({ error: 'Road tax not found' });
+			return res.status(404).json({ error: 'Road tax not found' });
 		}
 	} catch (error) {
-		console.error('Error deleting road tax:', error);
-		res.status(500).json({ error: 'Internal server error' });
+		logger.error('Error deleting road tax:', error);
+		return res.status(500).json({ error: 'Internal server error' });
 	}
 };
 
@@ -444,7 +445,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 
 		// Build cache key from query parameters
 		const cacheKey = `maintenance:requests:${status || 'all'}:${ramco || 'all'}:${years?.join(',') || 'all'}:${pendingStatus || 'all'}:${includeInvoice ? 'invoice' : 'noinvoice'}`;
-		
+
 		// Try to get from cache
 		const cachedResult = await cacheService.get<any>(cacheKey);
 		if (cachedResult) {
@@ -463,7 +464,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		const ramcoIds = new Set<string>();
 		const svcTypeIds = new Set<number>();
 		const billingIds = new Set<string>();
-		
+
 		records.forEach((rec: any) => {
 			if (rec.asset_id) assetIds.add(rec.asset_id);
 			if (rec.costcenter_id) costcenterIds.add(rec.costcenter_id);
@@ -489,7 +490,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 			assetModel.getEmployees().then(emps => (Array.isArray(emps) ? emps : []).filter((e: any) => ramcoIds.has(e.ramco_id))),
 			maintenanceModel.getServiceTypes().then(svcs => (Array.isArray(svcs) ? svcs : []).filter((s: any) => svcTypeIds.has(s.svcTypeId)))
 		];
-		
+
 		// Only fetch billings if explicitly requested
 		if (includeInvoice) {
 			fetchPromises.push(
@@ -591,7 +592,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 					name: (wsMap.get(record.ws_id))?.ws_name
 				} : null
 			};
-			
+
 			// Only include invoice if it was requested
 			if (includeInvoice) {
 				const key = String(record.req_id);
@@ -611,9 +612,9 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		// Cache the result with 10-minute TTL
 		await cacheService.set(cacheKey, responseData, 600);
 
-		res.json(responseData);
+		return res.json(responseData);
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -769,13 +770,13 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 		const invoice = billingBySvcOrder.get(key) || billingByReqId.get(key) || null;
 		const resolvedWithInvoice = { ...resolvedRecord, invoice };
 
-		res.json({
+		return res.json({
 			data: resolvedWithInvoice,
 			message: 'Maintenance record data retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -859,7 +860,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 					const dbPath = '/' + toDbPath('admin/vehiclemtn2', finalFilename);
 					await maintenanceModel.updateVehicleMtnUpload(createdId, dbPath);
 				} catch (moveErr) {
-					console.error('Failed to finalize maintenance upload rename/update', moveErr);
+					logger.error('Failed to finalize maintenance upload rename/update', moveErr);
 				}
 			}
 			fullRecord = await resolveVehicleMtnRecord(createdId);
@@ -877,7 +878,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 			if (fullRecord) {
 				const rec = fullRecord;
 				// debug: log resolved record and chosen recipient
-				//console.log('createVehicleMtnRequest: resolved record for email:', JSON.stringify(rec && typeof rec === 'object' ? (rec) : 'null'));
+				//logger.info('createVehicleMtnRequest: resolved record for email:', JSON.stringify(rec && typeof rec === 'object' ? (rec) : 'null'));
 				const emailSubject = `Vehicle Maintenance Request Submitted - Service Order: ${rec.req_id}`;
 				// format date as dd/m/yyyy
 				let formattedDate = '';
@@ -936,7 +937,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 						annualSummary = validYears.map(y => ({ amount: billingByYear.get(y) || 0, requests: requestsByYear.get(y) || 0, year: y }));
 					}
 				} catch (e) {
-					console.warn('Failed to compute annualSummary', e);
+					logger.warn('Failed to compute annualSummary', e);
 				}
 
 				// compute recent requests for this asset (exclude current request)
@@ -987,7 +988,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 							.map(({ dateRaw, ...rest }: any) => rest);
 					}
 				} catch (e) {
-					console.warn('Failed to compute recentRequests', e);
+					logger.warn('Failed to compute recentRequests', e);
 				}
 
 				const emailBody = vehicleMaintenanceEmail({
@@ -1016,7 +1017,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 				if (!recipientEmail && isValidEmail((body)?.email)) {
 					recipientEmail = String((body).email);
 				}
-				console.log('createVehicleMtnRequest: sending email to:', recipientEmail);
+				logger.info('createVehicleMtnRequest: sending email to:', recipientEmail);
 
 				// Admin CC if configured (supports comma/semicolon-separated list)
 				const { ccString } = getAdminCcList();
@@ -1024,12 +1025,12 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 				if (recipientEmail) {
 					await mailer.sendMail(recipientEmail, emailSubject, emailBody, ccString ? { cc: ccString } : undefined);
 				} else {
-					console.warn('createVehicleMtnRequest: no recipientEmail resolved; skipping mail send');
+					logger.warn('createVehicleMtnRequest: no recipientEmail resolved; skipping mail send');
 				}
 			}
 		} catch (mailErr) {
 			// do not fail the request creation if email fails; log and continue
-			console.error('Failed to send maintenance notification email', mailErr);
+			logger.error('Failed to send maintenance notification email', mailErr);
 		}
 
 		// Notify admins via Socket.IO about new request and badge count update
@@ -1039,16 +1040,16 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 			}
 		} catch (notifErr) {
 			// do not fail the request creation if notification fails; log and continue
-			console.error('Failed to emit notification for new maintenance request', notifErr);
+			logger.error('Failed to emit notification for new maintenance request', notifErr);
 		}
 
-		res.status(201).json({
+		return res.status(201).json({
 			data: result,
 			message: 'Maintenance record created successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -1100,7 +1101,7 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 					data.form_upload_date = dayjs().format('YYYY-MM-DD HH:mm:ss');
 				}
 			} catch (fileErr) {
-				console.error('updateVehicleMtnRequest: failed handling form_upload file', fileErr);
+				logger.error('updateVehicleMtnRequest: failed handling form_upload file', fileErr);
 			}
 		}
 		const result = await maintenanceModel.updateVehicleMtnRequest(Number(id), data);
@@ -1112,10 +1113,10 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 				await sendRecommendationEmail(Number(id));
 			}
 		} catch (emailErr) {
-			console.error('Failed to send recommender notification email (service)', emailErr);
+			logger.error('Failed to send recommender notification email (service)', emailErr);
 		}
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Maintenance record updated successfully',
 			status: 'success'
@@ -1124,7 +1125,7 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 		// Invalidate caches after successful update
 		await invalidateMaintenanceCaches();
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -1143,7 +1144,7 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 	try {
 		const { id: requestId } = req.params;
 		const reqId = Number(requestId);
-		
+
 		// Get current user for audit trail
 		const uploadedBy = (req as any).user?.userId ?? (req as any).userId ?? 'unknown';
 
@@ -1173,7 +1174,7 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 						data.form_upload_date = dayjs().format('YYYY-MM-DD HH:mm:ss');
 					}
 				} catch (fileErr) {
-					console.error('uploadVehicleMtnForm: failed handling form_upload file', fileErr);
+					logger.error('uploadVehicleMtnForm: failed handling form_upload file', fileErr);
 				}
 			}
 
@@ -1188,11 +1189,11 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 			if (verificationFlag) {
 				// Send email asynchronously without awaiting - don't block response
 				sendRecommendationEmail(Number(id)).catch((emailErr) => {
-					console.error('Failed to send recommender notification email', emailErr);
+					logger.error('Failed to send recommender notification email', emailErr);
 				});
 			}
 		} catch (updateErr) {
-			console.error('uploadVehicleMtnForm: update failed', updateErr);
+			logger.error('uploadVehicleMtnForm: update failed', updateErr);
 			return res.status(500).json({
 				data: null,
 				message: updateErr instanceof Error ? updateErr.message : 'Unknown error occurred',
@@ -1224,17 +1225,17 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 							unseenBills: unseenCount
 						});
 					} catch (countErr) {
-						console.warn('Failed to emit mtn:counts event:', countErr);
+						logger.warn('Failed to emit mtn:counts event:', countErr);
 					}
 				} else {
-					console.warn('Socket.IO instance not available for emitting events');
+					logger.warn('Socket.IO instance not available for emitting events');
 				}
 			} catch (socketErr) {
-				console.warn('Failed to emit Socket.IO events:', socketErr);
+				logger.warn('Failed to emit Socket.IO events:', socketErr);
 			}
 		};
 		// Emit socket events without blocking response
-		emitSocketEvents().catch(console.warn);
+		emitSocketEvents().catch((err: unknown) => logger.warn('Socket emit error', { err }));
 
 		return res.json({
 			data: updateResult,
@@ -1242,7 +1243,7 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		console.error('uploadVehicleMtnForm error:', error);
+		logger.error('uploadVehicleMtnForm error:', error);
 		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -1256,7 +1257,7 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const result = await maintenanceModel.deleteVehicleMtnRequest(Number(id));
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Maintenance record deleted successfully',
 			status: 'success'
@@ -1265,7 +1266,7 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 		// Invalidate caches after successful deletion
 		await invalidateMaintenanceCaches();
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -1362,7 +1363,7 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 				billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
 			} catch (e: any) {
 				if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
-					console.warn('approveVehicleMtnRequestSingle: push to billing failed', e);
+					logger.warn('approveVehicleMtnRequestSingle: push to billing failed', e);
 				}
 			}
 		}
@@ -1405,7 +1406,7 @@ export const recommendVehicleMtnRequestBulk = async (req: Request, res: Response
 			}
 		}
 		const responseData = { data: results, message: 'Bulk recommendation processed', status: 'success' };
-		
+
 		// Invalidate caches after successful bulk update
 		await invalidateMaintenanceCaches();
 
@@ -1439,7 +1440,7 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 						billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
 					} catch (e: any) {
 						if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
-							console.warn('approveVehicleMtnRequestBulk: push to billing failed', e);
+							logger.warn('approveVehicleMtnRequestBulk: push to billing failed', e);
 						}
 					}
 				}
@@ -1450,7 +1451,7 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 			}
 		}
 		const responseData = { data: results, message: 'Bulk approval processed', status: 'success' };
-		
+
 		// Invalidate caches after successful bulk update
 		await invalidateMaintenanceCaches();
 
@@ -1531,16 +1532,16 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 					const cc = toEmail && adminCc && primary !== adminCc ? adminCc : undefined;
 					await mailer.sendMail(primary, subject, html, cc ? { cc } : undefined);
 				} else {
-					console.warn('cancelVehicleMtnRequest: no valid recipient (driver/admin) to notify');
+					logger.warn('cancelVehicleMtnRequest: no valid recipient (driver/admin) to notify');
 				}
 			}
 		} catch (mailErr) {
-			console.error('Failed to send cancellation email', mailErr);
+			logger.error('Failed to send cancellation email', mailErr);
 		}
 
 		return res.json({ data: result, message: 'Maintenance request cancelled successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1629,7 +1630,7 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		if (verification_stat === 1) {
 			// Fire-and-forget: Send email in background without blocking response
 			sendRecommendationEmail(reqId).catch(mailErr => {
-				console.error('Failed to send recommendation notification (background)', mailErr);
+				logger.error('Failed to send recommendation notification (background)', mailErr);
 			});
 		}
 
@@ -1637,12 +1638,12 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 		if (verification_stat === 1) {
 			// Admin verified - this counts as a response, so badge count decreases
 			notificationService.notifyMtnRequestUpdate(reqId, 'verified', (req as any).user?.ramco_id).catch(notifErr => {
-				console.error('Failed to emit notification for maintenance request update', notifErr);
+				logger.error('Failed to emit notification for maintenance request update', notifErr);
 			});
 		} else if (verification_stat === 2) {
 			// Admin rejected
 			notificationService.notifyMtnRequestUpdate(reqId, 'rejected', (req as any).user?.ramco_id).catch(notifErr => {
-				console.error('Failed to emit notification for maintenance request update', notifErr);
+				logger.error('Failed to emit notification for maintenance request update', notifErr);
 			});
 		}
 
@@ -1659,7 +1660,7 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 
 		const result = await maintenanceModel.pushVehicleMtnToBilling(requestId);
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Invoice created successfully for maintenance record',
 			status: 'success'
@@ -1673,7 +1674,7 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 			});
 		}
 
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -1728,7 +1729,7 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 				await maintenanceModel.approveVehicleMtnRequest(requestId, ramcoResolved, Number(approval_status));
 			}
 		} catch (updErr) {
-			console.warn('authorizeVehicleMtnRequest: DB update failed', updErr);
+			logger.warn('authorizeVehicleMtnRequest: DB update failed', updErr);
 			// continue to notify regardless
 		}
 
@@ -1746,7 +1747,7 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 			try {
 				await sendApprovalEmail(requestId);
 			} catch (e) {
-				console.warn('authorizeVehicleMtnRequest (recommend): sendApprovalEmail failed', e);
+				logger.warn('authorizeVehicleMtnRequest (recommend): sendApprovalEmail failed', e);
 			}
 			return res.json({ data: { requestId }, message: 'Recommendation processed and approver notified', status: 'success' });
 		}
@@ -1775,17 +1776,17 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 		`;
 
 		const recipientEmail = targetUser.email || (requester?.email) || null;
-		console.log('authorizeVehicleMtnRequest (approve): sending mail to requester', { portalUrl, subject: emailSubject, to: recipientEmail });
+		logger.info('authorizeVehicleMtnRequest (approve): sending mail to requester', { portalUrl, subject: emailSubject, to: recipientEmail });
 		try {
 			if (recipientEmail && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(recipientEmail)) await mailer.sendMail(recipientEmail, emailSubject, emailBody);
-			console.log('authorizeVehicleMtnRequest (approve): mail sent to', recipientEmail);
+			logger.info('authorizeVehicleMtnRequest (approve): mail sent to', recipientEmail);
 		} catch (mailErr) {
-			console.error('authorizeVehicleMtnRequest (approve): mailer error sending to', recipientEmail, mailErr);
+			logger.error('authorizeVehicleMtnRequest (approve): mailer error sending to', recipientEmail, mailErr);
 		}
 
 		return res.json({ data: { requestId, sentTo: recipientEmail }, message: 'Approval processed and requester notified', status: 'success' });
 	} catch (error) {
-		console.error('authorizeVehicleMtnRequest error', error);
+		logger.error('authorizeVehicleMtnRequest error', error);
 		return res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
@@ -1850,23 +1851,23 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 		// Use actual requester email
 		const recipientEmail = (requester as any).email;
 
-		console.log('resendMaintenancePortalLink: sending mail', { portalUrl, subject: emailSubject, to: recipientEmail });
+		logger.info('resendMaintenancePortalLink: sending mail', { portalUrl, subject: emailSubject, to: recipientEmail });
 		try {
 			if (recipientEmail && /[^@\s]+@[^@\s]+\.[^@\s]+/.test(recipientEmail)) {
 				await mailer.sendMail(recipientEmail, emailSubject, emailBody);
 			}
-			console.log('resendMaintenancePortalLink: mail sent to', recipientEmail);
+			logger.info('resendMaintenancePortalLink: mail sent to', recipientEmail);
 		} catch (mailErr) {
-			console.error('resendMaintenancePortalLink: mailer error sending to', recipientEmail, mailErr);
+			logger.error('resendMaintenancePortalLink: mailer error sending to', recipientEmail, mailErr);
 		}
 
-		res.json({
+		return res.json({
 			data: { portalUrl, requestId: Number(requestId), sentTo: recipientEmail },
 			message: 'Portal link sent successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2058,7 +2059,7 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 
 		// Build cache key from asset_id and status
 		const cacheKey = `maintenance:request:asset:${assetId}:${status || 'all'}`;
-		
+
 		// Try to get from cache
 		const cachedResult = await cacheService.get<any>(cacheKey);
 		if (cachedResult) {
@@ -2208,9 +2209,9 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 		// Cache the result with 10-minute TTL
 		await cacheService.set(cacheKey, responseData, 600);
 
-		res.json(responseData);
+		return res.json(responseData);
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2336,13 +2337,13 @@ export const getServiceTypes = async (req: Request, res: Response) => {
 	try {
 		const types = await maintenanceModel.getServiceTypes();
 
-		res.json({
+		return res.json({
 			data: types,
 			message: 'Maintenance types data retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2363,13 +2364,13 @@ export const getServiceTypeById = async (req: Request, res: Response) => {
 			});
 		}
 
-		res.json({
+		return res.json({
 			data: type,
 			message: 'Maintenance type data retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2382,13 +2383,13 @@ export const createServiceType = async (req: Request, res: Response) => {
 		const typeData = req.body;
 		const result = await maintenanceModel.createServiceType(typeData);
 
-		res.status(201).json({
+		return res.status(201).json({
 			data: result,
 			message: 'Maintenance type created successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2402,13 +2403,13 @@ export const updateServiceType = async (req: Request, res: Response) => {
 		const typeData = req.body;
 		const result = await maintenanceModel.updateServiceType(Number(id), typeData);
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Maintenance type updated successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2421,13 +2422,13 @@ export const deleteServiceType = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const result = await maintenanceModel.deleteServiceType(Number(id));
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Maintenance type deleted successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2559,13 +2560,13 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			return out;
 		});
 
-		res.json({
+		return res.json({
 			data,
 			message: 'Pool car data retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2687,13 +2688,13 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 
 		Object.keys(obj).forEach((k) => { if (obj[k] === null) delete obj[k]; });
 
-		res.json({
+		return res.json({
 			data: obj,
 			message: 'Pool car data retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2765,16 +2766,16 @@ export const createPoolCar = async (req: Request, res: Response) => {
 				}
 			}
 		} catch (mailErr) {
-			console.error('createPoolCar: email notification error', mailErr);
+			logger.error('createPoolCar: email notification error', mailErr);
 		}
 
-		res.status(201).json({
+		return res.status(201).json({
 			data: result,
 			message: 'Pool car created successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2788,13 +2789,13 @@ export const updatePoolCar = async (req: Request, res: Response) => {
 		const carData = mapPoolCarPayload(req.body);
 		const result = await maintenanceModel.updatePoolCar(Number(id), carData);
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Pool car updated successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -2906,9 +2907,9 @@ export const verifyPoolCar = async (req: Request, res: Response) => {
 
 		await maintenanceModel.updatePoolCar(Number(id), update);
 
-		res.json({ data: { id: Number(id), ...update }, message: 'Verification updated', status: 'success' });
+		return res.json({ data: { id: Number(id), ...update }, message: 'Verification updated', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -2919,18 +2920,18 @@ export const verifyPoolCarGet = async (req: Request, res: Response) => {
 		const ramco = typeof req.query.ramco === 'string' ? req.query.ramco.trim() : '';
 		const decision = typeof req.query.decision === 'string' ? req.query.decision : undefined;
 		if (!ramco || !decision) {
-			res.status(400).send('<!doctype html><html><body><h3>Invalid verification link</h3><p>Missing ramco or decision.</p></body></html>');
+			return res.status(400).send('<!doctype html><html><body><h3>Invalid verification link</h3><p>Missing ramco or decision.</p></body></html>');
 			return;
 		}
 		const recommendation_stat = decision === 'approved' ? 1 : decision === 'rejected' ? 2 : 0;
 		if (!recommendation_stat) {
-			res.status(400).send('<!doctype html><html><body><h3>Invalid decision</h3><p>Use approved or rejected.</p></body></html>');
+			return res.status(400).send('<!doctype html><html><body><h3>Invalid decision</h3><p>Use approved or rejected.</p></body></html>');
 			return;
 		}
 		const recommendation_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
 		await maintenanceModel.updatePoolCar(Number(id), { recommendation: ramco, recommendation_date, recommendation_stat });
 		const title = decision === 'approved' ? 'Approved' : 'Rejected';
-		res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Pool Car ${title}</title>
+		return res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Pool Car ${title}</title>
 				<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#f9fafb;color:#111827;padding:24px} .card{max-width:680px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.06)} .bar{height:6px;background:linear-gradient(90deg,#22c55e,#16a34a,#065f46);border-top-left-radius:8px;border-top-right-radius:8px} .content{padding:20px 24px} .muted{color:#6b7280} .ok{color:#065f46;font-weight:600}</style></head>
 				<body><div class="card"><div class="bar"></div><div class="content">
 				<h2 style="margin:0 0 8px;">Verification ${title}</h2>
@@ -2938,7 +2939,7 @@ export const verifyPoolCarGet = async (req: Request, res: Response) => {
 				<p class="ok">ADMS4</p>
 				</div></div></body></html>`);
 	} catch (error) {
-		res.status(500).send('<!doctype html><html><body><h3>Server error</h3><p>Please try again later.</p></body></html>');
+		return res.status(500).send('<!doctype html><html><body><h3>Server error</h3><p>Please try again later.</p></body></html>');
 	}
 };
 
@@ -2947,13 +2948,13 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const result = await maintenanceModel.deletePoolCar(Number(id));
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Pool car deleted successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -3085,12 +3086,12 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 				await mailer.sendMail(toEmail, subject, html, cc ? { cc } : undefined);
 			}
 		} catch (mailErr) {
-			console.error('updateAdminPoolCar: email error', mailErr);
+			logger.error('updateAdminPoolCar: email error', mailErr);
 		}
 
-		res.json({ data: { id: pcarId }, message: 'Pool car updated', status: 'success' });
+		return res.json({ data: { id: pcarId }, message: 'Pool car updated', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3167,7 +3168,7 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 				}
 			}
 		} catch (mailErr) {
-			console.error('resendPoolCarMail: email error', mailErr);
+			logger.error('resendPoolCarMail: email error', mailErr);
 		}
 
 		return res.json({
@@ -3176,7 +3177,7 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3184,9 +3185,9 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 export const getAvailablePoolCars = async (req: Request, res: Response) => {
 	try {
 		const cars = await maintenanceModel.getAvailablePoolCars();
-		res.json({ data: cars, message: 'Available pool cars retrieved', status: 'success' });
+		return res.json({ data: cars, message: 'Available pool cars retrieved', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3196,13 +3197,13 @@ export const getAvailablePoolCars = async (req: Request, res: Response) => {
 export const getTouchNGoCards = async (req: Request, res: Response) => {
 	try {
 		const cards = await maintenanceModel.getTngRecords();
-		res.json({
+		return res.json({
 			data: cards,
 			message: 'Touch N Go cards retrieved successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -3243,9 +3244,9 @@ export const getTouchNGoCardById = async (req: Request, res: Response) => {
 			usage,
 			usage_count: usage.length
 		};
-		res.json({ data: enriched, message: 'Touch N Go card retrieved successfully', status: 'success' });
+		return res.json({ data: enriched, message: 'Touch N Go card retrieved successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -3258,13 +3259,13 @@ export const createTouchNGoCard = async (req: Request, res: Response) => {
 		const cardData = req.body || {};
 		const result = await maintenanceModel.createTngRecord(cardData);
 
-		res.status(201).json({
+		return res.status(201).json({
 			data: result,
 			message: 'Touch N Go card created successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -3278,13 +3279,13 @@ export const updateTouchNGoCard = async (req: Request, res: Response) => {
 		const cardData = req.body || {};
 		const result = await maintenanceModel.updateTngRecord(Number(id), cardData);
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Touch N Go card updated successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'
@@ -3297,13 +3298,13 @@ export const deleteTouchNGoCard = async (req: Request, res: Response) => {
 		const { id } = req.params;
 		const result = await maintenanceModel.deleteTngRecord(Number(id));
 
-		res.json({
+		return res.json({
 			data: result,
 			message: 'Touch N Go card deleted successfully',
 			status: 'success'
 		});
 	} catch (error) {
-		res.status(500).json({
+		return res.status(500).json({
 			data: null,
 			message: error instanceof Error ? error.message : 'Unknown error occurred',
 			status: 'error'

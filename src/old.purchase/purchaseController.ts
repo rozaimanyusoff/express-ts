@@ -44,7 +44,7 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
       requestor
     };
   });
-  res.json({ data: enriched, message: 'Purchase requests retrieved successfully', status: 'success' });
+  return res.json({ data: enriched, message: 'Purchase requests retrieved successfully', status: 'success' });
 };
 
 export const getPurchaseRequestById = async (req: Request, res: Response) => {
@@ -102,7 +102,7 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
     details,
     total_items: details.length
   };
-  res.json({ data: enriched, message: 'Purchase request retrieved successfully', status: 'success' });
+  return res.json({ data: enriched, message: 'Purchase request retrieved successfully', status: 'success' });
 };
 
 export const createPurchaseRequest = async (req: Request, res: Response) => {
@@ -225,10 +225,10 @@ export const createPurchaseRequest = async (req: Request, res: Response) => {
         }
       }
     }
-    res.status(201).json({ id: insertId, message: 'Purchase request created successfully', status: 'success' });
+    return res.status(201).json({ id: insertId, message: 'Purchase request created successfully', status: 'success' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ message, status: 'error' });
+    return res.status(500).json({ message, status: 'error' });
   }
 };
 
@@ -236,5 +236,5 @@ export const deletePurchaseRequest = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   await purchaseModel.deletePurchaseRequest(id);
   await purchaseModel.deletePurchaseRequestDetails(id);
-  res.json({ message: 'Purchase request and details deleted successfully', status: 'success' });
+  return res.json({ message: 'Purchase request and details deleted successfully', status: 'success' });
 };

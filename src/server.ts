@@ -2,11 +2,11 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
+import logger from './utils/logger';
 
 import app from './app.js';
 import * as userModel from './p.user/userModel.js';
 import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
-import logger from './utils/logger.js';
 import { setSocketIOInstance } from './utils/socketIoInstance.js';
 import { initAssetTransferJob } from './jobs/processAssetTransfers.js';
 import { initializePendingUserCleanup } from './jobs/cleanupExpiredPendingUsers.js';
@@ -90,7 +90,7 @@ const startServer = async () => {
 
     if (!isConnected) {
       logger.error('❌ Database connection test failed - unable to start server');
-      console.error('❌ Database connection test failed - unable to start server');
+      logger.error('❌ Database connection test failed - unable to start server');
       process.exit(1); // Exit with error code
     }
 
@@ -103,12 +103,12 @@ const startServer = async () => {
     startPeriodicHealthCheck(30000, io);
 
     httpServer.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      logger.info(`Server is running on port ${PORT}`);
       logger.info(`Server is running on port ${PORT}`);
     });
   } catch (error) {
     logger.error('Fatal error during server startup:', error);
-    console.error('Fatal error during server startup:', error);
+    logger.error('Fatal error during server startup:', error);
     process.exit(1);
   }
 };

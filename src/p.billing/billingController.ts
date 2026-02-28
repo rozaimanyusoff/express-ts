@@ -5,11 +5,11 @@ import { stat } from 'fs';
 import fs from 'fs';
 import { register } from 'module';
 import path from 'path';
+import logger from '../utils/logger';
 
 import * as assetsModel from '../p.asset/assetModel';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
 import * as userModel from '../p.user/userModel';
-import logger from '../utils/logger';
 import { getSocketIOInstance } from '../utils/socketIoInstance';
 import { sendMail } from '../utils/mailer';
 import { renderFleetCardCreatedNotification } from '../utils/emailTemplates/fleetCardCreated';
@@ -300,7 +300,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 					const filename = pathParts.pop();
 					const encodedFilename = encodeURIComponent(filename);
 					const encodedPath = [...pathParts, encodedFilename].join('/');
-					formUploadUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/${encodedPath}`;
+					formUploadUrl = `${process.env.BACKEND_URL || 'http://localhost:3030'}/${encodedPath}`;
 				}
 
 				svcOrderDetails = {
@@ -384,7 +384,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 		} : null
 	};
 
-	res.json({ data: structuredBilling, message: 'Vehicle maintenance billing retrieved successfully', status: 'success' });
+	return res.json({ data: structuredBilling, message: 'Vehicle maintenance billing retrieved successfully', status: 'success' });
 };
 
 // POST /api/bills/mtn/ - Get multiple maintenance billings by IDs without parts
@@ -491,7 +491,7 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 			};
 		});
 
-		res.json({
+		return res.json({
 			data: structuredBillings,
 			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`,
 			status: 'success'
@@ -690,21 +690,21 @@ export const updateVehicleMtnBilling = async (req: Request, res: Response) => {
 						unseenBills: unseenCount
 					});
 				} catch (countErr) {
-					console.warn('Failed to emit mtn:counts after billing update:', countErr);
+					logger.warn('Failed to emit mtn:counts after billing update:', countErr);
 				}
 			}
 		}
 	} catch (socketErr) {
-		console.warn('Failed to emit Socket.IO event on billing update:', socketErr);
+		logger.warn('Failed to emit Socket.IO event on billing update:', socketErr);
 	}
 
-	res.json({ message: 'Vehicle maintenance billing updated successfully', status: 'success' });
+	return res.json({ message: 'Vehicle maintenance billing updated successfully', status: 'success' });
 };
 
 export const deleteVehicleMtnBilling = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteVehicleMtnBilling(id);
-	res.json({ message: 'Billing deleted successfully', status: 'success' });
+	return res.json({ message: 'Billing deleted successfully', status: 'success' });
 };
 
 export const getVehicleMtnBillingByDate = async (req: Request, res: Response) => {
@@ -775,7 +775,7 @@ export const getVehicleMtnBillingByDate = async (req: Request, res: Response) =>
 			} : null
 		};
 	});
-	res.json({ data: filtered, message: 'Vehicle maintenance by date range retrieved successfully', status: 'success' });
+	return res.json({ data: filtered, message: 'Vehicle maintenance by date range retrieved successfully', status: 'success' });
 };
 
 // Check if an invoice number already exists for maintenance billings.
@@ -954,7 +954,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 		return aVehicle.toLowerCase().localeCompare(bVehicle.toLowerCase());
 	});
 
-	res.json({
+	return res.json({
 		data: result,
 		message: `Vehicle maintenance summary from date range ${from} to ${to} retrieved successfully with a total entries: ` + result.length,
 		status: 'success',
@@ -966,7 +966,7 @@ export const getVehicleMtnBillingByVehicleSummary = async (req: Request, res: Re
 
 export const getWorkshops = async (req: Request, res: Response) => {
 	const workshops = await billingModel.getWorkshops();
-	res.json({ data: workshops, message: 'Workshops retrieved successfully', status: 'success' });
+	return res.json({ data: workshops, message: 'Workshops retrieved successfully', status: 'success' });
 };
 
 export const getWorkshopById = async (req: Request, res: Response) => {
@@ -975,15 +975,15 @@ export const getWorkshopById = async (req: Request, res: Response) => {
 	if (!workshop) {
 		return res.status(404).json({ message: 'Workshop not found', status: 'error' });
 	}
-	res.json({ data: workshop, message: 'Workshop retrieved successfully', status: 'success' });
+	return res.json({ data: workshop, message: 'Workshop retrieved successfully', status: 'success' });
 };
 
 export const createWorkshop = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createWorkshop(req.body);
-		res.status(201).json({ id: insertId, message: 'Workshop created successfully', status: 'success' });
+		return res.status(201).json({ id: insertId, message: 'Workshop created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to create workshop', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to create workshop', status: 'error' });
 	}
 };
 
@@ -991,9 +991,9 @@ export const updateWorkshop = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateWorkshop(id, req.body);
-		res.json({ message: 'Workshop updated successfully', status: 'success' });
+		return res.json({ message: 'Workshop updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to update workshop', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update workshop', status: 'error' });
 	}
 };
 
@@ -1001,9 +1001,9 @@ export const deleteWorkshop = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.deleteWorkshop(id);
-		res.json({ message: 'Workshop deleted successfully', status: 'success' });
+		return res.json({ message: 'Workshop deleted successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to delete workshop', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to delete workshop', status: 'error' });
 	}
 };
 
@@ -1029,7 +1029,7 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 			return { ...rest, vendor };
 		})
 	);
-	res.json({ data, message: 'Fuel billing retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fuel billing retrieved successfully', status: 'success' });
 };
 
 
@@ -1142,7 +1142,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		.sort((a, b) => a.name.localeCompare(b.name));
 
 	const msg = `Fuel billing retrieved successfully (${costcenter_summ.length} costcenter group(s), ${details.length} transaction detail(s))`;
-	res.json({ data: { ...rest, costcenter_summ, details, fuel_vendor }, message: msg, status: 'success' });
+	return res.json({ data: { ...rest, costcenter_summ, details, fuel_vendor }, message: msg, status: 'success' });
 };
 
 // Get fuel consumption records and summary for a specific vehicle (asset_id)
@@ -1199,7 +1199,7 @@ export const getFuelConsumptionByVehicle = async (req: Request, res: Response) =
 
 	const avgEfficiency = countEff > 0 ? (rows.reduce((acc: number, r: any) => acc + parseFloat(r.effct || r.efficiency || '0'), 0) / countEff) : null;
 
-	res.json({
+	return res.json({
 		data: {
 			average_efficiency: avgEfficiency ? Number(avgEfficiency.toFixed(2)) : null,
 			records,
@@ -1252,7 +1252,7 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 	});
 
 	const regNoForMsg = registerNumber || ((rows && rows.length > 0) ? (rows[0] as any).register_number : null);
-	res.json({
+	return res.json({
 		data: {
 			id: assetId,
 			records,
@@ -1376,13 +1376,13 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 				});
 			}
 		}
-		res.status(201).json({ id: insertId, message: 'Fuel billing created successfully', status: 'success' });
+		return res.status(201).json({ id: insertId, message: 'Fuel billing created successfully', status: 'success' });
 	} catch (error) {
 		// Check if it's a duplicate entry error
 		if (error instanceof Error && error.message.includes('already exists')) {
-			res.status(409).json({ message: error.message, status: 'error' });
+			return res.status(409).json({ message: error.message, status: 'error' });
 		} else {
-			res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to create fuel billing', status: 'error' });
+			return res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to create fuel billing', status: 'error' });
 		}
 	}
 };
@@ -1487,9 +1487,9 @@ export const updateFuelBilling = async (req: Request, res: Response) => {
 				}
 			}
 		}
-		res.json({ message: 'Fuel billing updated successfully', status: 'success' });
+		return res.json({ message: 'Fuel billing updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to update fuel billing', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update fuel billing', status: 'error' });
 	}
 };
 
@@ -1707,7 +1707,7 @@ export const getFuelBillingVehicleSummary = async (req: Request, res: Response) 
 		return aVehicle.toLowerCase().localeCompare(bVehicle.toLowerCase());
 	});
 
-	res.json({
+	return res.json({
 		data: result,
 		message: `Fuel billing summary from ${from} to ${to} retrieved successfully with ${result.length} entries`,
 		status: 'success',
@@ -1780,7 +1780,7 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 			return { ...rest, details };
 		})
 		.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
-	res.json({
+	return res.json({
 		data: result,
 		message: 'Fuel billing costcenter summary by date range retrieved successfully',
 		status: 'success'
@@ -1797,7 +1797,7 @@ export const getFuelVendors = async (req: Request, res: Response) => {
 		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2,
 		logo: v.logo ? `${baseUrl.replace(/\/$/, '')}/${v.logo.replace(/^\//, '')}` : v.logo
 	}));
-	res.json({ data: vendorsWithUrls, message: 'Fuel vendors retrieved successfully', status: 'success' });
+	return res.json({ data: vendorsWithUrls, message: 'Fuel vendors retrieved successfully', status: 'success' });
 };
 
 // Insert a new minimal fuel statement detail row for a given statement
@@ -1860,15 +1860,15 @@ export const getFuelVendorById = async (req: Request, res: Response) => {
 		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2,
 		logo: fuelVendor.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.logo).replace(/^\//, '')}` : fuelVendor.logo
 	};
-	res.json({ data: vendorWithUrl, message: 'Fuel vendor retrieved successfully', status: 'success' });
+	return res.json({ data: vendorWithUrl, message: 'Fuel vendor retrieved successfully', status: 'success' });
 };
 
 export const createFuelVendor = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createFuelVendor(req.body);
-		res.status(201).json({ id: insertId, message: 'Fuel vendor created successfully', status: 'success' });
+		return res.status(201).json({ id: insertId, message: 'Fuel vendor created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to create fuel vendor', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to create fuel vendor', status: 'error' });
 	}
 };
 
@@ -1876,9 +1876,9 @@ export const updateFuelVendor = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateFuelVendor(id, req.body);
-		res.json({ message: 'Fuel vendor updated successfully', status: 'success' });
+		return res.json({ message: 'Fuel vendor updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to update fuel vendor', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update fuel vendor', status: 'error' });
 	}
 };
 
@@ -2040,10 +2040,10 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			};
 		});
 
-		res.json({ data, message: 'Fleet cards retrieved successfully', status: 'success' });
+		return res.json({ data, message: 'Fleet cards retrieved successfully', status: 'success' });
 	} catch (err: any) {
 		logger.error(err);
-		res.status(500).json({ message: err.message || 'Failed to retrieve fleet cards', status: 'error' });
+		return res.status(500).json({ message: err.message || 'Failed to retrieve fleet cards', status: 'error' });
 	}
 };
 export const getFleetCardById = async (req: Request, res: Response) => {
@@ -2096,7 +2096,7 @@ export const getFleetCardById = async (req: Request, res: Response) => {
 		vendor
 	};
 
-	res.json({ data, message: 'Fleet card retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fleet card retrieved successfully', status: 'success' });
 };
 
 export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
@@ -2145,7 +2145,7 @@ export const getFleetCardsByAssetId = async (req: Request, res: Response) => {
 	});
 
 	const data = [{ asset: assetSummary, cards }];
-	res.json({ data, message: 'Fleet cards for asset retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fleet cards for asset retrieved successfully', status: 'success' });
 };
 export const createFleetCard = async (req: Request, res: Response) => {
 	try {
@@ -2242,14 +2242,14 @@ export const createFleetCard = async (req: Request, res: Response) => {
 			}
 		}
 
-		res.status(201).json({
+		return res.status(201).json({
 			id: insertId,
 			message: `Fleet card created successfully${assignmentMsg}`,
 			status: 'success'
 		});
 	} catch (error: any) {
-		console.error('Create fleet card error:', error?.message || error);
-		res.status(500).json({
+		logger.error('Create fleet card error:', error?.message || error);
+		return res.status(500).json({
 			error: error?.message || String(error),
 			message: 'Failed to create fleet card',
 			status: 'error'
@@ -2364,9 +2364,9 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 			}
 		}
 
-		res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });
+		return res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to update fleet card', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update fleet card', status: 'error' });
 	}
 }
 
@@ -2411,9 +2411,9 @@ function publicUrl(rawPath?: null | string): null | string {
 export const updateFleetCardFromBilling = async (req: Request, res: Response) => {
 	try {
 		await billingModel.updateFleetCardFromBilling(req.body);
-		res.json({ message: 'Fleet card updated from billing successfully', status: 'success' });
+		return res.json({ message: 'Fleet card updated from billing successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', status: 'error' });
+		return res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', status: 'error' });
 	}
 };
 
@@ -2480,7 +2480,7 @@ export const getFleetCardByIssuer = async (req: Request, res: Response) => {
 			};
 		});
 
-	res.json({ data, message: 'Fleet cards by fuel vendor retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fleet cards by fuel vendor retrieved successfully', status: 'success' });
 };
 
 // Get fleet card by card number
@@ -2547,7 +2547,7 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 			};
 		});
 
-	res.json({ data, message: 'Fleet card by card number retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fleet card by card number retrieved successfully', status: 'success' });
 };
 
 export const getFleetCardByRegisterNumber = async (req: Request, res: Response) => {
@@ -2619,7 +2619,7 @@ export const getFleetCardByRegisterNumber = async (req: Request, res: Response) 
 			};
 		});
 
-	res.json({ data, message: 'Fleet card by register number retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Fleet card by register number retrieved successfully', status: 'success' });
 };
 
 // Return all assets populated with their assigned fleet cards (uses fleet_asset join table)
@@ -2674,13 +2674,13 @@ export const getFleetCardsByAssets = async (req: Request, res: Response) => {
 		return { asset: assetSummary, cards: cardsForAsset };
 	});
 
-	res.json({ data, message: 'Assets with fleet cards retrieved successfully', status: 'success' });
+	return res.json({ data, message: 'Assets with fleet cards retrieved successfully', status: 'success' });
 };
 /* =================== SERVICE OPTION TABLE ========================== */
 
 export const getServiceOptions = async (req: Request, res: Response) => {
 	const serviceOptions = await billingModel.getServiceOptions();
-	res.json({ data: serviceOptions, message: 'Service options retrieved successfully', status: 'success' });
+	return res.json({ data: serviceOptions, message: 'Service options retrieved successfully', status: 'success' });
 };
 export const getServiceOptionById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
@@ -2688,23 +2688,23 @@ export const getServiceOptionById = async (req: Request, res: Response) => {
 	if (!serviceOption) {
 		return res.status(404).json({ message: 'Service option not found', status: 'error' });
 	}
-	res.json({ data: serviceOption, message: 'Service option retrieved successfully', status: 'success' });
+	return res.json({ data: serviceOption, message: 'Service option retrieved successfully', status: 'success' });
 };
 export const createServiceOption = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createServiceOption(req.body);
-		res.status(201).json({ id: insertId, message: 'Service option created successfully', status: 'success' });
+		return res.status(201).json({ id: insertId, message: 'Service option created successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to create service option', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to create service option', status: 'error' });
 	}
 }
 export const updateServiceOption = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateServiceOption(id, req.body);
-		res.json({ message: 'Service option updated successfully', status: 'success' });
+		return res.json({ message: 'Service option updated successfully', status: 'success' });
 	} catch (error) {
-		res.status(500).json({ error, message: 'Failed to update service option', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update service option', status: 'error' });
 	}
 }
 
@@ -2730,7 +2730,7 @@ export const getServiceParts = async (req: Request, res: Response) => {
 		return { ...rest, part_category };
 	});
 
-	res.json({
+	return res.json({
 		data: enriched,
 		message: 'Service parts retrieved successfully',
 		meta: {
@@ -2753,16 +2753,16 @@ export const getServicePartById = async (req: Request, res: Response) => {
 	const part_category = svc ? { svcType: svc.svcType, svcTypeId: svc.svcTypeId } : null;
 	const { vtype_id, ...rest } = part as any;
 	const enriched = { ...rest, part_category };
-	res.json({ data: enriched, message: 'Service part retrieved successfully', status: 'success' });
+	return res.json({ data: enriched, message: 'Service part retrieved successfully', status: 'success' });
 };
 
 export const createServicePart = async (req: Request, res: Response) => {
 	try {
 		const insertId = await billingModel.createServicePart(req.body);
-		res.status(201).json({ id: insertId, message: 'Service part created', status: 'success' });
+		return res.status(201).json({ id: insertId, message: 'Service part created', status: 'success' });
 	} catch (error) {
 		logger.error('createServicePart error', error);
-		res.status(500).json({ error, message: 'Failed to create service part', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to create service part', status: 'error' });
 	}
 };
 
@@ -2770,17 +2770,17 @@ export const updateServicePart = async (req: Request, res: Response) => {
 	try {
 		const id = Number(req.params.id);
 		await billingModel.updateServicePart(id, req.body);
-		res.json({ message: 'Service part updated', status: 'success' });
+		return res.json({ message: 'Service part updated', status: 'success' });
 	} catch (error) {
 		logger.error('updateServicePart error', error);
-		res.status(500).json({ error, message: 'Failed to update service part', status: 'error' });
+		return res.status(500).json({ error, message: 'Failed to update service part', status: 'error' });
 	}
 };
 
 export const deleteServicePart = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteServicePart(id);
-	res.json({ message: 'Service part deleted', status: 'success' });
+	return res.json({ message: 'Service part deleted', status: 'success' });
 };
 
 // Quick search for typeahead or global search
@@ -2798,7 +2798,7 @@ export const searchServiceParts = async (req: Request, res: Response) => {
 		const { vtype_id, ...rest } = p;
 		return { ...rest, part_category };
 	});
-	res.json({ data: enriched, message: 'Search results', status: 'success' });
+	return res.json({ data: enriched, message: 'Search results', status: 'success' });
 };
 
 
@@ -2896,7 +2896,7 @@ export const getTempVehicleRecords = async (req: Request, res: Response) => {
 		return mapped;
 	});
 
-	res.json({ data: enriched, message: 'Temp vehicle records retrieved successfully', status: 'success' });
+	return res.json({ data: enriched, message: 'Temp vehicle records retrieved successfully', status: 'success' });
 };
 
 export const getTempVehicleRecordById = async (req: Request, res: Response) => {
@@ -2967,14 +2967,14 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 	const fleetcard = fleetCardObj ? { card_no: fleetCardObj.card_no, id: fleetCardObj.id } : null;
 
 	const { brand_id, card_id, category_id, cc_id, dept_id, model_id, ramco_id, ...rest } = record;
-	res.json({ data: { ...rest, brand, category, costcenter, department, fleetcard, model, owner }, message: 'Temp vehicle record retrieved successfully', status: 'success' });
+	return res.json({ data: { ...rest, brand, category, costcenter, department, fleetcard, model, owner }, message: 'Temp vehicle record retrieved successfully', status: 'success' });
 };
 
 export const createTempVehicleRecord = async (req: Request, res: Response) => {
 	const payload = req.body;
 
 	const insertId = await billingModel.createTempVehicleRecord(payload);
-	res.status(201).json({ id: insertId, message: 'Temp vehicle record created successfully', status: 'success' });
+	return res.status(201).json({ id: insertId, message: 'Temp vehicle record created successfully', status: 'success' });
 };
 
 export const updateTempVehicleRecord = async (req: Request, res: Response) => {
@@ -2982,13 +2982,13 @@ export const updateTempVehicleRecord = async (req: Request, res: Response) => {
 	const payload = req.body;
 
 	await billingModel.updateTempVehicleRecord(id, payload);
-	res.json({ message: 'Temp vehicle record updated successfully', status: 'success' });
+	return res.json({ message: 'Temp vehicle record updated successfully', status: 'success' });
 };
 
 export const deleteTempVehicleRecord = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteTempVehicleRecord(id);
-	res.json({ message: 'Temp vehicle record deleted successfully', status: 'success' });
+	return res.json({ message: 'Temp vehicle record deleted successfully', status: 'success' });
 };
 
 
@@ -3115,7 +3115,7 @@ export const getUtilityBills = async (req: Request, res: Response) => {
 		final = filtered.filter((item: any) => item.account?.service && String(item.account.service).toLowerCase().includes(String(service).toLowerCase()));
 	}
 
-	res.json({ data: final, message: 'Utility bills retrieved successfully', status: 'success' });
+	return res.json({ data: final, message: 'Utility bills retrieved successfully', status: 'success' });
 };
 
 // Get utility bills only for printing category (cc_id, loc_id, ubill_rent, ubill_color, ubill_bw, ubill_stotal, ubill_gtotal, ubill_no, ubill_date)
@@ -3233,9 +3233,9 @@ export const getPrintingBills = async (req: Request, res: Response) => {
 		});
 
 		// Return the printing bills list directly (no year/month aggregation)
-		res.json({ data: result, message: 'Printing utility bills retrieved successfully', status: 'success' });
+		return res.json({ data: result, message: 'Printing utility bills retrieved successfully', status: 'success' });
 	} catch (err) {
-		res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing bills', status: 'error' });
+		return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing bills', status: 'error' });
 	}
 };
 
@@ -3354,9 +3354,9 @@ export const getPrintingSummary = async (req: Request, res: Response) => {
 				};
 			});
 
-		res.json({ data: detailsArr, message: 'ok', status: 'success' });
+		return res.json({ data: detailsArr, message: 'ok', status: 'success' });
 	} catch (err) {
-		res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing summary', status: 'error' });
+		return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to fetch printing summary', status: 'error' });
 	}
 };
 
@@ -3446,7 +3446,7 @@ export const getUtilityBillById = async (req: Request, res: Response) => {
 		ubill_tax: bill.ubill_tax,
 		util_id: (bill as any).util_id
 	};
-	res.json({ data: filtered, message: 'Utility bill retrieved successfully', status: 'success' });
+	return res.json({ data: filtered, message: 'Utility bill retrieved successfully', status: 'success' });
 };
 
 export const createUtilityBill = async (req: Request, res: Response) => {
@@ -3501,20 +3501,20 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 		}
 	}
 
-	res.status(201).json({ id, message: 'Utility bill created', status: 'success', ubill_ref: finalRef, ubill_url: publicUrl(finalRef) });
+	return res.status(201).json({ id, message: 'Utility bill created', status: 'success', ubill_ref: finalRef, ubill_url: publicUrl(finalRef) });
 };
 
 export const updateUtilityBill = async (req: Request, res: Response) => {
 	const util_id = Number(req.params.id);
 	const data = req.body;
 	await billingModel.updateUtilityBill(util_id, data);
-	res.json({ message: 'Utility bill updated successfully', status: 'success' });
+	return res.json({ message: 'Utility bill updated successfully', status: 'success' });
 };
 
 export const deleteUtilityBill = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	await billingModel.deleteUtilityBill(bill_id);
-	res.json({ message: 'Utility bill deleted successfully', status: 'success' });
+	return res.json({ message: 'Utility bill deleted successfully', status: 'success' });
 };
 
 
@@ -3637,7 +3637,7 @@ export const getUtilityBillingCostcenterSummary = async (req: Request, res: Resp
 	// Sort by costcenter name
 	const sortedResult = result.sort((a: any, b: any) => String(a.costcenter).localeCompare(String(b.costcenter)));
 
-	res.json({
+	return res.json({
 		data: sortedResult,
 		message: `Utility billing costcenter summary by date range retrieved successfully${service ? ` (filtered by service: ${service})` : ' (no service filter)'}`,
 		status: 'success'
@@ -3722,7 +3722,7 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 		service: s.service
 	})).sort((a, b) => a.service.localeCompare(b.service));
 
-	res.json({
+	return res.json({
 		data: result,
 		message: `Utility billing service summary by date range${costcenter ? ` (filtered by costcenter: ${costcenterName || costcenter})` : ''}`,
 		status: 'success'
@@ -3791,7 +3791,7 @@ export const getBillingAccounts = async (req: Request, res: Response) => {
 		return obj;
 	});
 
-	res.json({ data: enriched, message: 'Billing accounts retrieved successfully', status: 'success' });
+	return res.json({ data: enriched, message: 'Billing accounts retrieved successfully', status: 'success' });
 };
 
 export const getBillingAccountById = async (req: Request, res: Response) => {
@@ -3847,7 +3847,7 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	delete obj.loc_id;
 	delete obj.location_id;
 
-	res.json({ data: obj, message: 'Billing account retrieved successfully', status: 'success' });
+	return res.json({ data: obj, message: 'Billing account retrieved successfully', status: 'success' });
 };
 
 export const createBillingAccount = async (req: Request, res: Response) => {
@@ -3865,7 +3865,7 @@ export const createBillingAccount = async (req: Request, res: Response) => {
 		payload.bill_cont_end = d2.format('YYYY-MM-DD');
 	}
 	const id = await billingModel.createBillingAccount(payload);
-	res.status(201).json({ id, message: 'Billing account created successfully', status: 'success' });
+	return res.status(201).json({ id, message: 'Billing account created successfully', status: 'success' });
 };
 
 export const updateBillingAccount = async (req: Request, res: Response) => {
@@ -3884,13 +3884,13 @@ export const updateBillingAccount = async (req: Request, res: Response) => {
 		data.bill_cont_end = d2.format('YYYY-MM-DD');
 	}
 	await billingModel.updateBillingAccount(bill_id, data);
-	res.json({ message: 'Billing account updated successfully', status: 'success' });
+	return res.json({ message: 'Billing account updated successfully', status: 'success' });
 };
 
 export const deleteBillingAccount = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
 	await billingModel.deleteBillingAccount(bill_id);
-	res.json({ message: 'Billing account deleted successfully', status: 'success' });
+	return res.json({ message: 'Billing account deleted successfully', status: 'success' });
 };
 
 
@@ -4012,7 +4012,7 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 		};
 	}).filter(Boolean) as any[];
 
-	res.json({ status: 'success', message: `${data.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data });
+	return res.json({ status: 'success', message: `${data.length} utility bill(s) retrieved`, beneficiary: beneficiaryResp, data });
 }; */
 
 // POST variant: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
@@ -4168,7 +4168,7 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 		})
 	);
 
-	res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} utility bill(s) retrieved`, status: 'success' });
+	return res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} utility bill(s) retrieved`, status: 'success' });
 };
 
 // POST /api/bills/util/by-ids?service=a,b,c
@@ -4287,7 +4287,7 @@ export const postUtilityBillsByIdsByService = async (req: Request, res: Response
 		? enriched.filter((item: any) => item.account?.service && normalizedServices.some(s => String(item.account.service).toLowerCase().includes(s)))
 		: enriched;
 
-	res.json({ data: final, message: `${final.length} utility bill(s) retrieved`, status: 'success' });
+	return res.json({ data: final, message: `${final.length} utility bill(s) retrieved`, status: 'success' });
 };
 
 // POST variant for printing bills: accepts JSON body { ids: [1,2] } or { util_id: [1,2] } or comma-separated string
@@ -4431,7 +4431,7 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 		})
 	);
 
-	res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} printing bill(s) retrieved`, status: 'success' });
+	return res.json({ beneficiary: beneficiaryResp, data: dataWithPrevious, message: `${dataWithPrevious.length} printing bill(s) retrieved`, status: 'success' });
 };
 
 // =================== BENEFICIARY (BILLING PROVIDERS) CONTROLLER ===================
@@ -4475,7 +4475,7 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 		}
 		return obj;
 	});
-	res.json({ data: enriched, message: 'Beneficiaries retrieved successfully', status: 'success' });
+	return res.json({ data: enriched, message: 'Beneficiaries retrieved successfully', status: 'success' });
 };
 
 export const getBeneficiaryById = async (req: Request, res: Response) => {
@@ -4512,7 +4512,7 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 	} else {
 		resp.entry_by = null;
 	}
-	res.json({ data: resp, message: 'Beneficiary retrieved successfully', status: 'success' });
+	return res.json({ data: resp, message: 'Beneficiary retrieved successfully', status: 'success' });
 };
 
 export const createBeneficiary = async (req: Request, res: Response) => {
@@ -4523,7 +4523,7 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 	}
 	try {
 		const id = await billingModel.createBeneficiary(payload);
-		res.status(201).json({ id, message: 'Beneficiary created successfully', status: 'success' });
+		return res.status(201).json({ id, message: 'Beneficiary created successfully', status: 'success' });
 	} catch (err: any) {
 		if (err && String(err.message) === 'duplicate_beneficiary') {
 			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
@@ -4542,7 +4542,7 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	}
 	try {
 		await billingModel.updateBeneficiary(id, payload);
-		res.json({ message: 'Beneficiary updated successfully', status: 'success' });
+		return res.json({ message: 'Beneficiary updated successfully', status: 'success' });
 	} catch (err: any) {
 		if (err && String(err.message) === 'duplicate_beneficiary') {
 			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
@@ -4554,5 +4554,5 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 export const deleteBeneficiary = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	await billingModel.deleteBeneficiary(id);
-	res.json({ message: 'Beneficiary deleted successfully', status: 'success' });
+	return res.json({ message: 'Beneficiary deleted successfully', status: 'success' });
 };

@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
-import logger from './logger';
 import redisConfig from './redisConfig';
+import logger from '../utils/logger';
 
 // Create a dummy Redis instance that simulates being connected but doesn't do anything
 class DummyRedis {

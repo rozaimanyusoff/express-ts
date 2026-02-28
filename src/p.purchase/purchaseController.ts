@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
+import logger from '../utils/logger';
 
 import * as assetModel from '../p.asset/assetModel';
 import * as userModel from '../p.user/userModel';
@@ -217,14 +218,14 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
       })),
     };
 
-    res.json({
+    return res.json({
       data: enrichedPurchases,
       summary,
       message: 'Purchases retrieved successfully with total entries ' + enrichedPurchases.length,
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchases',
       status: 'error'
@@ -346,13 +347,13 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
       (enrichedPurchase as any).deliveries = [];
     }
 
-    res.json({
+    return res.json({
       data: enrichedPurchase,
       message: 'Purchase retrieved successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchase',
       status: 'error'
@@ -468,7 +469,7 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
       }
     } catch (e) {
       // Non-blocking: if delivery creation fails, continue
-      console.error('createPurchase: deliveries insert error', e);
+      logger.error('createPurchase: deliveries insert error', e);
     }
 
     // If a file was uploaded, rename and update stored path to include module id
@@ -548,30 +549,30 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
               await sendMail(r.email, subject, html);
             } catch (mailErr) {
               // Non-blocking: log and continue
-              console.error('createPurchase: mail send error to', r.email, mailErr);
+              logger.error('createPurchase: mail send error to', r.email, mailErr);
             }
           }
         }
       }
     } catch (notifyErr) {
       // Non-blocking: log and continue
-      console.error('createPurchase: notification error', notifyErr);
+      logger.error('createPurchase: notification error', notifyErr);
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       data: { id: insertId, request_id: requestId },
       message: 'Purchase created successfully',
       status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('already exists')) {
-      res.status(409).json({
+      return res.status(409).json({
         data: null,
         message: error.message,
         status: 'error'
       });
     } else {
-      res.status(500).json({
+      return res.status(500).json({
         data: null,
         message: error instanceof Error ? error.message : 'Failed to create purchase',
         status: 'error'
@@ -676,12 +677,12 @@ export const resendPurchaseNotification = async (req: Request, res: Response) =>
         await sendMail(r.email, subject, html);
         successfulRecipients.push({ email: r.email, name: r.name });
       } catch (mailErr) {
-        console.error('resendNotification: mail send error to', r.email, mailErr);
+        logger.error('resendNotification: mail send error to', r.email, mailErr);
         failedRecipients.push({ email: r.email, name: r.name, error: mailErr instanceof Error ? mailErr.message : String(mailErr) });
       }
     }
 
-    res.json({
+    return res.json({
       data: {
         purchase_id: id,
         successful_recipients: successfulRecipients,
@@ -692,7 +693,7 @@ export const resendPurchaseNotification = async (req: Request, res: Response) =>
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to resend notification',
       status: 'error'
@@ -951,23 +952,23 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
       }
     } catch (e) {
       // Non-blocking: continue even if deliveries update fails
-      console.error('updatePurchase: deliveries upsert error', e);
+      logger.error('updatePurchase: deliveries upsert error', e);
     }
 
-    res.json({
+    return res.json({
       data: null,
       message: 'Purchase updated successfully',
       status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message.includes('already exists')) {
-      res.status(409).json({
+      return res.status(409).json({
         data: null,
         message: error.message,
         status: 'error'
       });
     } else {
-      res.status(500).json({
+      return res.status(500).json({
         data: null,
         message: error instanceof Error ? error.message : 'Failed to update purchase',
         status: 'error'
@@ -981,20 +982,20 @@ export const deletePurchaseRequestItem = async (req: Request, res: Response) => 
     const id = Number(req.params.id);
     await purchaseModel.deletePurchaseRequestItem(id);
 
-    res.json({
+    return res.json({
       data: null,
       message: 'Purchase deleted successfully',
       status: 'success'
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Purchase record not found') {
-      res.status(404).json({
+      return res.status(404).json({
         data: null,
         message: error.message,
         status: 'error'
       });
     } else {
-      res.status(500).json({
+      return res.status(500).json({
         data: null,
         message: error instanceof Error ? error.message : 'Failed to delete purchase',
         status: 'error'
@@ -1012,13 +1013,13 @@ export const getPurchaseRequestItemSummary = async (req: Request, res: Response)
       endDate as string
     );
 
-    res.json({
+    return res.json({
       data: summary,
       message: 'Purchase summary retrieved successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve purchase summary',
       status: 'error'
@@ -1095,7 +1096,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     // This prevents creating master assets, updating handover, or sending notifications when registry insertion failed.
     if (!Array.isArray(ids) || ids.length !== assets.length) {
       const msg = `Failed to register all assets: expected=${assets.length} registered=${Array.isArray(ids) ? ids.length : 0}`;
-      console.error('createPurchaseAssetsRegistry:', msg);
+      logger.error('createPurchaseAssetsRegistry:', msg);
       return res.status(500).json({ data: { expected: assets.length, registered: Array.isArray(ids) ? ids.length : 0 }, message: msg, status: 'error' });
     }
 
@@ -1103,7 +1104,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     try {
       await purchaseModel.createMasterAssetsFromRegistryBatch(purchaseId, assets);
     } catch (e) {
-      console.error('registerPurchaseAssetsBatch: create master assets failed', e);
+      logger.error('registerPurchaseAssetsBatch: create master assets failed', e);
       // If creating master assets failed, we should not proceed to mark handover or send notifications.
       return res.status(500).json({ data: null, message: 'Failed to create master asset records', status: 'error' });
     }
@@ -1117,7 +1118,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
         }
       }
     } catch (e) {
-      console.error('createPurchaseAssetsRegistry: sync model_id to assetdata failed', e);
+      logger.error('createPurchaseAssetsRegistry: sync model_id to assetdata failed', e);
       // Non-blocking error: continue with notification
     }
 
@@ -1126,7 +1127,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       const who = (typeof updated_by === 'string' && updated_by) ? updated_by : (typeof created_by === 'string' ? created_by : null);
       await purchaseModel.updatePurchaseRequestItemHandover(purchaseId, who ?? null);
     } catch (e) {
-      console.error('registerPurchaseAssetsBatch: handover update failed', e);
+      logger.error('registerPurchaseAssetsBatch: handover update failed', e);
       // If handover update failed, do not continue to notifications because state may be inconsistent.
       return res.status(500).json({ data: null, message: 'Failed to update handover state', status: 'error' });
     }
@@ -1218,7 +1219,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
         }
       }
     } catch (notifyErr) {
-      console.error('registerPurchaseAssetsBatch: notification error', notifyErr);
+      logger.error('registerPurchaseAssetsBatch: notification error', notifyErr);
     }
 
     return res.status(201).json({ data: { insertIds: ids, pr_id: purchaseId }, message: `Registered ${ids.length} assets for PR ${purchaseId}`, status: 'success' });
@@ -1397,9 +1398,9 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
 export const getDeliveries = async (req: Request, res: Response) => {
   try {
     const rows = await purchaseModel.getDeliveries();
-    res.json({ data: rows, message: 'Deliveries retrieved', status: 'success' });
+    return res.json({ data: rows, message: 'Deliveries retrieved', status: 'success' });
   } catch (error) {
-    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve deliveries', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve deliveries', status: 'error' });
   }
 };
 
@@ -1408,9 +1409,9 @@ export const getDeliveryById = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     const rec = await purchaseModel.getDeliveryById(id);
     if (!rec) return res.status(404).json({ data: null, message: 'Delivery not found', status: 'error' });
-    res.json({ data: rec, message: 'Delivery retrieved', status: 'success' });
+    return res.json({ data: rec, message: 'Delivery retrieved', status: 'success' });
   } catch (error) {
-    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve delivery', status: 'error' });
   }
 };
 
@@ -1443,9 +1444,9 @@ export const createDelivery = async (req: Request, res: Response) => {
       await purchaseModel.updateDelivery(insertId, { upload_path: toDbPath(PURCHASE_SUBDIR, filename) } as any);
     }
 
-    res.status(201).json({ data: { id: insertId }, message: 'Delivery created', status: 'success' });
+    return res.status(201).json({ data: { id: insertId }, message: 'Delivery created', status: 'success' });
   } catch (error) {
-    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create delivery', status: 'error' });
   }
 };
 
@@ -1473,9 +1474,9 @@ export const updateDelivery = async (req: Request, res: Response) => {
     }
 
     await purchaseModel.updateDelivery(id, payload);
-    res.json({ data: null, message: 'Delivery updated', status: 'success' });
+    return res.json({ data: null, message: 'Delivery updated', status: 'success' });
   } catch (error) {
-    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update delivery', status: 'error' });
   }
 };
 
@@ -1483,9 +1484,9 @@ export const deleteDelivery = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     await purchaseModel.deleteDelivery(id);
-    res.json({ data: null, message: 'Delivery deleted', status: 'success' });
+    return res.json({ data: null, message: 'Delivery deleted', status: 'success' });
   } catch (error) {
-    res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to delete delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to delete delivery', status: 'error' });
   }
 };
 
@@ -1740,13 +1741,13 @@ export const deletePurchaseRequest = async (req: Request, res: Response) => {
 export const getSuppliers = async (req: Request, res: Response) => {
   try {
     const suppliers = await purchaseModel.getSuppliers();
-    res.json({
+    return res.json({
       data: suppliers,
       message: 'Suppliers retrieved successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve suppliers',
       status: 'error'
@@ -1765,13 +1766,13 @@ export const getSupplierById = async (req: Request, res: Response) => {
         status: 'error'
       });
     }
-    res.json({
+    return res.json({
       data: supplier,
       message: 'Supplier retrieved successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to retrieve supplier',
       status: 'error'
@@ -1783,13 +1784,13 @@ export const createSupplier = async (req: Request, res: Response) => {
   try {
     const supplierData = req.body;
     const newSupplierId = await purchaseModel.createSupplier(supplierData);
-    res.status(201).json({
+    return res.status(201).json({
       data: { id: newSupplierId },
       message: 'Supplier created successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to create supplier',
       status: 'error'
@@ -1802,13 +1803,13 @@ export const updateSupplier = async (req: Request, res: Response) => {
     const { id } = req.params;
     const supplierData = req.body;
     await purchaseModel.updateSupplier(Number(id), supplierData);
-    res.json({
+    return res.json({
       data: null,
       message: 'Supplier updated successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to update supplier',
       status: 'error'
@@ -1827,13 +1828,13 @@ export const deleteSupplier = async (req: Request, res: Response) => {
         status: 'error'
       });
     }
-    res.json({
+    return res.json({
       data: null,
       message: 'Supplier deleted successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to delete supplier',
       status: 'error'
@@ -2325,16 +2326,16 @@ ${almostMatchesSection}
 
       await workbook.xlsx.writeFile(excelFilePath);
     } catch (excelErr) {
-      console.error('Failed to generate Excel report:', excelErr);
+      logger.error('Failed to generate Excel report:', excelErr);
     }
 
-    res.json({
+    return res.json({
       data: report,
       message: 'Registry model check completed successfully',
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to check registry models',
       status: 'error'
@@ -2420,13 +2421,13 @@ export const importPurchaseData = async (req: Request, res: Response) => {
       log_file: `/p.purchase/import.logs`
     };
 
-    res.json({
+    return res.json({
       data: combinedResult,
       message: `Successfully imported ${itemsResult.imported_count} items, ${requestsResult.imported_count} requests, and ${deliveryResult.imported_count} deliveries (${requestsResult.duplicate_items.length} items linked to existing requests)`,
       status: 'success'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       data: null,
       message: error instanceof Error ? error.message : 'Failed to import purchase data',
       status: 'error'
@@ -2450,7 +2451,7 @@ const writeImportLog = async (logEntry: any): Promise<void> => {
     const logLine = JSON.stringify(logEntry) + '\n';
     await fsPromises.appendFile(logPath, logLine, 'utf-8');
   } catch (err) {
-    console.warn('Failed to write import log:', err);
+    logger.warn('Failed to write import log:', err);
     // Don't fail the import if logging fails
   }
 };

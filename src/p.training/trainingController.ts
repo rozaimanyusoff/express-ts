@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 // src/p.training/trainingController.ts
 import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
+import logger from '../utils/logger';
 
 import type { TrainingEvent } from './trainingModel';
 
@@ -223,7 +224,7 @@ export const createTraining = async (req: Request, res: Response) => {
             const dbPath = toDbPath(`trainings/${trainingId}`, sanitized);
             await trainingModel.updateTraining(trainingId, { attendance_upload: dbPath });
          } catch (fileError) {
-            console.error('File upload error:', fileError);
+            logger.error('File upload error:', fileError);
             // Don't fail the entire creation if file upload fails
          }
       }
@@ -337,7 +338,7 @@ export const updateTraining = async (req: Request, res: Response) => {
             const insertResult = await trainingModel.createMultipleCostings(costingsToInsert);
             costingResult.insertedCount = insertResult.insertedCount;
          } catch (costError) {
-            console.error('Error updating costings:', costError);
+            logger.error('Error updating costings:', costError);
             // Don't fail the entire update if costings fail
          }
       }
@@ -359,7 +360,7 @@ export const updateTraining = async (req: Request, res: Response) => {
             const insertResult = await trainingModel.createMultipleParticipants(participantsToInsert);
             participantResult.insertedCount = insertResult.insertedCount;
          } catch (partError) {
-            console.error('Error updating participants:', partError);
+            logger.error('Error updating participants:', partError);
             // Don't fail the entire update if participants fail
          }
       }

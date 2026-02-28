@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
+import logger from '../utils/logger';
 
 import { logAuthActivity } from '../utils/authLogger';
 
@@ -143,7 +144,7 @@ export function getClientKey(req: Request): string {
 }
 
 // Admin/utility: list active blocks (for observability)
-export function listActiveBlocks(): { blockedUntil: number; firstBlockedAt: null | number; ip: string; key: string; lastAttemptAt: null | number; lastIdentity: null | string; remainingMs: number; route: string; userAgent: string; }[]{
+export function listActiveBlocks(): { blockedUntil: number; firstBlockedAt: null | number; ip: string; key: string; lastAttemptAt: null | number; lastIdentity: null | string; remainingMs: number; route: string; userAgent: string; }[] {
     const now = Date.now();
     const rows: { blockedUntil: number; firstBlockedAt: null | number; ip: string; key: string; lastAttemptAt: null | number; lastIdentity: null | string; remainingMs: number; route: string; userAgent: string; }[] = [];
     for (const [key, info] of blockedMap.entries()) {
@@ -179,7 +180,7 @@ const MAX_BLOCKED_ENTRIES = 10000; // Prevent unbounded memory growth
 const cleanupInterval = setInterval(() => {
     const now = Date.now();
     let deleted = 0;
-    
+
     // Remove expired entries
     for (const [key, info] of blockedMap.entries()) {
         if (info.blockedUntil <= now) {
@@ -187,7 +188,7 @@ const cleanupInterval = setInterval(() => {
             deleted++;
         }
     }
-    
+
     // If still over limit, remove oldest entries
     if (blockedMap.size > MAX_BLOCKED_ENTRIES) {
         const entriesToRemove = blockedMap.size - MAX_BLOCKED_ENTRIES;
@@ -198,9 +199,9 @@ const cleanupInterval = setInterval(() => {
             removed++;
         }
     }
-    
+
     if (deleted > 0) {
-        console.log(`[RateLimiter] Cleanup: removed ${deleted} expired entries, total: ${blockedMap.size}`);
+        logger.info(`[RateLimiter] Cleanup: removed ${deleted} expired entries, total: ${blockedMap.size}`);
     }
 }, CLEANUP_INTERVAL);
 
@@ -208,7 +209,7 @@ const cleanupInterval = setInterval(() => {
 const attemptCleanupInterval = setInterval(() => {
     const now = Date.now();
     let deleted = 0;
-    
+
     // Remove expired attempt records
     for (const [key, rec] of attemptMap.entries()) {
         if (now - rec.windowStart >= WINDOW_MS) {
@@ -216,7 +217,7 @@ const attemptCleanupInterval = setInterval(() => {
             deleted++;
         }
     }
-    
+
     // Enforce max size on attempt map
     if (attemptMap.size > MAX_BLOCKED_ENTRIES) {
         const entriesToRemove = attemptMap.size - MAX_BLOCKED_ENTRIES;
@@ -227,9 +228,9 @@ const attemptCleanupInterval = setInterval(() => {
             removed++;
         }
     }
-    
+
     if (deleted > 0) {
-        console.log(`[RateLimiter] Attempt cleanup: removed ${deleted} expired records, total: ${attemptMap.size}`);
+        logger.info(`[RateLimiter] Attempt cleanup: removed ${deleted} expired records, total: ${attemptMap.size}`);
     }
 }, CLEANUP_INTERVAL);
 
@@ -250,16 +251,17 @@ const rateLimiter = rateLimit({
             lastIdentity: identity ?? prev?.lastIdentity ?? null
         });
         const [ip, userAgent] = key.split('|');
-        await logAuthActivity(0, 'other', 'fail', { ip, reason: 'rate_limit_block', userAgent }, req).catch(() => {});
+        await logAuthActivity(0, 'other', 'fail', { ip, reason: 'rate_limit_block', userAgent }, req).catch(() => { });
         // Communicate retry information for frontend UX (countdown)
         const retryAfterSec = Math.ceil(BLOCK_DURATION / 1000);
         res.setHeader('Retry-After', String(retryAfterSec));
-        res.status(429).json({
+        void res.status(429).json({
             code: 429,
             message: 'Too many requests. This IP and device are temporarily blocked.',
             retryAfter: retryAfterSec,
             status: 'error'
         });
+        return;
     },
     keyGenerator: (req: Request) => getClientKey(req),
     legacyHeaders: false,
@@ -274,18 +276,18 @@ function ipBlocker(req: Request, res: Response, next: NextFunction) {
     const block = blockedMap.get(key);
     if (block && block.blockedUntil > Date.now()) {
         const [ip, userAgent] = key.split('|');
-        logAuthActivity(0, 'other', 'fail', { ip, reason: 'ip_blocked', userAgent }, req).catch(() => {});
+        logAuthActivity(0, 'other', 'fail', { ip, reason: 'ip_blocked', userAgent }, req).catch(() => { });
         // Update metadata for observability
         try {
             const identity = extractIdentity(req);
             block.lastIdentity = identity ?? block.lastIdentity ?? null;
             block.lastAttemptAt = Date.now();
             blockedMap.set(key, block);
-        } catch {}
+        } catch { }
         const remainingMs = Math.max(0, block.blockedUntil - Date.now());
         const retryAfterSec = Math.ceil(remainingMs / 1000);
         res.setHeader('Retry-After', String(retryAfterSec));
-        res.status(429).json({
+        void res.status(429).json({
             blockedUntil: block.blockedUntil,
             code: 429,
             message: 'This IP and device are temporarily blocked due to too many requests.',

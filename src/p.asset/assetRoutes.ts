@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import logger from '../utils/logger';
 
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
@@ -14,7 +15,7 @@ const cacheInvalidationMiddleware = asyncHandler(async (req, res, next) => {
     res.json = function (data: any) {
       // Invalidate cache after sending response
       invalidateAssetCache().catch(err => {
-        console.error('Cache invalidation failed:', err);
+        logger.error('Cache invalidation failed:', err);
       });
       return originalJson.call(this, data);
     };

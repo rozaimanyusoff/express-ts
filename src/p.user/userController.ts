@@ -3,13 +3,13 @@ import dotenv from 'dotenv';
 import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
+import logger from '../utils/logger';
 
 import * as authLogger from '../utils/authLogger';
 import * as assetModel from '../p.asset/assetModel';
 import * as adminModel from '../p.admin/adminModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
 import {pool} from '../utils/db';
-import logger from '../utils/logger';
 import { sendMail } from '../utils/mailer';
 import { buildStoragePath, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
 import * as userModel from './userModel';
@@ -104,7 +104,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
 
     return res.status(200).json({ data: formattedUsers, message: 'User data retrieved successfully', status: 'success' });
   } catch (error: any) {
-    console.error('Error getting all users:', error);
+    logger.error('Error getting all users:', error);
     return res.status(500).json({ message: 'Error getting all users' });
   }
 };
@@ -115,7 +115,7 @@ export const getAllPendingUser = async (_req: Request, res: Response): Promise<R
     const pendingUsers = await pendingUserModel.getAllPendingUsers();
     return res.status(200).json({ data: pendingUsers, message: 'Pending user data retrieved successfully', status: 'success' });
   } catch (error: any) {
-    console.error('Error getting all pending users:', error);
+    logger.error('Error getting all pending users:', error);
     return res.status(500).json({ message: 'Error getting all pending users' });
   }
 };
@@ -182,7 +182,7 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
 
     return res.status(200).json({ message: 'User updated successfully', status: 'success' });
   } catch (error: any) {
-    console.error('Error updating user:', error);
+    logger.error('Error updating user:', error);
     return res.status(500).json({ error: error.message, message: 'Error updating user' });
   }
 };
@@ -217,7 +217,7 @@ export const deleteUser = async (req: Request, res: Response): Promise<Response>
       status: 'success'
     });
   } catch (error: any) {
-    console.error('Error deleting user(s):', error);
+    logger.error('Error deleting user(s):', error);
     return res.status(500).json({ error: error.message, message: 'Error deleting user(s)', status: 'error' });
   }
 };
@@ -247,7 +247,7 @@ export const deleteUsers = async (req: Request, res: Response): Promise<Response
       status: 'success'
     });
   } catch (error: any) {
-    console.error('Error deleting users:', error);
+    logger.error('Error deleting users:', error);
     return res.status(500).json({ error: error.message, message: 'Error deleting users', status: 'error' });
   }
 };
@@ -269,7 +269,7 @@ export const assignUserToGroups1 = async (
       .status(200)
       .json({ message: 'User assigned to groups successfully', status: 'Success' });
   } catch (error: any) {
-    console.error('Error assigning user to groups:', error);
+    logger.error('Error assigning user to groups:', error);
     return res
       .status(500)
       .json({ error: error.message, message: 'Error assigning user to groups', status: 'Error' });
@@ -288,7 +288,7 @@ export const changeUsersGroups = async (req: Request, res: Response): Promise<Re
     }
     return res.status(200).json({ message: 'Groups updated for selected users', status: 'Success' });
   } catch (error: any) {
-    console.error('Error changing users groups:', error);
+    logger.error('Error changing users groups:', error);
     return res.status(500).json({ error: error.message, message: 'Error changing users groups', status: 'Error' });
   }
 };
@@ -305,7 +305,7 @@ export const changeUsersRole = async (req: Request, res: Response): Promise<Resp
     }
     return res.status(200).json({ message: 'Role updated for selected users', status: 'Success' });
   } catch (error: any) {
-    console.error('Error changing users role:', error);
+    logger.error('Error changing users role:', error);
     return res.status(500).json({ error: error.message, message: 'Error changing users role' });
   }
 };
@@ -322,7 +322,7 @@ export const suspendOrActivateUsers = async (req: Request, res: Response): Promi
     }
     return res.status(200).json({ message: 'Status updated for selected users', status: 'Success' });
   } catch (error: any) {
-    console.error('Error updating users status:', error);
+    logger.error('Error updating users status:', error);
     return res.status(500).json({ error: error.message, message: 'Error updating users status', status: 'Error' });
   }
 };
@@ -346,7 +346,7 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
       },
     });
   } catch (error: any) {
-    console.error('Error logging in user:', error);
+    logger.error('Error logging in user:', error);
     return res.status(500).json({ error: error.message, message: 'Error logging in user' });
   }
 };
@@ -459,7 +459,7 @@ export const getTasks = async (req: Request, res: Response) => {
         time: timeAgo(task.updated_at || task.created_at, now),
         title: task.title
     }));
-    res.json({ status: 'Success', tasks: formatted });
+    return res.json({ status: 'Success', tasks: formatted });
 };
 
 // POST /api/users/tasks
@@ -468,7 +468,7 @@ export const postTask = async (req: Request, res: Response) => {
     const { progress, title } = req.body;
     if (!title) return res.status(400).json({ message: 'Title required', status: 'Error' });
     await userModel.createUserTask(userId, title, progress || 0);
-    res.status(201).json({ message: 'Task created', status: 'Success' });
+    return res.status(201).json({ message: 'Task created', status: 'Success' });
 };
 
 // PUT /api/users/tasks/:id
@@ -478,9 +478,9 @@ export const putTask = async (req: Request, res: Response) => {
     const { completed, progress, title } = req.body;
     const result = await userModel.updateUserTask(userId, taskId, { completed, progress, title });
     if (result && (result as any).affectedRows > 0) {
-        res.json({ message: 'Task updated', status: 'Success' });
+        return res.json({ message: 'Task updated', status: 'Success' });
     } else {
-        res.status(404).json({ message: 'Task not found or not updated', status: 'Error' });
+        return res.status(404).json({ message: 'Task not found or not updated', status: 'Error' });
     }
 };
 
@@ -792,7 +792,7 @@ export const getWorkflows = async (_req: Request, res: Response): Promise<Respon
 
     return res.status(200).json({ data: enriched, message: 'Approval levels retrieved successfully', status: 'success' });
   } catch (error: any) {
-    console.error('Error getting approval levels:', error);
+    logger.error('Error getting approval levels:', error);
     return res.status(500).json({ error: error.message, message: 'Error getting approval levels' });
   }
 };
@@ -820,7 +820,7 @@ export const getWorkflowById = async (req: Request, res: Response): Promise<Resp
 
     return res.status(200).json({ data: copy, status: 'success' });
   } catch (error) {
-    console.error('Error getting approval level by ID:', error);
+    logger.error('Error getting approval level by ID:', error);
     return res.status(500).json({ error: (error as any).message, message: 'Error getting approval level', status: 'error' });
   }
 };
@@ -839,7 +839,7 @@ export const createWorkflow = async (req: Request, res: Response) => {
       status: 'success'
     });
   } catch (error) {
-    console.error('Error creating workflow:', error);
+    logger.error('Error creating workflow:', error);
     return res.status(500).json({ error: (error as any).message, message: 'Error creating workflow', status: 'error' });
   }
 };
@@ -852,7 +852,7 @@ export const updateWorkflow = async (req: Request, res: Response) => {
     await userModel.updateWorkflow(workflowId, data);
     return res.status(200).json({ message: 'Workflow updated successfully', status: 'success' });
   } catch (error) {
-    console.error('Error updating workflow:', error);
+    logger.error('Error updating workflow:', error);
     return res.status(500).json({ error: (error as any).message, message: 'Error updating workflow', status: 'error' });
   }
 };
@@ -887,7 +887,7 @@ export const deleteWorkflow = async (req: Request, res: Response) => {
     }
     return res.status(200).json({ data: { deleted_levels: deletedCount }, message: `Workflow deleted successfully (${deletedCount} level${deletedCount === 1 ? '' : 's'})`, status: 'success' });
   } catch (error) {
-    console.error('Error deleting workflow:', error);
+    logger.error('Error deleting workflow:', error);
     return res.status(500).json({ error: (error as any).message, message: 'Error deleting workflow', status: 'error' });
   }
 };
