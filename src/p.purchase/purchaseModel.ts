@@ -1,6 +1,7 @@
 import e from 'express';
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
 import * as assetModel from '../p.asset/assetModel';
 import { pool, pool2 } from '../utils/db';
@@ -22,7 +23,7 @@ const purchaseRegistryTable = `${dbName}.purchase_registry`;
 export interface PurchaseRequestRecord {
   costcenter_id: number;
   created_at?: string;
-  department_id: number;
+  department_id?: number;
   id?: number;
   pr_date: string; // YYYY-MM-DD
   pr_no?: null | string;
@@ -34,12 +35,12 @@ export interface PurchaseRequestRecord {
 export const getPurchaseRequests = async (ramcoId?: string): Promise<PurchaseRequestRecord[]> => {
   let query = `SELECT * FROM ${purchaseRequestTable}`;
   const params: any[] = [];
-  
+
   if (ramcoId) {
     query += ` WHERE ramco_id = ?`;
     params.push(ramcoId);
   }
-  
+
   query += ` ORDER BY pr_date DESC, id DESC`;
   const [rows] = await pool.query(query, params);
   return rows as PurchaseRequestRecord[];
@@ -381,7 +382,7 @@ export const createSupplier = async (data: Omit<Supplier, 'id'>): Promise<number
   if (existingSupplier) {
     throw new Error(`Supplier with name '${data.name}' already exists (ID: ${existingSupplier.id})`);
   }
-  
+
   const [result] = await pool.query(`INSERT INTO ${supplierTable} SET ?`, [data]);
   return (result as any).insertId;
 };
@@ -423,17 +424,17 @@ export const checkRegisterNumberExists = async (registerNumber: string): Promise
   if (!registerNumber || registerNumber.trim() === '') {
     return { exists: false };
   }
-  
+
   const [rows] = await pool.query(
     `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
     [registerNumber.trim()]
   );
-  
+
   const existingRow = Array.isArray(rows) ? (rows as any[])[0] : null;
   if (existingRow?.id) {
     return { exists: true, assetId: existingRow.id };
   }
-  
+
   return { exists: false };
 };
 
@@ -471,7 +472,7 @@ export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryReco
 
     // Use provided model_id if available, otherwise lookup model_id from model name
     let modelId: null | number = rec.model_id && rec.model_id !== null ? Number(rec.model_id) : null;
-    
+
     if (!modelId && rec.model) {
       // Only lookup if model_id not provided
       const modelName = rec.model !== undefined && rec.model !== null ? String(rec.model).trim() : '';
@@ -707,7 +708,7 @@ export const createMasterAssetsFromRegistryBatch = async (
 
       // Lookup model_id from model name if model provided, or use provided model_id
       let modelId: null | number = null;
-      
+
       // First check if model_id was provided directly
       if (a.model_id !== undefined && a.model_id !== null) {
         modelId = Number(a.model_id);
@@ -919,10 +920,10 @@ export const updateAssetDataFromRegistry = async (
 ): Promise<void> => {
   const keys = Object.keys(data);
   if (!keys.length) return;
-  
+
   const fields = keys.map(k => `${k} = ?`).join(', ');
   const vals = keys.map(k => (data as any)[k]);
-  
+
   await pool.query(
     `UPDATE assets.assetdata SET ${fields} WHERE purchase_id = ? LIMIT 1`,
     [...vals, purchaseId]
@@ -978,10 +979,10 @@ export const logRegistryAuditBatch = async (
 ): Promise<void> => {
   try {
     if (changes.length === 0) return;
-    
+
     const placeholders = changes.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(',');
     const values: any[] = [];
-    
+
     for (const change of changes) {
       values.push(
         registryId,
@@ -994,7 +995,7 @@ export const logRegistryAuditBatch = async (
         notes || null
       );
     }
-    
+
     await pool.query(
       `INSERT INTO ${purchaseAssetRegistryAuditTable} 
        (registry_id, purchase_id, field_name, old_value, new_value, changed_by, ip_address, notes) 
@@ -1112,7 +1113,7 @@ export const importPurchaseItems = async (
   for (const item of items) {
     try {
       const prNo = item.pr_no || '';
-      
+
       // Skip if pr_no is empty
       if (!prNo.trim()) {
         result.failed_items.push({ pr_no: prNo, error: 'pr_no is required' });
@@ -1164,10 +1165,10 @@ export const importPurchaseItems = async (
       );
 
       result.imported_count++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       result.failed_items.push({
         pr_no: item.pr_no || 'unknown',
-        error: err.message || 'Unknown error'
+        error: getErrorMessage(err) || 'Unknown error'
       });
     }
   }
@@ -1217,13 +1218,13 @@ export const importPurchaseRequests = async (
         `SELECT id FROM ${purchaseRequestTable} WHERE pr_no = ? LIMIT 1`,
         [prNo]
       );
-      
+
       if (Array.isArray(existingRows) && existingRows.length > 0) {
         // Record duplicate but still map the existing request_id
         const existingId = (existingRows[0] as any).id;
         result.duplicate_items.push(prNo);
         result.request_id_map.set(prNo, existingId);
-        
+
         // Update existing purchase_items records with this pr_no to link them to the request_id
         try {
           await pool.query(
@@ -1234,7 +1235,7 @@ export const importPurchaseRequests = async (
           logger.warn(`Failed to update purchase_items for duplicate pr_no ${prNo}:`, updateErr);
           // Don't fail the import if update fails
         }
-        
+
         continue;
       }
 
@@ -1255,10 +1256,10 @@ export const importPurchaseRequests = async (
       const insertId = (insertResult as ResultSetHeader).insertId;
       result.request_id_map.set(prNo, insertId);
       result.imported_count++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       result.failed_items.push({
         pr_no: item.pr_no || 'unknown',
-        error: err.message || 'Unknown error'
+        error: getErrorMessage(err) || 'Unknown error'
       });
     }
   }
@@ -1284,7 +1285,7 @@ export const importDeliveryData = async (
 
   // Track unique delivery records by pr_no to avoid duplicate deliveries within import batch
   const uniqueDeliveries = new Map<string, ImportItem>();
-  
+
   for (const item of items) {
     // Only process items that have delivery data and haven't been processed yet
     if (item.pr_no && (item.do_date || item.inv_date || item.grn_date)) {
@@ -1299,7 +1300,7 @@ export const importDeliveryData = async (
   for (const item of uniqueDeliveries.values()) {
     try {
       const prNo = item.pr_no || '';
-      
+
       if (!prNo.trim()) {
         result.failed_items.push({ pr_no: prNo, error: 'pr_no is required for delivery' });
         continue;
@@ -1310,20 +1311,20 @@ export const importDeliveryData = async (
         `SELECT id FROM ${purchaseRequestItemTable} WHERE pr_no = ? LIMIT 1`,
         [prNo]
       );
-      
+
       const purchaseList = purchaseRows as Array<{ id: number }>;
       const purchaseId = purchaseList.length > 0 ? purchaseList[0].id : null;
 
       // Get request_id from mapping or from purchase_items record
       let requestId: number | null = requestIdMap?.get(prNo) || null;
-      
+
       if (!requestId && purchaseId) {
         // Try to get request_id from the purchase_items record itself
         const [itemRows] = await pool.query(
           `SELECT request_id FROM ${purchaseRequestItemTable} WHERE id = ? LIMIT 1`,
           [purchaseId]
         );
-        
+
         const itemList = itemRows as Array<{ request_id: number | null }>;
         if (itemList.length > 0 && itemList[0].request_id) {
           requestId = itemList[0].request_id;
@@ -1336,7 +1337,7 @@ export const importDeliveryData = async (
         `SELECT id FROM ${purchaseDeliveryTable} WHERE purchase_id = ? LIMIT 1`,
         [purchaseId]
       );
-      
+
       const existingDeliveryList = existingDelivery as Array<{ id: number }>;
       if (existingDeliveryList.length > 0) {
         result.duplicate_items.push(prNo);
@@ -1361,10 +1362,10 @@ export const importDeliveryData = async (
       );
 
       result.imported_count++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       result.failed_items.push({
         pr_no: item.pr_no || 'unknown',
-        error: err.message || 'Unknown error'
+        error: getErrorMessage(err) || 'Unknown error'
       });
     }
   }

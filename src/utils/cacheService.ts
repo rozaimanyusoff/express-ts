@@ -1,6 +1,7 @@
 import redis from './redis';
 import redisConfig from './redisConfig';
 import logger from '../utils/logger';
+import { getErrorMessage } from './errorUtils';
 
 export const cacheService = {
   // Check if caching is enabled
@@ -9,7 +10,7 @@ export const cacheService = {
   },
 
   // Set cache with TTL (seconds)
-  async set(key: string, value: any, ttl: number = 3600): Promise<void> {
+  async set(key: string, value: unknown, ttl: number = 3600): Promise<void> {
     if (!redisConfig.enabled) {
       logger.debug(`[Cache Disabled] Would set: ${key}`);
       return;
@@ -17,7 +18,7 @@ export const cacheService = {
     try {
       await redis.setex(key, ttl, JSON.stringify(value));
     } catch (error) {
-      logger.error(`Cache set error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache set error for key ${key}: ${getErrorMessage(error)}`);
     }
   },
 
@@ -31,7 +32,7 @@ export const cacheService = {
       const data = await redis.get(key);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      logger.error(`Cache get error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache get error for key ${key}: ${getErrorMessage(error)}`);
       return null;
     }
   },
@@ -45,7 +46,7 @@ export const cacheService = {
     try {
       await redis.del(key);
     } catch (error) {
-      logger.error(`Cache delete error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache delete error for key ${key}: ${getErrorMessage(error)}`);
     }
   },
 
@@ -62,7 +63,7 @@ export const cacheService = {
         logger.debug(`Cleared ${keys.length} cache keys matching pattern: ${pattern}`);
       }
     } catch (error) {
-      logger.error(`Cache delete pattern error for ${pattern}: ${(error as any).message}`);
+      logger.error(`Cache delete pattern error for ${pattern}: ${getErrorMessage(error)}`);
     }
   },
 
@@ -74,7 +75,7 @@ export const cacheService = {
     try {
       return (await redis.exists(key)) === 1;
     } catch (error) {
-      logger.error(`Cache exists error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache exists error for key ${key}: ${getErrorMessage(error)}`);
       return false;
     }
   },
@@ -96,7 +97,7 @@ export const cacheService = {
       await this.set(key, fresh, ttl);
       return fresh;
     } catch (error) {
-      logger.error(`Cache getOrSet error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache getOrSet error for key ${key}: ${getErrorMessage(error)}`);
       // Fallback: fetch without cache if Redis fails
       return await fetchFn();
     }
@@ -110,7 +111,7 @@ export const cacheService = {
     try {
       return await redis.incrby(key, by);
     } catch (error) {
-      logger.error(`Cache increment error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache increment error for key ${key}: ${getErrorMessage(error)}`);
       return 0;
     }
   },
@@ -123,7 +124,7 @@ export const cacheService = {
     try {
       return await redis.decrby(key, by);
     } catch (error) {
-      logger.error(`Cache decrement error for key ${key}: ${(error as any).message}`);
+      logger.error(`Cache decrement error for key ${key}: ${getErrorMessage(error)}`);
       return 0;
     }
   },
@@ -146,7 +147,7 @@ export const cacheService = {
 
       return result;
     } catch (error) {
-      logger.error(`Cache getPatternValues error for ${pattern}: ${(error as any).message}`);
+      logger.error(`Cache getPatternValues error for ${pattern}: ${getErrorMessage(error)}`);
       return {};
     }
   },

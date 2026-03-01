@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import { RowDataPacket } from 'mysql2';
 import logger from '../utils/logger';
+import { CreateAccountSchema, CreateSubscriberSchema } from '../utils/validation/telco.schemas';
+import { parseBody } from '../utils/validation/index';
 
 import { pool } from '../utils/db';
 import * as assetModel from '../p.asset/assetModel';
@@ -838,7 +840,9 @@ export const getSubscribersFullData = async (req: Request, res: Response, next: 
 /* Create subs. POST /subs */
 export const createSubscriber = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const subscriber = req.body;
+        const validation = parseBody(req.body, CreateSubscriberSchema);
+        if (!validation.ok) return res.status(400).json(validation.error);
+        const subscriber = validation.data;
         const id = await telcoModel.createSubscriber(subscriber);
         return res.status(201).json({ id, message: 'Subscriber created' });
     } catch (error) {
@@ -943,7 +947,9 @@ export const getAccounts = async (req: Request, res: Response, next: NextFunctio
 /* Create account. POST /accounts */
 export const createAccount = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const account = req.body;
+        const validation = parseBody(req.body, CreateAccountSchema);
+        if (!validation.ok) return res.status(400).json(validation.error);
+        const account = validation.data;
         const id = await telcoModel.createAccount(account);
         return res.status(201).json({ id, message: 'Account created' });
     } catch (error) {
@@ -1449,8 +1455,9 @@ export const getTelcoBillingsByIds = async (req: Request, res: Response, next: N
 // GET all telco billings
 export const getTelcoBillings = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const year = req.query.year as string | undefined;
         const [billings, accounts] = await Promise.all([
-            telcoModel.getTelcoBillings(),
+            telcoModel.getTelcoBillings(year),
             telcoModel.getAccounts()
         ]);
         // Map account_no to account object (reverse mapping)

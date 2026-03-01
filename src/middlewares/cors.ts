@@ -1,6 +1,8 @@
 import cors from 'cors';
 import logger from '../utils/logger';
 
+import { CORS_ALLOWED_ORIGINS } from '../utils/env';
+
 // Lazy-load allowed origins to ensure .env is loaded before evaluation
 let cachedOrigins: string[] | null = null;
 
@@ -9,18 +11,16 @@ const getallowedOrigins = (): string[] => {
   if (cachedOrigins !== null) {
     return cachedOrigins;
   }
-  
-  const envOrigins = process.env.CORS_ALLOWED_ORIGINS;
-  
-  if (envOrigins) {
+
+  if (CORS_ALLOWED_ORIGINS) {
     // Parse comma-separated list from ENV
-    cachedOrigins = envOrigins
+    cachedOrigins = CORS_ALLOWED_ORIGINS
       .split(',')
       .map(origin => origin.trim())
       .filter(origin => origin.length > 0);
     return cachedOrigins;
   }
-  
+
   // Default origins for development (check both NODE_ENV and ENV)
   const isDev = process.env.NODE_ENV === 'development' || process.env.ENV === 'development';
   if (isDev) {
@@ -31,7 +31,7 @@ const getallowedOrigins = (): string[] => {
     ];
     return cachedOrigins;
   }
-  
+
   // Production: require explicit configuration
   logger.warn('[CORS] No CORS_ALLOWED_ORIGINS configured and not in development mode. CORS will be restrictive.');
   cachedOrigins = [];
@@ -48,7 +48,7 @@ const corsOptions = {
       callback(null, true);
       return;
     }
-    
+
     const allowedOrigins = getallowedOrigins();
     if (allowedOrigins.includes(origin)) {
       callback(null, true);

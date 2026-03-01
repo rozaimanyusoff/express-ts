@@ -448,14 +448,8 @@ export interface CorrespondenceCreatePayload {
   document_others: boolean;
   document_others_specify: string | null;
   subject: string;
-  correspondent: string;
   direction: 'incoming' | 'outgoing';
-  department: string;
-  letter_type: string | null;
-  category: string | null;
-  priority: 'low' | 'normal' | 'high';
   date_received: string | null;
-  remarks: string | null;
   registered_at: string | null;
   registered_by: string | null;
   disseminated_at: string | null;
@@ -507,8 +501,8 @@ export const createCorrespondence = async (
       reference_no, sender, sender_ref,
       document_cover_page, document_full_letters, document_claim_attachment,
       document_others, document_others_specify,
-      subject, correspondent, direction, department,
-      letter_type, category, priority, date_received, remarks,
+      subject, direction,
+      date_received,
       registered_at, registered_by, disseminated_at, disseminated_by,
       attachment_filename, attachment_mime_type, attachment_size,
       attachment_pdf_page_count, attachment_file_path,
@@ -517,8 +511,8 @@ export const createCorrespondence = async (
       ?, ?, ?,
       ?, ?, ?,
       ?, ?,
-      ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
+      ?, ?,
+      ?,
       ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?,
@@ -536,14 +530,8 @@ export const createCorrespondence = async (
     payload.document_others ? 1 : 0,
     payload.document_others_specify ?? null,
     payload.subject,
-    payload.correspondent,
     payload.direction,
-    payload.department,
-    payload.letter_type ?? null,
-    payload.category ?? null,
-    payload.priority,
     payload.date_received ?? null,
-    payload.remarks ?? null,
     payload.registered_at ?? null,
     payload.registered_by ?? null,
     payload.disseminated_at ?? null,
@@ -635,14 +623,8 @@ export const updateCorrespondence = async (
     document_others: payload.document_others !== undefined ? (payload.document_others ? 1 : 0) : undefined,
     document_others_specify: payload.document_others_specify,
     subject: payload.subject,
-    correspondent: payload.correspondent,
     direction: payload.direction,
-    department: payload.department,
-    letter_type: payload.letter_type,
-    category: payload.category,
-    priority: payload.priority,
     date_received: payload.date_received,
-    remarks: payload.remarks,
     registered_at: payload.registered_at,
     registered_by: payload.registered_by,
     disseminated_at: payload.disseminated_at,
@@ -755,5 +737,84 @@ CREATE TABLE IF NOT EXISTS ${correspondenceTable} (
   INDEX idx_date_received   (date_received),
   INDEX idx_reference_no    (reference_no),
   INDEX idx_deleted_at      (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+// ---------------------------------------------------------------------------
+// Correspondence Recipients
+// ---------------------------------------------------------------------------
+const correspondenceRecipientsTable = `${db}.correspondence_recipients`;
+
+export interface CorrespondenceRecipient extends RowDataPacket {
+  correspondence_id: number;
+  created_at: Date;
+  department_id: number;
+  id: number;
+  recipient_ramco_id: string;
+}
+
+/**
+ * Update QA fields on an existing correspondence (letter_type, category, priority, remarks).
+ * Returns true if the record was found and updated.
+ */
+export const updateCorrespondenceQA = async (
+  id: number,
+  payload: {
+    category: string;
+    letter_type: string;
+    priority?: 'high' | 'low' | 'normal';
+    remarks?: null | string;
+  }
+): Promise<boolean> => {
+  const [result] = await pool.query<ResultSetHeader>(
+    `UPDATE ${correspondenceTable}
+     SET letter_type = ?, category = ?, priority = ?, remarks = ?, updated_at = NOW()
+     WHERE id = ? AND deleted_at IS NULL`,
+    [payload.letter_type, payload.category, payload.priority ?? 'normal', payload.remarks ?? null, id]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Replace the full recipients list for a correspondence (delete-then-insert).
+ */
+export const replaceCorrespondenceRecipients = async (
+  correspondenceId: number,
+  recipients: Array<{ department_id: number; recipient_ramco_id: string }>
+): Promise<void> => {
+  await pool.query(
+    `DELETE FROM ${correspondenceRecipientsTable} WHERE correspondence_id = ?`,
+    [correspondenceId]
+  );
+  if (recipients.length === 0) return;
+  const placeholders = recipients.map(() => '(?, ?, ?)').join(', ');
+  const values = recipients.flatMap((r) => [correspondenceId, r.recipient_ramco_id, r.department_id]);
+  await pool.query(
+    `INSERT INTO ${correspondenceRecipientsTable} (correspondence_id, recipient_ramco_id, department_id) VALUES ${placeholders}`,
+    values
+  );
+};
+
+/**
+ * Fetch all recipients for a correspondence.
+ */
+export const getCorrespondenceRecipients = async (
+  correspondenceId: number
+): Promise<CorrespondenceRecipient[]> => {
+  const [rows] = await pool.query<CorrespondenceRecipient[]>(
+    `SELECT * FROM ${correspondenceRecipientsTable} WHERE correspondence_id = ? ORDER BY id`,
+    [correspondenceId]
+  );
+  return rows;
+};
+
+export const correspondenceRecipientsTableDDL = `
+CREATE TABLE IF NOT EXISTS ${correspondenceRecipientsTable} (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  correspondence_id    INT UNSIGNED NOT NULL,
+  recipient_ramco_id   VARCHAR(50)  NOT NULL,
+  department_id        INT          NOT NULL,
+  created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_correspondence_id (correspondence_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;

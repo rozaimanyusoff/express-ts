@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import dotenv from 'dotenv';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import os from 'os';
@@ -8,6 +7,10 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../../utils/logger';
 
 import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../middlewares/rateLimiter';
+import { getErrorMessage } from '../../utils/errorUtils';
+import { EMAIL_FROM, JWT_SECRET, SINGLE_SESSION_ENFORCEMENT, VERIFY_EXCLUDE_CONTACTS, VERIFY_EXCLUDE_EMAILS, VERIFY_EXCLUDE_NAMES } from '../../utils/env';
+import { LoginSchema } from '../../utils/validation/auth.schemas';
+import { parseBody } from '../../utils/validation/index';
 import * as authLogger from '../../utils/authLogger';
 import * as notificationManager from '../../utils/notificationManager';
 import * as assetModel from '../../p.asset/assetModel';
@@ -24,7 +27,6 @@ import { sendMail } from '../../utils/mailer';
 import buildNavigationTree from '../../utils/navBuilder';
 import { toPublicUrl } from '../../utils/uploadUtil';
 
-dotenv.config();
 
 // Lazy-initialize sanitizedFrontendUrl to avoid throwing at module load time
 let sanitizedFrontendUrl: string | null = null;
@@ -296,7 +298,7 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
             await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pendingUserId]);
             // Send activation email
             const mailOptions = {
-                from: process.env.EMAIL_FROM,
+                from: EMAIL_FROM,
                 html: accountActivationTemplate(pendingUser.fname, activationLink),
                 subject: 'Account Activation',
                 to: pendingUser.email,
@@ -368,8 +370,8 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
         // 5. Assign group (non-blocking - don't fail activation if group assignment fails)
         try {
             await adminModel.assignGroupByUserId(newUserId, 5);
-        } catch (groupError: any) {
-            logger.warn('Warning: Could not assign group to user:', { newUserId, error: groupError.message });
+        } catch (groupError: unknown) {
+            logger.warn('Warning: Could not assign group to user:', { newUserId, error: getErrorMessage(groupError) });
             // Continue with activation - group assignment is not critical
         }
 
@@ -382,20 +384,20 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                     try {
                         const group = await adminModel.getGroupById(groupId);
                         return group ? group.name : null;
-                    } catch (err: any) {
-                        logger.warn(`Could not fetch group ${groupId}:`, err.message);
+                    } catch (err: unknown) {
+                        logger.warn(`Could not fetch group ${groupId}: ${getErrorMessage(err)}`);
                         return null;
                     }
                 })
             )).filter(Boolean) as string[];
-        } catch (groupFetchError: any) {
-            logger.warn('Warning: Could not fetch user groups:', groupFetchError.message);
+        } catch (groupFetchError: unknown) {
+            logger.warn('Warning: Could not fetch user groups:', getErrorMessage(groupFetchError));
             // Continue with activation - group names not critical for email
         }
 
         // 6. Send activation email
         const mailOptions = {
-            from: process.env.EMAIL_FROM,
+            from: EMAIL_FROM,
             html: accountActivatedTemplate(
                 username,
                 email,
@@ -420,20 +422,20 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
                 message: `User ${username} (${email}) has activated their account.`,
                 type: 'activation'
             });
-        } catch (notifError: any) {
+        } catch (notifError: unknown) {
             logger.warn('Failed to create admin notification:', notifError);
             // Don't fail activation if notification fails
         }
 
         await authLogger.logAuthActivity(newUserId, 'activate', 'success', {}, req);
         return res.status(200).json({ message: 'Account activated successfully.', status: 'success' });
-    } catch (error: any) {
-        logger.error('Activation error:', { error: error.message, stack: error.stack });
-        await authLogger.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(error.message), reason: 'exception' }, req);
+    } catch (error: unknown) {
+        logger.error('Activation error:', { error: getErrorMessage(error), stack: error instanceof Error ? error.stack : undefined });
+        await authLogger.logAuthActivity(0, 'activate', 'fail', { contact, email, error: String(getErrorMessage(error)), reason: 'exception' }, req);
         return res.status(500).json({
             code: 500,
             message: 'Internal server error during activation',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+            error: process.env.NODE_ENV === 'development' ? getErrorMessage(error) : undefined,
             status: 'error'
         });
     }
@@ -441,7 +443,9 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
 // Login user
 export const login = async (req: Request, res: Response): Promise<Response> => {
-    const { emailOrUsername, password } = req.body;
+    const validation = parseBody(req.body, LoginSchema);
+    if (!validation.ok) return res.status(400).json(validation.error) as unknown as Response;
+    const { emailOrUsername, password } = validation.data;
     try {
         const result: any = await userModel.verifyLoginCredentials(emailOrUsername, password);
 
@@ -468,7 +472,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
         }
 
         // Single-session enforcement (configurable, allow same browser/IP re-login)
-        const singleSessionEnforcement = process.env.SINGLE_SESSION_ENFORCEMENT === 'true';
+        const singleSessionEnforcement = SINGLE_SESSION_ENFORCEMENT;
         if (singleSessionEnforcement) {
             const existingSession = await userModel.getUserSessionToken(result.user.id);
             if (existingSession) {
@@ -496,11 +500,11 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
             ip: userIp,
             os: userAgent || os.platform()
         });
-        if (!process.env.JWT_SECRET) {
+        if (!JWT_SECRET) {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
-        const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
+        const token = jwt.sign({ contact: result.user.contact, email: result.user.email, session: sessionToken, userId: result.user.id }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
 
         // Fetch navigation based on user's ID and groups
         // Point 19 FIX: Handle group fetch failures gracefully with fallback
@@ -614,9 +618,9 @@ export const verifyRegisterUser = async (req: Request, res: Response): Promise<R
             .split(',')
             .map(s => s.trim())
             .filter(Boolean);
-        const EXC_EMAILS = splitList(process.env.VERIFY_EXCLUDE_EMAILS).map(s => s.toLowerCase());
-        const EXC_CONTACTS = splitList(process.env.VERIFY_EXCLUDE_CONTACTS).map(s => s.toLowerCase().replace(/[^0-9+]/g, ''));
-        const EXC_NAMES = splitList(process.env.VERIFY_EXCLUDE_NAMES).map(s => s.toLowerCase());
+        const EXC_EMAILS = splitList(VERIFY_EXCLUDE_EMAILS).map(s => s.toLowerCase());
+        const EXC_CONTACTS = splitList(VERIFY_EXCLUDE_CONTACTS).map(s => s.toLowerCase().replace(/[^0-9+]/g, ''));
+        const EXC_NAMES = splitList(VERIFY_EXCLUDE_NAMES).map(s => s.toLowerCase());
 
         const normLower = (v: any) => String(v || '').trim().toLowerCase();
         const targetNameLower = normLower(name);
@@ -725,7 +729,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
         await userModel.updateUserResetTokenAndStatus(user.id, resetToken, 3);
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM,
+            from: EMAIL_FROM,
             html: resetPasswordTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/reset-password?token=${resetToken}`),
             subject: 'Reset Password',
             to: email,
@@ -832,7 +836,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
         await userModel.reactivateUser(user.id);
 
         const mailOptions = {
-            from: process.env.EMAIL_FROM,
+            from: EMAIL_FROM,
             html: passwordChangedTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/login`),
             subject: 'Password Changed Successfully',
             to: email,
@@ -902,18 +906,18 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
     }
 
     try {
-        if (!process.env.JWT_SECRET) {
+        if (!JWT_SECRET) {
             throw new Error('JWT_SECRET is not defined in environment variables');
         }
 
         // Allow verification of expired tokens for refresh (ignoreExpiration: true)
         let decoded: any;
         try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-        } catch (err: any) {
-            if (err.name === 'TokenExpiredError') {
+            decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+        } catch (err: unknown) {
+            if (err instanceof Error && err.name === 'TokenExpiredError') {
                 // Allow expired tokens for refresh, but verify signature
-                decoded = jwt.verify(token, process.env.JWT_SECRET, {
+                decoded = jwt.verify(token, JWT_SECRET, {
                     algorithms: ['HS256'],
                     ignoreExpiration: true
                 });
@@ -954,7 +958,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<Respons
                 session: newSessionToken,
                 userId: decoded.userId
             },
-            process.env.JWT_SECRET,
+            JWT_SECRET,
             { algorithm: 'HS256', expiresIn: '1h' }
         );
 
@@ -1005,7 +1009,7 @@ export const resetPasswordMulti = async (req: Request, res: Response): Promise<R
 
                 // Send reset email
                 const mailOptions = {
-                    from: process.env.EMAIL_FROM,
+                    from: EMAIL_FROM,
                     html: resetPasswordTemplate(name, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
                     subject: 'Reset Password',
                     to: email,
@@ -1083,7 +1087,7 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
             // Send activation email
             const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             const mailOptions = {
-                from: process.env.EMAIL_FROM,
+                from: EMAIL_FROM,
                 html: accountActivationTemplate(name, activationLink),
                 subject: 'Account Activation',
                 to: email,
@@ -1135,7 +1139,7 @@ export const deletePendingUser = async (req: Request, res: Response): Promise<Re
         } catch (error) {
             logger.error('Delete pending user error for id ' + uid + ':', error);
             await authLogger.logAuthActivity(0, 'other', 'fail', { action: 'delete_pending_user', error: String(error), pendingUserId: uid, reason: 'exception' }, req);
-            results.push({ error: String(error instanceof Error ? error.message : error), status: 'error', user_id: uid });
+            results.push({ error: String(error instanceof Error ? getErrorMessage(error) : error), status: 'error', user_id: uid });
         }
     }
 
@@ -1218,7 +1222,7 @@ export const sendAdminPincode = async (req: Request, res: Response): Promise<Res
         logger.error('Send admin pincode error:', error);
         await authLogger.logAuthActivity(0, 'other', 'fail', {
             action: 'send_admin_pincode',
-            error: String(error instanceof Error ? error.message : error)
+            error: String(error instanceof Error ? getErrorMessage(error) : error)
         }, req);
 
         return res.status(500).json({

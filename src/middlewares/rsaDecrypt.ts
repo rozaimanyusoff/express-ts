@@ -3,6 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
+import { getErrorMessage } from '../utils/errorUtils';
 
 const privateKey = fs.readFileSync(path.join(__dirname, '../../certs/private.pem'), 'utf8');
 
@@ -31,8 +32,8 @@ export const rsaDecryptMiddleware = (req: Request, res: Response, next: NextFunc
     req.body.password = decrypted.toString('utf-8');
     //logger.info('[RSA] Decryption successful:', req.body.password); // only for dev
     next();
-  } catch (err: any) {
-    logger.error('[RSA Decryption Error]', err.message || err);
+  } catch (err: unknown) {
+    logger.error('[RSA Decryption Error]', getErrorMessage(err));
     void res.status(400).json({ message: 'Invalid encrypted password' });
     return;
   }

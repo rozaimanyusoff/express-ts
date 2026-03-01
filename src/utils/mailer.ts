@@ -1,16 +1,15 @@
-import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 
-dotenv.config();
+import { EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_USER } from './env';
 
 const transporter = nodemailer.createTransport({
   auth: {
-    pass: process.env.EMAIL_PASS,
-    user: process.env.EMAIL_USER,
+    pass: EMAIL_PASS,
+    user: EMAIL_USER,
   },
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT),
+  host: EMAIL_HOST,
+  port: EMAIL_PORT,
   secure: false, // true for 465, false for other ports
 });
 
@@ -27,7 +26,7 @@ export interface MailOptions {
 // Backward compatible API: allow optional text, cc and attachments
 export const sendMail = async (to: string, subject: string, html: string, options?: MailOptions) => {
   const mail: any = {
-    from: `"ADMS" <${process.env.EMAIL_USER}>`,
+    from: `"ADMS" <${EMAIL_USER}>`,
     html,
     subject,
     to,
@@ -38,6 +37,6 @@ export const sendMail = async (to: string, subject: string, html: string, option
     mail.attachments = options.attachments;
   }
   const info = await transporter.sendMail(mail);
-   
+
   logger.info('Message sent: %s', info.messageId);
 };

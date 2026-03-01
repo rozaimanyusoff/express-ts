@@ -3,6 +3,12 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import ExcelJS from 'exceljs';
+
+import { getErrorMessage } from '../utils/errorUtils';
+import { validateBody } from '../utils/bodyValidator';
+import { CreatePurchaseRequestSchema } from '../utils/validation/purchase.schemas';
+import { parseBody } from '../utils/validation/index';
+import { UPLOAD_BASE_PATH } from '../utils/env';
 import logger from '../utils/logger';
 
 import * as assetModel from '../p.asset/assetModel';
@@ -227,7 +233,7 @@ export const getPurchaseRequestItems = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to retrieve purchases',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve purchases',
       status: 'error'
     });
   }
@@ -355,7 +361,7 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to retrieve purchase',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve purchase',
       status: 'error'
     });
   }
@@ -565,16 +571,16 @@ export const createPurchaseRequestItem = async (req: Request, res: Response) => 
       status: 'success'
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('already exists')) {
+    if (error instanceof Error && getErrorMessage(error).includes('already exists')) {
       return res.status(409).json({
         data: null,
-        message: error.message,
+        message: getErrorMessage(error),
         status: 'error'
       });
     } else {
       return res.status(500).json({
         data: null,
-        message: error instanceof Error ? error.message : 'Failed to create purchase',
+        message: error instanceof Error ? getErrorMessage(error) : 'Failed to create purchase',
         status: 'error'
       });
     }
@@ -695,7 +701,7 @@ export const resendPurchaseNotification = async (req: Request, res: Response) =>
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to resend notification',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to resend notification',
       status: 'error'
     });
   }
@@ -732,7 +738,7 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
           const existing = await purchaseModel.getPurchaseRequestItemById(id);
           if (existing?.upload_path) {
             const prevFilename = path.basename(existing.upload_path);
-            const base = process.env.UPLOAD_BASE_PATH ? String(process.env.UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
+            const base = UPLOAD_BASE_PATH ? String(UPLOAD_BASE_PATH) : path.join(process.cwd(), 'uploads');
             const prevFull = path.join(base, PURCHASE_SUBDIR, prevFilename);
             await fsPromises.unlink(prevFull).catch(() => { });
           }
@@ -961,16 +967,16 @@ export const updatePurchaseRequestItem = async (req: Request, res: Response) => 
       status: 'success'
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('already exists')) {
+    if (error instanceof Error && getErrorMessage(error).includes('already exists')) {
       return res.status(409).json({
         data: null,
-        message: error.message,
+        message: getErrorMessage(error),
         status: 'error'
       });
     } else {
       return res.status(500).json({
         data: null,
-        message: error instanceof Error ? error.message : 'Failed to update purchase',
+        message: error instanceof Error ? getErrorMessage(error) : 'Failed to update purchase',
         status: 'error'
       });
     }
@@ -988,16 +994,16 @@ export const deletePurchaseRequestItem = async (req: Request, res: Response) => 
       status: 'success'
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'Purchase record not found') {
+    if (error instanceof Error && getErrorMessage(error) === 'Purchase record not found') {
       return res.status(404).json({
         data: null,
-        message: error.message,
+        message: getErrorMessage(error),
         status: 'error'
       });
     } else {
       return res.status(500).json({
         data: null,
-        message: error instanceof Error ? error.message : 'Failed to delete purchase',
+        message: error instanceof Error ? getErrorMessage(error) : 'Failed to delete purchase',
         status: 'error'
       });
     }
@@ -1021,7 +1027,7 @@ export const getPurchaseRequestItemSummary = async (req: Request, res: Response)
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to retrieve purchase summary',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve purchase summary',
       status: 'error'
     });
   }
@@ -1224,7 +1230,7 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
 
     return res.status(201).json({ data: { insertIds: ids, pr_id: purchaseId }, message: `Registered ${ids.length} assets for PR ${purchaseId}`, status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to register assets', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to register assets', status: 'error' });
   }
 };
 
@@ -1246,7 +1252,7 @@ export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
 
     return res.json({ data, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve registry', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve registry', status: 'error' });
   }
 }
 
@@ -1260,7 +1266,7 @@ export const getPurchaseAssetRegistryByPrId = async (req: Request, res: Response
     const rows = await purchaseModel.getPurchaseAssetRegistryByPrId(purchaseId);
     return res.json({ data: rows, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve registry', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve registry', status: 'error' });
   }
 };
 
@@ -1371,7 +1377,7 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
     // Fields to sync: register_number, brand_id, category_id, classification, costcenter_id, location_id, model_id
     if (registryEntry && registryEntry.purchase_id) {
       const purchaseId = registryEntry.purchase_id;
-      
+
       // Build assetdata update payload with fields that were changed
       const assetDataUpdate: any = {};
       if (register_number !== undefined) assetDataUpdate.register_number = register_number;
@@ -1381,7 +1387,7 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
       if (costcenter_id !== undefined) assetDataUpdate.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
       if (location_id !== undefined) assetDataUpdate.location_id = location_id ? Number(location_id) : null;
       if (model_id !== undefined) assetDataUpdate.model_id = resolvedModelId;
-      
+
       // Update assetdata with the sync fields
       if (Object.keys(assetDataUpdate).length > 0) {
         await purchaseModel.updateAssetDataFromRegistry(purchaseId, assetDataUpdate);
@@ -1390,7 +1396,7 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
 
     return res.json({ data: null, message: 'Purchase asset registry updated successfully', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update registry', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to update registry', status: 'error' });
   }
 };
 
@@ -1400,7 +1406,7 @@ export const getDeliveries = async (req: Request, res: Response) => {
     const rows = await purchaseModel.getDeliveries();
     return res.json({ data: rows, message: 'Deliveries retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve deliveries', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve deliveries', status: 'error' });
   }
 };
 
@@ -1411,7 +1417,7 @@ export const getDeliveryById = async (req: Request, res: Response) => {
     if (!rec) return res.status(404).json({ data: null, message: 'Delivery not found', status: 'error' });
     return res.json({ data: rec, message: 'Delivery retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve delivery', status: 'error' });
   }
 };
 
@@ -1446,7 +1452,7 @@ export const createDelivery = async (req: Request, res: Response) => {
 
     return res.status(201).json({ data: { id: insertId }, message: 'Delivery created', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to create delivery', status: 'error' });
   }
 };
 
@@ -1476,7 +1482,7 @@ export const updateDelivery = async (req: Request, res: Response) => {
     await purchaseModel.updateDelivery(id, payload);
     return res.json({ data: null, message: 'Delivery updated', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to update delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to update delivery', status: 'error' });
   }
 };
 
@@ -1486,7 +1492,7 @@ export const deleteDelivery = async (req: Request, res: Response) => {
     await purchaseModel.deleteDelivery(id);
     return res.json({ data: null, message: 'Delivery deleted', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to delete delivery', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to delete delivery', status: 'error' });
   }
 };
 
@@ -1580,7 +1586,7 @@ export const getPurchaseRequests = async (req: Request, res: Response) => {
 
     return res.json({ data: enriched, message: 'Purchase requests retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve purchase requests', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve purchase requests', status: 'error' });
   }
 };
 
@@ -1686,27 +1692,25 @@ export const getPurchaseRequestById = async (req: Request, res: Response) => {
 
     return res.json({ data: enrichedRec, message: 'Purchase request retrieved', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to retrieve purchase request', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve purchase request', status: 'error' });
   }
 };
 
 export const createPurchaseRequest = async (req: Request, res: Response) => {
   try {
-    const body = req.body || {};
-    const payload: any = {
-      costcenter_id: Number(body.costcenter_id),
-      pr_date: String(body.pr_date || '').trim(),
-      pr_no: body.pr_no ?? null,
-      ramco_id: String(body.ramco_id || '').trim(),
-      request_type: String(body.request_type || '').trim(),
+    const validation = parseBody(req.body, CreatePurchaseRequestSchema);
+    if (!validation.ok) return res.status(400).json(validation.error);
+    const payload = {
+      costcenter_id: validation.data.costcenter_id,
+      pr_date: validation.data.pr_date,
+      pr_no: validation.data.pr_no ?? null,
+      ramco_id: validation.data.ramco_id,
+      request_type: validation.data.request_type,
     };
-    if (!payload.pr_date || !payload.request_type || !payload.ramco_id || !payload.costcenter_id) {
-      return res.status(400).json({ data: null, message: 'Missing required fields', status: 'error' });
-    }
     const id = await purchaseModel.createPurchaseRequest(payload);
     return res.status(201).json({ data: { id }, message: 'Purchase request created', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to create purchase request', status: 'error' });
+    return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to create purchase request', status: 'error' });
   }
 };
 
@@ -1723,7 +1727,7 @@ export const updatePurchaseRequest = async (req: Request, res: Response) => {
     await purchaseModel.updatePurchaseRequest(id, data);
     return res.json({ message: 'Purchase request updated', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to update purchase request', status: 'error' });
+    return res.status(500).json({ message: error instanceof Error ? getErrorMessage(error) : 'Failed to update purchase request', status: 'error' });
   }
 };
 
@@ -1733,7 +1737,7 @@ export const deletePurchaseRequest = async (req: Request, res: Response) => {
     await purchaseModel.deletePurchaseRequest(id);
     return res.json({ message: 'Purchase request deleted', status: 'success' });
   } catch (error) {
-    return res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to delete purchase request', status: 'error' });
+    return res.status(500).json({ message: error instanceof Error ? getErrorMessage(error) : 'Failed to delete purchase request', status: 'error' });
   }
 };
 
@@ -1749,7 +1753,7 @@ export const getSuppliers = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to retrieve suppliers',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve suppliers',
       status: 'error'
     });
   }
@@ -1774,7 +1778,7 @@ export const getSupplierById = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to retrieve supplier',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve supplier',
       status: 'error'
     });
   }
@@ -1792,7 +1796,7 @@ export const createSupplier = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to create supplier',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to create supplier',
       status: 'error'
     });
   }
@@ -1811,7 +1815,7 @@ export const updateSupplier = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to update supplier',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to update supplier',
       status: 'error'
     });
   }
@@ -1836,7 +1840,7 @@ export const deleteSupplier = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to delete supplier',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to delete supplier',
       status: 'error'
     });
   }
@@ -1880,7 +1884,7 @@ export const matchSuppliers = async (req: Request, res: Response) => {
          ORDER BY name ASC`,
         [word]
       );
-      
+
       const suppliers = (supplierRows as any[]) || [];
       for (const supplier of suppliers) {
         if (!matchesMap.has(supplier.id)) {
@@ -1929,7 +1933,7 @@ export const matchSuppliers = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to match suppliers',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to match suppliers',
       status: 'error'
     });
   }
@@ -1972,7 +1976,7 @@ export const matchModels = async (req: Request, res: Response) => {
          ORDER BY name ASC`,
         [word]
       );
-      
+
       const models = (modelRows as any[]) || [];
       for (const model of models) {
         if (!matchesMap.has(model.id)) {
@@ -2021,7 +2025,7 @@ export const matchModels = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to match models',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to match models',
       status: 'error'
     });
   }
@@ -2337,7 +2341,7 @@ ${almostMatchesSection}
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to check registry models',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to check registry models',
       status: 'error'
     });
   }
@@ -2429,7 +2433,7 @@ export const importPurchaseData = async (req: Request, res: Response) => {
   } catch (error) {
     return res.status(500).json({
       data: null,
-      message: error instanceof Error ? error.message : 'Failed to import purchase data',
+      message: error instanceof Error ? getErrorMessage(error) : 'Failed to import purchase data',
       status: 'error'
     });
   }
@@ -2443,10 +2447,10 @@ const writeImportLog = async (logEntry: any): Promise<void> => {
   try {
     const modulePath = path.join(__dirname, '..', '..', 'p.purchase');
     const logPath = path.join(modulePath, 'import.logs');
-    
+
     // Ensure directory exists
     await fsPromises.mkdir(modulePath, { recursive: true });
-    
+
     // Append log entry as JSON line
     const logLine = JSON.stringify(logEntry) + '\n';
     await fsPromises.appendFile(logPath, logLine, 'utf-8');

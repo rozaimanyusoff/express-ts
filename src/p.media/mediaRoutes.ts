@@ -120,6 +120,12 @@ router.patch(
 );
 
 /**
+ * PUT /api/media/correspondence/:id/qa
+ * Update QA classification fields (letter_type, category, priority, remarks) and replace recipients.
+ */
+router.put('/correspondence/:id/qa', asyncHandler(mediaController.qaCorrespondence));
+
+/**
  * DELETE /api/media/correspondence/:id
  * Soft-delete a correspondence.
  */

@@ -34,5 +34,5 @@
     "skipLibCheck": true // Skip .d.ts checking; speeds up build, avoids upstream type conflicts
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "scripts"]
+  "exclude": ["node_modules", "dist", "scripts", "src/old.purchase"]
 }

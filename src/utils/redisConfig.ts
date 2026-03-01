@@ -1,23 +1,21 @@
-import * as dotenv from 'dotenv';
-
-dotenv.config();
+import { REDIS_DB, REDIS_ENABLED, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT } from './env';
 
 export const redisConfig = {
   // Check if Redis is enabled via environment variable
-  enabled: process.env.REDIS_ENABLED !== 'false', // Default: true (enabled)
-  
+  enabled: REDIS_ENABLED,
+
   // Redis connection settings
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  db: parseInt(process.env.REDIS_DB || '0'),
-  
+  host: REDIS_HOST,
+  port: REDIS_PORT,
+  password: REDIS_PASSWORD,
+  db: REDIS_DB,
+
   // Redis retry strategy
   retryStrategy: (times: number) => {
     const delay = Math.min(times * 50, 2000);
     return delay;
   },
-  
+
   // Redis connection options
   enableReadyCheck: false,
   enableOfflineQueue: true,

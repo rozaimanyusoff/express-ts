@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import logger from '../utils/logger';
 
+import { RATE_LIMIT_BLOCK_MINUTES, RATE_LIMIT_MAX_ATTEMPTS, RATE_LIMIT_WINDOW_MINUTES } from '../utils/env';
 import { logAuthActivity } from '../utils/authLogger';
 
 interface BlockRecord {
@@ -22,7 +23,7 @@ const attemptMap = new Map<string, AttemptRecord>();
 export function getAttemptInfo(req: Request, routeIdOverride?: string): { current: number; limit: number; remaining: number; resetAt: number } {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.socket.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -45,7 +46,7 @@ export function getAttemptInfo(req: Request, routeIdOverride?: string): { curren
 export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.socket.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -70,7 +71,7 @@ export function recordFailedAttempt(req: Request, routeIdOverride?: string) {
 export function resetAttempts(req: Request, routeIdOverride?: string) {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.socket.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -80,16 +81,16 @@ export function resetAttempts(req: Request, routeIdOverride?: string) {
 }
 
 // Read runtime configuration from env with safe defaults
-const toPosInt = (v: any, defVal: number) => {
+const toPosInt = (v: string | undefined, defVal: number) => {
     const n = Number.parseInt(String(v ?? ''));
     return Number.isFinite(n) && n > 0 ? n : defVal;
 };
 
 // Defaults preserve existing behavior unless env overrides are set
-const BLOCK_MINUTES = toPosInt(process.env.RATE_LIMIT_BLOCK_MINUTES, 60); // default 60 minutes
+const BLOCK_MINUTES = toPosInt(RATE_LIMIT_BLOCK_MINUTES, 60); // default 60 minutes
 const BLOCK_DURATION = BLOCK_MINUTES * 60 * 1000;
-const MAX_ATTEMPTS = toPosInt(process.env.RATE_LIMIT_MAX_ATTEMPTS, 5); // default 5
-const WINDOW_MINUTES = toPosInt(process.env.RATE_LIMIT_WINDOW_MINUTES, 15); // default 15 minutes
+const MAX_ATTEMPTS = toPosInt(RATE_LIMIT_MAX_ATTEMPTS, 5); // default 5
+const WINDOW_MINUTES = toPosInt(RATE_LIMIT_WINDOW_MINUTES, 15); // default 15 minutes
 const WINDOW_MS = WINDOW_MINUTES * 60 * 1000; // allow MAX_ATTEMPTS per WINDOW_MINUTES
 // Middleware to limit the number of requests from a single IP+userAgent
 // to prevent brute-force attacks
@@ -117,7 +118,7 @@ export function clearClientBlockByParams(ip: string, userAgent: string, routeId:
 export function getClientBlockInfo(req: Request, routeIdOverride?: string): { blocked: boolean; blockedUntil: null | number; remainingMs: number; } {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket.remoteAddress || (req as any).connection?.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.socket.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -135,7 +136,7 @@ export function getClientBlockInfo(req: Request, routeIdOverride?: string): { bl
 export function getClientKey(req: Request): string {
     const xfwd = req.headers['x-forwarded-for'];
     const forwarded = Array.isArray(xfwd) ? xfwd[0] : (xfwd || '');
-    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.connection.remoteAddress || '')
+    const ip = String(forwarded || req.ip || req.socket.remoteAddress || req.socket.remoteAddress || '')
         .split(',')[0]
         .trim();
     const userAgent = String(req.headers['user-agent'] || '').trim();
@@ -168,8 +169,9 @@ export function listActiveBlocks(): { blockedUntil: number; firstBlockedAt: null
 
 // Best-effort identity extraction for observability on auth routes
 function extractIdentity(req: Request): null | string {
-    const b: any = (req as any).body || {};
-    const val = b.emailOrUsername ?? b.email ?? b.username ?? b.contact ?? null;
+    // req.body is typed as any by Express — cast to a loose record for safe access
+    const b = (req.body as Record<string, unknown>) || {};
+    const val = b['emailOrUsername'] ?? b['email'] ?? b['username'] ?? b['contact'] ?? null;
     return val != null ? String(val) : null;
 }
 

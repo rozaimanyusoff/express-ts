@@ -47,10 +47,10 @@ async function ensureAuthLogsDir(): Promise<void> {
 export async function logAuthActivityToFile(entry: AuthLogEntry): Promise<void> {
   try {
     await ensureAuthLogsDir();
-    
+
     const filename = getLogFilename();
     const filepath = path.join(AUTH_LOGS_DIR, filename);
-    
+
     // Append the entry as a JSON line
     const logLine = JSON.stringify(entry) + '\n';
     await fs.appendFile(filepath, logLine, 'utf-8');
@@ -68,10 +68,10 @@ export async function getAuthLogsForDateRange(
   endDate: Date
 ): Promise<AuthLogEntry[]> {
   const logs: AuthLogEntry[] = [];
-  
+
   try {
     await ensureAuthLogsDir();
-    
+
     // Generate list of dates in range
     const dateList: Date[] = [];
     let currentDate = new Date(startDate);
@@ -79,16 +79,16 @@ export async function getAuthLogsForDateRange(
       dateList.push(new Date(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
+
     // Read logs from each day
     for (const date of dateList) {
       const filename = getLogFilename(date);
       const filepath = path.join(AUTH_LOGS_DIR, filename);
-      
+
       try {
         const content = await fs.readFile(filepath, 'utf-8');
         const lines = content.split('\n').filter(line => line.trim());
-        
+
         for (const line of lines) {
           try {
             const entry = JSON.parse(line) as AuthLogEntry;
@@ -97,14 +97,14 @@ export async function getAuthLogsForDateRange(
             logger.warn('Failed to parse auth log line:', e);
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         // File might not exist for this date, which is OK
-        if (error.code !== 'ENOENT') {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
           logger.warn(`Error reading auth log for ${filename}:`, error);
         }
       }
     }
-    
+
     return logs;
   } catch (error) {
     logger.error('Error retrieving auth logs:', error);
@@ -130,10 +130,10 @@ export async function getUserAuthLogsForDateRange(
 export async function getTodayAuthLogs(): Promise<AuthLogEntry[]> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  
+
   return getAuthLogsForDateRange(today, tomorrow);
 }
 
@@ -151,24 +151,24 @@ export async function getUserTodayAuthLogs(userId: number): Promise<AuthLogEntry
 export async function archiveOldLogs(daysToKeep: number = 90): Promise<number> {
   try {
     await ensureAuthLogsDir();
-    
+
     const files = await fs.readdir(AUTH_LOGS_DIR);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-    
+
     let archivedCount = 0;
-    
+
     for (const file of files) {
       if (!file.startsWith('auth_') || !file.endsWith('.jsonl')) {
         continue;
       }
-      
+
       // Extract date from filename (auth_YYYY-MM-DD.jsonl)
       const dateMatch = file.match(/auth_(\d{4})-(\d{2})-(\d{2})\.jsonl/);
       if (!dateMatch) continue;
-      
+
       const fileDate = new Date(`${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`);
-      
+
       if (fileDate < cutoffDate) {
         const filepath = path.join(AUTH_LOGS_DIR, file);
         const archiveDir = path.join(AUTH_LOGS_DIR, 'archive');
@@ -178,7 +178,7 @@ export async function archiveOldLogs(daysToKeep: number = 90): Promise<number> {
         logger.info(`Archived auth log: ${file}`);
       }
     }
-    
+
     return archivedCount;
   } catch (error) {
     logger.error('Error archiving old logs:', error);

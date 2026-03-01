@@ -1,4 +1,3 @@
-import dotenv from 'dotenv';
 import { createServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
@@ -6,20 +5,19 @@ import logger from './utils/logger';
 
 import app from './app.js';
 import * as userModel from './p.user/userModel.js';
+import { CORS_ALLOWED_ORIGINS, JWT_SECRET, SINGLE_SESSION_ENFORCEMENT, SERVER_PORT } from './utils/env.js';
 import { startPeriodicHealthCheck, testConnection } from './utils/dbHealthCheck.js';
 import { setSocketIOInstance } from './utils/socketIoInstance.js';
 import { initAssetTransferJob } from './jobs/processAssetTransfers.js';
 import { initializePendingUserCleanup } from './jobs/cleanupExpiredPendingUsers.js';
 
-dotenv.config();
-
-const PORT = process.env.SERVER_PORT;
+const PORT = SERVER_PORT;
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     methods: ['GET', 'POST'],
-    origin: process.env.CORS_ALLOWED_ORIGINS?.split(',') || '*' // Use configured CORS origins
+    origin: CORS_ALLOWED_ORIGINS?.split(',') || '*' // Use configured CORS origins
   }
 });
 
@@ -28,10 +26,10 @@ io.use(async (socket, next) => {
   if (!token) { next(new Error('unauthorized')); return; }
   try {
     if (!process.env.JWT_SECRET) throw new Error('Missing JWT secret');
-    const decoded: any = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const decoded: any = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
 
     // Validate session token if single-session enforcement is enabled
-    if (process.env.SINGLE_SESSION_ENFORCEMENT === 'true') {
+    if (SINGLE_SESSION_ENFORCEMENT) {
       const userId = decoded.userId;
       const sessionToken = decoded.session;
 

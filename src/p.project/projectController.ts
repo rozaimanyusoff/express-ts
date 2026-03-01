@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import path from 'path';
 
+import { getErrorMessage } from '../utils/errorUtils';
 import * as assetModel from '../p.asset/assetModel';
 import { buildStoragePath, safeMove, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
 import * as projectModel from './projectModel';
@@ -83,8 +84,8 @@ export const getProjects = async (req: Request, res: Response) => {
     );
 
     return res.status(200).json({ data: enrichedProjects, message: `${enrichedProjects.length} Projects retrieved`, status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch projects', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch projects', status: 'error' });
   }
 };
 
@@ -169,8 +170,8 @@ export const getProjectById = async (req: Request, res: Response) => {
       message: 'Project retrieved',
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch project', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch project', status: 'error' });
   }
 };
 
@@ -322,8 +323,8 @@ export const createProject = async (req: Request, res: Response) => {
     }
 
     return res.status(201).json({ data: { due_date, id: projId, overall_progress: percent_complete, priority: priority ?? null, scopes: createdScopes, start_date, tags: projectTags }, message: 'Project created', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create project', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create project', status: 'error' });
   }
 };
 
@@ -368,8 +369,8 @@ export const updateProject = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ data: null, message: 'Project updated', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update project', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update project', status: 'error' });
   }
 };
 
@@ -386,8 +387,8 @@ export const deleteProject = async (req: Request, res: Response) => {
 
     await projectModel.deleteProject(projectId);
     return res.status(200).json({ data: null, message: 'Project deleted', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete project', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete project', status: 'error' });
   }
 };
 
@@ -485,8 +486,8 @@ export const addScope = async (req: Request, res: Response) => {
       });
     }
     return res.status(201).json({ data: { id, ...scopePayload }, message: 'Scope created', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create scope', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create scope', status: 'error' });
   }
 };
 
@@ -509,8 +510,8 @@ export const removeScope = async (req: Request, res: Response) => {
     // Also remove assignment data for this project/scope
     await projectModel.deleteAssignmentByProjectScope(projectId, scopeId);
     return res.status(200).json({ data: { id: scopeId }, message: 'Scope deleted', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete scope', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete scope', status: 'error' });
   }
 };
 
@@ -537,8 +538,8 @@ export const getScopeById = async (req: Request, res: Response) => {
       message: 'Scope retrieved',
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch scope', status: 'error' });
   }
 };
 
@@ -668,7 +669,7 @@ export const updateScope = async (req: Request, res: Response) => {
       const changedBy = (req.user as any)?.ramco_id || (req.user as any)?.id || 'system';
       const reason = body.activity_reason || body.reason || null;
       const comments = body.review_comments || body.comments || null;
-      
+
       await projectModel.createActivity({
         scope_id: scopeId,
         project_id: projectId,
@@ -745,8 +746,8 @@ export const updateScope = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ data: { id: scopeId }, message: 'Scope updated', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update scope', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update scope', status: 'error' });
   }
 };
 
@@ -786,8 +787,8 @@ export const reorderScopes = async (req: Request, res: Response) => {
     }
     await projectModel.setScopesOrder(projectId, order);
     return res.status(200).json({ data: { order }, message: 'Scopes reordered', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to reorder scopes', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to reorder scopes', status: 'error' });
   }
 };
 
@@ -820,8 +821,8 @@ export const getScopeActivityHistory = async (req: Request, res: Response) => {
       message: `Retrieved ${activities.length} activity records`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope activity history', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch scope activity history', status: 'error' });
   }
 };
 
@@ -851,8 +852,8 @@ export const getScopeActivitySummary = async (req: Request, res: Response) => {
       message: 'Activity summary retrieved',
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope activity summary', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch scope activity summary', status: 'error' });
   }
 };
 
@@ -893,8 +894,8 @@ export const getProjectAssignments = async (req: Request, res: Response) => {
       message: `${enriched.length} assignments retrieved`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -939,8 +940,8 @@ export const getAllAssignments = async (req: Request, res: Response) => {
       message: `${enriched.length} assignments retrieved`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -987,8 +988,8 @@ export const getAssignmentsByAssignee = async (req: Request, res: Response) => {
       message: `${enriched.length} assignments retrieved for ${assignee}`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch assignments', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch assignments', status: 'error' });
   }
 };
 
@@ -1052,8 +1053,8 @@ export const getWorkloadSummary = async (req: Request, res: Response) => {
       message: `Workload summary for ${enriched.length} developers`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch workload summary', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch workload summary', status: 'error' });
   }
 };
 
@@ -1073,8 +1074,8 @@ export const createDevCoreTask = async (req: Request, res: Response) => {
 
     const id = await projectModel.createDevCoreTask({ description, example, title });
     return res.status(201).json({ data: { id }, message: 'Dev core task created', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create dev core task', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create dev core task', status: 'error' });
   }
 };
 
@@ -1087,8 +1088,8 @@ export const getDevCoreTasks = async (req: Request, res: Response) => {
       message: `Retrieved ${tasks.length} dev core tasks`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch dev core tasks', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch dev core tasks', status: 'error' });
   }
 };
 
@@ -1108,8 +1109,8 @@ export const getDevCoreTaskById = async (req: Request, res: Response) => {
       message: 'Dev core task retrieved',
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch dev core task', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch dev core task', status: 'error' });
   }
 };
 
@@ -1133,8 +1134,8 @@ export const updateDevCoreTask = async (req: Request, res: Response) => {
 
     await projectModel.updateDevCoreTask(taskId, updateData);
     return res.status(200).json({ data: null, message: 'Dev core task updated', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update dev core task', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update dev core task', status: 'error' });
   }
 };
 
@@ -1152,8 +1153,8 @@ export const deleteDevCoreTask = async (req: Request, res: Response) => {
 
     await projectModel.deleteDevCoreTask(taskId);
     return res.status(200).json({ data: null, message: 'Dev core task deleted', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete dev core task', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete dev core task', status: 'error' });
   }
 };
 
@@ -1174,8 +1175,8 @@ export const createCoreFeature = async (req: Request, res: Response) => {
 
     const id = await projectModel.createCoreFeature({ category, description, example_module, feature_key, feature_name });
     return res.status(201).json({ data: { id }, message: 'Core feature created', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create core feature', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create core feature', status: 'error' });
   }
 };
 
@@ -1188,8 +1189,8 @@ export const getCoreFeatures = async (req: Request, res: Response) => {
       message: `Retrieved ${features.length} core features`,
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch core features', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch core features', status: 'error' });
   }
 };
 
@@ -1209,8 +1210,8 @@ export const getCoreFeatureById = async (req: Request, res: Response) => {
       message: 'Core feature retrieved',
       status: 'success'
     });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch core feature', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch core feature', status: 'error' });
   }
 };
 
@@ -1236,8 +1237,8 @@ export const updateCoreFeature = async (req: Request, res: Response) => {
 
     await projectModel.updateCoreFeature(featureId, updateData);
     return res.status(200).json({ data: null, message: 'Core feature updated', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update core feature', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update core feature', status: 'error' });
   }
 };
 
@@ -1255,8 +1256,8 @@ export const deleteCoreFeature = async (req: Request, res: Response) => {
 
     await projectModel.deleteCoreFeature(featureId);
     return res.status(200).json({ data: null, message: 'Core feature deleted', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete core feature', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete core feature', status: 'error' });
   }
 };
 
@@ -1266,8 +1267,8 @@ export const getChecklists = async (req: Request, res: Response) => {
   try {
     const checklists = await projectModel.getChecklists();
     return res.json({ data: checklists, message: 'Checklists retrieved', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklists', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch checklists', status: 'error' });
   }
 };
 
@@ -1284,8 +1285,8 @@ export const getChecklistById = async (req: Request, res: Response) => {
     }
 
     return res.json({ data: checklist, message: 'Checklist retrieved', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklist', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch checklist', status: 'error' });
   }
 };
 
@@ -1300,8 +1301,8 @@ export const createChecklist = async (req: Request, res: Response) => {
     const checklist = await projectModel.getChecklistById(id);
 
     return res.status(201).json({ data: checklist, message: 'Checklist created successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create checklist', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create checklist', status: 'error' });
   }
 };
 
@@ -1327,8 +1328,8 @@ export const updateChecklist = async (req: Request, res: Response) => {
     const updated = await projectModel.getChecklistById(id);
 
     return res.json({ data: updated, message: 'Checklist updated successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update checklist', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update checklist', status: 'error' });
   }
 };
 
@@ -1347,8 +1348,8 @@ export const deleteChecklist = async (req: Request, res: Response) => {
 
     await projectModel.deleteChecklist(id);
     return res.json({ data: null, message: 'Checklist deleted successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete checklist', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete checklist', status: 'error' });
   }
 };
 
@@ -1362,8 +1363,8 @@ export const getScopeChecklists = async (req: Request, res: Response) => {
 
     const checklists = await projectModel.getScopeChecklistsByScope(scopeId);
     return res.json({ data: checklists, message: 'Scope checklists retrieved', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch scope checklists', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch scope checklists', status: 'error' });
   }
 };
 
@@ -1377,8 +1378,8 @@ export const getProjectChecklists = async (req: Request, res: Response) => {
 
     const checklists = await projectModel.getScopeChecklistsByProject(projectId);
     return res.json({ data: checklists, message: 'Project checklists retrieved', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch project checklists', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch project checklists', status: 'error' });
   }
 };
 
@@ -1396,8 +1397,8 @@ export const getScopeChecklistMapById = async (req: Request, res: Response) => {
     }
 
     return res.json({ data: mapping, message: 'Checklist mapping retrieved', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to fetch checklist mapping', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to fetch checklist mapping', status: 'error' });
   }
 };
 
@@ -1426,8 +1427,8 @@ export const createScopeChecklistMap = async (req: Request, res: Response) => {
 
     const mapping = await projectModel.getScopeChecklistMapById(id);
     return res.status(201).json({ data: mapping, message: 'Checklist mapping created successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to create checklist mapping', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to create checklist mapping', status: 'error' });
   }
 };
 
@@ -1452,8 +1453,8 @@ export const updateScopeChecklistMap = async (req: Request, res: Response) => {
 
     const updated = await projectModel.getScopeChecklistMapById(id);
     return res.json({ data: updated, message: 'Checklist mapping updated successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to update checklist mapping', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to update checklist mapping', status: 'error' });
   }
 };
 
@@ -1472,7 +1473,7 @@ export const deleteScopeChecklistMap = async (req: Request, res: Response) => {
 
     await projectModel.deleteScopeChecklistMap(id);
     return res.json({ data: null, message: 'Checklist mapping deleted successfully', status: 'success' });
-  } catch (e: any) {
-    return res.status(500).json({ data: null, message: e?.message || 'Failed to delete checklist mapping', status: 'error' });
+  } catch (e: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(e) || 'Failed to delete checklist mapping', status: 'error' });
   }
 };

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import redis from '../utils/redis';
 import redisConfig from '../utils/redisConfig';
 import logger from '../utils/logger';
+import { getErrorMessage } from '../utils/errorUtils';
 
 export const createCacheMiddleware = (
   ttl: number = 300,
@@ -22,7 +23,7 @@ export const createCacheMiddleware = (
     const cacheKey = `${keyPrefix}:${req.originalUrl || req.url}`;
 
     // Try to get from cache asynchronously
-    redis.get(cacheKey).then((cached: any) => {
+    redis.get(cacheKey).then((cached: string | null) => {
       if (cached) {
         logger.debug(`Cache hit: ${cacheKey}`);
         res.set('X-Cache', 'HIT');
@@ -34,15 +35,15 @@ export const createCacheMiddleware = (
       const originalJson = res.json.bind(res);
 
       // Override json to cache response
-      res.json = function (data: any) {
+      res.json = function (data: unknown) {
         try {
           if (res.statusCode === 200) {
-            redis.setex(cacheKey, ttl, JSON.stringify(data)).catch((err: any) => {
-              logger.error(`Failed to cache response: ${err.message}`);
+            redis.setex(cacheKey, ttl, JSON.stringify(data)).catch((err: unknown) => {
+              logger.error(`Failed to cache response: ${getErrorMessage(err)}`);
             });
           }
         } catch (error) {
-          logger.error(`Cache middleware set error: ${(error as any).message}`);
+          logger.error(`Cache middleware set error: ${getErrorMessage(error)}`);
         }
 
         res.set('X-Cache', 'MISS');
@@ -50,8 +51,8 @@ export const createCacheMiddleware = (
       };
 
       next();
-    }).catch((error: any) => {
-      logger.error(`Cache middleware get error: ${(error as any).message}`);
+    }).catch((error: unknown) => {
+      logger.error(`Cache middleware get error: ${getErrorMessage(error)}`);
       next();
     });
   };

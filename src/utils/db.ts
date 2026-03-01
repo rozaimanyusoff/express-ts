@@ -1,8 +1,6 @@
-import * as dotenv from 'dotenv';
-// filepath: /Users/rozaiman/express-ts/src/utils/dbPool.ts
 import * as mysql from 'mysql2/promise';
 
-dotenv.config();
+import { DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER, DB2_HOST, DB2_NAME, DB2_PASSWORD, DB2_PORT, DB2_USER } from './env';
 
 // Enhanced pool configuration to prevent ETIMEDOUT errors
 const poolConfig = {
@@ -11,18 +9,18 @@ const poolConfig = {
   connectionLimit: 10,
   // Timeout settings
   connectTimeout: 10000, // 10 seconds
-  database: process.env.DB_NAME,
+  database: DB_NAME,
   // Connection health
   enableKeepAlive: true,
-  host: process.env.DB_HOST,
+  host: DB_HOST,
   idleTimeout: 60000, // 60 seconds
   keepAliveInitialDelay: 0,
   maxIdle: 10,
-  password: process.env.DB_PASSWORD,
-  port: parseInt(process.env.DB_PORT!),
+  password: DB_PASSWORD,
+  port: DB_PORT,
   queueLimit: 0,
   timeout: 30000, // 30 seconds for queries
-  user: process.env.DB_USER,
+  user: DB_USER,
   // Retry configuration
   waitForConnections: true,
 };
@@ -33,18 +31,18 @@ const pool2Config = {
   connectionLimit: 10,
   // Timeout settings
   connectTimeout: 10000,
-  database: process.env.DB2_NAME,
+  database: DB2_NAME,
   // Connection health
   enableKeepAlive: true,
-  host: process.env.DB2_HOST,
+  host: DB2_HOST,
   idleTimeout: 60000,
   keepAliveInitialDelay: 0,
   maxIdle: 10,
-  password: process.env.DB2_PASSWORD,
-  port: parseInt(process.env.DB2_PORT!),
+  password: DB2_PASSWORD,
+  port: DB2_PORT,
   queueLimit: 0,
   timeout: 30000,
-  user: process.env.DB2_USER,
+  user: DB2_USER,
   // Retry configuration
   waitForConnections: true,
 };

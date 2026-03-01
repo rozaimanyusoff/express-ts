@@ -1,7 +1,12 @@
 import cron from 'node-cron';
+import { RowDataPacket } from 'mysql2';
 import { pool } from '../utils/db.js';
 import * as assetModel from '../p.asset/assetModel.js';
 import logger from '../utils/logger';
+
+interface LockRow extends RowDataPacket {
+  lock_acquired: number;
+}
 
 const LOCK_NAME = 'asset_transfer_processing';
 const LOCK_TIMEOUT = 10; // seconds, should be less than cron interval
@@ -12,11 +17,11 @@ const LOCK_TIMEOUT = 10; // seconds, should be less than cron interval
  */
 const acquireLock = async (): Promise<boolean> => {
   try {
-    const [result] = await pool.query(
+    const [rows] = await pool.query<LockRow[]>(
       `SELECT GET_LOCK(?, ?) as lock_acquired`,
       [LOCK_NAME, LOCK_TIMEOUT]
     );
-    const lockAcquired = (result as any[])[0]?.lock_acquired === 1;
+    const lockAcquired = rows[0]?.lock_acquired === 1;
     if (lockAcquired) {
       logger.info(`🔒 Lock acquired for asset transfer processing`);
     } else {
@@ -50,7 +55,7 @@ export const initAssetTransferJob = () => {
   // Format: minute hour day month dayOfWeek
   const task = cron.schedule('0 3 * * *', async () => {
     logger.info('🔄 [Asset Transfer Job] Starting scheduled processing...');
-    
+
     const lockAcquired = await acquireLock();
     if (!lockAcquired) {
       logger.debug('⏭️  [Asset Transfer Job] Skipping - another instance is processing');
@@ -69,7 +74,7 @@ export const initAssetTransferJob = () => {
 
   // Optionally validate that task is running
   logger.info('📅 [Asset Transfer Job] Scheduled for 3:00 AM daily');
-  
+
   return task;
 };
 
@@ -78,7 +83,7 @@ export const initAssetTransferJob = () => {
  */
 export const manualProcessAssetTransfers = async () => {
   logger.info('🔄 [Manual Trigger] Starting asset transfer processing...');
-  
+
   const lockAcquired = await acquireLock();
   if (!lockAcquired) {
     throw new Error('Could not acquire lock - another instance is processing');

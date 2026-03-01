@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Request, Response } from 'express';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
 import * as billingModel from '../p.billing/billingModel';
 import * as purchaseModel from '../p.purchase/purchaseModel';
@@ -628,7 +629,7 @@ export const updateAssetBasicSpecs = async (req: Request, res: Response) => {
 		});
 	} catch (error) {
 		return res.status(400).json({
-			message: error instanceof Error ? error.message : 'Failed to update asset specs',
+			message: error instanceof Error ? getErrorMessage(error) : 'Failed to update asset specs',
 			status: 'error'
 		});
 	}
@@ -886,7 +887,7 @@ export const registerAssetsBatch = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Failed to register assets batch', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to register assets batch', status: 'error' });
 	}
 }
 
@@ -1595,11 +1596,11 @@ export const createDepartment = async (req: Request, res: Response) => {
 			message: 'Department created successfully',
 			data: createdDepartment
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error creating department:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error creating department',
+			message: getErrorMessage(error) || 'Error creating department',
 			data: null
 		});
 	}
@@ -1645,11 +1646,11 @@ export const updateDepartment = async (req: Request, res: Response) => {
 			message: 'Department updated successfully',
 			data: updatedDepartment
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error updating department:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error updating department',
+			message: getErrorMessage(error) || 'Error updating department',
 			data: null
 		});
 	}
@@ -1771,11 +1772,11 @@ export const getLocationById = async (req: Request, res: Response) => {
 			message: 'Location retrieved successfully',
 			data: location
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error retrieving location:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error retrieving location',
+			message: getErrorMessage(error) || 'Error retrieving location',
 			data: null
 		});
 	}
@@ -1802,11 +1803,11 @@ export const deleteLocation = async (req: Request, res: Response) => {
 			message: 'Location deleted successfully',
 			data: { id: Number(id) }
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error deleting location:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error deleting location',
+			message: getErrorMessage(error) || 'Error deleting location',
 			data: null
 		});
 	}
@@ -2439,7 +2440,7 @@ export const createEmployee = async (req: Request, res: Response) => {
 		logger.error('createEmployee error:', error);
 		return res.status(500).json({
 			error: process.env.NODE_ENV === 'development' ? error : undefined,
-			message: error instanceof Error ? error.message : 'Failed to create employee',
+			message: error instanceof Error ? getErrorMessage(error) : 'Failed to create employee',
 			status: 'error'
 		});
 	}
@@ -2690,11 +2691,11 @@ export const createPosition = async (req: Request, res: Response) => {
 			message: 'Position created successfully',
 			data: createdPosition
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error creating position:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error creating position',
+			message: getErrorMessage(error) || 'Error creating position',
 			data: null
 		});
 	}
@@ -2738,11 +2739,11 @@ export const updatePosition = async (req: Request, res: Response) => {
 			message: 'Position updated successfully',
 			data: updatedPosition
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error updating position:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error updating position',
+			message: getErrorMessage(error) || 'Error updating position',
 			data: null
 		});
 	}
@@ -4614,11 +4615,11 @@ export const commitTransfer = async (req: Request, res: Response) => {
 				}))
 			}
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error committing transfer:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error committing transfer',
+			message: getErrorMessage(error) || 'Error committing transfer',
 			data: null
 		});
 	}
@@ -4676,11 +4677,11 @@ export const getUncommittedTransfers = async (req: Request, res: Response) => {
 				items
 			}
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error fetching uncommitted transfers:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error fetching uncommitted transfers',
+			message: getErrorMessage(error) || 'Error fetching uncommitted transfers',
 			data: null
 		});
 	}
@@ -5507,12 +5508,12 @@ export const resendApprovalNotification = async (req: Request, res: Response) =>
 				sentAt: new Date().toISOString()
 			}
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error resending approval notification:', error);
 		return res.status(500).json({
 			message: 'Failed to resend approval notification',
 			status: 'error',
-			error: error.message
+			error: getErrorMessage(error)
 		});
 	}
 };
@@ -5688,12 +5689,12 @@ export const resendAcceptanceNotification = async (req: Request, res: Response) 
 				sentAt: new Date().toISOString()
 			}
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error resending acceptance notification:', error);
 		return res.status(500).json({
 			message: 'Failed to resend acceptance notification',
 			status: 'error',
-			error: error.message
+			error: getErrorMessage(error)
 		});
 	}
 };
@@ -5920,19 +5921,19 @@ export const createLocation = async (req: Request, res: Response) => {
 			message: 'Location created successfully',
 			data: createdLocation
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error creating location:', error);
 		// Check for duplicate error
-		if (error?.message?.includes('already exists')) {
+		if (error instanceof Error && error.message.includes('already exists')) {
 			return res.status(409).json({
 				status: 'error',
-				message: error.message,
+				message: getErrorMessage(error),
 				data: null
 			});
 		}
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error creating location',
+			message: getErrorMessage(error) || 'Error creating location',
 			data: null
 		});
 	}
@@ -5981,11 +5982,11 @@ export const updateLocation = async (req: Request, res: Response) => {
 			message: 'Location updated successfully',
 			data: updatedLocation
 		});
-	} catch (error: any) {
+	} catch (error: unknown) {
 		logger.error('Error updating location:', error);
 		return res.status(500).json({
 			status: 'error',
-			message: error?.message || 'Error updating location',
+			message: getErrorMessage(error) || 'Error updating location',
 			data: null
 		});
 	}

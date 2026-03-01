@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import redisConfig from './redisConfig';
 import logger from '../utils/logger';
+import { getErrorMessage } from './errorUtils';
 
 // Create a dummy Redis instance that simulates being connected but doesn't do anything
 class DummyRedis {
@@ -45,13 +46,13 @@ class DummyRedis {
     return 0;
   }
 
-  on(event: string, callback: Function) {
+  on(_event: string, _callback: (...args: unknown[]) => void) {
     return this;
   }
 }
 
 // Initialize Redis based on config
-let redis: any;
+let redis: Redis | DummyRedis;
 
 if (redisConfig.enabled) {
   redis = new Redis({
@@ -69,8 +70,8 @@ if (redisConfig.enabled) {
     logger.info('Redis connected successfully');
   });
 
-  redis.on('error', (err: any) => {
-    logger.error(`Redis connection error: ${err.message}`);
+  redis.on('error', (err: unknown) => {
+    logger.error(`Redis connection error: ${getErrorMessage(err)}`);
   });
 
   redis.on('close', () => {

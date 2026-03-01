@@ -88,7 +88,7 @@ export async function createSimHistory(data: {
         asset_id: data.asset_id || null,
         effective_date: data.effective_date || now,
     };
-    
+
     const [result] = await pool.query<ResultSetHeader>(`INSERT INTO ${tables.simsHistory} SET ?`, [payload]);
     return result.insertId;
 }
@@ -207,7 +207,7 @@ export async function createSubscriber(subscriber: any) {
 
 export async function updateSubscriber(id: number, subscriber: any) {
     const { account, account_sub, asset_id, register_date, simcard, status, sub_no, user } = subscriber;
-    
+
     // Convert register_date to proper format if it's a string
     const effectiveDate = register_date ? new Date(register_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -224,21 +224,21 @@ export async function updateSubscriber(id: number, subscriber: any) {
             [id, asset_id, effectiveDate]
         );
     }
-    
+
     if (user && (!userSub || userSub.ramco_id !== user)) {
         await pool.query(
             `INSERT INTO ${tables.userSubs} (sub_no_id, ramco_id, effective_date) VALUES (?, ?, ?)`,
             [id, user, effectiveDate]
         );
     }
-    
+
     if (simcard && (!simSub || simSub.sim_id !== simcard)) {
         await pool.query(
             `INSERT INTO ${tables.simCardSubs} (sub_no_id, sim_id, effective_date) VALUES (?, ?, ?)`,
             [id, simcard, effectiveDate]
         );
     }
-    
+
     if (account && (!accSub || accSub.account_id !== account)) {
         await pool.query(
             `INSERT INTO ${tables.subsAccounts} (sub_no_id, account_id, effective_date) VALUES (?, ?, ?)`,
@@ -267,9 +267,9 @@ export async function getSubscriberByIdWithHistory(id: number) {
     // Get subscriber record
     const [subRows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.subscribers} WHERE id = ?`, [id]);
     if (!subRows || subRows.length === 0) return null;
-    
+
     const subscriber = subRows[0];
-    
+
     // Fetch all history records in parallel (ordered by effective_date DESC - latest first)
     const [accountHistory, simHistory, userHistory, assetHistory] = await Promise.all([
         pool.query<RowDataPacket[]>(`
@@ -293,7 +293,7 @@ export async function getSubscriberByIdWithHistory(id: number) {
             ORDER BY effective_date DESC
         `, [id]),
     ]);
-    
+
     return {
         subscriber,
         history: {
@@ -490,7 +490,7 @@ export async function createTelcoBilling(billing: any) {
     }
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.telcoBilling} (account_id, account, bill_no, bill_date, subtotal, tax, rounding, grand_total, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [ account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status ]
+        [account_id, account_master, bill_no, bill_date, subtotal, tax, rounding, grand_total, status]
     );
     return result.insertId;
 }
@@ -500,7 +500,7 @@ export async function createTelcoBillingDetail(detail: any) {
     const { account_id, amount, bill_id, costcenter_id, discount, new_sim_id, old_sim_id, plan, ramco_id, subs_id, usage } = detail;
     const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO ${tables.telcoBillingDetails} (bill_id, sim_id, new_sim_id, plan, \`usage\`, discount, amount, sub_id, costcenter_id, account_id, ramco_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [ bill_id, old_sim_id, new_sim_id, plan, usage, discount, amount, subs_id, costcenter_id, account_id, ramco_id ]
+        [bill_id, old_sim_id, new_sim_id, plan, usage, discount, amount, subs_id, costcenter_id, account_id, ramco_id]
     );
     return result.insertId;
 }
@@ -519,7 +519,7 @@ export async function updateTelcoBillingDetail(id: number, detail: any) {
     const { account_id, amount, bill_id, costcenter_id, discount, new_sim_id, old_sim_id, plan, ramco_id, sub_id, usage } = detail;
     await pool.query(
         `UPDATE ${tables.telcoBillingDetails} SET bill_id = ?, sim_id = ?, new_sim_id = ?, plan = ?, \`usage\` = ?, discount = ?, amount = ?, sub_id = ?, costcenter_id = ?, account_id = ?, ramco_id = ? WHERE id = ?`,
-        [ bill_id, old_sim_id, new_sim_id, plan, usage, discount, amount, sub_id, costcenter_id, account_id, ramco_id, id ]
+        [bill_id, old_sim_id, new_sim_id, plan, usage, discount, amount, sub_id, costcenter_id, account_id, ramco_id, id]
     );
 }
 
@@ -557,7 +557,17 @@ export async function getBillingByAccountDateRange(accountId: number, from: stri
     return rows;
 }
 
-export async function getTelcoBillings() {
+export async function getTelcoBillings(year?: number | string) {
+    if (year !== undefined && year !== null && String(year).trim() !== '') {
+        const y = Number(year);
+        if (Number.isFinite(y)) {
+            const [rows] = await pool.query<RowDataPacket[]>(
+                `SELECT * FROM ${tables.telcoBilling} WHERE YEAR(bill_date) = ? ORDER BY id DESC`,
+                [y]
+            );
+            return rows;
+        }
+    }
     const [rows] = await pool.query<RowDataPacket[]>(`SELECT * FROM ${tables.telcoBilling} ORDER BY id DESC`);
     return rows;
 }

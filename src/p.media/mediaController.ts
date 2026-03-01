@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import path from 'path';
 import * as mediaModel from './mediaModel';
 import logger from '../utils/logger';
+import { CorrespondenceQASchema } from '../utils/validation/media.schemas';
+import { parseBody } from '../utils/validation/index';
 
 // Get base URL from environment, default to localhost
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3030';
@@ -586,8 +588,8 @@ export const streamMedia = async (req: Request, res: Response) => {
 
 function normaliseAttachmentPath(record: any) {
   if (record?.attachment_file_path && !record.attachment_file_path.startsWith('http')) {
-    // Stored without leading slash — join with /
-    return { ...record, attachment_file_path: `${BACKEND_URL}/${record.attachment_file_path}` };
+    // Stored without leading slash — join with /, stripping any trailing slash from BACKEND_URL
+    return { ...record, attachment_file_path: `${BACKEND_URL.replace(/\/+$/, '')}/${record.attachment_file_path}` };
   }
   return record;
 }
@@ -602,7 +604,7 @@ export const createCorrespondence = async (req: Request, res: Response) => {
   const file = req.file as Express.Multer.File | undefined;
 
   // Only truly required fields for creation
-  const requiredFields = ['sender', 'subject', 'direction', 'priority'] as const;
+  const requiredFields = ['sender', 'subject', 'direction'] as const;
   for (const field of requiredFields) {
     if (!body[field]) {
       return res.status(400).json({ status: 'error', message: `Missing required field: ${field}`, data: null });
@@ -619,11 +621,6 @@ export const createCorrespondence = async (req: Request, res: Response) => {
   const year = new Date().getFullYear();
   const seq = await mediaModel.getNextCorrespondenceSequence(direction);
   const referenceNo = `RTSB/${dirCode}/${String(seq).padStart(5, '0')}/${year}`;
-
-  const priority = (body.priority || 'normal') as 'low' | 'normal' | 'high';
-  if (!['low', 'normal', 'high'].includes(priority)) {
-    return res.status(400).json({ status: 'error', message: 'priority must be "low", "normal", or "high"', data: null });
-  }
 
   // Helper: treat empty string as null for optional fields
   const orNull = (v: string | undefined): string | null => (v && v.trim() !== '' ? v.trim() : null);
@@ -645,14 +642,8 @@ export const createCorrespondence = async (req: Request, res: Response) => {
     document_others: parseBool(body.document_others),
     document_others_specify: orNull(body.document_others_specify),
     subject: body.subject,
-    correspondent: body.correspondent || '',
     direction,
-    department: body.department || '',
-    letter_type: orNull(body.letter_type),
-    category: orNull(body.category),
-    priority,
     date_received: orNull(body.date_received),
-    remarks: orNull(body.remarks),
     registered_at: orNull(body.registered_at),
     registered_by: orNull(body.registered_by),
     disseminated_at: orNull(body.disseminated_at),
@@ -754,14 +745,8 @@ export const updateCorrespondence = async (req: Request, res: Response) => {
     document_others: parseBoolOrUndef(body.document_others),
     document_others_specify: orNull(body.document_others_specify),
     subject: orUndef(body.subject),
-    correspondent: orUndef(body.correspondent),
     direction: (orUndef(body.direction) as 'incoming' | 'outgoing' | undefined),
-    department: orUndef(body.department),
-    letter_type: orNull(body.letter_type),
-    category: orNull(body.category),
-    priority: (orUndef(body.priority) as 'low' | 'normal' | 'high' | undefined),
     date_received: orNull(body.date_received),
-    remarks: orNull(body.remarks),
     registered_at: orNull(body.registered_at),
     registered_by: orNull(body.registered_by),
     disseminated_at: orNull(body.disseminated_at),
@@ -866,4 +851,36 @@ export const deleteCorrespondence = async (req: Request, res: Response) => {
   }
 
   return res.json({ status: 'success', message: 'Correspondence deleted', data: { id } });
+};
+
+/**
+ * PUT /api/media/correspondence/:id/qa
+ * Update QA classification fields and replace the recipients list.
+ */
+export const qaCorrespondence = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  }
+
+  const validation = parseBody(req.body, CorrespondenceQASchema);
+  if (!validation.ok) return res.status(400).json(validation.error);
+
+  const { letter_type, category, priority, remarks, recipients } = validation.data;
+
+  const existing = await mediaModel.getCorrespondenceById(id);
+  if (!existing) {
+    return res.status(404).json({ status: 'error', message: 'Correspondence not found', data: null });
+  }
+
+  await mediaModel.updateCorrespondenceQA(id, { category, letter_type, priority, remarks });
+  await mediaModel.replaceCorrespondenceRecipients(id, recipients);
+
+  const updatedRecipients = await mediaModel.getCorrespondenceRecipients(id);
+
+  return res.json({
+    status: 'success',
+    message: 'Correspondence QA updated',
+    data: { id, recipients: updatedRecipients },
+  });
 };

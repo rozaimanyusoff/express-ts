@@ -1,82 +1,92 @@
 import { NextFunction, Request, Response } from 'express';
 import logger from '../utils/logger';
+import { getErrorMessage } from '../utils/errorUtils';
 
-const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+interface HttpError extends Error {
+  code?: string;
+  status?: number;
+}
+
+const errorHandler = (err: HttpError | unknown, req: Request, res: Response, _next: NextFunction) => {
+  const error: HttpError = err instanceof Error
+    ? (err as HttpError)
+    : Object.assign(new Error(String(err)));
+
   // Log full error on the server for diagnosis
   logger.error('Global error handler:', {
-    code: err?.code,
-    message: err?.message,
+    code: error?.code,
+    message: error?.message,
     method: req.method,
     path: req.path,
-    stack: err?.stack,
-    statusCode: err?.status
+    stack: error?.stack,
+    statusCode: error?.status
   });
 
   const isDevelopment = process.env.NODE_ENV === 'development';
-  
+
   // Handle specific database errors with meaningful messages
-  let statusCode = err?.status ? err.status : 500;
+  let statusCode = error?.status ? error.status : 500;
   let userMessage = 'Internal Server Error';
-  
+
   // Handle multer file size errors
-  if (err?.code === 'LIMIT_FILE_SIZE') {
+  if (error?.code === 'LIMIT_FILE_SIZE') {
     userMessage = 'File too large. Maximum file size is 500MB';
     statusCode = 413; // Payload too large
-  } else if (err?.code === 'LIMIT_PART_COUNT') {
+  } else if (error?.code === 'LIMIT_PART_COUNT') {
     userMessage = 'Too many file parts';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_FILE_COUNT') {
+  } else if (error?.code === 'LIMIT_FILE_COUNT') {
     userMessage = 'Too many files';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_FIELD_KEY') {
+  } else if (error?.code === 'LIMIT_FIELD_KEY') {
     userMessage = 'Field name too long';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_FIELD_VALUE') {
+  } else if (error?.code === 'LIMIT_FIELD_VALUE') {
     userMessage = 'Field value too long';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_FIELD_COUNT') {
+  } else if (error?.code === 'LIMIT_FIELD_COUNT') {
     userMessage = 'Too many fields';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_UNEXPECTED_FILE') {
+  } else if (error?.code === 'LIMIT_UNEXPECTED_FILE') {
     userMessage = 'Unexpected file field';
     statusCode = 400;
-  } else if (err?.code === 'LIMIT_ABORTED') {
+  } else if (error?.code === 'LIMIT_ABORTED') {
     userMessage = 'File upload aborted';
     statusCode = 400;
-  } else if (err?.code === 'ER_DUP_ENTRY') {
+  } else if (error?.code === 'ER_DUP_ENTRY') {
     // Extract field name from error message (e.g., "Duplicate entry 'value' for key 'table.field'")
-    const match = err?.message?.match(/for key '([^']+)'/);
+    const match = error?.message?.match(/for key '([^']+)'/);
     const fieldInfo = match ? match[1] : 'duplicate value';
     userMessage = `A record with this ${fieldInfo.split('.')[1] || 'field'} already exists`;
     statusCode = 409; // Conflict status code
-  } else if (err?.code === 'ER_NO_REFERENCED_ROW') {
+  } else if (error?.code === 'ER_NO_REFERENCED_ROW') {
     userMessage = 'Referenced record does not exist';
     statusCode = 400;
-  } else if (err?.code === 'ER_NO_REFERENCED_ROW_2') {
+  } else if (error?.code === 'ER_NO_REFERENCED_ROW_2') {
     userMessage = 'Referenced record does not exist';
     statusCode = 400;
-  } else if (err?.code === 'ER_BAD_NULL_ERROR') {
+  } else if (error?.code === 'ER_BAD_NULL_ERROR') {
     userMessage = 'Required field is missing';
     statusCode = 400;
-  } else if (err?.code === 'ER_DATA_TOO_LONG') {
+  } else if (error?.code === 'ER_DATA_TOO_LONG') {
     userMessage = 'Provided data is too long for one or more fields';
     statusCode = 400;
   } else if (statusCode >= 500) {
     // For 500+ errors, only expose message in development
-    userMessage = isDevelopment ? (err?.message || 'Internal Server Error') : 'Internal Server Error';
+    userMessage = isDevelopment ? (error?.message || 'Internal Server Error') : 'Internal Server Error';
   } else {
     // For 4xx errors, use predefined messages - don't expose raw error messages
-    userMessage = err?.message && typeof err.message === 'string' 
-      ? err.message.substring(0, 200)  // Limit length and only if explicitly set
+    userMessage = error?.message && typeof getErrorMessage(error) === 'string'
+      ? getErrorMessage(error).substring(0, 200)  // Limit length and only if explicitly set
       : userMessage;
   }
 
   return res.status(statusCode).json({
     message: userMessage,
     status: false,
-    ...(isDevelopment && { 
-      code: err?.code,
-      stack: err?.stack 
+    ...(isDevelopment && {
+      code: error?.code,
+      stack: error?.stack
     })
   });
 };

@@ -1,6 +1,7 @@
 import { getSocketIOInstance } from './socketIoInstance';
 import { pool } from './db';
 import { sendWebhook } from './webhook';
+import { NOTIFICATION_WEBHOOK_URL } from './env';
 import logger from '../utils/logger';
 
 // Import dynamically to avoid circular dependencies
@@ -57,7 +58,7 @@ export const createNotification = async ({ message, type, userId }: Notification
     }
 
     // Forward to configured webhook (if any) - fire-and-forget
-    const webhookUrl = process.env.NOTIFICATION_WEBHOOK_URL;
+    const webhookUrl = NOTIFICATION_WEBHOOK_URL;
     if (webhookUrl) {
       try {
         // do not await to avoid blocking main flow; sendWebhook handles its own errors

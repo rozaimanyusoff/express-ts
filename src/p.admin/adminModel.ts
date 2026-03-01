@@ -1,6 +1,7 @@
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../utils/db';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
 // ==================== NAVIGATION TYPES & INTERFACES ====================
 
@@ -105,14 +106,14 @@ export const routeTracker = async (path: string, userId: number): Promise<void> 
     );
 
     const [result]: any = await Promise.race([queryPromise, timeoutPromise]);
-    
+
     if (result.affectedRows === 0) {
       logger.warn(`Route tracking: No user found with id: ${userId}`);
     }
-  } catch (error: any) {
-    if (error.message === 'Route tracking timeout') {
+  } catch (error: unknown) {
+    if (error instanceof Error && getErrorMessage(error) === 'Route tracking timeout') {
       logger.error('Route tracking timeout - database may be slow or unresponsive');
-    } else if (error.code === 'ETIMEDOUT' || error.errno === -110) {
+    } else if (isMysqlError(error) && (error.code === 'ETIMEDOUT' || error.errno === -110)) {
       logger.error('Route tracking database timeout (ETIMEDOUT):', {
         path,
         timestamp: new Date().toISOString(),
@@ -335,7 +336,7 @@ export const updateRole = async (id: number, role: Omit<Role, 'create_at' | 'id'
 export const getUsersByRoleIds = async (roleIds: number[]): Promise<any[]> => {
   try {
     if (roleIds.length === 0) return [];
-    
+
     const placeholders = roleIds.map(() => '?').join(', ');
     const query = `
       SELECT id, fname, email, username, role
@@ -343,7 +344,7 @@ export const getUsersByRoleIds = async (roleIds: number[]): Promise<any[]> => {
       WHERE role IN (${placeholders})
       ORDER BY role, fname
     `;
-    
+
     const [rows]: any[] = await pool.query(query, roleIds);
     return rows;
   } catch (error) {
@@ -359,7 +360,7 @@ export const deleteRoles = async (roleIds: number[]): Promise<number> => {
     const placeholders = roleIds.map(() => '?').join(', ');
     const query = `DELETE FROM auth.roles WHERE id IN (${placeholders})`;
     const [result]: any = await pool.query(query, roleIds);
-    
+
     return result.affectedRows;
   } catch (error) {
     logger.error('Error deleting roles:', error);

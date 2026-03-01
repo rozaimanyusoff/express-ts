@@ -4,12 +4,13 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
 import * as authLogger from '../utils/authLogger';
 import * as assetModel from '../p.asset/assetModel';
 import * as adminModel from '../p.admin/adminModel';
 import * as pendingUserModel from '../p.user/pendingUserModel';
-import {pool} from '../utils/db';
+import { pool } from '../utils/db';
 import { sendMail } from '../utils/mailer';
 import { buildStoragePath, sanitizeFilename, toDbPath } from '../utils/uploadUtil';
 import * as userModel from './userModel';
@@ -103,7 +104,7 @@ export const getAllUser = async (_req: Request, res: Response): Promise<Response
     });
 
     return res.status(200).json({ data: formattedUsers, message: 'User data retrieved successfully', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error getting all users:', error);
     return res.status(500).json({ message: 'Error getting all users' });
   }
@@ -114,7 +115,7 @@ export const getAllPendingUser = async (_req: Request, res: Response): Promise<R
   try {
     const pendingUsers = await pendingUserModel.getAllPendingUsers();
     return res.status(200).json({ data: pendingUsers, message: 'Pending user data retrieved successfully', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error getting all pending users:', error);
     return res.status(500).json({ message: 'Error getting all pending users' });
   }
@@ -181,9 +182,9 @@ export const updateUser1 = async (req: Request, res: Response): Promise<Response
     }
 
     return res.status(200).json({ message: 'User updated successfully', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error updating user:', error);
-    return res.status(500).json({ error: error.message, message: 'Error updating user' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error updating user' });
   }
 };
 
@@ -216,9 +217,9 @@ export const deleteUser = async (req: Request, res: Response): Promise<Response>
       message: `${idArray.length} user(s) deleted successfully`,
       status: 'success'
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error deleting user(s):', error);
-    return res.status(500).json({ error: error.message, message: 'Error deleting user(s)', status: 'error' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error deleting user(s)', status: 'error' });
   }
 };
 
@@ -246,9 +247,9 @@ export const deleteUsers = async (req: Request, res: Response): Promise<Response
       message: `${validIds.length} user(s) deleted successfully`,
       status: 'success'
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error deleting users:', error);
-    return res.status(500).json({ error: error.message, message: 'Error deleting users', status: 'error' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error deleting users', status: 'error' });
   }
 };
 
@@ -268,11 +269,11 @@ export const assignUserToGroups1 = async (
     return res
       .status(200)
       .json({ message: 'User assigned to groups successfully', status: 'Success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error assigning user to groups:', error);
     return res
       .status(500)
-      .json({ error: error.message, message: 'Error assigning user to groups', status: 'Error' });
+      .json({ error: getErrorMessage(error), message: 'Error assigning user to groups', status: 'Error' });
   }
 };
 
@@ -287,9 +288,9 @@ export const changeUsersGroups = async (req: Request, res: Response): Promise<Re
       await userModel.assignUserToGroups(userId, groupIds);
     }
     return res.status(200).json({ message: 'Groups updated for selected users', status: 'Success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error changing users groups:', error);
-    return res.status(500).json({ error: error.message, message: 'Error changing users groups', status: 'Error' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error changing users groups', status: 'Error' });
   }
 };
 
@@ -304,9 +305,9 @@ export const changeUsersRole = async (req: Request, res: Response): Promise<Resp
       await userModel.updateUserRole(userId, roleId);
     }
     return res.status(200).json({ message: 'Role updated for selected users', status: 'Success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error changing users role:', error);
-    return res.status(500).json({ error: error.message, message: 'Error changing users role' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error changing users role' });
   }
 };
 
@@ -321,9 +322,9 @@ export const suspendOrActivateUsers = async (req: Request, res: Response): Promi
       await userModel.updateUser(userId, { status } as any);
     }
     return res.status(200).json({ message: 'Status updated for selected users', status: 'Success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error updating users status:', error);
-    return res.status(500).json({ error: error.message, message: 'Error updating users status', status: 'Error' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error updating users status', status: 'Error' });
   }
 };
 
@@ -345,9 +346,9 @@ export const loginUser = async (req: Request, res: Response): Promise<Response> 
         usergroups: user?.usergroups || '', // Ensure usergroups is always a string
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error logging in user:', error);
-    return res.status(500).json({ error: error.message, message: 'Error logging in user' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error logging in user' });
   }
 };
 
@@ -441,92 +442,92 @@ export const updateUserProfile = async (req: Request, res: Response): Promise<Re
     // Update user_profile table for profile fields
     await userModel.upsertUserProfile(userId, { dob, job, location, profileImage });
     return res.status(200).json({ message: 'Profile updated successfully' });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message, message: 'Error updating profile' });
+  } catch (error: unknown) {
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error updating profile' });
   }
 };
 
 export const getTasks = async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
-    const tasks = await userModel.getUserTasks(userId) as any[];
-    // Format for frontend
-    const now = new Date();
-    const formatted = tasks.map((task: any) => ({
-        completed: !!task.completed,
-        done: `${task.progress}%`,
-        id: task.id,
-        progress: Number(task.progress),
-        time: timeAgo(task.updated_at || task.created_at, now),
-        title: task.title
-    }));
-    return res.json({ status: 'Success', tasks: formatted });
+  const userId = (req as any).user.id;
+  const tasks = await userModel.getUserTasks(userId) as any[];
+  // Format for frontend
+  const now = new Date();
+  const formatted = tasks.map((task: any) => ({
+    completed: !!task.completed,
+    done: `${task.progress}%`,
+    id: task.id,
+    progress: Number(task.progress),
+    time: timeAgo(task.updated_at || task.created_at, now),
+    title: task.title
+  }));
+  return res.json({ status: 'Success', tasks: formatted });
 };
 
 // POST /api/users/tasks
 export const postTask = async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
-    const { progress, title } = req.body;
-    if (!title) return res.status(400).json({ message: 'Title required', status: 'Error' });
-    await userModel.createUserTask(userId, title, progress || 0);
-    return res.status(201).json({ message: 'Task created', status: 'Success' });
+  const userId = (req as any).user.id;
+  const { progress, title } = req.body;
+  if (!title) return res.status(400).json({ message: 'Title required', status: 'Error' });
+  await userModel.createUserTask(userId, title, progress || 0);
+  return res.status(201).json({ message: 'Task created', status: 'Success' });
 };
 
 // PUT /api/users/tasks/:id
 export const putTask = async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
-    const taskId = Number(req.params.id);
-    const { completed, progress, title } = req.body;
-    const result = await userModel.updateUserTask(userId, taskId, { completed, progress, title });
-    if (result && (result as any).affectedRows > 0) {
-        return res.json({ message: 'Task updated', status: 'Success' });
-    } else {
-        return res.status(404).json({ message: 'Task not found or not updated', status: 'Error' });
-    }
+  const userId = (req as any).user.id;
+  const taskId = Number(req.params.id);
+  const { completed, progress, title } = req.body;
+  const result = await userModel.updateUserTask(userId, taskId, { completed, progress, title });
+  if (result && (result as any).affectedRows > 0) {
+    return res.json({ message: 'Task updated', status: 'Success' });
+  } else {
+    return res.status(404).json({ message: 'Task not found or not updated', status: 'Error' });
+  }
 };
 
 // Get authentication logs for a user (admin only)
 export const getUserAuthLogs = async (req: Request, res: Response): Promise<Response> => {
-    const userId = Number(req.params.userId);
-    // Robust admin check
-    const isAdmin = req.user && typeof req.user === 'object' && 'role' in req.user && req.user.role === 1;
-    if (!isAdmin) {
-        return res.status(403).json({ message: 'Forbidden: Admins only', status: 'error' });
-    }
-    if (!userId) {
-        return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
-    }
-    try {
-        const authLoggerModule = await import('../utils/authLogger.js');
-        const { getUserAuthLogs } = authLoggerModule;
-        const logs = await getUserAuthLogs(userId);
-        return res.status(200).json({ logs, status: 'success' });
-    } catch (error) {
-        logger.error('Error fetching user auth logs:', error);
-        return res.status(500).json({ message: 'Failed to fetch user logs', status: 'error' });
-    }
+  const userId = Number(req.params.userId);
+  // Robust admin check
+  const isAdmin = req.user && typeof req.user === 'object' && 'role' in req.user && req.user.role === 1;
+  if (!isAdmin) {
+    return res.status(403).json({ message: 'Forbidden: Admins only', status: 'error' });
+  }
+  if (!userId) {
+    return res.status(400).json({ message: 'Missing or invalid userId', status: 'error' });
+  }
+  try {
+    const authLoggerModule = await import('../utils/authLogger.js');
+    const { getUserAuthLogs } = authLoggerModule;
+    const logs = await getUserAuthLogs(userId);
+    return res.status(200).json({ logs, status: 'success' });
+  } catch (error) {
+    logger.error('Error fetching user auth logs:', error);
+    return res.status(500).json({ message: 'Failed to fetch user logs', status: 'error' });
+  }
 };
 
 // Get all authentication logs (admin only, using logModel)
 export const getAllAuthLogs = async (req: Request, res: Response): Promise<Response> => {
-    try {
-        const logs = await authLogger.getAuthLogs();
-        // Use userModel.getAllUsers to get user info
-        const users = await userModel.getAllUsers();
-        const userMap = new Map(users.map((u: any) => [u.id, u]));
-        const logsWithUser = logs.map((log: any) => {
-            const user = userMap.get(log.user_id);
-            // Remove user_id from log
-            const { user_id, ...rest } = log;
-            return {
-                ...rest,
-                user: user ? { id: user.id, name: user.username || user.email } : null
-            };
-        });
-        return res.status(200).json({ logs: logsWithUser, message: 'Logs data retrieved succesfully', status: 'success' });
-    } catch (error) {
-        logger.error('Error fetching all auth logs:', error);
-        return res.status(500).json({ message: 'Failed to fetch auth logs', status: 'error' });
-    }
+  try {
+    const logs = await authLogger.getAuthLogs();
+    // Use userModel.getAllUsers to get user info
+    const users = await userModel.getAllUsers();
+    const userMap = new Map(users.map((u: any) => [u.id, u]));
+    const logsWithUser = logs.map((log: any) => {
+      const user = userMap.get(log.user_id);
+      // Remove user_id from log
+      const { user_id, ...rest } = log;
+      return {
+        ...rest,
+        user: user ? { id: user.id, name: user.username || user.email } : null
+      };
+    });
+    return res.status(200).json({ logs: logsWithUser, message: 'Logs data retrieved succesfully', status: 'success' });
+  } catch (error) {
+    logger.error('Error fetching all auth logs:', error);
+    return res.status(500).json({ message: 'Failed to fetch auth logs', status: 'error' });
+  }
 }
 
 // Get authentication logs for a user (admin only, using logModel)
@@ -546,11 +547,11 @@ export const getAuthLogs = async (req: Request, res: Response) => {
 
 // Helper for "time ago"
 function timeAgo(date: Date, now: Date) {
-    const diff = Math.floor((now.getTime() - new Date(date).getTime()) / 1000);
-    if (diff < 60) return `${diff} secs ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hrs ago`;
-    return `${Math.floor(diff / 86400)} days ago`;
+  const diff = Math.floor((now.getTime() - new Date(date).getTime()) / 1000);
+  if (diff < 60) return `${diff} secs ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hrs ago`;
+  return `${Math.floor(diff / 86400)} days ago`;
 }
 
 
@@ -560,7 +561,7 @@ export const getModules = async (req: Request, res: Response): Promise<Response>
   try {
     const modules = await userModel.getAllModules();
     return res.status(200).json({ data: modules, message: 'Modules retrieved', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching modules', error);
     return res.status(500).json({ message: 'Failed to fetch modules', status: 'error' });
   }
@@ -593,7 +594,7 @@ export const getModuleById = async (req: Request, res: Response): Promise<Respon
       }
     ];
     return res.status(200).json({ data: result, message: 'Permissions data retrieved successfully', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching module', error);
     return res.status(500).json({ message: 'Failed to fetch module', status: 'error' });
   }
@@ -605,7 +606,7 @@ export const createModule = async (req: Request, res: Response): Promise<Respons
   try {
     const insertId = await userModel.createModule(name, description || null);
     return res.status(201).json({ data: { id: insertId }, message: 'Module created', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error creating module', error);
     return res.status(500).json({ message: 'Failed to create module', status: 'error' });
   }
@@ -618,7 +619,7 @@ export const updateModule = async (req: Request, res: Response): Promise<Respons
   try {
     await userModel.updateModule(id, name, description || null);
     return res.status(200).json({ message: 'Module updated', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error updating module', error);
     return res.status(500).json({ message: 'Failed to update module', status: 'error' });
   }
@@ -630,7 +631,7 @@ export const deleteModule = async (req: Request, res: Response): Promise<Respons
   try {
     await userModel.deleteModule(id);
     return res.status(200).json({ message: 'Module deleted', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error deleting module', error);
     return res.status(500).json({ message: 'Failed to delete module', status: 'error' });
   }
@@ -641,7 +642,7 @@ export const getAllModuleMembers = async (_req: Request, res: Response): Promise
   try {
     const rows = await userModel.getModuleMembers();
     return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching module members', error);
     return res.status(500).json({ message: 'Failed to fetch module members', status: 'error' });
   }
@@ -653,7 +654,7 @@ export const getModuleMembersByModule = async (req: Request, res: Response): Pro
   try {
     const rows = await userModel.getModuleMembersByModule(moduleId);
     return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching module members by module', error);
     return res.status(500).json({ message: 'Failed to fetch module members by module', status: 'error' });
   }
@@ -665,7 +666,7 @@ export const getModuleMembersByRamco = async (req: Request, res: Response): Prom
   try {
     const rows = await userModel.getModuleMembersByRamco(ramco);
     return res.status(200).json({ data: rows, message: 'Module members retrieved', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching module members by ramco', error);
     return res.status(500).json({ message: 'Failed to fetch module members by ramco', status: 'error' });
   }
@@ -678,7 +679,7 @@ export const postModuleMember = async (req: Request, res: Response): Promise<Res
   try {
     const insertId = await userModel.addModuleMember(ramco_id, moduleId, Number(permission_id || 0));
     return res.status(201).json({ data: { id: insertId }, message: 'Module member added', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error adding module member', error);
     return res.status(500).json({ message: 'Failed to add module member', status: 'error' });
   }
@@ -691,7 +692,7 @@ export const putModuleMember = async (req: Request, res: Response): Promise<Resp
   try {
     await userModel.updateModuleMember(id, { module_id: module_id ? Number(module_id) : undefined, permission_id, ramco_id });
     return res.status(200).json({ message: 'Module member updated', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error updating module member', error);
     return res.status(500).json({ message: 'Failed to update module member', status: 'error' });
   }
@@ -703,7 +704,7 @@ export const deleteModuleMemberHandler = async (req: Request, res: Response): Pr
   try {
     await userModel.deleteModuleMember(id);
     return res.status(200).json({ message: 'Module member deleted', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error deleting module member', error);
     return res.status(500).json({ message: 'Failed to delete module member', status: 'error' });
   }
@@ -714,7 +715,7 @@ export const getPermissionsHandler = async (_req: Request, res: Response): Promi
   try {
     const rows = await userModel.getPermissions();
     return res.status(200).json({ data: rows, message: 'Permissions retrieved', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching permissions', error);
     return res.status(500).json({ message: 'Failed to fetch permissions', status: 'error' });
   }
@@ -727,7 +728,7 @@ export const getPermissionHandler = async (req: Request, res: Response): Promise
     const p = await userModel.getPermissionById(id);
     if (!p) return res.status(404).json({ message: 'Permission not found', status: 'error' });
     return res.status(200).json({ data: p, status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error fetching permission', error);
     return res.status(500).json({ message: 'Failed to fetch permission', status: 'error' });
   }
@@ -739,7 +740,7 @@ export const postPermissionHandler = async (req: Request, res: Response): Promis
   try {
     const id = await userModel.createPermission({ category, code, description, is_active, name });
     return res.status(201).json({ data: { id }, message: 'Permission created', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error creating permission', error);
     return res.status(500).json({ message: 'Failed to create permission', status: 'error' });
   }
@@ -752,7 +753,7 @@ export const putPermissionHandler = async (req: Request, res: Response): Promise
   try {
     await userModel.updatePermission(id, data);
     return res.status(200).json({ message: 'Permission updated', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error updating permission', error);
     return res.status(500).json({ message: 'Failed to update permission', status: 'error' });
   }
@@ -764,7 +765,7 @@ export const deletePermissionHandler = async (req: Request, res: Response): Prom
   try {
     await userModel.deletePermission(id);
     return res.status(200).json({ message: 'Permission deleted', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error deleting permission', error);
     return res.status(500).json({ message: 'Failed to delete permission', status: 'error' });
   }
@@ -791,9 +792,9 @@ export const getWorkflows = async (_req: Request, res: Response): Promise<Respon
     });
 
     return res.status(200).json({ data: enriched, message: 'Approval levels retrieved successfully', status: 'success' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error getting approval levels:', error);
-    return res.status(500).json({ error: error.message, message: 'Error getting approval levels' });
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Error getting approval levels' });
   }
 };
 
@@ -812,9 +813,9 @@ export const getWorkflowById = async (req: Request, res: Response): Promise<Resp
     const employeesRaw = await assetModel.getEmployees();
     const employees = Array.isArray(employeesRaw) ? (employeesRaw as any[]) : [];
     const empMap = new Map(employees.map((e: any) => [String(e.ramco_id), e]));
-  const emp = empMap.get(String(workflow.ramco_id)) || null;
+    const emp = empMap.get(String(workflow.ramco_id)) || null;
     const employee = emp ? { full_name: emp.full_name || emp.fullname || emp.name || null, ramco_id: emp.ramco_id } : null;
-  const copy = { ...workflow };
+    const copy = { ...workflow };
     delete (copy).ramco_id;
     (copy).employee = employee;
 
@@ -870,8 +871,8 @@ export const reorderWorkflows = async (req: Request, res: Response) => {
     }
     const updated = await userModel.reorderWorkflows({ items: incoming, module_name: data.module_name });
     return res.status(200).json({ data: { updated }, message: `Reordered ${updated} workflow level(s)`, status: 'success' });
-  } catch (error: any) {
-    return res.status(500).json({ error: error?.message, message: 'Failed to reorder workflows', status: 'error' });
+  } catch (error: unknown) {
+    return res.status(500).json({ error: getErrorMessage(error), message: 'Failed to reorder workflows', status: 'error' });
   }
 };
 

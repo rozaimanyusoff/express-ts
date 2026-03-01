@@ -1,6 +1,8 @@
+import { Pool } from 'mysql2/promise';
 import { Server } from 'socket.io';
 import { pool, pool2 } from './db';
 import logger from '../utils/logger';
+import { getErrorMessage } from './errorUtils';
 
 interface HealthCheckResult {
   pool1: {
@@ -35,18 +37,18 @@ export const checkDatabaseHealth = async (): Promise<HealthCheckResult> => {
   const DB_QUERY_TIMEOUT = 5000; // 5 second timeout per query
 
   // Helper function to run query with timeout
-  const queryWithTimeout = async (pool: any, poolName: string): Promise<{ latency: number } | { error: string }> => {
+  const queryWithTimeout = async (poolInstance: Pool, poolName: string): Promise<{ latency: number } | { error: string }> => {
     const start = Date.now();
-    const timeoutPromise = new Promise((_, reject) => 
+    const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error(`${poolName} query timeout (${DB_QUERY_TIMEOUT}ms)`)), DB_QUERY_TIMEOUT)
     );
-    
+
     try {
-      await Promise.race([pool.query('SELECT 1'), timeoutPromise]);
+      await Promise.race([poolInstance.query('SELECT 1'), timeoutPromise]);
       const latency = Date.now() - start;
       return { latency };
-    } catch (error: any) {
-      return { error: error.message || 'Connection failed' };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) || 'Connection failed' };
     }
   };
 
@@ -90,34 +92,34 @@ const determineHealthStatus = (health: HealthCheckResult): 'healthy' | 'degraded
  */
 export const startPeriodicHealthCheck = (intervalMs = 30000, io?: Server): NodeJS.Timeout => {
   logger.info(`Starting database health monitoring (interval: ${intervalMs}ms)`);
-  
+
   return setInterval(async () => {
     const health = await checkDatabaseHealth();
     const status = determineHealthStatus(health);
-    
+
     // Build response for both logging and Socket.IO broadcast
     const healthResponse: HealthCheckResponse = {
       ...health,
       status,
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      message: status === 'healthy' ? 'All systems operational' : 
-               status === 'degraded' ? 'One or more systems degraded' : 
-               'Critical system issues'
+      message: status === 'healthy' ? 'All systems operational' :
+        status === 'degraded' ? 'One or more systems degraded' :
+          'Critical system issues'
     };
 
     // Broadcast to all connected clients via Socket.IO
     if (io) {
       io.emit('backend:health', healthResponse);
     }
-    
+
     // Log warnings for any issues
     if (!health.pool1.connected) {
       logger.error('⚠️ Database pool1 is DISCONNECTED:', health.pool1.error);
     } else if (health.pool1.latency && health.pool1.latency > 1000) {
       logger.warn(`⚠️ Database pool1 latency is HIGH: ${health.pool1.latency}ms`);
     }
-    
+
     if (!health.pool2.connected) {
       logger.error('⚠️ Database pool2 is DISCONNECTED:', health.pool2.error);
     } else if (health.pool2.latency && health.pool2.latency > 1000) {
@@ -145,10 +147,10 @@ export const testConnection = async (timeoutMs = 5000): Promise<boolean> => {
 
     const testPromise = pool.query('SELECT 1');
     await Promise.race([testPromise, timeoutPromise]);
-    
+
     return true;
-  } catch (error: any) {
-    logger.error('Database connection test failed:', error.message);
+  } catch (error: unknown) {
+    logger.error('Database connection test failed:', getErrorMessage(error));
     return false;
   }
 };

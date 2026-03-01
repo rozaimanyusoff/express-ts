@@ -1,14 +1,11 @@
-import dotenv from 'dotenv';
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
 
 import * as userModel from '../p.user/userModel';
+import { JWT_SECRET, SINGLE_SESSION_ENFORCEMENT } from '../utils/env';
+import { AppJwtPayload } from '../types/express';
 import { isTokenBlacklisted } from '../utils/tokenBlacklist';
-
-dotenv.config();
-
-const { JWT_SECRET, SINGLE_SESSION_ENFORCEMENT } = process.env;
 
 const tokenValidator = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.header('Authorization');
@@ -36,17 +33,20 @@ const tokenValidator = async (req: Request, res: Response, next: NextFunction): 
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
 
     if (typeof decoded === 'object' && decoded !== null) {
-      req.user = decoded;
-      if (!('id' in req.user) && 'userId' in decoded) {
-        (req.user as any).id = (decoded as any).userId;
+      const payload = decoded as AppJwtPayload;
+      // Normalise: if token uses `userId` instead of `id`, expose both
+      if (!('id' in payload) && 'userId' in payload) {
+        payload.id = payload.userId;
       }
+      req.user = payload;
     } else {
       req.user = {};
     }
 
     if (String(SINGLE_SESSION_ENFORCEMENT) === 'true') {
-      const uid = (req.user as any)?.id;
-      const sess = (decoded as any)?.session;
+      const appUser = req.user as AppJwtPayload;
+      const uid = appUser?.id;
+      const sess = appUser?.session;
       if (uid && sess) {
         try {
           const current = await userModel.getUserSessionToken(Number(uid));

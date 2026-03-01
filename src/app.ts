@@ -1,20 +1,11 @@
 //import { toNodeHandler } from "better-auth/node";
-import dotenv from 'dotenv';
 import express, { Express, json, urlencoded } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import fs from 'fs';
 import path from 'path';
 import logger from './utils/logger';
 
-// Load environment variables early
-dotenv.config();
-
-//import aqsAuthRoutes from './aqs/a.auth/authRoutes';
-//import districtRoutes from './aqs/a.district/districtRoutes';
-//import aqsModuleRoutes from './aqs/a.module/moduleRoutes'
-//import organizationRoutes from './aqs/a.organization/organizationRoutes';
-//import aqsRequestRoutes from './aqs/a.request/requestRoutes';
-//import aqsRoleRoutes from './aqs/a.role/roleRoutes';
+import { STATIC_UPLOAD_PATH } from './utils/env';
 import corsMiddleware from './middlewares/cors';
 import errorHandler from './middlewares/errorHandler';
 import rateLimit from './middlewares/rateLimiter';
@@ -43,6 +34,7 @@ import userRoutes from './p.user/userRoutes';
 import webstockRoutes from './s.webstock/webstockRoutes';
 //import { pgPool } from './utils/db';
 import { checkDatabaseHealth } from './utils/dbHealthCheck';
+import { getErrorMessage } from './utils/errorUtils';
 import { getUploadBaseSync } from './utils/uploadUtil';
 import redis from './utils/redis';
 import redisConfig from './utils/redisConfig';
@@ -55,8 +47,8 @@ const app: Express = express();
 if (redisConfig.enabled) {
   redis.connect().then(() => {
     logger.info('Redis initialized and connected');
-  }).catch((err: any) => {
-    logger.error(`Redis initialization failed: ${err.message}`);
+  }).catch((err: unknown) => {
+    logger.error(`Redis initialization failed: ${getErrorMessage(err)}`);
   });
 } else {
   logger.info('Redis is disabled (REDIS_ENABLED=false)');
@@ -92,14 +84,14 @@ app.use('/uploads', (req, res, next) => {
 // Dynamically select static uploads directory.
 // Priority: explicit STATIC_UPLOAD_PATH | existing /mnt/winshare | resolved upload base util
 (() => {
-  const explicit = process.env.STATIC_UPLOAD_PATH;
+  const explicit = STATIC_UPLOAD_PATH;
   const sharePath = '/mnt/winshare';
   const staticPath = explicit ? explicit : (fs.existsSync(sharePath) ? sharePath : getUploadBaseSync());
   try {
     // Ensure directory exists for fallback/local scenario.
     fs.mkdirSync(staticPath, { recursive: true });
-  } catch (e) {
-    logger.error(`Unable to ensure static uploads directory '${staticPath}': ${(e as any).message}`);
+  } catch (e: unknown) {
+    logger.error(`Unable to ensure static uploads directory '${staticPath}': ${getErrorMessage(e)}`);
   }
   logger.info(`Serving /uploads from: ${staticPath}`);
   app.use('/uploads', express.static(staticPath));

@@ -1,3 +1,4 @@
+import { getErrorMessage } from '../../utils/errorUtils';
 import { NextFunction, Request, Response } from 'express';
 
 import { generateStockAnalysis } from '../../utils/stockAnalysis';
@@ -651,8 +652,8 @@ export const createStockRequest = async (req: Request, res: Response) => {
       message: 'Stock request created successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to create stock request', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to create stock request', status: 'error' });
   }
 };
 
@@ -695,8 +696,8 @@ export const getStockRequests = async (_req: Request, res: Response) => {
       message: 'Stock requests retrieved successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to retrieve stock requests', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to retrieve stock requests', status: 'error' });
   }
 };
 
@@ -731,8 +732,8 @@ export const updateStockRequest = async (req: Request, res: Response) => {
       message: 'Stock request updated successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to update stock request', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to update stock request', status: 'error' });
   }
 };
 
@@ -746,8 +747,8 @@ export const deleteStockRequest = async (req: Request, res: Response) => {
       message: 'Stock request deleted successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to delete stock request', status: 'error' });
   }
 };
 
@@ -760,8 +761,8 @@ export const addStockRequestItem = async (req: Request, res: Response) => {
       message: 'Stock request item added successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to add stock request item', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to add stock request item', status: 'error' });
   }
 };
 
@@ -775,8 +776,8 @@ export const updateStockRequestItem = async (req: Request, res: Response) => {
       message: 'Stock request item updated successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to update stock request item', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to update stock request item', status: 'error' });
   }
 };
 
@@ -790,8 +791,8 @@ export const deleteStockRequestItem = async (req: Request, res: Response) => {
       message: 'Stock request item deleted successfully',
       status: 'success'
     });
-  } catch (err: any) {
-    return res.status(500).json({ data: null, message: err.message || 'Failed to delete stock request item', status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to delete stock request item', status: 'error' });
   }
 };
 

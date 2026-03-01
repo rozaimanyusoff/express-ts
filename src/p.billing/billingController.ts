@@ -6,6 +6,11 @@ import fs from 'fs';
 import { register } from 'module';
 import path from 'path';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
+import { BACKEND_URL, UPLOAD_BASE_PATH } from '../utils/env';
+import { validateBody } from '../utils/bodyValidator';
+import { CreateFuelBillingSchema } from '../utils/validation/billing.schemas';
+import { parseBody } from '../utils/validation/index';
 
 import * as assetsModel from '../p.asset/assetModel';
 import * as maintenanceModel from '../p.maintenance/maintenanceModel';
@@ -144,9 +149,9 @@ export const getVehicleMtnBillings = async (req: Request, res: Response) => {
 			};
 		});
 		return res.json({ data, message: `Vehicle maintenance billings retrieved successfully total entries: ${data.length}`, status: 'success' });
-	} catch (err: any) {
+	} catch (err: unknown) {
 		logger.error(err);
-		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
+		return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
 	}
 };
 
@@ -225,9 +230,9 @@ export const getVehicleMtnBillingsInv = async (req: Request, res: Response) => {
 			};
 		});
 		return res.json({ data, message: `Vehicle maintenance billings (inv_date) retrieved successfully`, status: 'success' });
-	} catch (err: any) {
+	} catch (err: unknown) {
 		logger.error(err);
-		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings (inv_date)', status: 'error' });
+		return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to retrieve vehicle maintenance billings (inv_date)', status: 'error' });
 	}
 };
 
@@ -300,7 +305,7 @@ export const getVehicleMtnBillingById = async (req: Request, res: Response) => {
 					const filename = pathParts.pop();
 					const encodedFilename = encodeURIComponent(filename);
 					const encodedPath = [...pathParts, encodedFilename].join('/');
-					formUploadUrl = `${process.env.BACKEND_URL || 'http://localhost:3030'}/${encodedPath}`;
+					formUploadUrl = `${BACKEND_URL || 'http://localhost:3030'}/${encodedPath}`;
 				}
 
 				svcOrderDetails = {
@@ -496,9 +501,9 @@ export const getVehicleMtnBillingsByIds = async (req: Request, res: Response) =>
 			message: `${structuredBillings.length} vehicle maintenance billings retrieved successfully`,
 			status: 'success'
 		});
-	} catch (err: any) {
+	} catch (err: unknown) {
 		logger.error(err);
-		return res.status(500).json({ data: null, message: err?.message || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
+		return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to retrieve vehicle maintenance billings', status: 'error' });
 	}
 };
 
@@ -980,6 +985,8 @@ export const getWorkshopById = async (req: Request, res: Response) => {
 
 export const createWorkshop = async (req: Request, res: Response) => {
 	try {
+		const bodyErr = validateBody(req.body, []);
+		if (bodyErr) return res.status(400).json({ data: null, status: 'error', ...bodyErr });
 		const insertId = await billingModel.createWorkshop(req.body);
 		return res.status(201).json({ id: insertId, message: 'Workshop created successfully', status: 'success' });
 	} catch (error) {
@@ -1019,7 +1026,7 @@ export const getFuelBillings = async (req: Request, res: Response) => {
 				if (fv) {
 					// New schema: { id, name, logo, image2 }
 					const name = fv.name;
-					const baseUrl = process.env.BACKEND_URL || '';
+					const baseUrl = BACKEND_URL || '';
 					const logo = fv.logo ? `${baseUrl.replace(/\/$/, '')}/${String(fv.logo).replace(/^\//, '')}` : fv.logo;
 					vendor = { id: bill.stmt_issuer, logo, name };
 				}
@@ -1069,7 +1076,7 @@ export const getFuelBillingById = async (req: Request, res: Response) => {
 		const fv = await billingModel.getFuelVendorById(fuelBilling.stmt_issuer);
 		if (fv) {
 			const name = fv.name;
-			const logo = fv.logo ? `${process.env.BACKEND_URL}/${fv.logo}` : null;
+			const logo = fv.logo ? `${BACKEND_URL}/${fv.logo}` : null;
 			fuel_vendor = { id: fuelBilling.stmt_issuer, logo, vendor: name };
 		}
 	}
@@ -1268,6 +1275,8 @@ export const getVehicleMaintenanceByAsset = async (req: Request, res: Response) 
 
 export const createFuelBilling = async (req: Request, res: Response) => {
 	try {
+		const bodyErr = validateBody(req.body, ['stmt_issuer', 'stmt_date', 'stmt_no']);
+		if (bodyErr) return res.status(400).json({ data: null, status: 'error', ...bodyErr });
 		// Map frontend payload to backend model
 		const { details, diesel_amount, petrol_amount, stmt_count, stmt_date, stmt_diesel, stmt_disc, stmt_issuer, stmt_litre, stmt_no, stmt_ron95, stmt_ron97, stmt_stotal, stmt_total, stmt_total_km } = req.body;
 
@@ -1379,10 +1388,10 @@ export const createFuelBilling = async (req: Request, res: Response) => {
 		return res.status(201).json({ id: insertId, message: 'Fuel billing created successfully', status: 'success' });
 	} catch (error) {
 		// Check if it's a duplicate entry error
-		if (error instanceof Error && error.message.includes('already exists')) {
-			return res.status(409).json({ message: error.message, status: 'error' });
+		if (error instanceof Error && getErrorMessage(error).includes('already exists')) {
+			return res.status(409).json({ message: getErrorMessage(error), status: 'error' });
 		} else {
-			return res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to create fuel billing', status: 'error' });
+			return res.status(500).json({ error, message: error instanceof Error ? getErrorMessage(error) : 'Failed to create fuel billing', status: 'error' });
 		}
 	}
 };
@@ -1509,8 +1518,8 @@ export const deleteFuelBilling = async (req: Request, res: Response) => {
 		await billingModel.deleteFuelVehicleAmount(id);
 		await billingModel.deleteFuelBilling(id);
 		return res.json({ data: { stmt_id: id }, message: 'Fuel billing deleted successfully', status: 'success' });
-	} catch (error: any) {
-		return res.status(500).json({ data: null, message: error?.message || 'Failed to delete fuel billing', status: 'error' });
+	} catch (error: unknown) {
+		return res.status(500).json({ data: null, message: getErrorMessage(error) || 'Failed to delete fuel billing', status: 'error' });
 	}
 };
 
@@ -1791,7 +1800,7 @@ export const getFuelBillingCostcenterSummary = async (req: Request, res: Respons
 
 export const getFuelVendors = async (req: Request, res: Response) => {
 	const fuelVendors = await billingModel.getFuelVendor();
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const vendorsWithUrls = (fuelVendors || []).map((v: any) => ({
 		...v,
 		image2: v.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(v.image2).replace(/^\//, '')}` : v.image2,
@@ -1843,8 +1852,8 @@ export const createFuelNewBillEntry = async (req: Request, res: Response) => {
 		});
 
 		return res.status(201).json({ data: { s_id: insertId }, message: 'Fuel bill entry created', status: 'success' });
-	} catch (err: any) {
-		return res.status(500).json({ data: null, message: err?.message || 'Failed to create fuel bill entry', status: 'error' });
+	} catch (err: unknown) {
+		return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to create fuel bill entry', status: 'error' });
 	}
 }
 
@@ -1854,7 +1863,7 @@ export const getFuelVendorById = async (req: Request, res: Response) => {
 	if (!fuelVendor) {
 		return res.status(404).json({ message: 'Fuel vendor not found', status: 'error' });
 	}
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const vendorWithUrl = {
 		...fuelVendor,
 		image2: fuelVendor.image2 ? `${baseUrl.replace(/\/$/, '')}/${String(fuelVendor.image2).replace(/^\//, '')}` : fuelVendor.image2,
@@ -1900,8 +1909,8 @@ export const removeFuelBillEntry = async (req: Request, res: Response) => {
 
 		await billingModel.deleteFuelVehicleAmountByStmtAndSid(stmt_id, s_id);
 		return res.json({ data: { s_id, stmt_id }, message: 'Bill entry removed', status: 'success' });
-	} catch (error: any) {
-		return res.status(500).json({ data: null, message: error?.message || 'Failed to remove bill entry', status: 'error' });
+	} catch (error: unknown) {
+		return res.status(500).json({ data: null, message: getErrorMessage(error) || 'Failed to remove bill entry', status: 'error' });
 	}
 };
 
@@ -2041,9 +2050,9 @@ export const getFleetCards = async (req: Request, res: Response) => {
 		});
 
 		return res.json({ data, message: 'Fleet cards retrieved successfully', status: 'success' });
-	} catch (err: any) {
+	} catch (err: unknown) {
 		logger.error(err);
-		return res.status(500).json({ message: err.message || 'Failed to retrieve fleet cards', status: 'error' });
+		return res.status(500).json({ message: getErrorMessage(err) || 'Failed to retrieve fleet cards', status: 'error' });
 	}
 };
 export const getFleetCardById = async (req: Request, res: Response) => {
@@ -2247,10 +2256,10 @@ export const createFleetCard = async (req: Request, res: Response) => {
 			message: `Fleet card created successfully${assignmentMsg}`,
 			status: 'success'
 		});
-	} catch (error: any) {
-		logger.error('Create fleet card error:', error?.message || error);
+	} catch (error: unknown) {
+		logger.error('Create fleet card error:', getErrorMessage(error) || error);
 		return res.status(500).json({
-			error: error?.message || String(error),
+			error: getErrorMessage(error) || String(error),
 			message: 'Failed to create fleet card',
 			status: 'error'
 		});
@@ -2376,7 +2385,7 @@ function normalizeStoredPath(filePath?: null | string): null | string {
 	// normalize separators
 	p = p.replace(/\\/g, '/');
 	// remove configured upload base if present
-	const base = process.env.UPLOAD_BASE_PATH;
+	const base = UPLOAD_BASE_PATH;
 	if (base) {
 		const nb = String(base).replace(/\\/g, '/').replace(/\/+$/, '');
 		if (p.startsWith(nb)) {
@@ -2401,7 +2410,7 @@ function normalizeStoredPath(filePath?: null | string): null | string {
 // logos: strips mount segments and ensures path is under 'uploads/'.
 function publicUrl(rawPath?: null | string): null | string {
 	if (!rawPath) return null;
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	let normalized = String(rawPath).replace(/\\/g, '/').replace(/^\/+/, '');
 	normalized = normalized.replace(/(^|\/)mnt\/winshare\/?/ig, '');
 	if (!normalized.startsWith('uploads/')) normalized = `uploads/${normalized.replace(/^\/+/, '')}`;
@@ -2413,7 +2422,7 @@ export const updateFleetCardFromBilling = async (req: Request, res: Response) =>
 		await billingModel.updateFleetCardFromBilling(req.body);
 		return res.json({ message: 'Fleet card updated from billing successfully', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ error, message: error instanceof Error ? error.message : 'Failed to update fleet card from billing', status: 'error' });
+		return res.status(500).json({ error, message: error instanceof Error ? getErrorMessage(error) : 'Failed to update fleet card from billing', status: 'error' });
 	}
 };
 
@@ -2971,6 +2980,8 @@ export const getTempVehicleRecordById = async (req: Request, res: Response) => {
 };
 
 export const createTempVehicleRecord = async (req: Request, res: Response) => {
+	const bodyErr = validateBody(req.body, []);
+	if (bodyErr) return res.status(400).json({ data: null, status: 'error', ...bodyErr });
 	const payload = req.body;
 
 	const insertId = await billingModel.createTempVehicleRecord(payload);
@@ -3463,10 +3474,10 @@ export const createUtilityBill = async (req: Request, res: Response) => {
 	let id: number;
 	try {
 		id = await billingModel.createUtilityBill(payload);
-	} catch (err: any) {
+	} catch (err: unknown) {
 		// Handle duplicate/unique constraint errors gracefully
-		const msg = err && (err.message || err.sqlMessage || err.toString());
-		const code = err?.code;
+		const msg = isMysqlError(err) ? (err.message || String(err)) : getErrorMessage(err);
+		const code = isMysqlError(err) ? err.code : undefined;
 		// Common MySQL duplicate error code is 'ER_DUP_ENTRY' or message contains 'Duplicate' / 'already exists'
 		if (String(code) === 'ER_DUP_ENTRY' || (typeof msg === 'string' && (/duplicate|already exists|duplicate entry|unique constraint/i).test(msg))) {
 			return res.status(409).json({ message: 'Utility bill already exists', status: 'error' });
@@ -3733,7 +3744,7 @@ export const getUtilityBillingServiceSummary = async (req: Request, res: Respons
 // =================== BILLING ACCOUNT TABLE CONTROLLER ===================
 export const getBillingAccounts = async (req: Request, res: Response) => {
 	const accounts = await billingModel.getBillingAccounts();
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 
 	// fetch beneficiaries map (support old schema bfcy_* or new schema id/name)
 	const beneficiaries = await billingModel.getBeneficiaries(undefined);
@@ -3800,7 +3811,7 @@ export const getBillingAccountById = async (req: Request, res: Response) => {
 	if (!account) {
 		return res.status(404).json({ error: 'Billing account not found' });
 	}
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 
 	// fetch beneficiaries, costcenters, and locations to resolve ids
 	const [beneficiaries, costcentersRaw, locationsRaw] = await Promise.all([
@@ -3902,7 +3913,7 @@ export const deleteBillingAccount = async (req: Request, res: Response) => {
 	// fetch beneficiary record and enrich
 	const ben = await billingModel.getBeneficiaryById(beneficiaryId);
 	if (!ben) return res.status(404).json({ status: 'error', message: 'Beneficiary not found' });
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
 	let logo = rawLogo;
 	if (rawLogo) {
@@ -4024,7 +4035,7 @@ export const postUtilityBillsByIds = async (req: Request, res: Response) => {
 	// fetch beneficiary record and enrich
 	const ben = await billingModel.getBeneficiaryById(beneficiaryId);
 	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
 	let logo = rawLogo;
 	if (rawLogo) {
@@ -4299,7 +4310,7 @@ export const postPrintingBillsByIds = async (req: Request, res: Response) => {
 	// fetch beneficiary record and enrich
 	const ben = await billingModel.getBeneficiaryById(beneficiaryId);
 	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo ?? ben.logo ?? ben.bfcy_pic ?? null;
 	let logo = rawLogo;
 	if (rawLogo) {
@@ -4440,7 +4451,7 @@ export const getBeneficiaries = async (req: Request, res: Response) => {
 	const servicesQuery = req.query.services;
 	// Pass through as string or string[] to model; model will normalize
 	const beneficiaries = await billingModel.getBeneficiaries(servicesQuery as any);
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	// fetch employees to resolve entry_by
 	const employeesRaw = await assetsModel.getEmployees();
 	const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
@@ -4482,7 +4493,7 @@ export const getBeneficiaryById = async (req: Request, res: Response) => {
 	const id = Number(req.params.id);
 	const ben = await billingModel.getBeneficiaryById(id);
 	if (!ben) return res.status(404).json({ message: 'Beneficiary not found', status: 'error' });
-	const baseUrl = process.env.BACKEND_URL || '';
+	const baseUrl = BACKEND_URL || '';
 	const rawLogo = ben.bfcy_logo || ben.logo || ben.bfcy_pic || null;
 	let logo = rawLogo;
 	if (rawLogo) {
@@ -4524,8 +4535,8 @@ export const createBeneficiary = async (req: Request, res: Response) => {
 	try {
 		const id = await billingModel.createBeneficiary(payload);
 		return res.status(201).json({ id, message: 'Beneficiary created successfully', status: 'success' });
-	} catch (err: any) {
-		if (err && String(err.message) === 'duplicate_beneficiary') {
+	} catch (err: unknown) {
+		if (err instanceof Error && err.message === 'duplicate_beneficiary') {
 			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
 		}
 		throw err;
@@ -4543,8 +4554,8 @@ export const updateBeneficiary = async (req: Request, res: Response) => {
 	try {
 		await billingModel.updateBeneficiary(id, payload);
 		return res.json({ message: 'Beneficiary updated successfully', status: 'success' });
-	} catch (err: any) {
-		if (err && String(err.message) === 'duplicate_beneficiary') {
+	} catch (err: unknown) {
+		if (err instanceof Error && err.message === 'duplicate_beneficiary') {
 			return res.status(409).json({ message: 'Beneficiary with same name and category already exists', status: 'error' });
 		}
 		throw err;

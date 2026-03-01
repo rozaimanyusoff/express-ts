@@ -5,6 +5,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import * as path from 'path';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
 import * as assetModel from '../p.asset/assetModel';
 import * as billingModel from '../p.billing/billingModel';
@@ -71,7 +72,7 @@ export const getUnseenBillsCount = async (req: Request, res: Response) => {
 		logger.error('Error getting unseen bills count:', error);
 		return res.status(500).json({
 			data: { count: 0 },
-			message: error instanceof Error ? error.message : 'Failed to get unseen bills count',
+			message: error instanceof Error ? getErrorMessage(error) : 'Failed to get unseen bills count',
 			status: 'error'
 		});
 	}
@@ -616,7 +617,7 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -778,7 +779,7 @@ export const getVehicleMtnRequestById = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1051,7 +1052,7 @@ export const createVehicleMtnRequest = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1127,7 +1128,7 @@ export const updateVehicleMtnRequest = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1246,7 +1247,7 @@ export const uploadVehicleMtnForm = async (req: Request, res: Response) => {
 		logger.error('uploadVehicleMtnForm error:', error);
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1268,7 +1269,7 @@ export const deleteVehicleMtnRequest = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1320,7 +1321,7 @@ export const recommendVehicleMtnRequestSingle = async (req: Request, res: Respon
 
 		return res.json({ data: { requestId: reqId, result }, message: 'Recommendation updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1361,7 +1362,7 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 		if (approval_stat === 1) {
 			try {
 				billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
-			} catch (e: any) {
+			} catch (e: unknown) {
 				if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
 					logger.warn('approveVehicleMtnRequestSingle: push to billing failed', e);
 				}
@@ -1376,7 +1377,7 @@ export const approveVehicleMtnRequestSingle = async (req: Request, res: Response
 
 		return res.json({ data: { billing, requestId: reqId, result }, message: 'Approval updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1412,7 +1413,7 @@ export const recommendVehicleMtnRequestBulk = async (req: Request, res: Response
 
 		return res.json(responseData);
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1438,7 +1439,7 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 				if (stat === 1) {
 					try {
 						billing = await maintenanceModel.pushVehicleMtnToBilling(reqId);
-					} catch (e: any) {
+					} catch (e: unknown) {
 						if (!(e instanceof Error && e.message && e.message.toLowerCase().includes('duplicate'))) {
 							logger.warn('approveVehicleMtnRequestBulk: push to billing failed', e);
 						}
@@ -1457,7 +1458,7 @@ export const approveVehicleMtnRequestBulk = async (req: Request, res: Response) 
 
 		return res.json(responseData);
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1541,7 +1542,7 @@ export const cancelVehicleMtnRequest = async (req: Request, res: Response) => {
 
 		return res.json({ data: result, message: 'Maintenance request cancelled successfully', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1649,7 +1650,7 @@ export const adminUpdateVehicleMtnRequest = async (req: Request, res: Response) 
 
 		return res.json({ data: result, message: 'Maintenance record updated successfully', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -1666,7 +1667,7 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		if (error instanceof Error && error.message.includes('duplicate')) {
+		if (error instanceof Error && getErrorMessage(error).includes('duplicate')) {
 			return res.status(409).json({
 				data: null,
 				message: 'Invoice already exists for this maintenance record',
@@ -1676,7 +1677,7 @@ export const pushVehicleMtnToBilling = async (req: Request, res: Response) => {
 
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1787,7 +1788,7 @@ export const authorizeVehicleMtnRequest = async (req: Request, res: Response) =>
 		return res.json({ data: { requestId, sentTo: recipientEmail }, message: 'Approval processed and requester notified', status: 'success' });
 	} catch (error) {
 		logger.error('authorizeVehicleMtnRequest error', error);
-		return res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -1869,7 +1870,7 @@ export const resendMaintenancePortalLink = async (req: Request, res: Response) =
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -1936,7 +1937,7 @@ export const resendWorkflowMail = async (req: Request, res: Response) => {
 		}
 		return res.json({ data: { requestId, sentTo: to }, message: `Workflow mail resent to ${desired || 'recommend'}`, status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error occurred', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred', status: 'error' });
 	}
 };
 
@@ -2039,7 +2040,7 @@ export const authorizeViaEmailLink = async (req: Request, res: Response) => {
 	} catch (error) {
 		const wantsJson = String((req.query as any).format || '').toLowerCase() === 'json'
 			|| (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'));
-		if (wantsJson) return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		if (wantsJson) return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 		const redirectUrl = `${frontendUrl.replace(/\/?$/, '')}/mtn/vehicle/portal/${Number(req.params.id || 0)}`;
 		res.redirect(302, redirectUrl); return;
@@ -2213,7 +2214,7 @@ export const getVehicleMtnRequestByAssetId = async (req: Request, res: Response)
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2345,7 +2346,7 @@ export const getServiceTypes = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2372,7 +2373,7 @@ export const getServiceTypeById = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2391,7 +2392,7 @@ export const createServiceType = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2411,7 +2412,7 @@ export const updateServiceType = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2430,7 +2431,7 @@ export const deleteServiceType = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2568,7 +2569,7 @@ export const getPoolCars = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2696,7 +2697,7 @@ export const getPoolCarById = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2777,7 +2778,7 @@ export const createPoolCar = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2797,7 +2798,7 @@ export const updatePoolCar = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -2833,8 +2834,8 @@ export const returnPoolCar = async (req: Request, res: Response) => {
 		await maintenanceModel.updatePoolCar(pcarId, payload);
 
 		return res.json({ data: { id: pcarId, pcar_odo_end, pcar_retdate }, message: 'Pool car marked as returned', status: 'success' });
-	} catch (error: any) {
-		return res.status(500).json({ data: null, message: error?.message || 'Failed to update return info', status: 'error' });
+	} catch (error: unknown) {
+		return res.status(500).json({ data: null, message: getErrorMessage(error) || 'Failed to update return info', status: 'error' });
 	}
 };
 
@@ -2873,8 +2874,8 @@ export const cancelPoolCar = async (req: Request, res: Response) => {
 
 		await maintenanceModel.updatePoolCar(pcarId, update);
 		return res.json({ data: { id: pcarId }, message: isCancelled ? 'Pool car cancelled' : 'Pool car cancellation cleared', status: 'success' });
-	} catch (err: any) {
-		return res.status(500).json({ data: null, message: err?.message || 'Failed to update pool car cancellation', status: 'error' });
+	} catch (err: unknown) {
+		return res.status(500).json({ data: null, message: getErrorMessage(err) || 'Failed to update pool car cancellation', status: 'error' });
 	}
 };
 
@@ -2909,7 +2910,7 @@ export const verifyPoolCar = async (req: Request, res: Response) => {
 
 		return res.json({ data: { id: Number(id), ...update }, message: 'Verification updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -2956,7 +2957,7 @@ export const deletePoolCar = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -3091,7 +3092,7 @@ export const updateAdminPoolCar = async (req: Request, res: Response) => {
 
 		return res.json({ data: { id: pcarId }, message: 'Pool car updated', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3177,7 +3178,7 @@ export const resendPoolCarMail = async (req: Request, res: Response) => {
 			status: 'success'
 		});
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3187,7 +3188,7 @@ export const getAvailablePoolCars = async (req: Request, res: Response) => {
 		const cars = await maintenanceModel.getAvailablePoolCars();
 		return res.json({ data: cars, message: 'Available pool cars retrieved', status: 'success' });
 	} catch (error) {
-		return res.status(500).json({ data: null, message: error instanceof Error ? error.message : 'Unknown error', status: 'error' });
+		return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Unknown error', status: 'error' });
 	}
 };
 
@@ -3205,7 +3206,7 @@ export const getTouchNGoCards = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -3248,7 +3249,7 @@ export const getTouchNGoCardById = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -3267,7 +3268,7 @@ export const createTouchNGoCard = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -3287,7 +3288,7 @@ export const updateTouchNGoCard = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}
@@ -3306,7 +3307,7 @@ export const deleteTouchNGoCard = async (req: Request, res: Response) => {
 	} catch (error) {
 		return res.status(500).json({
 			data: null,
-			message: error instanceof Error ? error.message : 'Unknown error occurred',
+			message: error instanceof Error ? getErrorMessage(error) : 'Unknown error occurred',
 			status: 'error'
 		});
 	}

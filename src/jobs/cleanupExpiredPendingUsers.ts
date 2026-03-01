@@ -1,5 +1,11 @@
+import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import { pool } from '../utils/db.js';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils.js';
+
+interface LockRow extends RowDataPacket {
+   lock_acquired: number;
+}
 
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // Run every hour
 const PENDING_USERS_TABLE = 'pending_users';
@@ -12,11 +18,11 @@ const LOCK_TIMEOUT = 30; // seconds
  */
 const acquireLock = async (): Promise<boolean> => {
    try {
-      const [result] = await pool.query(
+      const [rows] = await pool.query<LockRow[]>(
          `SELECT GET_LOCK(?, ?) as lock_acquired`,
          [LOCK_NAME, LOCK_TIMEOUT]
       );
-      return (result as any[])[0]?.lock_acquired === 1;
+      return rows[0]?.lock_acquired === 1;
    } catch (err) {
       logger.error('[PendingUserCleanup] Error acquiring lock:', err);
       return false;
@@ -41,7 +47,7 @@ export const cleanupExpiredPendingUsers = async (): Promise<void> => {
       const now = new Date();
 
       // Delete pending users where activation code has expired
-      const [result]: any[] = await pool.query(
+      const [result] = await pool.query<ResultSetHeader>(
          `DELETE FROM ${PENDING_USERS_TABLE} 
        WHERE activation_expires_at IS NOT NULL 
        AND activation_expires_at < ?`,
@@ -53,9 +59,9 @@ export const cleanupExpiredPendingUsers = async (): Promise<void> => {
       if (deletedCount > 0) {
          logger.info(`[PendingUserCleanup] Removed ${deletedCount} expired pending user(s) with expired activation codes`);
       }
-   } catch (error: any) {
+   } catch (error: unknown) {
       // Ignore column not found errors (migration may not have run yet)
-      if (error.code === 'ER_BAD_FIELD_ERROR' && error.message.includes('activation_expires_at')) {
+      if (isMysqlError(error) && error.code === 'ER_BAD_FIELD_ERROR' && getErrorMessage(error).includes('activation_expires_at')) {
          logger.warn('[PendingUserCleanup] activation_expires_at column not found. Please run migration: db/migrations/add_activation_expires_at_to_pending_users.sql');
          return;
       }

@@ -3,6 +3,10 @@ import { Request, Response } from 'express';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import logger from '../utils/logger';
+import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
+import { validateBody } from '../utils/bodyValidator';
+import { CreateSummonSchema } from '../utils/validation/compliance.schemas';
+import { parseBody } from '../utils/validation/index';
 
 import * as notificationManager from '../utils/notificationManager';
 import * as assetModel from '../p.asset/assetModel';
@@ -317,9 +321,10 @@ export const getSummonById = async (req: Request, res: Response) => {
 
 export const createSummon = async (req: Request, res: Response) => {
   try {
-    // Pass request body directly to the model (no payload construction here)
-    const data: any = req.body || {};
-    const id = await complianceModel.createSummon(data);
+    const validation = parseBody(req.body, CreateSummonSchema);
+    if (!validation.ok) return res.status(400).json(validation.error);
+    const data = validation.data;
+    const id = await complianceModel.createSummon(data as any);
 
     // If there was an uploaded file, validate, move it into final storage and update the record
     if ((req as any).file?.path) {
@@ -353,11 +358,11 @@ export const createSummon = async (req: Request, res: Response) => {
         const ramco = r?.ramco_id || null;
         let emp: any = null;
         if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
-  const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
-  const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
-  const adminCc = isValidEmail(ADMIN_EMAIL_ENV) ? ADMIN_EMAIL_ENV : undefined;
-  const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
-  if (!toEmail) return; // no valid recipient
+        const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+        const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
+        const adminCc = isValidEmail(ADMIN_EMAIL_ENV) ? ADMIN_EMAIL_ENV : undefined;
+        const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
+        if (!toEmail) return; // no valid recipient
 
         const html = renderSummonNotification({
           driverName: localTestName || (emp?.full_name || emp?.name) || null,
@@ -529,11 +534,11 @@ export const resendSummonNotification = async (req: Request, res: Response) => {
     const ramco = r?.ramco_id || null;
     let emp: any = null;
     if (ramco) emp = await assetModel.getEmployeeByRamco(String(ramco));
-  const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
-  const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
-  const adminCc = (ADMIN_EMAIL_ENV && isValidEmail(ADMIN_EMAIL_ENV)) ? ADMIN_EMAIL_ENV : undefined;
-  const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
-  if (!toEmail) return res.status(400).json({ data: null, message: 'Recipient email not found', status: 'error' });
+    const toCandidate = localTestEmail || (emp && (emp.email || emp.contact)) || r?.v_email || null;
+    const isValidEmail = (s: any) => typeof s === 'string' && s.includes('@');
+    const adminCc = (ADMIN_EMAIL_ENV && isValidEmail(ADMIN_EMAIL_ENV)) ? ADMIN_EMAIL_ENV : undefined;
+    const toEmail = isValidEmail(toCandidate) ? String(toCandidate) : (ADMIN_EMAIL_ENV || null);
+    if (!toEmail) return res.status(400).json({ data: null, message: 'Recipient email not found', status: 'error' });
 
     const html = renderSummonNotification({
       driverName: localTestName || (emp?.full_name || emp?.name) || null,
@@ -577,7 +582,7 @@ export const deleteSummon = async (req: Request, res: Response) => {
     return res.json({ data: null, message: 'Summon deleted', status: 'success' });
   } catch (err) {
     if (err instanceof Error && err.message === 'Summon record not found') {
-      return res.status(404).json({ data: null, message: err.message, status: 'error' });
+      return res.status(404).json({ data: null, message: getErrorMessage(err), status: 'error' });
     } else {
       return res.status(500).json({ data: null, message: err instanceof Error ? err.message : 'Failed to delete summon', status: 'error' });
     }
@@ -670,7 +675,7 @@ export const deleteSummonType = async (req: Request, res: Response) => {
     await complianceModel.deleteSummonType(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete summon type', status: 'error' });
   }
 };
@@ -726,7 +731,7 @@ export const deleteSummonAgency = async (req: Request, res: Response) => {
     await complianceModel.deleteSummonAgency(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete summon agency', status: 'error' });
   }
 };
@@ -771,7 +776,7 @@ export const updateSummonTypeAgency = async (req: Request, res: Response) => {
     await complianceModel.updateSummonTypeAgency(id, data);
     return res.json({ message: 'Updated', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('exists')) return res.status(400).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('exists')) return res.status(400).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to update mapping', status: 'error' });
   }
 };
@@ -783,7 +788,7 @@ export const deleteSummonTypeAgency = async (req: Request, res: Response) => {
     await complianceModel.deleteSummonTypeAgency(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete mapping', status: 'error' });
   }
 };
@@ -827,7 +832,7 @@ export const getAssessmentCriteria = async (req: Request, res: Response) => {
       return res.status(400).json({ data: null, message: 'Invalid status filter. Use active or inactive', status: 'error' });
     }
 
-  const rows = await complianceModel.getAssessmentCriteria();
+    const rows = await complianceModel.getAssessmentCriteria();
 
     // If no filters, return raw rows
     if ((!statusParam || String(statusParam).trim() === '') && (!typeParam || String(typeParam).trim() === '') && (ownershipParam === undefined)) {
@@ -870,8 +875,8 @@ export const getAssessmentCriteria = async (req: Request, res: Response) => {
       return okStatus && okType && okOwnership;
     });
 
-  const count = Array.isArray(filtered) ? filtered.length : 0;
-  return res.json({ data: filtered, message: `Assessment criteria retrieved (${count})`, status: 'success' });
+    const count = Array.isArray(filtered) ? filtered.length : 0;
+    return res.json({ data: filtered, message: `Assessment criteria retrieved (${count})`, status: 'success' });
   } catch (e) {
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to fetch assessment criteria', status: 'error' });
   }
@@ -918,7 +923,7 @@ export const deleteAssessmentCriteria = async (req: Request, res: Response) => {
     await complianceModel.deleteAssessmentCriteria(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment criteria', status: 'error' });
   }
 };
@@ -1009,7 +1014,7 @@ export const deleteAssessmentCriteriaOwnership = async (req: Request, res: Respo
     if (!ownerships.includes(id)) {
       return res.status(404).json({ data: null, message: 'Ownership not found', status: 'error' });
     }
-  // Remove ownership from all criteria that have it
+    // Remove ownership from all criteria that have it
     for (const r of rows) {
       if (r.ownership === id) {
         // ensure qset_id is a valid number before calling the model
@@ -1079,7 +1084,7 @@ export const getAssessments = async (req: Request, res: Response) => {
     const data = (rows || []).map((r: any) => {
       let asset = null;
       let ownerRamcoForFilter = null;
-      
+
       if (r.asset_id && assetMap.has(r.asset_id)) {
         const a = assetMap.get(r.asset_id);
         // compute purchase_date and age if available
@@ -1117,7 +1122,7 @@ export const getAssessments = async (req: Request, res: Response) => {
         const l = locationMap.get(r.location_id);
         return { code: l.code || l.name || null, id: r.location_id };
       })() : null;
-      
+
       // Transform ncr_details: remove internal fields and map status
       const formattedNcrDetails = (ncr_details || []).map((detail: any) => {
         const { created_at, updated_at, vehicle_id: vid, assess_id: aid, ...ncrClean } = detail;
@@ -1126,12 +1131,12 @@ export const getAssessments = async (req: Request, res: Response) => {
           is_closed: detail.ncr_status !== null && detail.ncr_status !== 'open'
         };
       });
-      
+
       // Convert upload paths to full public URLs
-      return { 
-        ...clean, 
+      return {
+        ...clean,
         // Convert attachment fields to full URLs
-        a_upload: toPublicUrl(clean.a_upload), 
+        a_upload: toPublicUrl(clean.a_upload),
         a_upload2: toPublicUrl(clean.a_upload2),
         a_upload3: toPublicUrl(clean.a_upload3),
         a_upload4: toPublicUrl(clean.a_upload4),
@@ -1228,10 +1233,10 @@ export const getAssessmentById = async (req: Request, res: Response) => {
       const qset_type = qid && qsetMap.has(qid) ? ((criteria.find((c: any) => Number(c.qset_id) === qid) || {}).qset_type || null) : null;
       // remove internal ids from detail response
       const { asset_id, vehicle_id, ...rest } = d || {};
-      return { 
-        ...rest, 
+      return {
+        ...rest,
         // Convert detail image URL to full path
-        adt_image: toPublicUrl(rest.adt_image), 
+        adt_image: toPublicUrl(rest.adt_image),
         qset_desc,
         qset_type
       };
@@ -1279,7 +1284,7 @@ export const createAssessment = async (req: Request, res: Response) => {
           details = body.details as any[];
         } else if (body.details && typeof body.details === 'object') {
           // Handle object with numeric keys: { '0': {...}, '1': {...} }
-          const keys = Object.keys(body.details).filter(k => /^\d+$/.test(k)).sort((a,b)=>Number(a)-Number(b));
+          const keys = Object.keys(body.details).filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
           if (keys.length > 0) {
             details = keys.map(k => (body.details)[k]);
           }
@@ -1381,14 +1386,14 @@ export const createAssessment = async (req: Request, res: Response) => {
     }
 
     // Insert details: for each detail, try to find a file using these strategies in order:
-  // 1) Dedicated field per index: adt_image_<index>
-  // 2) Array-style fields: adt_image or adt_images (take i-th element)
-  // 3) Original name equals provided d.adt_image (when frontend supplies reference filename)
-  // 4) Generic fallback: detail_<index>_image
-  // NOTE: Previous implementation reused the same 'adt_image' collection for all rows causing
-  // index misalignment when the client sent multiple files; also relying on originalname often
-  // failed because multer's storage renames files. We now use fieldname-based matching only
-  // and only fall back to originalname if the client explicitly provided one in d.adt_image.
+    // 1) Dedicated field per index: adt_image_<index>
+    // 2) Array-style fields: adt_image or adt_images (take i-th element)
+    // 3) Original name equals provided d.adt_image (when frontend supplies reference filename)
+    // 4) Generic fallback: detail_<index>_image
+    // NOTE: Previous implementation reused the same 'adt_image' collection for all rows causing
+    // index misalignment when the client sent multiple files; also relying on originalname often
+    // failed because multer's storage renames files. We now use fieldname-based matching only
+    // and only fall back to originalname if the client explicitly provided one in d.adt_image.
 
     // Pre-extract possible array style fields
     const adtImageArray = filesByField.get('adt_image') || filesByField.get('adt_images') || [];
@@ -1398,8 +1403,8 @@ export const createAssessment = async (req: Request, res: Response) => {
       try {
         const tempPath = file.path;
         const ext = path.extname(file.originalname || tempPath) || '';
-        const safeItem = adtItem !== undefined && adtItem !== null ? String(adtItem).replace(/[^a-zA-Z0-9_-]+/g, '').slice(0,40) : 'item';
-        const filename = `assess-${assessId}-idx${index}-itm${safeItem}-${Date.now()}-${Math.round(Math.random()*1e6)}${ext}`;
+        const safeItem = adtItem !== undefined && adtItem !== null ? String(adtItem).replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 40) : 'item';
+        const filename = `assess-${assessId}-idx${index}-itm${safeItem}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
         const base = await getUploadBase();
         // Store inside nested folder by assess_id for easier traceability
         const destDir = path.join(base, 'compliance', 'assessment', String(assessId));
@@ -1538,8 +1543,8 @@ export const createAssessment = async (req: Request, res: Response) => {
         }).filter(Boolean) as { filename: string; path: string }[];
 
         try {
-          await sendMail(toEmail, subject, html, { 
-            attachments, 
+          await sendMail(toEmail, subject, html, {
+            attachments,
             cc: supervisorEmail || undefined,
             text
           });
@@ -1576,7 +1581,7 @@ export const deleteAssessment = async (req: Request, res: Response) => {
     await complianceModel.deleteAssessment(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment', status: 'error' });
   }
 };
@@ -1670,7 +1675,7 @@ export const deleteAssessmentDetail = async (req: Request, res: Response) => {
     await complianceModel.deleteAssessmentDetail(id);
     return res.json({ message: 'Deleted', status: 'success' });
   } catch (e) {
-    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: e.message, status: 'error' });
+    if (e instanceof Error && e.message.includes('not found')) return res.status(404).json({ data: null, message: getErrorMessage(e), status: 'error' });
     return res.status(500).json({ data: null, message: e instanceof Error ? e.message : 'Failed to delete assessment detail', status: 'error' });
   }
 };
@@ -1679,7 +1684,7 @@ export const closeNCRItem = async (req: Request, res: Response) => {
   try {
     const assessId = Number(req.params.assess_id);
     const adtId = Number(req.params.adt_id);
-    
+
     if (!assessId || !adtId) {
       return res.status(400).json({
         status: 'error',
@@ -1687,9 +1692,9 @@ export const closeNCRItem = async (req: Request, res: Response) => {
         data: null,
       });
     }
-    
+
     const { ncr_status, closed_at, action, svc_order } = req.body;
-    
+
     if (!ncr_status || !closed_at || !action || svc_order === undefined) {
       return res.status(400).json({
         status: 'error',
@@ -1697,7 +1702,7 @@ export const closeNCRItem = async (req: Request, res: Response) => {
         data: null,
       });
     }
-    
+
     // Update the NCR item
     const affectedRows = await complianceModel.closeNCRItem(adtId, {
       ncr_status,
@@ -1705,7 +1710,7 @@ export const closeNCRItem = async (req: Request, res: Response) => {
       action,
       svc_order,
     });
-    
+
     return res.json({
       status: 'success',
       message: 'NCR item closed successfully',
@@ -1723,7 +1728,7 @@ export const closeNCRItem = async (req: Request, res: Response) => {
     if (e instanceof Error && e.message.includes('not found')) {
       return res.status(404).json({
         status: 'error',
-        message: e.message,
+        message: getErrorMessage(e),
         data: null,
       });
     }
@@ -1786,7 +1791,7 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
     const qsetMap = new Map<number, any>();
     for (const c of criteria) {
       if (c?.qset_id) {
-        qsetMap.set(Number(c.qset_id), { 
+        qsetMap.set(Number(c.qset_id), {
           qset_desc: c.qset_desc || null,
           qset_type: c.qset_type || null
         });
@@ -1799,8 +1804,8 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
         const qid = d?.adt_item ? Number(d.adt_item) : null;
         const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
         const { asset_id, vehicle_id, ...rest } = d || {};
-        return { 
-          ...rest, 
+        return {
+          ...rest,
           adt_image: toPublicUrl(rest.adt_image),
           qset_desc: qset_info.qset_desc,
           qset_type: qset_info.qset_type
@@ -1808,7 +1813,7 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
       });
 
       const { a_loc, asset_id: aid, details, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanAssessment } = assessment;
-      
+
       // Build asset object
       let asset = null;
       if (aid && assetMap.has(aid)) {
@@ -1841,7 +1846,7 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
       }
 
       // Build assessed_location
-      const assessed_location = location_id && locationMap.has(location_id) 
+      const assessed_location = location_id && locationMap.has(location_id)
         ? { code: locationMap.get(location_id).code || locationMap.get(location_id).name || null, id: location_id }
         : null;
 
@@ -1857,16 +1862,16 @@ export const getAssessmentDetailsByAssetAndYear = async (req: Request, res: Resp
       };
     });
 
-    return res.json({ 
-      data: enrichedData, 
-      message: `${enrichedData.length} assessment(s) retrieved`, 
-      status: 'success' 
+    return res.json({
+      data: enrichedData,
+      message: `${enrichedData.length} assessment(s) retrieved`,
+      status: 'success'
     });
   } catch (e) {
-    return res.status(500).json({ 
-      data: null, 
-      message: e instanceof Error ? e.message : 'Failed to fetch assessment details', 
-      status: 'error' 
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to fetch assessment details',
+      status: 'error'
     });
   }
 };
@@ -1922,7 +1927,7 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     const qsetMap = new Map<number, any>();
     for (const c of criteria) {
       if (c?.qset_id) {
-        qsetMap.set(Number(c.qset_id), { 
+        qsetMap.set(Number(c.qset_id), {
           qset_desc: c.qset_desc || null,
           qset_type: c.qset_type || null
         });
@@ -1938,8 +1943,8 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
           const qid = d?.adt_item ? Number(d.adt_item) : null;
           const qset_info = qid && qsetMap.has(qid) ? qsetMap.get(qid) : { qset_desc: null, qset_type: null };
           const { asset_id, vehicle_id, ...rest } = d || {};
-          return { 
-            ...rest, 
+          return {
+            ...rest,
             adt_image: toPublicUrl(rest.adt_image),
             qset_desc: qset_info.qset_desc,
             qset_type: qset_info.qset_type
@@ -1947,7 +1952,7 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
         });
 
       const { a_loc, asset_id: aid, details, loc_id, location_id, ownership, reg_no, vehicle_id, ...cleanAssessment } = assessment;
-      
+
       // Build asset object
       let asset = null;
       if (aid && assetMap.has(aid)) {
@@ -1980,7 +1985,7 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
       }
 
       // Build assessed_location
-      const assessed_location = location_id && locationMap.has(location_id) 
+      const assessed_location = location_id && locationMap.has(location_id)
         ? { code: locationMap.get(location_id).code || locationMap.get(location_id).name || null, id: location_id }
         : null;
 
@@ -1999,16 +2004,16 @@ export const getAssessmentNCRDetailsByAsset = async (req: Request, res: Response
     // Filter out assessments with no open NCR items
     const filteredData = enrichedData.filter((assessment: any) => assessment.details.length > 0);
 
-    return res.json({ 
-      data: filteredData, 
-      message: `${filteredData.length} assessment(s) with open NCR retrieved`, 
-      status: 'success' 
+    return res.json({
+      data: filteredData,
+      message: `${filteredData.length} assessment(s) with open NCR retrieved`,
+      status: 'success'
     });
   } catch (e) {
-    return res.status(500).json({ 
-      data: null, 
-      message: e instanceof Error ? e.message : 'Failed to fetch NCR assessment details', 
-      status: 'error' 
+    return res.status(500).json({
+      data: null,
+      message: e instanceof Error ? e.message : 'Failed to fetch NCR assessment details',
+      status: 'error'
     });
   }
 };
@@ -2029,7 +2034,7 @@ export const getComputerAssessments = async (req: Request, res: Response) => {
     if (ramcoIdParam) filters.ramco_id = String(ramcoIdParam);
 
     const assessments = await complianceModel.getComputerAssessments(filters);
-    
+
     // Fetch lookup data in parallel
     const [costcentersRaw, departmentsRaw, locationsRaw, employeesRaw] = await Promise.all([
       assetModel.getCostcenters(),
@@ -2134,30 +2139,30 @@ export const getComputerAssessmentById = async (req: Request, res: Response) => 
 export const createComputerAssessment = async (req: Request, res: Response) => {
   try {
     const data = req.body;
-    
+
     // Convert register_number to uppercase
     if (data.register_number) {
       data.register_number = String(data.register_number).toUpperCase();
     }
-    
+
     // If no asset_id provided, mark asset_status as 'new'
     if (!data.asset_id) {
       data.asset_status = 'new';
     }
-    
+
     // Check for duplicate assessment only if asset_id is provided
     if (data.asset_id) {
       const existingAssessments = await complianceModel.getComputerAssessments({
         assessment_year: String(data.assessment_year),
         asset_id: Number(data.asset_id),
       });
-      
-      const isDuplicate = existingAssessments.some((a: any) => 
+
+      const isDuplicate = existingAssessments.some((a: any) =>
         a.register_number === data.register_number &&
         a.assessment_year === data.assessment_year &&
         a.asset_id === data.asset_id
       );
-      
+
       if (isDuplicate) {
         return res.status(400).json({
           status: 'error',
@@ -2271,9 +2276,9 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           upgraded_at: data.upgraded_at || null,
           updated_by: data.ramco_id || null
         };
-        
+
         const specsResult = await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
-        
+
         // Log the operation (update vs insert) for monitoring
         if (specsResult.operation === 'update-success') {
           logger.info(`✓ Computer specs UPDATED for asset_id=${data.asset_id}: ${specsResult.updatedFieldCount} fields modified`);
@@ -2298,7 +2303,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
           location_id: data.location_id || null,
           ramco_id: data.ramco_id || null
         });
-        
+
         if (historyResult.inserted) {
           const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
           logger.info(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
@@ -2318,7 +2323,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
       if (data.asset_id) {
         // Get the specs that were just updated to extract category_id, brand_id, model_id
         const specs = await assetModel.getComputerSpecsForAsset(data.asset_id);
-        
+
         const assetDataUpdates: any = {
           // Ownership and location fields (from payload)
           costcenter_id: data.costcenter_id !== undefined ? data.costcenter_id : undefined,
@@ -2334,7 +2339,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         };
 
         const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
-        
+
         if (assetDataResult.updated) {
           logger.info(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
         } else if (!assetDataResult.error) {
@@ -2351,7 +2356,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
     // Handle attachment files if present
     const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
     const attachmentUpdates: any = {};
-    
+
     if (files.length > 0) {
       const filesByField = new Map<string, Express.Multer.File[]>();
       for (const f of files) {
@@ -2364,7 +2369,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
       for (let i = 0; i < 3; i++) {
         const fieldName = `attachments[${i}]`;
         const fileArray = filesByField.get(fieldName);
-        
+
         if (fileArray && fileArray.length > 0) {
           const f = fileArray[0];
           try {
@@ -2397,7 +2402,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
         const employeesRaw = await assetModel.getEmployees();
         const employees = Array.isArray(employeesRaw) ? employeesRaw : [];
         const technician = employees.find((e: any) => e.ramco_id === data.ramco_id) as any;
-        
+
         if (technician && technician.email) {
           // Fetch owner details (same as technician if ramco_id refers to owner)
           let assessedOwner = { name: '', email: '', ramco_id: data.ramco_id };
@@ -2408,56 +2413,56 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
               ramco_id: data.ramco_id,
             };
           }
-          
+
           // Fetch costcenter, department, location details and resolve names
           let costcenter: any = undefined;
           let department: any = undefined;
           let location: any = undefined;
-          
+
           if (data.costcenter_id) {
             const costcenters = await assetModel.getCostcenters();
             const costcenterRecord = (costcenters as any[]).find((cc: any) => cc.id === data.costcenter_id);
             costcenter = { id: data.costcenter_id, name: costcenterRecord?.name || `CC-${data.costcenter_id}` };
           }
-          
+
           if (data.department_id) {
             const departments = await assetModel.getDepartments();
             const departmentRecord = (departments as any[]).find((d: any) => d.id === data.department_id);
             department = { id: data.department_id, name: departmentRecord?.name || `Dept-${data.department_id}` };
           }
-          
+
           if (data.location_id) {
             const locations = await assetModel.getLocations();
             const locationRecord = (locations as any[]).find((l: any) => l.id === data.location_id);
             location = { id: data.location_id, name: locationRecord?.name || `Location-${data.location_id}` };
           }
-          
+
           // Resolve category, brand, and model names from IDs
           let categoryName = data.category;
           let brandName = data.brand;
           let modelName = data.model;
-          
+
           // If category is numeric, look up the name
           if (Number.isFinite(Number(data.category))) {
             const categories = await assetModel.getCategories();
             const categoryRecord = (categories as any[]).find((c: any) => c.id === Number(data.category));
             categoryName = categoryRecord?.name || categoryName;
           }
-          
+
           // If brand is numeric, look up the name
           if (Number.isFinite(Number(data.brand))) {
             const brands = await assetModel.getBrands();
             const brandRecord = (brands as any[]).find((b: any) => b.id === Number(data.brand));
             brandName = brandRecord?.name || brandName;
           }
-          
+
           // If model is numeric, look up the name
           if (Number.isFinite(Number(data.model))) {
             const models = await assetModel.getModels();
             const modelRecord = (models as any[]).find((m: any) => m.id === Number(data.model));
             modelName = modelRecord?.name || modelName;
           }
-          
+
           const { html, subject } = renderITAssessmentNotification({
             assessment: {
               date: data.assessment_date ? new Date(data.assessment_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -2483,7 +2488,7 @@ export const createComputerAssessment = async (req: Request, res: Response) => {
             department,
             location,
           });
-          
+
           await sendMail(technician.email, subject, html);
           logger.info(`✓ Email notification sent to ${technician.email} for assessment ID: ${id}`);
         }
@@ -2516,7 +2521,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
 
     // Handle attachment files if present
     const files: Express.Multer.File[] = Array.isArray((req as any).files) ? (req as any).files as Express.Multer.File[] : [];
-    
+
     if (files.length > 0) {
       const filesByField = new Map<string, Express.Multer.File[]>();
       for (const f of files) {
@@ -2529,7 +2534,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
       for (let i = 0; i < 3; i++) {
         const fieldName = `attachments[${i}]`;
         const fileArray = filesByField.get(fieldName);
-        
+
         if (fileArray && fileArray.length > 0) {
           const f = fileArray[0];
           try {
@@ -2648,7 +2653,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
           upgraded_at: data.upgraded_at || null,
           updated_by: data.ramco_id || null
         };
-        
+
         await assetModel.updateAssetBasicSpecs(data.asset_id, specsUpdateData);
       }
     } catch (specsErr) {
@@ -2668,7 +2673,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
           location_id: data.location_id || null,
           ramco_id: data.ramco_id || null
         });
-        
+
         if (historyResult.inserted) {
           const changedFields = Object.entries(historyResult.changes).filter(([_, v]) => v).map(([k]) => k).join(', ');
           logger.info(`✓ Asset history record INSERTED for asset_id=${data.asset_id} (ID: ${historyResult.recordId}): Changes detected - ${changedFields}`);
@@ -2688,7 +2693,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
       if (data.asset_id) {
         // Get the specs to extract category_id, brand_id, model_id
         const specs = await assetModel.getComputerSpecsForAsset(data.asset_id);
-        
+
         const assetDataUpdates: any = {
           // Ownership and location fields (from payload)
           costcenter_id: data.costcenter_id !== undefined ? data.costcenter_id : undefined,
@@ -2704,7 +2709,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
         };
 
         const assetDataResult = await assetModel.updateAssetDataFromAssessment(data.asset_id, assetDataUpdates);
-        
+
         if (assetDataResult.updated) {
           logger.info(`✓ assetdata UPDATED for asset_id=${data.asset_id}: ${assetDataResult.fieldsUpdated} field(s) modified`);
         } else if (!assetDataResult.error) {
@@ -2719,7 +2724,7 @@ export const updateComputerAssessment = async (req: Request, res: Response) => {
     }
 
     const updated = await complianceModel.getComputerAssessmentById(id);
-    
+
     // Fetch lookup data in parallel
     const [costcentersRaw, departmentsRaw, locationsRaw, employeesRaw] = await Promise.all([
       assetModel.getCostcenters(),
@@ -2967,7 +2972,7 @@ export const getITAssetsWithAssessmentStatus = async (req: Request, res: Respons
     // Helper function to enrich assessment data with lookups
     const enrichAssessment = (assessment: any) => {
       if (!assessment) return null;
-      
+
       const enriched = {
         ...assessment,
         brand: assessment.brand && brandMap.has(Number(assessment.brand))
@@ -2990,31 +2995,31 @@ export const getITAssetsWithAssessmentStatus = async (req: Request, res: Respons
           : (assessment.model ? { raw: assessment.model } : null),
         owner: assessment.ramco_id && employeeMap.has(assessment.ramco_id)
           ? {
-              full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
-              ramco_id: assessment.ramco_id
-            }
+            full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
+            ramco_id: assessment.ramco_id
+          }
           : null,
         technician_info: assessment.ramco_id && employeeMap.has(assessment.ramco_id)
           ? {
-              full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
-              ramco_id: assessment.ramco_id
-            }
+            full_name: employeeMap.get(assessment.ramco_id)?.full_name || null,
+            ramco_id: assessment.ramco_id
+          }
           : (assessment.technician ? { technician: assessment.technician } : null),
       };
-      
+
       // Remove raw ID fields that have been enriched (keep the enriched objects)
       delete enriched.costcenter_id;
       delete enriched.department_id;
       delete enriched.location_id;
       delete enriched.ramco_id;
-      
+
       return enriched;
     };
 
     // Enrich assets with lookup data
     const enrichedResult = result.map((item: any) => {
       const asset = item.asset;
-      
+
       // If asset is null (orphaned assessment), enrich assessments and return
       if (!asset) {
         return {
@@ -3024,7 +3029,7 @@ export const getITAssetsWithAssessmentStatus = async (req: Request, res: Respons
           last_assessment: enrichAssessment(item.last_assessment),
         };
       }
-      
+
       const type = typeMap.get(asset.type_id);
       const nbv = assetModel.calculateNBV(asset.unit_price, asset.purchase_year);
       const age = assetModel.calculateAge(asset.purchase_year);
@@ -3344,9 +3349,9 @@ export const trackAssessmentNCRActions = async (req: Request, res: Response) => 
       const ownerRamco = a.ramco_id ?? a.owner_ramco ?? a.owner?.ramco_id ?? a.assigned_to ?? a.employee_ramco ?? a.user_ramco ?? null;
       const owner = ownerRamco && employeeMap.has(ownerRamco)
         ? {
-            full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null,
-            ramco_id: ownerRamco,
-          }
+          full_name: employeeMap.get(ownerRamco).full_name || employeeMap.get(ownerRamco).name || null,
+          ramco_id: ownerRamco,
+        }
         : null;
       asset = {
         age,
@@ -3451,7 +3456,7 @@ export const trackAssessmentNCRActions = async (req: Request, res: Response) => 
 export const debugNCRMaintenance = async (req: Request, res: Response) => {
   try {
     const records = await complianceModel.debugNCRRecords();
-    
+
     return res.json({
       status: 'success',
       message: 'Debug: Asset IDs with NCR maintenance records',

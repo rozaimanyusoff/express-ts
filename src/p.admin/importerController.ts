@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 
+import { getErrorMessage } from '../utils/errorUtils';
 import * as importerModel from './importerModel';
 
 export const importTempTable = async (req: Request, res: Response) => {
@@ -10,8 +11,8 @@ export const importTempTable = async (req: Request, res: Response) => {
   try {
     const result = await importerModel.importTempTable(tableName, headers, data);
     return res.json({ message: result.message, rows: result.rows, status: 'success', table: result.table });
-  } catch (err: any) {
-    return res.status(500).json({ message: err.message, status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ message: getErrorMessage(err), status: 'error' });
   }
 };
 
@@ -53,8 +54,8 @@ export const getTempTables = async (req: Request, res: Response) => {
     // If only one table, return as object, else as array
     const data = result.length === 1 ? result[0] : result;
     return res.json({ data, message: 'Data processed successfully', status: 'success' });
-  } catch (err: any) {
-    return res.status(500).json({ message: err.message, status: 'error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ message: getErrorMessage(err), status: 'error' });
   }
 };
 
