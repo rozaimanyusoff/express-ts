@@ -3881,21 +3881,31 @@ export const createBillingAccount = async (req: Request, res: Response) => {
 
 export const updateBillingAccount = async (req: Request, res: Response) => {
 	const bill_id = Number(req.params.id);
+	if (!Number.isFinite(bill_id) || bill_id <= 0) return res.status(400).json({ status: 'error', message: 'Invalid billing account ID' });
 	const data = req.body;
 
 	// Validate and normalize DATE fields to YYYY-MM-DD since DB column type is DATE
-	if (data.bill_cont_start) {
-		const d = dayjs(data.bill_cont_start);
-		if (!d.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_start date', status: 'error' });
-		data.bill_cont_start = d.format('YYYY-MM-DD');
+	if (data.contract_start) {
+		const d = dayjs(data.contract_start);
+		if (!d.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid contract_start date' });
+		data.contract_start = d.format('YYYY-MM-DD');
 	}
-	if (data.bill_cont_end) {
-		const d2 = dayjs(data.bill_cont_end);
-		if (!d2.isValid()) return res.status(400).json({ message: 'Invalid bill_cont_end date', status: 'error' });
-		data.bill_cont_end = d2.format('YYYY-MM-DD');
+	if (data.contract_end) {
+		const d2 = dayjs(data.contract_end);
+		if (!d2.isValid()) return res.status(400).json({ status: 'error', message: 'Invalid contract_end date' });
+		data.contract_end = d2.format('YYYY-MM-DD');
 	}
-	await billingModel.updateBillingAccount(bill_id, data);
-	return res.json({ message: 'Billing account updated successfully', status: 'success' });
+
+	try {
+		await billingModel.updateBillingAccount(bill_id, data);
+	} catch (err: any) {
+		if (err.message === 'duplicate_billing_account') {
+			return res.status(409).json({ status: 'error', message: 'A billing account with the same account number, category, cost center and location already exists' });
+		}
+		throw err;
+	}
+
+	return res.json({ status: 'success', message: 'Billing account updated successfully' });
 };
 
 export const deleteBillingAccount = async (req: Request, res: Response) => {
