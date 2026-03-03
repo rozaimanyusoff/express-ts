@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import path from 'path';
 import * as mediaModel from './mediaModel';
 import logger from '../utils/logger';
-import { CorrespondenceQASchema } from '../utils/validation/media.schemas';
+import { CorrespondenceEndorsementSchema, CorrespondenceQASchema, RecipientActionSchema } from '../utils/validation/media.schemas';
 import { parseBody } from '../utils/validation/index';
 
 // Get base URL from environment, default to localhost
@@ -644,10 +644,9 @@ export const createCorrespondence = async (req: Request, res: Response) => {
     subject: body.subject,
     direction,
     date_received: orNull(body.date_received),
+    letter_date: orNull(body.letter_date),
     registered_at: orNull(body.registered_at),
     registered_by: orNull(body.registered_by),
-    disseminated_at: orNull(body.disseminated_at),
-    disseminated_by: orNull(body.disseminated_by),
     attachment_filename: attachmentFilename,
     attachment_mime_type: attachmentMimeType,
     attachment_size: attachmentSize,
@@ -667,23 +666,25 @@ export const createCorrespondence = async (req: Request, res: Response) => {
 /**
  * GET /api/media/correspondence
  * List correspondences with optional filters.
- * Query: direction, priority, category, letter_type, department,
- *        search, date_from, date_to, limit (max 200), offset
+ * Query: direction, priority, category, letter_type,
+ *        search, date_from, date_to, page, limit (max 200)
  */
 export const listCorrespondences = async (req: Request, res: Response) => {
   const query = req.query as Record<string, string>;
+
+  const limit = query.limit ? Math.min(Number(query.limit), 200) : 20;
+  const page = query.page ? Math.max(Number(query.page), 1) : 1;
 
   const filters: mediaModel.CorrespondenceListFilters = {
     direction: query.direction as 'incoming' | 'outgoing' | undefined,
     priority: query.priority as 'low' | 'normal' | 'high' | undefined,
     category: query.category,
     letter_type: query.letter_type,
-    department: query.department,
     search: query.search,
     date_from: query.date_from,
     date_to: query.date_to,
-    limit: query.limit ? Math.min(Number(query.limit), 200) : 20,
-    offset: query.offset ? Number(query.offset) : 0,
+    page,
+    limit,
   };
 
   const { rows, total } = await mediaModel.getCorrespondences(filters);
@@ -691,7 +692,13 @@ export const listCorrespondences = async (req: Request, res: Response) => {
   return res.json({
     status: 'success',
     message: 'Correspondences retrieved',
-    data: { total, limit: filters.limit, offset: filters.offset, rows: rows.map(normaliseAttachmentPath) },
+    data: rows,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
   });
 };
 
@@ -747,10 +754,9 @@ export const updateCorrespondence = async (req: Request, res: Response) => {
     subject: orUndef(body.subject),
     direction: (orUndef(body.direction) as 'incoming' | 'outgoing' | undefined),
     date_received: orNull(body.date_received),
+    letter_date: orNull(body.letter_date),
     registered_at: orNull(body.registered_at),
     registered_by: orNull(body.registered_by),
-    disseminated_at: orNull(body.disseminated_at),
-    disseminated_by: orNull(body.disseminated_by),
   };
 
   // If a new file is attached, overwrite attachment metadata
@@ -866,15 +872,26 @@ export const qaCorrespondence = async (req: Request, res: Response) => {
   const validation = parseBody(req.body, CorrespondenceQASchema);
   if (!validation.ok) return res.status(400).json(validation.error);
 
-  const { letter_type, category, priority, remarks, recipients } = validation.data;
+  const { letter_type, category, priority, qa_review_date, qa_reviewed_by, qa_status, remarks, recipients } = validation.data;
 
   const existing = await mediaModel.getCorrespondenceById(id);
   if (!existing) {
     return res.status(404).json({ status: 'error', message: 'Correspondence not found', data: null });
   }
 
-  await mediaModel.updateCorrespondenceQA(id, { category, letter_type, priority, remarks });
-  await mediaModel.replaceCorrespondenceRecipients(id, recipients);
+  await mediaModel.updateCorrespondenceQA(id, {
+    category,
+    letter_type,
+    priority,
+    qa_review_date: qa_review_date ?? null,
+    qa_reviewed_by: qa_reviewed_by ?? null,
+    qa_status: qa_status ?? null,
+    qa_remarks: remarks ?? null,
+  });
+  await mediaModel.replaceCorrespondenceRecipients(
+    id,
+    recipients.map((r) => ({ recipient_ramco_id: r.ramco_id, department_id: r.department_id }))
+  );
 
   const updatedRecipients = await mediaModel.getCorrespondenceRecipients(id);
 
@@ -882,5 +899,66 @@ export const qaCorrespondence = async (req: Request, res: Response) => {
     status: 'success',
     message: 'Correspondence QA updated',
     data: { id, recipients: updatedRecipients },
+  });
+};
+
+/**
+ * PATCH /api/media/correspondence/:id/endorse
+ * General Manager endorses a correspondence.
+ */
+export const endorseCorrespondence = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid id', data: null });
+  }
+
+  const validation = parseBody(req.body, CorrespondenceEndorsementSchema);
+  if (!validation.ok) return res.status(400).json(validation.error);
+
+  const existing = await mediaModel.getCorrespondenceById(id);
+  if (!existing) {
+    return res.status(404).json({ status: 'error', message: 'Correspondence not found', data: null });
+  }
+
+  const updated = await mediaModel.updateCorrespondenceEndorsement(id, validation.data);
+  if (!updated) {
+    return res.status(500).json({ status: 'error', message: 'Endorsement update failed', data: null });
+  }
+
+  return res.json({ status: 'success', message: 'Correspondence endorsed', data: { id } });
+};
+
+/**
+ * PATCH /api/media/correspondence/:id/recipients/:recipientId/action
+ * Recipient (department head / section head) updates their action status.
+ * Optionally includes forwarded_to entries which replace their forward list.
+ */
+export const updateRecipientAction = async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const recipientId = Number(req.params.recipientId);
+  if (!id || isNaN(id) || !recipientId || isNaN(recipientId)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid id or recipientId', data: null });
+  }
+
+  const validation = parseBody(req.body, RecipientActionSchema);
+  if (!validation.ok) return res.status(400).json(validation.error);
+
+  const { action_status, action_date, action_remarks, forwarded_to } = validation.data;
+
+  const updated = await mediaModel.updateRecipientAction(recipientId, { action_status, action_date, action_remarks });
+  if (!updated) {
+    return res.status(404).json({ status: 'error', message: 'Recipient not found', data: null });
+  }
+
+  if (forwarded_to && forwarded_to.length > 0) {
+    await mediaModel.replaceRecipientForwards(recipientId, forwarded_to);
+  }
+
+  const forwards = await mediaModel.getRecipientForwards(recipientId);
+
+  return res.json({
+    status: 'success',
+    message: 'Recipient action updated',
+    data: { correspondence_id: id, recipient_id: recipientId, action_status, forwards },
   });
 };

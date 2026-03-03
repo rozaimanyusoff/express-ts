@@ -121,9 +121,21 @@ router.patch(
 
 /**
  * PUT /api/media/correspondence/:id/qa
- * Update QA classification fields (letter_type, category, priority, remarks) and replace recipients.
+ * Update QA classification fields (letter_type, category, priority, qa_* fields) and replace recipients.
  */
 router.put('/correspondence/:id/qa', asyncHandler(mediaController.qaCorrespondence));
+
+/**
+ * PUT /api/media/correspondence/:id/endorse
+ * General Manager endorses a correspondence (endorsed_by, endorsed_at, endorsed_remarks, endorsed_status).
+ */
+router.put('/correspondence/:id/endorse', asyncHandler(mediaController.endorseCorrespondence));
+
+/**
+ * PATCH /api/media/correspondence/:id/recipients/:recipientId/action
+ * Recipient updates their action status. Optional forwarded_to array replaces their forwards.
+ */
+router.patch('/correspondence/:id/recipients/:recipientId/action', asyncHandler(mediaController.updateRecipientAction));
 
 /**
  * DELETE /api/media/correspondence/:id

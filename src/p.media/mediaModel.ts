@@ -404,6 +404,8 @@ export const getMediaByTags = async (
 /* ============ CORRESPONDENCE ============ */
 
 const correspondenceTable = `${db}.correspondences`;
+const correspondenceRecipientsTable = `${db}.correspondence_recipients`;
+const correspondenceRecipientForwardsTable = `${db}.correspondence_recipient_forwards`;
 
 export interface CorrespondenceRecord extends RowDataPacket {
   id: number;
@@ -416,18 +418,24 @@ export interface CorrespondenceRecord extends RowDataPacket {
   document_others: boolean;
   document_others_specify: string | null;
   subject: string;
-  correspondent: string;
   direction: 'incoming' | 'outgoing';
-  department: string;
   letter_type: string | null;
   category: string | null;
   priority: 'low' | 'normal' | 'high';
   date_received: string | null;
-  remarks: string | null;
+  letter_date: string | null;
   registered_at: string | null;
   registered_by: string | null;
-  disseminated_at: string | null;
-  disseminated_by: string | null;
+  /** QA Team fields */
+  qa_review_date: string | null;
+  qa_reviewed_by: string | null;
+  qa_status: string | null;
+  qa_remarks: string | null;
+  /** General Manager endorsement fields */
+  endorsed_by: string | null;
+  endorsed_at: string | null;
+  endorsed_remarks: string | null;
+  endorsed_status: string | null;
   attachment_filename: string | null;
   attachment_mime_type: string | null;
   attachment_size: number | null;
@@ -450,10 +458,9 @@ export interface CorrespondenceCreatePayload {
   subject: string;
   direction: 'incoming' | 'outgoing';
   date_received: string | null;
+  letter_date: string | null;
   registered_at: string | null;
   registered_by: string | null;
-  disseminated_at: string | null;
-  disseminated_by: string | null;
   attachment_filename: string | null;
   attachment_mime_type: string | null;
   attachment_size: number | null;
@@ -466,13 +473,12 @@ export interface CorrespondenceListFilters {
   priority?: 'low' | 'normal' | 'high';
   category?: string;
   letter_type?: string;
-  department?: string;
-  /** searches reference_no, subject, sender, correspondent */
+  /** searches reference_no, subject, sender */
   search?: string;
   date_from?: string;
   date_to?: string;
+  page?: number;
   limit?: number;
-  offset?: number;
 }
 
 /**
@@ -502,8 +508,8 @@ export const createCorrespondence = async (
       document_cover_page, document_full_letters, document_claim_attachment,
       document_others, document_others_specify,
       subject, direction,
-      date_received,
-      registered_at, registered_by, disseminated_at, disseminated_by,
+      date_received, letter_date,
+      registered_at, registered_by,
       attachment_filename, attachment_mime_type, attachment_size,
       attachment_pdf_page_count, attachment_file_path,
       created_at, updated_at
@@ -512,8 +518,8 @@ export const createCorrespondence = async (
       ?, ?, ?,
       ?, ?,
       ?, ?,
-      ?,
-      ?, ?, ?, ?,
+      ?, ?,
+      ?, ?,
       ?, ?, ?,
       ?, ?,
       NOW(), NOW()
@@ -532,10 +538,9 @@ export const createCorrespondence = async (
     payload.subject,
     payload.direction,
     payload.date_received ?? null,
+    payload.letter_date ?? null,
     payload.registered_at ?? null,
     payload.registered_by ?? null,
-    payload.disseminated_at ?? null,
-    payload.disseminated_by ?? null,
     payload.attachment_filename ?? null,
     payload.attachment_mime_type ?? null,
     payload.attachment_size ?? null,
@@ -548,62 +553,186 @@ export const createCorrespondence = async (
 };
 
 /**
- * Retrieve correspondences with optional filtering, search and pagination.
+ * Retrieve correspondences with optional filtering, search and page-based pagination.
+ * Returns summary rows: specific columns + recipients_count + workflow_status.
  */
 export const getCorrespondences = async (
   filters: CorrespondenceListFilters = {}
-): Promise<{ rows: CorrespondenceRecord[]; total: number }> => {
-  const conditions: string[] = ['deleted_at IS NULL'];
+): Promise<{ rows: any[]; total: number }> => {
+  const conditions: string[] = ['c.deleted_at IS NULL'];
   const params: (string | number)[] = [];
 
-  if (filters.direction) { conditions.push('direction = ?'); params.push(filters.direction); }
-  if (filters.priority) { conditions.push('priority = ?'); params.push(filters.priority); }
-  if (filters.category) { conditions.push('category = ?'); params.push(filters.category); }
-  if (filters.letter_type) { conditions.push('letter_type = ?'); params.push(filters.letter_type); }
-  if (filters.department) {
-    conditions.push('FIND_IN_SET(?, REPLACE(department, ";", ",")) > 0');
-    params.push(filters.department);
-  }
+  if (filters.direction) { conditions.push('c.direction = ?'); params.push(filters.direction); }
+  if (filters.priority) { conditions.push('c.priority = ?'); params.push(filters.priority); }
+  if (filters.category) { conditions.push('c.category = ?'); params.push(filters.category); }
+  if (filters.letter_type) { conditions.push('c.letter_type = ?'); params.push(filters.letter_type); }
   if (filters.search) {
-    conditions.push(
-      '(reference_no LIKE ? OR subject LIKE ? OR sender LIKE ? OR correspondent LIKE ?)'
-    );
+    conditions.push('(c.reference_no LIKE ? OR c.subject LIKE ? OR c.sender LIKE ?)');
     const like = `%${filters.search}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like);
   }
-  if (filters.date_from) { conditions.push('date_received >= ?'); params.push(filters.date_from); }
-  if (filters.date_to) { conditions.push('date_received <= ?'); params.push(filters.date_to); }
+  if (filters.date_from) { conditions.push('c.date_received >= ?'); params.push(filters.date_from); }
+  if (filters.date_to) { conditions.push('c.date_received <= ?'); params.push(filters.date_to); }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
   const [countRows] = await pool.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total FROM ${correspondenceTable} ${where}`,
+    `SELECT COUNT(*) AS total FROM ${correspondenceTable} c ${where}`,
     params
   );
   const total = (countRows[0] as any).total as number;
 
   const limit = filters.limit ?? 20;
-  const offset = filters.offset ?? 0;
+  const page = Math.max(filters.page ?? 1, 1);
+  const offset = (page - 1) * limit;
 
-  const [rows] = await pool.query<CorrespondenceRecord[]>(
-    `SELECT * FROM ${correspondenceTable} ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       c.id, c.reference_no, c.date_received, c.sender, c.subject, c.direction,
+       c.registered_at, c.registered_by,
+       c.qa_status, c.qa_reviewed_by,
+       c.letter_type, c.category, c.priority,
+       c.endorsed_status,
+       c.created_at, c.updated_at,
+       (SELECT COUNT(*) FROM ${correspondenceRecipientsTable} r WHERE r.correspondence_id = c.id) AS recipients_count
+     FROM ${correspondenceTable} c
+     ${where}
+     ORDER BY c.created_at DESC
+     LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
-  return { rows, total };
+  if ((rows as any[]).length === 0) return { rows: [], total };
+
+  // Batch-fetch recipient action stats
+  const ids = (rows as any[]).map((r) => r.id);
+  const idPh = ids.map(() => '?').join(',');
+
+  const [recStats] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       correspondence_id,
+       SUM(action_status IS NULL) AS pending,
+       SUM(action_status IS NOT NULL) AS completed
+     FROM ${correspondenceRecipientsTable}
+     WHERE correspondence_id IN (${idPh})
+     GROUP BY correspondence_id`,
+    ids
+  );
+
+  // Batch-fetch forward action stats (via recipient → forward join)
+  const [fwdStats] = await pool.query<RowDataPacket[]>(
+    `SELECT
+       r.correspondence_id,
+       SUM(f.action_status IS NULL) AS pending,
+       SUM(f.action_status IS NOT NULL) AS completed
+     FROM ${correspondenceRecipientForwardsTable} f
+     JOIN ${correspondenceRecipientsTable} r ON f.recipient_id = r.id
+     WHERE r.correspondence_id IN (${idPh})
+     GROUP BY r.correspondence_id`,
+    ids
+  );
+
+  const recMap = new Map<number, { pending: number; completed: number }>();
+  for (const s of recStats as any[]) {
+    recMap.set(Number(s.correspondence_id), { pending: Number(s.pending), completed: Number(s.completed) });
+  }
+  const fwdMap = new Map<number, { pending: number; completed: number }>();
+  for (const s of fwdStats as any[]) {
+    fwdMap.set(Number(s.correspondence_id), { pending: Number(s.pending), completed: Number(s.completed) });
+  }
+
+  const enriched = (rows as any[]).map((row) => {
+    const rec = recMap.get(row.id) ?? { pending: 0, completed: 0 };
+    const fwd = fwdMap.get(row.id) ?? { pending: 0, completed: 0 };
+    const qa_completed = row.qa_status != null && row.qa_status !== '';
+    const endorsed = row.endorsed_status != null && row.endorsed_status !== '';
+
+    let overall_status: string;
+    if (!qa_completed) {
+      overall_status = 'pending_qa';
+    } else if (rec.pending > 0 || fwd.pending > 0) {
+      overall_status = 'in_progress';
+    } else if (endorsed) {
+      overall_status = 'endorsed';
+    } else {
+      overall_status = 'completed';
+    }
+
+    const { endorsed_status, ...rest } = row as any;
+    return {
+      ...rest,
+      recipients_count: Number(row.recipients_count),
+      workflow_status: {
+        qa_completed,
+        department_head_action_pending: rec.pending,
+        department_head_action_completed: rec.completed,
+        section_head_action_pending: fwd.pending,
+        section_head_action_completed: fwd.completed,
+        endorsed,
+        overall_status,
+      },
+    };
+  });
+
+  return { rows: enriched, total };
 };
 
 /**
  * Retrieve a single correspondence by id (excludes soft-deleted).
+ * Returns a fully composed object including recipients and their forwarded_to entries.
  */
 export const getCorrespondenceById = async (
   id: number
-): Promise<CorrespondenceRecord | null> => {
+): Promise<(CorrespondenceRecord & { recipients: any[] }) | null> => {
   const [rows] = await pool.query<CorrespondenceRecord[]>(
     `SELECT * FROM ${correspondenceTable} WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
     [id]
   );
-  return rows[0] ?? null;
+  const record = rows[0] ?? null;
+  if (!record) return null;
+
+  // Fetch recipients with action fields
+  const [recipientRows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, recipient_ramco_id AS ramco_id, department_id,
+            action_date, action_status, action_remarks
+     FROM ${correspondenceRecipientsTable}
+     WHERE correspondence_id = ? ORDER BY id`,
+    [id]
+  );
+
+  // For each recipient, fetch their forwards
+  const recipients = await Promise.all(
+    (recipientRows as any[]).map(async (r) => {
+      const [fwdRows] = await pool.query<RowDataPacket[]>(
+        `SELECT ramco_id, department_id, action_date, action_status, action_remarks
+         FROM ${correspondenceRecipientForwardsTable}
+         WHERE recipient_id = ? ORDER BY id`,
+        [r.id]
+      );
+      const forwarded_to = (fwdRows as any[]).map((f) => ({
+        ramco_id: f.ramco_id,
+        department_id: f.department_id,
+        action: {
+          date: f.action_date,
+          status: f.action_status,
+          remarks: f.action_remarks,
+        },
+      }));
+      const hasForwards = forwarded_to.length > 0;
+      return {
+        ramco_id: r.ramco_id,
+        department_id: r.department_id,
+        action: {
+          date: r.action_date,
+          status: r.action_status,
+          remarks: r.action_remarks,
+          ...(hasForwards ? { forwarded_to } : {}),
+        },
+      };
+    })
+  );
+
+  return { ...record, recipients };
 };
 
 /**
@@ -625,10 +754,9 @@ export const updateCorrespondence = async (
     subject: payload.subject,
     direction: payload.direction,
     date_received: payload.date_received,
+    letter_date: payload.letter_date,
     registered_at: payload.registered_at,
     registered_by: payload.registered_by,
-    disseminated_at: payload.disseminated_at,
-    disseminated_by: payload.disseminated_by,
     attachment_filename: payload.attachment_filename,
     attachment_mime_type: payload.attachment_mime_type,
     attachment_size: payload.attachment_size,
@@ -697,7 +825,7 @@ export const deleteCorrespondence = async (id: number): Promise<boolean> => {
 };
 
 /**
- * CREATE TABLE DDL for the correspondences table.
+ * CREATE TABLE DDL for the correspondences table (with QA + endorsement columns).
  * Run once during DB initialisation / migration.
  */
 export const correspondenceTableDDL = `
@@ -712,18 +840,22 @@ CREATE TABLE IF NOT EXISTS ${correspondenceTable} (
   document_others           TINYINT(1)    NOT NULL DEFAULT 0,
   document_others_specify   TEXT          NULL,
   subject                   TEXT          NOT NULL,
-  correspondent             TEXT          NOT NULL,
   direction                 ENUM('incoming','outgoing') NOT NULL,
-  department                TEXT          NOT NULL,
   letter_type               VARCHAR(100)  NULL,
   category                  VARCHAR(100)  NULL,
   priority                  ENUM('low','normal','high') NOT NULL DEFAULT 'normal',
   date_received             DATE          NULL,
-  remarks                   TEXT          NULL,
+  letter_date               DATE          NULL,
   registered_at             DATETIME      NULL,
-  registered_by             VARCHAR(255)  NULL,
-  disseminated_at           DATETIME      NULL,
-  disseminated_by           VARCHAR(255)  NULL,
+  registered_by             VARCHAR(50)   NULL,
+  qa_review_date            DATETIME      NULL,
+  qa_reviewed_by            VARCHAR(50)   NULL,
+  qa_status                 VARCHAR(50)   NULL,
+  qa_remarks                TEXT          NULL,
+  endorsed_by               VARCHAR(50)   NULL,
+  endorsed_at               DATETIME      NULL,
+  endorsed_remarks          TEXT          NULL,
+  endorsed_status           VARCHAR(50)   NULL,
   attachment_filename       VARCHAR(255)  NULL,
   attachment_mime_type      VARCHAR(100)  NULL,
   attachment_size           BIGINT        NULL,
@@ -743,18 +875,31 @@ CREATE TABLE IF NOT EXISTS ${correspondenceTable} (
 // ---------------------------------------------------------------------------
 // Correspondence Recipients
 // ---------------------------------------------------------------------------
-const correspondenceRecipientsTable = `${db}.correspondence_recipients`;
 
 export interface CorrespondenceRecipient extends RowDataPacket {
-  correspondence_id: number;
-  created_at: Date;
-  department_id: number;
   id: number;
+  correspondence_id: number;
   recipient_ramco_id: string;
+  department_id: number;
+  action_date: string | null;
+  action_status: string | null;
+  action_remarks: string | null;
+  created_at: Date;
+}
+
+export interface CorrespondenceRecipientForward extends RowDataPacket {
+  id: number;
+  recipient_id: number;
+  ramco_id: string;
+  department_id: number;
+  action_date: string | null;
+  action_status: string | null;
+  action_remarks: string | null;
+  created_at: Date;
 }
 
 /**
- * Update QA fields on an existing correspondence (letter_type, category, priority, remarks).
+ * Update QA classification + review fields on a correspondence.
  * Returns true if the record was found and updated.
  */
 export const updateCorrespondenceQA = async (
@@ -763,25 +908,77 @@ export const updateCorrespondenceQA = async (
     category: string;
     letter_type: string;
     priority?: 'high' | 'low' | 'normal';
-    remarks?: null | string;
+    qa_review_date?: null | string;
+    qa_reviewed_by?: null | string;
+    qa_remarks?: null | string;
+    qa_status?: null | string;
   }
 ): Promise<boolean> => {
   const [result] = await pool.query<ResultSetHeader>(
     `UPDATE ${correspondenceTable}
-     SET letter_type = ?, category = ?, priority = ?, remarks = ?, updated_at = NOW()
+     SET letter_type = ?, category = ?, priority = ?,
+         qa_review_date = ?, qa_reviewed_by = ?, qa_status = ?, qa_remarks = ?,
+         updated_at = NOW()
      WHERE id = ? AND deleted_at IS NULL`,
-    [payload.letter_type, payload.category, payload.priority ?? 'normal', payload.remarks ?? null, id]
+    [
+      payload.letter_type,
+      payload.category,
+      payload.priority ?? 'normal',
+      payload.qa_review_date ?? null,
+      payload.qa_reviewed_by ?? null,
+      payload.qa_status ?? null,
+      payload.qa_remarks ?? null,
+      id,
+    ]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Update General Manager endorsement fields on a correspondence.
+ */
+export const updateCorrespondenceEndorsement = async (
+  id: number,
+  payload: {
+    endorsed_by: string;
+    endorsed_at?: null | string;
+    endorsed_remarks?: null | string;
+    endorsed_status: string;
+  }
+): Promise<boolean> => {
+  const [result] = await pool.query<ResultSetHeader>(
+    `UPDATE ${correspondenceTable}
+     SET endorsed_by = ?, endorsed_at = ?, endorsed_remarks = ?, endorsed_status = ?, updated_at = NOW()
+     WHERE id = ? AND deleted_at IS NULL`,
+    [
+      payload.endorsed_by,
+      payload.endorsed_at ?? null,
+      payload.endorsed_remarks ?? null,
+      payload.endorsed_status,
+      id,
+    ]
   );
   return result.affectedRows > 0;
 };
 
 /**
  * Replace the full recipients list for a correspondence (delete-then-insert).
+ * Also deletes any existing forwards for the replaced recipients.
  */
 export const replaceCorrespondenceRecipients = async (
   correspondenceId: number,
   recipients: Array<{ department_id: number; recipient_ramco_id: string }>
 ): Promise<void> => {
+  // Delete forwards for existing recipients first
+  const [existingRows] = await pool.query<RowDataPacket[]>(
+    `SELECT id FROM ${correspondenceRecipientsTable} WHERE correspondence_id = ?`,
+    [correspondenceId]
+  );
+  const existingIds = (existingRows as any[]).map((r) => r.id);
+  if (existingIds.length > 0) {
+    const ph = existingIds.map(() => '?').join(',');
+    await pool.query(`DELETE FROM ${correspondenceRecipientForwardsTable} WHERE recipient_id IN (${ph})`, existingIds);
+  }
   await pool.query(
     `DELETE FROM ${correspondenceRecipientsTable} WHERE correspondence_id = ?`,
     [correspondenceId]
@@ -808,13 +1005,90 @@ export const getCorrespondenceRecipients = async (
   return rows;
 };
 
+/**
+ * Update the action fields (date, status, remarks) for a specific recipient row.
+ */
+export const updateRecipientAction = async (
+  recipientId: number,
+  payload: {
+    action_date?: null | string;
+    action_remarks?: null | string;
+    action_status: string;
+  }
+): Promise<boolean> => {
+  const [result] = await pool.query<ResultSetHeader>(
+    `UPDATE ${correspondenceRecipientsTable}
+     SET action_date = ?, action_status = ?, action_remarks = ?
+     WHERE id = ?`,
+    [payload.action_date ?? null, payload.action_status, payload.action_remarks ?? null, recipientId]
+  );
+  return result.affectedRows > 0;
+};
+
+/**
+ * Get forwards for a specific recipient.
+ */
+export const getRecipientForwards = async (
+  recipientId: number
+): Promise<CorrespondenceRecipientForward[]> => {
+  const [rows] = await pool.query<CorrespondenceRecipientForward[]>(
+    `SELECT * FROM ${correspondenceRecipientForwardsTable} WHERE recipient_id = ? ORDER BY id`,
+    [recipientId]
+  );
+  return rows;
+};
+
+/**
+ * Replace all forwards for a recipient (delete-then-insert).
+ */
+export const replaceRecipientForwards = async (
+  recipientId: number,
+  forwards: Array<{ ramco_id: string; department_id: number; action_date?: null | string; action_status?: null | string; action_remarks?: null | string }>
+): Promise<void> => {
+  await pool.query(
+    `DELETE FROM ${correspondenceRecipientForwardsTable} WHERE recipient_id = ?`,
+    [recipientId]
+  );
+  if (forwards.length === 0) return;
+  const placeholders = forwards.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+  const values = forwards.flatMap((f) => [
+    recipientId,
+    f.ramco_id,
+    f.department_id,
+    f.action_date ?? null,
+    f.action_status ?? null,
+    f.action_remarks ?? null,
+  ]);
+  await pool.query(
+    `INSERT INTO ${correspondenceRecipientForwardsTable} (recipient_id, ramco_id, department_id, action_date, action_status, action_remarks) VALUES ${placeholders}`,
+    values
+  );
+};
+
 export const correspondenceRecipientsTableDDL = `
 CREATE TABLE IF NOT EXISTS ${correspondenceRecipientsTable} (
   id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   correspondence_id    INT UNSIGNED NOT NULL,
   recipient_ramco_id   VARCHAR(50)  NOT NULL,
   department_id        INT          NOT NULL,
+  action_date          DATETIME     NULL,
+  action_status        VARCHAR(50)  NULL,
+  action_remarks       TEXT         NULL,
   created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_correspondence_id (correspondence_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+export const correspondenceRecipientForwardsTableDDL = `
+CREATE TABLE IF NOT EXISTS ${correspondenceRecipientForwardsTable} (
+  id              INT UNSIGNED  NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  recipient_id    INT UNSIGNED  NOT NULL,
+  ramco_id        VARCHAR(50)   NOT NULL,
+  department_id   INT           NOT NULL,
+  action_date     DATETIME      NULL,
+  action_status   VARCHAR(50)   NULL,
+  action_remarks  TEXT          NULL,
+  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_recipient_id (recipient_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
