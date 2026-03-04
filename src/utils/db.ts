@@ -4,7 +4,6 @@ import { DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER, DB2_HOST, DB2_NAME, DB
 
 // Enhanced pool configuration to prevent ETIMEDOUT errors
 const poolConfig = {
-  acquireTimeout: 10000, // 10 seconds
   // Connection pool limits
   connectionLimit: 10,
   // Timeout settings
@@ -19,14 +18,12 @@ const poolConfig = {
   password: DB_PASSWORD,
   port: DB_PORT,
   queueLimit: 0,
-  timeout: 30000, // 30 seconds for queries
   user: DB_USER,
   // Retry configuration
   waitForConnections: true,
 };
 
 const pool2Config = {
-  acquireTimeout: 10000,
   // Connection pool limits
   connectionLimit: 10,
   // Timeout settings
@@ -41,7 +38,6 @@ const pool2Config = {
   password: DB2_PASSWORD,
   port: DB2_PORT,
   queueLimit: 0,
-  timeout: 30000,
   user: DB2_USER,
   // Retry configuration
   waitForConnections: true,

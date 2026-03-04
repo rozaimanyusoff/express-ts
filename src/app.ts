@@ -97,9 +97,25 @@ app.use('/uploads', (req, res, next) => {
   app.use('/uploads', express.static(staticPath));
 })();
 
+// Swagger UI — Basic Auth protection in production
+// Set SWAGGER_USER and SWAGGER_PASSWORD in your production .env
+const swaggerBasicAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (process.env.NODE_ENV !== 'production') return next();
+
+  const b64 = (req.headers.authorization ?? '').replace('Basic ', '');
+  const [user, pass] = Buffer.from(b64, 'base64').toString().split(':');
+  const validUser = process.env.SWAGGER_USER || 'admin';
+  const validPass = process.env.SWAGGER_PASSWORD || 'changeme';
+
+  if (user === validUser && pass === validPass) return next();
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="API Docs"');
+  return res.status(401).send('Unauthorized');
+};
+
 // Swagger UI Documentation
-app.use('/api-docs', swaggerUi.serve);
-app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
+app.use('/api-docs', swaggerBasicAuth, swaggerUi.serve);
+app.get('/api-docs', swaggerBasicAuth, swaggerUi.setup(swaggerSpec, {
   swaggerOptions: {
     url: '/swagger.json',
     displayOperationId: true,
@@ -110,7 +126,7 @@ app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
 }));
 
 // Swagger JSON endpoint
-app.get('/swagger.json', (req, res) => {
+app.get('/swagger.json', swaggerBasicAuth, (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   return res.send(swaggerSpec);
 });
