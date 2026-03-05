@@ -1077,22 +1077,26 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       return res.status(400).json({ data: null, message: 'Invalid payload: purchase_id and non-empty assets[] are required', status: 'error' });
     }
 
-    // Check for duplicate register_numbers in assets.assetdata
-    const duplicateRegisterNumbers: string[] = [];
+    // Check for duplicate register_numbers in both purchase_asset_registry and assets.assetdata
+    const dupInRegistry: string[] = [];
+    const dupInAssets: string[] = [];
     for (const asset of assets) {
-      if (asset.register_number) {
-        const dupCheck = await purchaseModel.checkRegisterNumberExists(asset.register_number);
-        if (dupCheck.exists) {
-          duplicateRegisterNumbers.push(asset.register_number);
-        }
+      const reg = asset.register_number ? String(asset.register_number).trim() : '';
+      if (reg) {
+        const dupCheck = await purchaseModel.checkRegisterNumberExistsForUpdate(reg, 0);
+        if (dupCheck.registryDuplicate) dupInRegistry.push(reg);
+        else if (dupCheck.assetDuplicate) dupInAssets.push(reg);
       }
     }
 
-    if (duplicateRegisterNumbers.length > 0) {
+    if (dupInRegistry.length > 0 || dupInAssets.length > 0) {
+      const parts: string[] = [];
+      if (dupInRegistry.length > 0) parts.push(`already registered in purchase_asset_registry: ${dupInRegistry.join(', ')}`);
+      if (dupInAssets.length > 0) parts.push(`already exist in assets: ${dupInAssets.join(', ')}`);
       return res.status(409).json({
-        data: { duplicate_register_numbers: duplicateRegisterNumbers },
-        message: `Register numbers already exist in assets: ${duplicateRegisterNumbers.join(', ')}`,
-        status: 'error'
+        data: { duplicate_in_assets: dupInAssets, duplicate_in_registry: dupInRegistry },
+        message: `Duplicate register number(s) — ${parts.join('; ')}`,
+        status: 'error',
       });
     }
 
@@ -1281,10 +1285,26 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
     const { brand_id, category_id, classification, costcenter_id, description, item_condition, location_id, model, model_id, register_number, type_id, warranty_period } = req.body || {};
 
     // Get current registry entry to track old values for audit
-    const registry = await purchaseModel.getPurchaseAssetRegistry();
-    const registryEntry = (registry || []).find((r: any) => r.id === registryId);
+    const registryEntry = await purchaseModel.getPurchaseAssetRegistryById(registryId);
     if (!registryEntry) {
       return res.status(404).json({ data: null, message: 'Registry entry not found', status: 'error' });
+    }
+
+    // Duplicate register_number check — reject if new value already exists in registry or assetdata
+    if (register_number !== undefined && register_number !== null && String(register_number).trim() !== '') {
+      const newReg = String(register_number).trim();
+      const currentReg = registryEntry.register_number ? String(registryEntry.register_number).trim() : '';
+      if (newReg !== currentReg) {
+        const dupCheck = await purchaseModel.checkRegisterNumberExistsForUpdate(newReg, registryId);
+        if (dupCheck.registryDuplicate || dupCheck.assetDuplicate) {
+          const source = dupCheck.registryDuplicate ? 'already registered in purchase_asset_registry' : 'already exists in assets';
+          return res.status(409).json({
+            data: { duplicate_in_assets: dupCheck.assetDuplicate ? [newReg] : [], duplicate_in_registry: dupCheck.registryDuplicate ? [newReg] : [] },
+            message: `Duplicate register number '${newReg}' — ${source}`,
+            status: 'error',
+          });
+        }
+      }
     }
 
     const updateData: any = {};
@@ -1386,6 +1406,7 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
       if (classification !== undefined) assetDataUpdate.classification = classification;
       if (costcenter_id !== undefined) assetDataUpdate.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
       if (location_id !== undefined) assetDataUpdate.location_id = location_id ? Number(location_id) : null;
+      if (type_id !== undefined) assetDataUpdate.type_id = type_id ? Number(type_id) : null;
       if (model_id !== undefined) assetDataUpdate.model_id = resolvedModelId;
 
       // Update assetdata with the sync fields

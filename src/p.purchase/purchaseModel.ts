@@ -444,13 +444,15 @@ export const createPurchaseAssetRegistry = async (rec: PurchaseAssetRegistryReco
   try {
     await conn.beginTransaction();
 
-    // Duplicate check: prefer register_number when available, otherwise fall back to purchase_id+request_id if both provided
+    // Duplicate check: register_number must be globally unique across all registry rows.
+    // A register_number scoped only to purchase_id+request_id allowed the same number to be
+    // inserted again under a different purchase, causing duplicates.
     let existingId: null | number = null;
     const regnum = rec.register_number !== undefined && rec.register_number !== null ? String(rec.register_number).trim() : '';
     if (regnum) {
       const [rows] = await conn.query(
-        `SELECT id FROM ${purchaseAssetRegistryTable} WHERE register_number = ? AND ((purchase_id = ?) OR (purchase_id IS NULL AND ? IS NULL)) AND ((request_id = ?) OR (request_id IS NULL AND ? IS NULL)) LIMIT 1`,
-        [regnum, rec.purchase_id ?? null, rec.purchase_id ?? null, rec.request_id ?? null, rec.request_id ?? null]
+        `SELECT id FROM ${purchaseAssetRegistryTable} WHERE register_number = ? LIMIT 1`,
+        [regnum]
       );
       const r = Array.isArray(rows) ? (rows as any[])[0] : null;
       if (r?.id) existingId = r.id;
@@ -577,9 +579,11 @@ export const createPurchaseAssetRegistryBatch = async (
       const id = await createPurchaseAssetRegistry(rec);
       insertIds.push(id);
     } catch (e) {
-      // Continue inserting others; caller can check returned ids length
-      // Optional: log error
-      // logger.error('createPurchaseAssetRegistryBatch: insert failed for', rec, e);
+      logger.error('createPurchaseAssetRegistryBatch: insert failed', {
+        register_number: rec.register_number,
+        purchase_id: rec.purchase_id,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
   return insertIds;
@@ -616,23 +620,26 @@ export const createMasterAssetsFromRegistryBatch = async (
 ): Promise<number[]> => {
   const insertAssetIds: number[] = [];
 
-  // Fetch handover_at from the purchase request item to extract purchase_date and purchase_year
+  // Fetch purchase date fields from the purchase item.
+  // handover_at is set AFTER this function runs, so it is always NULL here.
+  // Use grn_date → do_date → po_date → pr_date as the purchase_date source instead.
   let purchaseDate: null | string = null;
   let purchaseYear: null | number = null;
   try {
     const [itemRows] = await pool.query(
-      `SELECT handover_at FROM ${purchaseRequestItemTable} WHERE id = ? LIMIT 1`,
+      `SELECT grn_date, do_date, po_date, pr_date FROM ${purchaseRequestItemTable} WHERE id = ? LIMIT 1`,
       [purchase_id]
     );
     if (Array.isArray(itemRows) && itemRows.length > 0) {
-      const handoverAt = (itemRows as any[])[0]?.handover_at;
-      if (handoverAt) {
-        // Extract date portion (YYYY-MM-DD)
-        const dateStr = String(handoverAt).split(' ')[0]; // Get date part before time
+      const row = (itemRows as any[])[0];
+      const rawDate = row?.grn_date || row?.do_date || row?.po_date || row?.pr_date;
+      if (rawDate) {
+        // Normalise: strip time component from datetime values
+        const dateStr = String(rawDate).split('T')[0].split(' ')[0];
         if (dateStr && dateStr !== '0000-00-00') {
           purchaseDate = dateStr;
-          // Extract year
-          purchaseYear = parseInt(dateStr.split('-')[0], 10);
+          const y = parseInt(dateStr.split('-')[0], 10);
+          purchaseYear = isNaN(y) ? null : y;
         }
       }
     }
@@ -743,7 +750,11 @@ export const createMasterAssetsFromRegistryBatch = async (
       const insertId = (result as ResultSetHeader).insertId;
       if (insertId) insertAssetIds.push(insertId);
     } catch (e) {
-      // continue others
+      logger.error('createMasterAssetsFromRegistryBatch: asset insert failed', {
+        register_number: a.register_number,
+        purchase_id,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
   return insertAssetIds;
@@ -877,6 +888,38 @@ export const updatePurchaseAssetRegistry = async (id: number, data: Partial<Omit
   await pool.query(`UPDATE ${purchaseAssetRegistryTable} SET ${fields} WHERE id = ?`, [...vals, id]);
 };
 
+export const getPurchaseAssetRegistryById = async (id: number): Promise<PurchaseAssetRegistryRecord | null> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${purchaseAssetRegistryTable} WHERE id = ? LIMIT 1`,
+    [id]
+  );
+  const r = Array.isArray(rows) ? (rows as any[])[0] : null;
+  return r || null;
+};
+
+// Check if a register_number is already taken in either purchase_asset_registry or assets.assetdata,
+// excluding the registry row being updated (by its id).
+export const checkRegisterNumberExistsForUpdate = async (
+  registerNumber: string,
+  excludeRegistryId: number
+): Promise<{ assetDuplicate: boolean; registryDuplicate: boolean }> => {
+  const reg = registerNumber.trim();
+  const [[regRows], [assetRows]] = await Promise.all([
+    pool.query(
+      `SELECT id FROM ${purchaseAssetRegistryTable} WHERE register_number = ? AND id != ? LIMIT 1`,
+      [reg, excludeRegistryId]
+    ),
+    pool.query(
+      `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
+      [reg]
+    ),
+  ]);
+  return {
+    assetDuplicate: Array.isArray(assetRows) && (assetRows as any[]).length > 0,
+    registryDuplicate: Array.isArray(regRows) && (regRows as any[]).length > 0,
+  };
+};
+
 // Lookup model ID by model name from assets.models table
 export const getModelIdByName = async (modelName: string): Promise<number | null> => {
   const [rows] = await pool.query(
@@ -909,13 +952,14 @@ export const updateAssetDataModelId = async (purchaseId: number, modelId: number
 export const updateAssetDataFromRegistry = async (
   purchaseId: number,
   data: {
-    register_number?: string | null;
     brand_id?: number | null;
     category_id?: number | null;
     classification?: string | null;
     costcenter_id?: number | null;
     location_id?: number | null;
     model_id?: number | null;
+    register_number?: string | null;
+    type_id?: number | null;
   }
 ): Promise<void> => {
   const keys = Object.keys(data);
