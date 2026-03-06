@@ -1,8 +1,3 @@
--- MySQL dump 10.13  Distrib 8.0.34, for macos13 (arm64)
---
--- Host: localhost    Database: compliance
--- ------------------------------------------------------
--- Server version	8.0.34
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -14,11 +9,6 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-
---
--- Table structure for table `computer_assessment`
---
-
 DROP TABLE IF EXISTS `computer_assessment`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -29,8 +19,8 @@ CREATE TABLE `computer_assessment` (
   `technician` varchar(50) NOT NULL,
   `overall_score` tinyint NOT NULL,
   `remarks` text,
-  `asset_id` int NOT NULL,
-  `register_number` varchar(50) NOT NULL,
+  `asset_id` int DEFAULT NULL,
+  `register_number` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `category` varchar(50) DEFAULT NULL,
   `brand` varchar(100) DEFAULT NULL,
   `model` varchar(100) DEFAULT NULL,
@@ -59,15 +49,18 @@ CREATE TABLE `computer_assessment` (
   `display_resolution` varchar(20) DEFAULT NULL,
   `display_form_factor` varchar(50) DEFAULT NULL,
   `display_interfaces` varchar(200) DEFAULT NULL,
-  `ports_usb_a` tinyint DEFAULT '0',
-  `ports_usb_c` tinyint DEFAULT '0',
-  `ports_thunderbolt` tinyint DEFAULT '0',
-  `ports_ethernet` tinyint DEFAULT '0',
-  `ports_hdmi` tinyint DEFAULT '0',
-  `ports_displayport` tinyint DEFAULT '0',
-  `ports_vga` tinyint DEFAULT '0',
-  `ports_sdcard` tinyint DEFAULT '0',
-  `ports_audiojack` tinyint DEFAULT '0',
+  `second_display` enum('yes','no') DEFAULT 'no',
+  `second_display_sn` varchar(100) DEFAULT NULL,
+  `second_display_size` int DEFAULT NULL,
+  `ports_usb_a` tinyint DEFAULT NULL,
+  `ports_usb_c` tinyint DEFAULT NULL,
+  `ports_thunderbolt` tinyint DEFAULT NULL,
+  `ports_ethernet` tinyint DEFAULT NULL,
+  `ports_hdmi` tinyint DEFAULT NULL,
+  `ports_displayport` tinyint DEFAULT NULL,
+  `ports_vga` tinyint DEFAULT NULL,
+  `ports_sdcard` tinyint DEFAULT NULL,
+  `ports_audiojack` tinyint DEFAULT NULL,
   `battery_equipped` tinyint(1) DEFAULT NULL,
   `battery_capacity` varchar(20) DEFAULT NULL,
   `adapter_equipped` tinyint(1) DEFAULT NULL,
@@ -81,20 +74,15 @@ CREATE TABLE `computer_assessment` (
   `vpn_username` varchar(50) DEFAULT NULL,
   `installed_software` text,
   `office_account` varchar(200) DEFAULT NULL,
-  `attachment_1` varchar(255) DEFAULT NULL,
-  `attachment_2` varchar(255) DEFAULT NULL,
-  `attachment_3` varchar(255) DEFAULT NULL,
-  `asset_status` varchar(20) DEFAULT NULL COMMENT 'new = unlinked asset, linked = has asset_id in assets.assetdata',
+  `attachment_1` varchar(200) DEFAULT NULL,
+  `attachment_2` varchar(200) DEFAULT NULL,
+  `attachment_3` varchar(200) DEFAULT NULL,
+  `asset_status` varchar(20) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=660 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `criteria_ownership`
---
-
 DROP TABLE IF EXISTS `criteria_ownership`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -108,11 +96,6 @@ CREATE TABLE `criteria_ownership` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `summon`
---
-
 DROP TABLE IF EXISTS `summon`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -141,15 +124,10 @@ CREATE TABLE `summon` (
   `notice` text CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci,
   `notice_date` date DEFAULT NULL,
   `summon_dt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `running_no` int NOT NULL DEFAULT '0',
+  `running_no` int DEFAULT NULL,
   PRIMARY KEY (`smn_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=207 DEFAULT CHARSET=utf8mb3;
+) ENGINE=InnoDB AUTO_INCREMENT=211 DEFAULT CHARSET=utf8mb3;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `summon_agency`
---
-
 DROP TABLE IF EXISTS `summon_agency`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -162,11 +140,6 @@ CREATE TABLE `summon_agency` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `summon_type`
---
-
 DROP TABLE IF EXISTS `summon_type`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -179,11 +152,6 @@ CREATE TABLE `summon_type` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `summon_type_agency`
---
-
 DROP TABLE IF EXISTS `summon_type_agency`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -196,11 +164,6 @@ CREATE TABLE `summon_type_agency` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `v_assess2`
---
-
 DROP TABLE IF EXISTS `v_assess2`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -226,13 +189,8 @@ CREATE TABLE `v_assess2` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`assess_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1115 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=1120 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `v_assess_dt2`
---
-
 DROP TABLE IF EXISTS `v_assess_dt2`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -254,19 +212,14 @@ CREATE TABLE `v_assess_dt2` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`adt_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=28875 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=29035 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `v_assess_qset`
---
-
 DROP TABLE IF EXISTS `v_assess_qset`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `v_assess_qset` (
   `qset_id` int NOT NULL AUTO_INCREMENT,
-  `q_id` int NOT NULL,
+  `q_id` int DEFAULT NULL,
   `qset_quesno` int DEFAULT NULL,
   `qset_desc` varchar(200) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
   `qset_stat` varchar(250) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
@@ -274,8 +227,8 @@ CREATE TABLE `v_assess_qset` (
   `qset_order` int DEFAULT NULL,
   `ownership` int DEFAULT NULL,
   `dept` int DEFAULT NULL,
-  `qset_order_new` int DEFAULT '0',
-  `year_new_criteria` int DEFAULT '0',
+  `qset_order_new` int DEFAULT NULL,
+  `year_new_criteria` int DEFAULT NULL,
   `created_by` varchar(6) DEFAULT NULL,
   `updated_by` varchar(6) DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
@@ -294,4 +247,3 @@ CREATE TABLE `v_assess_qset` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-12-25 11:27:49

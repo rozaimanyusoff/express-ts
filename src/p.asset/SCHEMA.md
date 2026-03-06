@@ -2,7 +2,7 @@
 
 ## Database Reference
 - **Full Database Schema**: [assets.sql](../../src/db/assets.sql) (50K)
-- **Module-Specific Tables**: [asset_module.sql](../../src/db/asset_module.sql)
+- **Module-Specific Tables**: [assets.sql](../../src/db/assets.sql)
 
 ---
 

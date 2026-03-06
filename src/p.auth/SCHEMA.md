@@ -2,7 +2,7 @@
 
 ## Database Reference
 - **Full Database Schema**: [auth.sql](../../src/db/auth.sql) (16K)
-- **Module-Specific Tables**: [auth_module.sql](../../src/db/auth_module.sql)
+- **Module-Specific Tables**: [auth.sql](../../src/db/auth.sql)
 
 ---
 

@@ -1,8 +1,3 @@
--- MySQL dump 10.13  Distrib 8.0.34, for macos13 (arm64)
---
--- Host: localhost    Database: purchases2
--- ------------------------------------------------------
--- Server version	8.0.34
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -14,11 +9,6 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-
---
--- Table structure for table `purchase_asset_registry`
---
-
 DROP TABLE IF EXISTS `purchase_asset_registry`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -30,6 +20,7 @@ CREATE TABLE `purchase_asset_registry` (
   `category_id` int DEFAULT NULL,
   `brand_id` int DEFAULT NULL,
   `model` varchar(200) DEFAULT NULL,
+  `model_id` int DEFAULT NULL,
   `warranty_period` int DEFAULT NULL,
   `costcenter_id` int DEFAULT NULL,
   `location_id` int DEFAULT NULL,
@@ -40,13 +31,29 @@ CREATE TABLE `purchase_asset_registry` (
   `created_at` datetime DEFAULT NULL,
   `created_by` varchar(50) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=131 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='has joined table purchase_registry';
+) ENGINE=InnoDB AUTO_INCREMENT=140 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='has joined table purchase_registry';
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_data2_2024`
---
-
+DROP TABLE IF EXISTS `purchase_asset_registry_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `purchase_asset_registry_audit` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `registry_id` int NOT NULL,
+  `purchase_id` int DEFAULT NULL,
+  `field_name` varchar(100) NOT NULL,
+  `old_value` text,
+  `new_value` text,
+  `changed_by` varchar(100) DEFAULT NULL,
+  `changed_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `notes` text,
+  PRIMARY KEY (`id`),
+  KEY `idx_registry_id` (`registry_id`),
+  KEY `idx_purchase_id` (`purchase_id`),
+  KEY `idx_changed_at` (`changed_at`),
+  KEY `idx_changed_by` (`changed_by`)
+) ENGINE=InnoDB AUTO_INCREMENT=49 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Audit trail for purchase_asset_registry updates - tracks corrections made by purchasers';
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `purchase_data2_2024`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -82,11 +89,6 @@ CREATE TABLE `purchase_data2_2024` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=141 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_data_bak`
---
-
 DROP TABLE IF EXISTS `purchase_data_bak`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -121,11 +123,6 @@ CREATE TABLE `purchase_data_bak` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=55 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_data_bak1Sept25`
---
-
 DROP TABLE IF EXISTS `purchase_data_bak1Sept25`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -165,11 +162,6 @@ CREATE TABLE `purchase_data_bak1Sept25` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=55 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_data_bak7Sept25`
---
-
 DROP TABLE IF EXISTS `purchase_data_bak7Sept25`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -209,11 +201,6 @@ CREATE TABLE `purchase_data_bak7Sept25` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=329 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_delivery`
---
-
 DROP TABLE IF EXISTS `purchase_delivery`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -233,13 +220,50 @@ CREATE TABLE `purchase_delivery` (
   `updated_at` datetime DEFAULT NULL,
   `upload_path` varchar(200) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=366 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=403 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_items`
---
-
+DROP TABLE IF EXISTS `purchase_item_import`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `purchase_item_import` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `request_id` int DEFAULT NULL,
+  `name` varchar(200) DEFAULT NULL,
+  `type_id` int DEFAULT NULL,
+  `category_id` int DEFAULT NULL,
+  `qty` text,
+  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `purpose` varchar(200) DEFAULT NULL,
+  `brand_id` int DEFAULT NULL,
+  `supplier_id` int DEFAULT NULL,
+  `unit_price` text,
+  `total_price` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `po_no` text,
+  `po_date` text,
+  `upload_path` varchar(200) DEFAULT NULL,
+  `handover_to` varchar(6) DEFAULT NULL,
+  `handover_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  `pr_date` text,
+  `pr_no` text,
+  `do_date` text,
+  `do_no` text,
+  `inv_date` text,
+  `inv_no` text,
+  `grn_date` text,
+  `grn_no` text,
+  `costcenter_id` int DEFAULT NULL,
+  `ramco_id` text,
+  `brand` text,
+  `supplier` text,
+  `request_type` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `cost_ctr` text,
+  `pic` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `item_type` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `purchase_items`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -280,13 +304,8 @@ CREATE TABLE `purchase_items` (
   `pic` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'TBR',
   `item_type` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL COMMENT 'TBR',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=343 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=376 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_registry`
---
-
 DROP TABLE IF EXISTS `purchase_registry`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -297,13 +316,8 @@ CREATE TABLE `purchase_registry` (
   `registry_id` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=131 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='joined table for purchase_asset_registry';
+) ENGINE=InnoDB AUTO_INCREMENT=140 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='joined table for purchase_asset_registry';
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_request`
---
-
 DROP TABLE IF EXISTS `purchase_request`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -318,13 +332,8 @@ CREATE TABLE `purchase_request` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=148 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=183 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_request_items`
---
-
 DROP TABLE IF EXISTS `purchase_request_items`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -349,11 +358,6 @@ CREATE TABLE `purchase_request_items` (
   KEY `idx_type` (`type_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Purchase request items';
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_sort_2024`
---
-
 DROP TABLE IF EXISTS `purchase_sort_2024`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -389,11 +393,6 @@ CREATE TABLE `purchase_sort_2024` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=256 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `purchase_supplier`
---
-
 DROP TABLE IF EXISTS `purchase_supplier`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -403,7 +402,7 @@ CREATE TABLE `purchase_supplier` (
   `contact_no` varchar(20) DEFAULT NULL,
   `contact_name` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=74 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -415,4 +414,3 @@ CREATE TABLE `purchase_supplier` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-12-25 11:27:56

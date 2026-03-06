@@ -2,7 +2,7 @@
 
 **Database**: `billings`  
 **Full Schema File**: [billings.sql](../../src/db/billings.sql) - Complete database  
-**Module-Specific Tables**: [billing_module.sql](../../src/db/billing_module.sql) - Focused tables only
+**Module-Specific Tables**: [billings.sql](../../src/db/billings.sql)
 
 ## Database Configuration
 

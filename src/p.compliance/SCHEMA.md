@@ -2,7 +2,7 @@
 
 **Database**: `compliance`  
 **Full Schema File**: [compliance.sql](../../src/db/compliance.sql) - Complete database  
-**Module-Specific Tables**: [compliance_module.sql](../../src/db/compliance_module.sql) - Focused tables only
+**Module-Specific Tables**: [compliance.sql](../../src/db/compliance.sql)
 
 ## Database Configuration
 

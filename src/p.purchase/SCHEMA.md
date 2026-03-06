@@ -2,7 +2,7 @@
 
 **Database**: `purchases2`  
 **Full Schema File**: [purchases2.sql](../../src/db/purchases2.sql) - Complete database  
-**Module-Specific Tables**: [purchase_module.sql](../../src/db/purchase_module.sql) - Focused tables only
+**Module-Specific Tables**: [purchases2.sql](../../src/db/purchases2.sql)
 
 ## Table: `purchase_request`
 
