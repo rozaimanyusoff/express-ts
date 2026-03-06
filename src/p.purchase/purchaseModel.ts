@@ -648,34 +648,38 @@ export const createMasterAssetsFromRegistryBatch = async (
   }
 
   for (const a of assets) {
+    const reg = (a.register_number !== undefined && a.register_number !== null)
+      ? String(a.register_number).trim()
+      : '';
+
     try {
-      // First, prevent duplicate register_number in assets.assetdata
-      const reg = (a.register_number !== undefined && a.register_number !== null)
-        ? String(a.register_number).trim()
-        : '';
+      // Inner dup guard: if a record with this register_number already exists in assetdata,
+      // update its purchase_id linkage instead of inserting a duplicate.
       if (reg) {
-        try {
-          const [dupRows] = await pool.query(
-            `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
-            [reg]
-          );
-          if (Array.isArray(dupRows) && dupRows.length > 0) {
-            // Duplicate exists: update existing asset with current pr_id (do not insert duplicate)
-            const existingId = (dupRows as any[])[0]?.id;
-            if (existingId) {
-              try {
-                await pool.query(
-                  `UPDATE ${assetDataTable} SET purchase_id = ? WHERE id = ?`,
-                  [purchase_id, existingId]
-                );
-                insertAssetIds.push(existingId);
-              } catch {
-                // non-blocking update failure
-              }
+        const [dupRows] = await pool.query(
+          `SELECT id FROM ${assetDataTable} WHERE register_number = ? LIMIT 1`,
+          [reg]
+        );
+        if (Array.isArray(dupRows) && (dupRows as any[]).length > 0) {
+          const existingId = (dupRows as any[])[0]?.id;
+          if (existingId) {
+            try {
+              await pool.query(
+                `UPDATE ${assetDataTable} SET purchase_id = ? WHERE id = ?`,
+                [purchase_id, existingId]
+              );
+            } catch (updateErr) {
+              logger.error('createMasterAssetsFromRegistryBatch: update existing asset purchase_id failed', {
+                existingId,
+                purchase_id,
+                register_number: reg,
+                error: updateErr instanceof Error ? updateErr.message : String(updateErr),
+              });
             }
+            insertAssetIds.push(existingId);
             continue;
           }
-        } catch { /* non-blocking duplicate check */ }
+        }
       }
 
       // Compute next entry_code based on type_id prefix, e.g., 1xxxx, 2xxxx
@@ -693,35 +697,20 @@ export const createMasterAssetsFromRegistryBatch = async (
           } else {
             entryCode = `${prefix}0001`;
           }
-        } catch { }
+        } catch (ecErr) {
+          logger.error('createMasterAssetsFromRegistryBatch: entry_code compute failed', {
+            type_id: typeIdNum,
+            error: ecErr instanceof Error ? ecErr.message : String(ecErr),
+          });
+        }
       }
-      // Build dynamic INSERT with only provided fields; exclude model/model_id and condition
-      const cols: string[] = [];
-      const placeholders: string[] = [];
-      const vals: any[] = [];
 
-      const pushCol = (col: string, val: any) => { cols.push(col); placeholders.push('?'); vals.push(val); };
-
-      if (a.register_number !== undefined) pushCol('register_number', a.register_number ?? null);
-      if (a.brand_id !== undefined && a.brand_id !== null) pushCol('brand_id', Number(a.brand_id));
-      if (a.category_id !== undefined && a.category_id !== null) pushCol('category_id', Number(a.category_id));
-      if (a.classification !== undefined) pushCol('classification', a.classification ?? null);
-      if (a.costcenter_id !== undefined && a.costcenter_id !== null) pushCol('costcenter_id', Number(a.costcenter_id));
-      if (a.location_id !== undefined && a.location_id !== null) pushCol('location_id', Number(a.location_id));
-      if (a.type_id !== undefined && a.type_id !== null) pushCol('type_id', Number(a.type_id));
-      // also store manager_id with same value as type_id when provided
-      if (a.type_id !== undefined && a.type_id !== null) pushCol('manager_id', Number(a.type_id));
-      if (entryCode) pushCol('entry_code', entryCode);
-
-      // Lookup model_id from model name if model provided, or use provided model_id
+      // Resolve model_id: use direct value if provided, otherwise lookup from model name
       let modelId: null | number = null;
-
-      // First check if model_id was provided directly
       if (a.model_id !== undefined && a.model_id !== null) {
         modelId = Number(a.model_id);
-      } else {
-        // Otherwise lookup from model name
-        const modelName = a.model !== undefined && a.model !== null ? String(a.model).trim() : '';
+      } else if (a.model) {
+        const modelName = String(a.model).trim();
         if (modelName) {
           try {
             const [modelRows] = await pool.query(
@@ -729,31 +718,64 @@ export const createMasterAssetsFromRegistryBatch = async (
               [modelName]
             );
             const modelRow = Array.isArray(modelRows) ? (modelRows as any[])[0] : null;
-            modelId = modelRow?.id || null;
-          } catch { }
+            modelId = modelRow?.id ?? null;
+          } catch (modelErr) {
+            logger.error('createMasterAssetsFromRegistryBatch: model_id lookup failed', {
+              model: modelName,
+              error: modelErr instanceof Error ? modelErr.message : String(modelErr),
+            });
+          }
         }
       }
-      if (modelId !== null) pushCol('model_id', modelId);
 
-      // Defaults: include record_status if schema supports it
-      pushCol('record_status', 'active');
-      // include linkage to purchase id on assetdata (pr_id) if present in schema
-      pushCol('purchase_id', purchase_id);
-      // condition status
-      pushCol('condition_status', 'in-use');
-      // Include purchase_date and purchase_year if available
-      if (purchaseDate) pushCol('purchase_date', purchaseDate);
-      if (purchaseYear) pushCol('purchase_year', purchaseYear);
+      // Fixed INSERT — all relevant columns explicitly listed, NULL for missing fields.
+      // This is more reliable than a dynamic column builder and avoids partial column list issues.
+      const insertVals = [
+        reg || null,                                                        // register_number
+        a.brand_id !== undefined && a.brand_id !== null ? Number(a.brand_id) : null,      // brand_id
+        a.category_id !== undefined && a.category_id !== null ? Number(a.category_id) : null, // category_id
+        a.classification ?? null,                                           // classification
+        a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null, // costcenter_id
+        a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,   // location_id
+        typeIdNum,                                                           // type_id
+        typeIdNum,                                                           // manager_id (mirrors type_id)
+        entryCode,                                                           // entry_code
+        modelId,                                                             // model_id
+        'active',                                                            // record_status
+        'in-use',                                                            // condition_status
+        purchase_id,                                                         // purchase_id
+        purchaseDate,                                                        // purchase_date
+        purchaseYear,                                                        // purchase_year
+      ];
 
-      const sql = `INSERT INTO ${assetDataTable} (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
-      const [result] = await pool.query(sql, vals);
+      const sql = `INSERT INTO ${assetDataTable}
+        (register_number, brand_id, category_id, classification, costcenter_id, location_id,
+         type_id, manager_id, entry_code, model_id, record_status, condition_status,
+         purchase_id, purchase_date, purchase_year)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+      logger.info('createMasterAssetsFromRegistryBatch: attempting INSERT', {
+        register_number: reg || null,
+        purchase_id,
+        type_id: typeIdNum,
+        model_id: modelId,
+        entry_code: entryCode,
+      });
+
+      const [result] = await pool.query(sql, insertVals);
       const insertId = (result as ResultSetHeader).insertId;
-      if (insertId) insertAssetIds.push(insertId);
+      if (insertId) {
+        insertAssetIds.push(insertId);
+        logger.info('createMasterAssetsFromRegistryBatch: inserted assetdata', { insertId, register_number: reg || null });
+      } else {
+        logger.error('createMasterAssetsFromRegistryBatch: INSERT returned no insertId', { register_number: reg || null, purchase_id });
+      }
     } catch (e) {
       logger.error('createMasterAssetsFromRegistryBatch: asset insert failed', {
-        register_number: a.register_number,
+        register_number: reg || null,
         purchase_id,
         error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack?.split('\n').slice(0, 4).join(' | ') : undefined,
       });
     }
   }
