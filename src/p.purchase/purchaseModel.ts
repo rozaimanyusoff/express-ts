@@ -634,9 +634,14 @@ export const createMasterAssetsFromRegistryBatch = async (
       const row = (itemRows as any[])[0];
       const rawDate = row?.grn_date || row?.do_date || row?.po_date || row?.pr_date;
       if (rawDate) {
-        // Normalise: strip time component from datetime values
-        const dateStr = String(rawDate).split('T')[0].split(' ')[0];
-        if (dateStr && dateStr !== '0000-00-00') {
+        // MySQL2 returns DATE/DATETIME columns as JavaScript Date objects by default.
+        // Use toISOString() to get a reliable "YYYY-MM-DD..." string; fall back to
+        // string splitting for any legacy string-typed values.
+        const isoStr = rawDate instanceof Date
+          ? rawDate.toISOString()
+          : String(rawDate);
+        const dateStr = isoStr.split('T')[0].split(' ')[0];
+        if (dateStr && dateStr !== '0000-00-00' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
           purchaseDate = dateStr;
           const y = parseInt(dateStr.split('-')[0], 10);
           purchaseYear = isNaN(y) ? null : y;

@@ -1077,24 +1077,31 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
       return res.status(400).json({ data: null, message: 'Invalid payload: purchase_id and non-empty assets[] are required', status: 'error' });
     }
 
-    // Check for duplicate register_numbers in both purchase_asset_registry and assets.assetdata
-    const dupInRegistry: string[] = [];
-    const dupInAssets: string[] = [];
+    // Check for duplicate register_numbers in both purchase_asset_registry and assets.assetdata.
+    // Only block if the register_number is already fully registered (in BOTH tables).
+    // If it is in purchase_asset_registry but NOT in assetdata, allow re-processing so the
+    // missing assetdata record can be created (recovery from a previous partial failure).
+    const dupFullyRegistered: string[] = []; // in both registry AND assetdata
+    const dupInAssets: string[] = [];         // only in assetdata (no corresponding registry)
     for (const asset of assets) {
       const reg = asset.register_number ? String(asset.register_number).trim() : '';
       if (reg) {
         const dupCheck = await purchaseModel.checkRegisterNumberExistsForUpdate(reg, 0);
-        if (dupCheck.registryDuplicate) dupInRegistry.push(reg);
-        else if (dupCheck.assetDuplicate) dupInAssets.push(reg);
+        if (dupCheck.registryDuplicate && dupCheck.assetDuplicate) {
+          dupFullyRegistered.push(reg);
+        } else if (!dupCheck.registryDuplicate && dupCheck.assetDuplicate) {
+          dupInAssets.push(reg);
+        }
+        // registryDuplicate && !assetDuplicate → allow (recovery: registry exists but assetdata missing)
       }
     }
 
-    if (dupInRegistry.length > 0 || dupInAssets.length > 0) {
+    if (dupFullyRegistered.length > 0 || dupInAssets.length > 0) {
       const parts: string[] = [];
-      if (dupInRegistry.length > 0) parts.push(`already registered in purchase_asset_registry: ${dupInRegistry.join(', ')}`);
+      if (dupFullyRegistered.length > 0) parts.push(`already fully registered: ${dupFullyRegistered.join(', ')}`);
       if (dupInAssets.length > 0) parts.push(`already exist in assets: ${dupInAssets.join(', ')}`);
       return res.status(409).json({
-        data: { duplicate_in_assets: dupInAssets, duplicate_in_registry: dupInRegistry },
+        data: { duplicate_in_assets: dupInAssets, duplicate_in_registry: dupFullyRegistered },
         message: `Duplicate register number(s) — ${parts.join('; ')}`,
         status: 'error',
       });
@@ -1111,12 +1118,19 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
     }
 
     // Also create master asset records in assets.assetdata
+    let assetIds: number[] = [];
     try {
-      await purchaseModel.createMasterAssetsFromRegistryBatch(purchaseId, assets);
+      assetIds = await purchaseModel.createMasterAssetsFromRegistryBatch(purchaseId, assets);
     } catch (e) {
       logger.error('registerPurchaseAssetsBatch: create master assets failed', e);
-      // If creating master assets failed, we should not proceed to mark handover or send notifications.
       return res.status(500).json({ data: null, message: 'Failed to create master asset records', status: 'error' });
+    }
+    // createMasterAssetsFromRegistryBatch silently swallows per-asset errors and returns only
+    // the IDs that were successfully inserted or already existed. Detect partial failures here.
+    if (!Array.isArray(assetIds) || assetIds.length !== assets.length) {
+      const msg = `Failed to create all master asset records: expected=${assets.length} created=${Array.isArray(assetIds) ? assetIds.length : 0}`;
+      logger.error('createPurchaseAssetsRegistry:', msg);
+      return res.status(500).json({ data: { created: Array.isArray(assetIds) ? assetIds.length : 0, expected: assets.length }, message: msg, status: 'error' });
     }
 
     // Sync model_id from purchase_asset_registry to assets.assetdata for all created registry entries
