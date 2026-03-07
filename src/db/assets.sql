@@ -125,6 +125,7 @@ CREATE TABLE `asset_history` (
   `ramco_id` varchar(100) CHARACTER SET latin1 COLLATE latin1_swedish_ci DEFAULT NULL,
   `transfer_id` int DEFAULT NULL,
   `effective_date` date DEFAULT NULL,
+  `data_source` varchar(100) DEFAULT NULL,
   `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=6389 DEFAULT CHARSET=latin1;

@@ -2612,6 +2612,7 @@ export const hasAssetHistoryChanged = async (data: {
 export const insertAssetHistory = async (data: {
   asset_id: number;
   costcenter_id?: null | number;
+  data_source?: null | string;
   department_id?: null | number;
   effective_date?: Date | string;
   location_id?: null | number;
@@ -2621,8 +2622,8 @@ export const insertAssetHistory = async (data: {
   type_id?: null | number;
 }) => {
   const [result] = await pool.query(
-    `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, transfer_id, effective_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${assetHistoryTable} (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, transfer_id, effective_date, data_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.asset_id,
       data.register_number ?? null,
@@ -2632,7 +2633,8 @@ export const insertAssetHistory = async (data: {
       data.location_id ?? null,
       data.ramco_id ?? null,
       data.transfer_id ?? null,
-      data.effective_date ?? new Date()
+      data.effective_date ?? new Date(),
+      data.data_source ?? null
     ]
   );
   return result;
@@ -2682,12 +2684,13 @@ export const updateAssetCurrentOwner = async (asset_id: number, data: {
 // Used during computer assessment to track asset movement and reassignment
 export const checkAndInsertAssetHistory = async (payload: {
   asset_id: number;
-  register_number?: string | null;
-  type_id?: number | null;
   costcenter_id?: number | null;
+  data_source?: string | null;
   department_id?: number | null;
   location_id?: number | null;
   ramco_id?: string | null;
+  register_number?: string | null;
+  type_id?: number | null;
 }) => {
   try {
     // Get the latest asset_history record for this asset
@@ -2716,8 +2719,8 @@ export const checkAndInsertAssetHistory = async (payload: {
     if (hasChanged) {
       const [result] = await pool.query(
         `INSERT INTO ${assetHistoryTable} 
-         (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (asset_id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id, effective_date, data_source) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           payload.asset_id,
           payload.register_number ?? null,
@@ -2726,7 +2729,8 @@ export const checkAndInsertAssetHistory = async (payload: {
           payload.department_id ?? null,
           payload.location_id ?? null,
           payload.ramco_id ?? null,
-          new Date()
+          new Date(),
+          payload.data_source ?? null
         ]
       );
 

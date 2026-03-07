@@ -406,6 +406,7 @@ export interface PurchaseAssetRegistryRecord {
   classification?: null | string;
   costcenter_id?: null | number;
   created_by?: null | string;
+  department_id?: null | number;
   description?: null | string;
   id?: number;
   item_condition?: null | string;
@@ -413,6 +414,8 @@ export interface PurchaseAssetRegistryRecord {
   model?: null | string;
   model_id?: null | number;
   purchase_id?: null | number;
+  purpose?: null | string;
+  ramco_id?: null | string;
   register_number?: null | string;
   request_id?: null | number;
   type_id?: null | number;
@@ -564,12 +567,15 @@ export const createPurchaseAssetRegistryBatch = async (
       classification: a.classification ?? null,
       costcenter_id: a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null,
       created_by: created_by ?? null,
+      department_id: a.department_id !== undefined && a.department_id !== null ? Number(a.department_id) : null,
       description: a.description ?? null,
       item_condition: a.item_condition ?? null,
       location_id: a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,
       model: a.model ?? null,
       model_id: a.model_id !== undefined && a.model_id !== null ? Number(a.model_id) : null,
       purchase_id: purchase_id ?? null,
+      purpose: a.purpose ?? null,
+      ramco_id: a.ramco_id ?? null,
       register_number: a.register_number ?? null,
       request_id: request_id ?? null,
       type_id: a.type_id !== undefined && a.type_id !== null ? Number(a.type_id) : null,
@@ -596,7 +602,14 @@ export const getPurchaseAssetRegistry = async (): Promise<PurchaseAssetRegistryR
 
 export const getPurchaseAssetRegistryByPrId = async (purchase_id: number): Promise<PurchaseAssetRegistryRecord[]> => {
   const [rows] = await pool.query(
-    `SELECT * FROM ${purchaseAssetRegistryTable} WHERE purchase_id = ? ORDER BY id DESC`,
+    `SELECT par.*,
+            ad.ramco_id,
+            ad.department_id,
+            ad.purpose
+     FROM ${purchaseAssetRegistryTable} par
+     LEFT JOIN ${assetDataTable} ad ON ad.register_number = par.register_number AND ad.purchase_id = par.purchase_id
+     WHERE par.purchase_id = ?
+     ORDER BY par.id ASC`,
     [purchase_id]
   );
   return rows as PurchaseAssetRegistryRecord[];
@@ -669,12 +682,32 @@ export const createMasterAssetsFromRegistryBatch = async (
           const existingId = (dupRows as any[])[0]?.id;
           if (existingId) {
             try {
+              const ramcoId = (a as any).ramco_id ? String((a as any).ramco_id).trim() : null;
+              const deptId = a.department_id !== undefined && a.department_id !== null ? Number(a.department_id) : null;
+              const syncFields: string[] = ['purchase_id = ?'];
+              const syncVals: any[] = [purchase_id];
+              if (ramcoId) { syncFields.push('ramco_id = ?'); syncVals.push(ramcoId); }
+              if (deptId !== null) { syncFields.push('department_id = ?'); syncVals.push(deptId); }
               await pool.query(
-                `UPDATE ${assetDataTable} SET purchase_id = ? WHERE id = ?`,
-                [purchase_id, existingId]
+                `UPDATE ${assetDataTable} SET ${syncFields.join(', ')} WHERE id = ?`,
+                [...syncVals, existingId]
               );
+              // Record assignment in asset_history if ramco_id provided
+              if (ramcoId) {
+                await assetModel.insertAssetHistory({
+                  asset_id: existingId,
+                  costcenter_id: a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null,
+                  data_source: `create purchase id: ${purchase_id}`,
+                  department_id: deptId,
+                  effective_date: new Date(),
+                  location_id: a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,
+                  ramco_id: ramcoId,
+                  register_number: reg || null,
+                  type_id: a.type_id !== undefined && a.type_id !== null ? Number(a.type_id) : null,
+                });
+              }
             } catch (updateErr) {
-              logger.error('createMasterAssetsFromRegistryBatch: update existing asset purchase_id failed', {
+              logger.error('createMasterAssetsFromRegistryBatch: update existing asset failed', {
                 existingId,
                 purchase_id,
                 register_number: reg,
@@ -735,12 +768,16 @@ export const createMasterAssetsFromRegistryBatch = async (
 
       // Fixed INSERT — all relevant columns explicitly listed, NULL for missing fields.
       // This is more reliable than a dynamic column builder and avoids partial column list issues.
+      const ramcoIdVal = (a as any).ramco_id ? String((a as any).ramco_id).trim() : null;
+      const deptIdVal = a.department_id !== undefined && a.department_id !== null ? Number(a.department_id) : null;
+      const purposeVal = (a as any).purpose ? String((a as any).purpose).trim() : null;
       const insertVals = [
         reg || null,                                                        // register_number
         a.brand_id !== undefined && a.brand_id !== null ? Number(a.brand_id) : null,      // brand_id
         a.category_id !== undefined && a.category_id !== null ? Number(a.category_id) : null, // category_id
         a.classification ?? null,                                           // classification
         a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null, // costcenter_id
+        deptIdVal,                                                           // department_id
         a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,   // location_id
         typeIdNum,                                                           // type_id
         typeIdNum,                                                           // manager_id (mirrors type_id)
@@ -751,13 +788,15 @@ export const createMasterAssetsFromRegistryBatch = async (
         purchase_id,                                                         // purchase_id
         purchaseDate,                                                        // purchase_date
         purchaseYear,                                                        // purchase_year
+        ramcoIdVal,                                                          // ramco_id
+        purposeVal,                                                          // purpose
       ];
 
       const sql = `INSERT INTO ${assetDataTable}
-        (register_number, brand_id, category_id, classification, costcenter_id, location_id,
+        (register_number, brand_id, category_id, classification, costcenter_id, department_id, location_id,
          type_id, manager_id, entry_code, model_id, record_status, condition_status,
-         purchase_id, purchase_date, purchase_year)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+         purchase_id, purchase_date, purchase_year, ramco_id, purpose)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
       logger.info('createMasterAssetsFromRegistryBatch: attempting INSERT', {
         register_number: reg || null,
@@ -771,7 +810,29 @@ export const createMasterAssetsFromRegistryBatch = async (
       const insertId = (result as ResultSetHeader).insertId;
       if (insertId) {
         insertAssetIds.push(insertId);
-        logger.info('createMasterAssetsFromRegistryBatch: inserted assetdata', { insertId, register_number: reg || null });
+        logger.info('createMasterAssetsFromRegistryBatch: inserted assetdata', { insertId, register_number: reg || null, ramco_id: ramcoIdVal });
+        // Record initial assignment in asset_history if ramco_id provided
+        if (ramcoIdVal) {
+          try {
+            await assetModel.insertAssetHistory({
+              asset_id: insertId,
+              costcenter_id: a.costcenter_id !== undefined && a.costcenter_id !== null ? Number(a.costcenter_id) : null,
+              data_source: `create purchase id: ${purchase_id}`,
+              department_id: deptIdVal,
+              effective_date: new Date(),
+              location_id: a.location_id !== undefined && a.location_id !== null ? Number(a.location_id) : null,
+              ramco_id: ramcoIdVal,
+              register_number: reg || null,
+              type_id: typeIdNum,
+            });
+          } catch (histErr) {
+            logger.error('createMasterAssetsFromRegistryBatch: asset_history insert failed', {
+              insertId,
+              register_number: reg || null,
+              error: histErr instanceof Error ? histErr.message : String(histErr),
+            });
+          }
+        }
       } else {
         logger.error('createMasterAssetsFromRegistryBatch: INSERT returned no insertId', { register_number: reg || null, purchase_id });
       }
@@ -983,8 +1044,11 @@ export const updateAssetDataFromRegistry = async (
     category_id?: number | null;
     classification?: string | null;
     costcenter_id?: number | null;
+    department_id?: number | null;
     location_id?: number | null;
     model_id?: number | null;
+    purpose?: string | null;
+    ramco_id?: string | null;
     register_number?: string | null;
     type_id?: number | null;
   }

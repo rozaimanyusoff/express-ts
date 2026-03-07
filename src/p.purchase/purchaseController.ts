@@ -353,6 +353,36 @@ export const getPurchaseRequestItemById = async (req: Request, res: Response) =>
       (enrichedPurchase as any).deliveries = [];
     }
 
+    // Attach registered assets for this purchase item
+    try {
+      const registryAssets = await purchaseModel.getPurchaseAssetRegistryByPrId(purchase.id);
+      (enrichedPurchase as any).assets = (Array.isArray(registryAssets) ? registryAssets : []).map((a: any) => ({
+        id: a.id,
+        register_number: a.register_number ?? null,
+        classification: a.classification ?? null,
+        type_id: a.type_id ?? null,
+        category_id: a.category_id ?? null,
+        brand_id: a.brand_id ?? null,
+        model: a.model ?? null,
+        model_id: a.model_id ?? null,
+        warranty_period: a.warranty_period ?? null,
+        costcenter_id: a.costcenter_id ?? null,
+        department_id: a.department_id ?? null,
+        location_id: a.location_id ?? null,
+        item_condition: a.item_condition ?? null,
+        description: a.description ?? null,
+        purpose: a.purpose ?? null,
+        ramco_id: a.ramco_id ?? null,
+        purchase_id: a.purchase_id ?? null,
+        request_id: a.request_id ?? null,
+        created_at: a.created_at ?? null,
+        created_by: a.created_by ?? null,
+      }));
+    } catch (e) {
+      // non-blocking: if registry fetch fails, continue without assets
+      (enrichedPurchase as any).assets = [];
+    }
+
     return res.json({
       data: enrichedPurchase,
       message: 'Purchase retrieved successfully',
@@ -1296,7 +1326,7 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
       return res.status(400).json({ data: null, message: 'Registry ID is required', status: 'error' });
     }
 
-    const { brand_id, category_id, classification, costcenter_id, description, item_condition, location_id, model, model_id, register_number, type_id, warranty_period } = req.body || {};
+    const { brand_id, category_id, classification, costcenter_id, department_id, description, item_condition, location_id, model, model_id, purpose, ramco_id, register_number, type_id, warranty_period } = req.body || {};
 
     // Get current registry entry to track old values for audit
     const registryEntry = await purchaseModel.getPurchaseAssetRegistryById(registryId);
@@ -1419,13 +1449,50 @@ export const updatePurchaseAssetsRegistry = async (req: Request, res: Response) 
       if (category_id !== undefined) assetDataUpdate.category_id = category_id ? Number(category_id) : null;
       if (classification !== undefined) assetDataUpdate.classification = classification;
       if (costcenter_id !== undefined) assetDataUpdate.costcenter_id = costcenter_id ? Number(costcenter_id) : null;
+      if (department_id !== undefined) assetDataUpdate.department_id = department_id ? Number(department_id) : null;
       if (location_id !== undefined) assetDataUpdate.location_id = location_id ? Number(location_id) : null;
       if (type_id !== undefined) assetDataUpdate.type_id = type_id ? Number(type_id) : null;
       if (model_id !== undefined) assetDataUpdate.model_id = resolvedModelId;
+      if (purpose !== undefined) assetDataUpdate.purpose = purpose || null;
+
+      // ramco_id: assign asset to an employee
+      const ramcoIdVal = ramco_id !== undefined && ramco_id !== null && String(ramco_id).trim() !== ''
+        ? String(ramco_id).trim()
+        : (ramco_id === null ? null : undefined);
+      if (ramcoIdVal !== undefined) assetDataUpdate.ramco_id = ramcoIdVal;
 
       // Update assetdata with the sync fields
       if (Object.keys(assetDataUpdate).length > 0) {
         await purchaseModel.updateAssetDataFromRegistry(purchaseId, assetDataUpdate);
+      }
+
+      // Sync to asset_history: fetch current assetdata state (post-update) so the full new state
+      // is compared against the latest history record — inserts only when something actually changed.
+      // Uses checkAndInsertAssetHistory which handles ramco_id, department_id, or any combination.
+      try {
+        const [assetRows] = await pool.query(
+          `SELECT id, register_number, type_id, costcenter_id, department_id, location_id, ramco_id
+           FROM assets.assetdata WHERE purchase_id = ? LIMIT 1`,
+          [purchaseId]
+        );
+        const assetRow = Array.isArray(assetRows) && (assetRows as any[]).length > 0 ? (assetRows as any[])[0] : null;
+        if (assetRow?.id) {
+          await assetModel.checkAndInsertAssetHistory({
+            asset_id: assetRow.id,
+            costcenter_id: assetRow.costcenter_id ?? null,
+            data_source: `update purchase id: ${purchaseId}`,
+            department_id: assetRow.department_id ?? null,
+            location_id: assetRow.location_id ?? null,
+            ramco_id: assetRow.ramco_id ?? null,
+            register_number: assetRow.register_number ?? null,
+            type_id: assetRow.type_id ?? null,
+          });
+        }
+      } catch (histErr) {
+        logger.error('updatePurchaseAssetsRegistry: asset_history sync failed', {
+          registryId,
+          error: histErr instanceof Error ? histErr.message : String(histErr),
+        });
       }
     }
 
