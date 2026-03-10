@@ -437,9 +437,12 @@ CREATE TABLE `transfer_items` (
   `acceptance_checklist_items` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `acceptance_remarks` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `acceptance_attachments` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+  `transferred_on` datetime DEFAULT NULL COMMENT 'Timestamp when ownership was transferred and asset_history was created',
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_transferred_on` (`transferred_on`),
+  KEY `idx_effective_date_transferred` (`effective_date`,`transferred_on`)
 ) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `transfer_request`;

@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import logger from '../utils/logger';
 import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
+import { pool } from '../utils/db';
 
 import * as billingModel from '../p.billing/billingModel';
 import * as purchaseModel from '../p.purchase/purchaseModel';
@@ -4700,12 +4701,22 @@ export const getAssetTransferItemsByTransfer = async (req: Request, res: Respons
 	// Filter to only include pending acceptance items (acceptance_date IS NULL and acceptance_by IS NULL)
 	let filteredItems = items.filter((item: any) => item.acceptance_date === null && item.acceptance_by === null);
 
-	// Optional filter by new_owner query parameter
+	// Resolve new_owner: use explicit query param, or fall back to the logged-in user's ramco_id (username)
+	let resolvedOwner: string | null = null;
 	const newOwnerParam = req.query.new_owner;
-
 	if (newOwnerParam && typeof newOwnerParam === 'string' && newOwnerParam.trim() !== '') {
-		const newOwnerRamco = newOwnerParam.trim();
-		filteredItems = filteredItems.filter((item: any) => item.new_owner === newOwnerRamco);
+		resolvedOwner = newOwnerParam.trim();
+	} else {
+		const appUser = req.user as any;
+		const userId = appUser?.userId ?? appUser?.id;
+		if (userId) {
+			const [userRows]: any[] = await pool.query('SELECT username FROM users WHERE id = ? LIMIT 1', [userId]);
+			resolvedOwner = userRows?.[0]?.username ?? null;
+		}
+	}
+
+	if (resolvedOwner) {
+		filteredItems = filteredItems.filter((item: any) => item.new_owner === resolvedOwner);
 	}
 
 	// Enrich items with nested objects (asset, owners, departments, costcenters, locations)
@@ -5022,13 +5033,45 @@ export const deleteAssetTransferItem = async (req: Request, res: Response) => {
 };
 
 export const getAssetTransferItems = async (req: Request, res: Response) => {
-	const rawItems = await assetModel.getAllAssetTransferItems();
-	const baseItems = Array.isArray(rawItems) ? (rawItems as any[]) : [];
-	// Optional filter by new_owner ramco_id: ?new_owner=000277
+	// Resolve new_owner: explicit param or fall back to JWT user's ramco_id (username)
+	let resolvedOwner: string | null = null;
 	const newOwnerParam = typeof req.query.new_owner === 'string' ? req.query.new_owner.trim() : '';
-	const itemsArr = newOwnerParam
-		? baseItems.filter((it: any) => String(it?.new_owner || '') === newOwnerParam)
-		: baseItems;
+	if (newOwnerParam) {
+		resolvedOwner = newOwnerParam;
+	} else {
+		const appUser = req.user as any;
+		const userId = appUser?.userId ?? appUser?.id;
+		if (userId) {
+			const [userRows]: any[] = await pool.query('SELECT username FROM users WHERE id = ? LIMIT 1', [userId]);
+			resolvedOwner = userRows?.[0]?.username ?? null;
+		}
+	}
+
+	const pendingOnly = req.query.pending === 'true';
+	const limit = Math.min(Number(req.query.limit) || 25, 100);
+	const offset = Number(req.query.offset) || 0;
+
+	let itemsArr: any[];
+	let summary: { accepted: number; pending: number; total: number } | null = null;
+
+	if (resolvedOwner) {
+		// Use efficient DB-level query when owner is known
+		const result = await assetModel.getTransferItemsByOwner({
+			limit,
+			new_owner: resolvedOwner,
+			offset,
+			pending_only: pendingOnly
+		});
+		itemsArr = Array.isArray(result.items) ? result.items : [];
+		summary = result.summary;
+	} else {
+		// Fallback: fetch all (admin use — no owner filter)
+		const rawItems = await assetModel.getAllAssetTransferItems();
+		itemsArr = Array.isArray(rawItems) ? (rawItems as any[]) : [];
+		if (pendingOnly) {
+			itemsArr = itemsArr.filter((it: any) => it.acceptance_date === null && it.acceptance_by === null);
+		}
+	}
 
 	// Gather lookup IDs
 	const employeeIds = new Set<string>();
@@ -5152,7 +5195,53 @@ export const getAssetTransferItems = async (req: Request, res: Response) => {
 		};
 	});
 
-	return res.json({ data: enriched, message: 'All transfer items retrieved', status: 'success' });
+	return res.json({ data: enriched, message: 'All transfer items retrieved', status: 'success', ...(summary && { summary }) });
+};
+
+/**
+ * Summary count of transfer items for the logged-in user (or ?new_owner=)
+ * Returns total, pending, accepted counts — ideal for dashboard badges
+ */
+export const getTransferItemsSummary = async (req: Request, res: Response) => {
+	let resolvedOwner: string | null = null;
+	const newOwnerParam = typeof req.query.new_owner === 'string' ? req.query.new_owner.trim() : '';
+	if (newOwnerParam) {
+		resolvedOwner = newOwnerParam;
+	} else {
+		const appUser = req.user as any;
+		const userId = appUser?.userId ?? appUser?.id;
+		if (userId) {
+			const [userRows]: any[] = await pool.query('SELECT username FROM users WHERE id = ? LIMIT 1', [userId]);
+			resolvedOwner = userRows?.[0]?.username ?? null;
+		}
+	}
+
+	if (!resolvedOwner) {
+		return res.status(400).json({ status: 'error', message: 'Unable to resolve user. Provide ?new_owner= or send a valid token.', data: null });
+	}
+
+	const { summary } = await assetModel.getTransferItemsByOwner({ new_owner: resolvedOwner, limit: 0, offset: 0 });
+
+	const latest = summary.total > 0
+		? ((await assetModel.getTransferItemsByOwner({ new_owner: resolvedOwner, limit: 1, offset: 0 })).items[0] ?? null)
+		: null;
+
+	return res.json({
+		status: 'success',
+		message: 'Transfer summary retrieved',
+		data: {
+			new_owner: resolvedOwner,
+			summary,
+			latest: latest ? {
+				id: latest.id,
+				transfer_id: latest.transfer_id,
+				effective_date: latest.effective_date ?? null,
+				acceptance_date: latest.acceptance_date ?? null,
+				asset_id: latest.asset_id ?? null,
+				transfer_date: (latest as any).transfer_date ?? null
+			} : null
+		}
+	});
 };
 
 // TypeScript interface for asset transfer detail item

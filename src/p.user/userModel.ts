@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../utils/logger';
 
 // Purpose: Model for user operations.
-import {pool} from '../utils/db';
+import { pool } from '../utils/db';
 const { compare, hash } = bcrypt;
 
 // DB and table variables for easier maintenance
@@ -48,6 +48,7 @@ export interface Users {
     reset_token: null | string;
     role: number; // role id, now references roles table with new schema
     status: number;
+    time_spent?: number;
     user_type: number;
     usergroups: null | string; // comma-separated group IDs
     username: string;
@@ -162,12 +163,12 @@ export const getModuleMemberByRamcoId = async (ramcoId: string | null | undefine
              WHERE mm.ramco_id = ? LIMIT 1`,
             [ramcoId]
         );
-        
+
         // If found and has fname, return it
         if (rows[0] && rows[0].fname) {
             return rows[0];
         }
-        
+
         // Strategy 2: If no result or fname is null, try to find user directly
         // Search for users by contact number matching ramco_id pattern or by email containing ramco_id
         const [userRows]: any[] = await pool.query(
@@ -176,7 +177,7 @@ export const getModuleMemberByRamcoId = async (ramcoId: string | null | undefine
              LIMIT 1`,
             [`%${ramcoId}%`, `%${ramcoId}%`, `%${ramcoId}%`]
         );
-        
+
         if (userRows[0]) {
             // Return with user data found
             return {
@@ -186,7 +187,7 @@ export const getModuleMemberByRamcoId = async (ramcoId: string | null | undefine
                 email: userRows[0].email
             };
         }
-        
+
         // If still no fname found, return the module_members record (fname will be null)
         return rows[0] || null;
     } catch (error) {
@@ -298,6 +299,7 @@ export const verifyLoginCredentials = async (
             last_os: user.last_os,
             password: '', // Password is removed for security
             reset_token: user.reset_token,
+            time_spent: Number(user.time_spent) || 0,
             role: user.role,
             status: user.status,
             user_type: user.user_type,
@@ -505,30 +507,30 @@ export const updateUserLogoutAndTimeSpent = async (userId: number): Promise<void
             `SELECT last_login, time_spent FROM ${usersTable} WHERE id = ?`,
             [userId]
         );
-        
+
         if (!rows || rows.length === 0) {
             logger.warn(`User ${userId} not found for logout update`);
             return;
         }
-        
+
         const user = rows[0];
         let sessionSeconds = 0;
-        
+
         // Calculate session duration from last_login to now
         if (user.last_login) {
             const loginTime = new Date(user.last_login).getTime();
             const now = Date.now();
             sessionSeconds = Math.max(0, Math.floor((now - loginTime) / 1000));
         }
-        
+
         // Update user with new logout time and accumulated time_spent
         const newTimeSpent = (user.time_spent || 0) + sessionSeconds;
-        
+
         await pool.query(
             `UPDATE ${usersTable} SET last_logout = NOW(), time_spent = ? WHERE id = ?`,
             [newTimeSpent, userId]
         );
-        
+
         logger.info(`Updated user ${userId} logout: session=${sessionSeconds}s, total_time=${newTimeSpent}s`);
     } catch (error) {
         logger.error(`Database error in updateUserLogoutAndTimeSpent: ${error}`);
@@ -558,7 +560,7 @@ export const deleteUser = async (userId: number): Promise<void> => {
         await pool.query(`DELETE FROM ${userGroupsTable} WHERE user_id = ?`, [userId]);
         await pool.query(`DELETE FROM ${userProfileTable} WHERE user_id = ?`, [userId]);
         await pool.query(`DELETE FROM ${userTasksTable} WHERE user_id = ?`, [userId]);
-        
+
         // Finally delete the user
         await pool.query(`DELETE FROM ${usersTable} WHERE id = ?`, [userId]);
         logger.info(`Deleted user ${userId} and related records`);
@@ -573,12 +575,12 @@ export const deleteUsers = async (userIds: number[]): Promise<void> => {
     if (!userIds.length) return;
     try {
         const placeholders = userIds.map(() => '?').join(',');
-        
+
         // Delete from related tables first (cascade)
         await pool.query(`DELETE FROM ${userGroupsTable} WHERE user_id IN (${placeholders})`, userIds);
         await pool.query(`DELETE FROM ${userProfileTable} WHERE user_id IN (${placeholders})`, userIds);
         await pool.query(`DELETE FROM ${userTasksTable} WHERE user_id IN (${placeholders})`, userIds);
-        
+
         // Finally delete the users
         await pool.query(`DELETE FROM ${usersTable} WHERE id IN (${placeholders})`, userIds);
         logger.info(`Deleted ${userIds.length} users and their related records`);
@@ -772,7 +774,7 @@ export const createWorkflow = async (data: any): Promise<number> => {
         // Return number of created rows (controller may choose to expose IDs)
         return count as unknown as number;
     } catch (err) {
-        try { await conn.rollback(); } catch {}
+        try { await conn.rollback(); } catch { }
         throw err;
     } finally {
         conn.release();
@@ -792,7 +794,7 @@ export const getWorkflowById = async (id: number) => {
 export const updateWorkflow = async (id: number, data: any): Promise<void> => {
     const [result] = await pool.query(`
         UPDATE ${workflowTable} SET module_name = ?, level_order = ?, ramco_id = ?, level_name = ?, description = ?, is_active = ?, department_id = ?, updated_at = NOW()
-        WHERE id = ?`, 
+        WHERE id = ?`,
         [data.module_name, data.level_order, data.ramco_id, data.level_name, data.description, data.is_active, data.department_id, id]
     );
 };
@@ -840,7 +842,7 @@ export const reorderWorkflows = async (payload: { items: (number | { id: number;
         await conn.commit();
         return updated;
     } catch (err) {
-        try { await conn.rollback(); } catch {}
+        try { await conn.rollback(); } catch { }
         throw err;
     } finally {
         conn.release();

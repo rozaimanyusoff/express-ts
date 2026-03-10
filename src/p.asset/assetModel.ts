@@ -2249,6 +2249,62 @@ export const getAllAssetTransferItems = async () => {
 };
 
 /**
+ * Efficient DB-level query for transfer items by new_owner with optional pending filter,
+ * pagination, and summary counts.
+ */
+export const getTransferItemsByOwner = async (options: {
+  limit?: number;
+  new_owner: string;
+  offset?: number;
+  pending_only?: boolean;
+}) => {
+  const { new_owner, pending_only = false, limit = 25, offset = 0 } = options;
+
+  const conditions = [`ti.new_owner = ?`];
+  const params: any[] = [new_owner];
+
+  if (pending_only) {
+    conditions.push(`ti.acceptance_date IS NULL`, `ti.acceptance_by IS NULL`);
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
+
+  const dataSql = `
+    SELECT ti.*, t.transfer_date, t.transfer_status, t.transfer_by
+    FROM ${assetTransferItemTable} ti
+    JOIN ${assetTransferRequestTable} t ON t.id = ti.transfer_id
+    ${where}
+    ORDER BY ti.id DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const countSql = `
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN ti.acceptance_date IS NULL AND ti.acceptance_by IS NULL THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN ti.acceptance_date IS NOT NULL THEN 1 ELSE 0 END) as accepted
+    FROM ${assetTransferItemTable} ti
+    JOIN ${assetTransferRequestTable} t ON t.id = ti.transfer_id
+    WHERE ti.new_owner = ?
+  `;
+
+  const [rows, countRows] = await Promise.all([
+    pool.query(dataSql, [...params, limit, offset]),
+    pool.query(countSql, [new_owner])
+  ]);
+
+  const counts = (countRows[0] as RowDataPacket[])[0] as any;
+  return {
+    items: rows[0] as RowDataPacket[],
+    summary: {
+      accepted: Number(counts?.accepted ?? 0),
+      pending: Number(counts?.pending ?? 0),
+      total: Number(counts?.total ?? 0)
+    }
+  };
+};
+
+/**
  * Find uncommitted accepted transfer items for a specific asset type
  * Returns transfer items that:
  * - Have acceptance_by IS NOT NULL (items are accepted)
@@ -3063,7 +3119,7 @@ export const processAcceptedTransfers = async () => {
           ramco_id: itemData.new_owner,
           register_number: asset.register_number || null,
           transfer_id: itemData.transfer_id,
-          type_id: itemData.new_type_id || asset.type_id || null
+          type_id: itemData.type_id || asset.type_id || null
         });
 
         // 2. Update current ownership in assetdata table

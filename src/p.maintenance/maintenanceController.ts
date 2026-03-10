@@ -604,10 +604,20 @@ export const getVehicleMtnRequests = async (req: Request, res: Response) => {
 		});
 
 		const total = resolvedRecords.length;
+		const summary = {
+			total,
+			pending: resolvedRecords.filter((r: any) => r.status === 'pending').length,
+			verified: resolvedRecords.filter((r: any) => r.status === 'verified').length,
+			recommended: resolvedRecords.filter((r: any) => r.status === 'recommended').length,
+			approved: resolvedRecords.filter((r: any) => r.status === 'approved').length,
+			rejected: resolvedRecords.filter((r: any) => r.status?.includes('rejected')).length,
+			cancelled: resolvedRecords.filter((r: any) => r.status === 'cancelled').length,
+		};
 		const responseData = {
 			data: resolvedRecords,
 			message: `Maintenance records data retrieved successfully (total: ${total})`,
-			status: 'success'
+			status: 'success',
+			summary
 		};
 
 		// Cache the result with 10-minute TTL
@@ -2561,10 +2571,20 @@ export const getPoolCars = async (req: Request, res: Response) => {
 			return out;
 		});
 
+		const summary = {
+			total: data.length,
+			pending: data.filter((c: any) => c.status === 'pending').length,
+			approved: data.filter((c: any) => c.status === 'approved').length,
+			returned: data.filter((c: any) => c.status === 'returned').length,
+			cancelled: data.filter((c: any) => c.status === 'cancelled').length,
+			rejected: data.filter((c: any) => c.status === 'rejected').length,
+		};
+
 		return res.json({
 			data,
 			message: 'Pool car data retrieved successfully',
-			status: 'success'
+			status: 'success',
+			summary
 		});
 	} catch (error) {
 		return res.status(500).json({

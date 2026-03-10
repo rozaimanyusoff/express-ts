@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import logger from '../utils/logger';
+import tokenValidator from '../middlewares/tokenValidator';
 
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
@@ -1832,20 +1833,54 @@ router.delete('/softwares/:id', asyncHandler(assetController.deleteSoftware));
  * /assets/transfers/items:
  *   get:
  *     summary: Get all asset transfer items
+ *     description: Supports ?new_owner={ramco_id} to filter by recipient. Add ?pending=true to return only items not yet accepted. Omit new_owner to auto-resolve from JWT.
  *     tags: [Asset Transfer Items]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: new_owner
+ *         schema:
+ *           type: string
+ *         description: Filter by new owner ramco_id. Defaults to logged-in user when omitted.
+ *       - in: query
+ *         name: pending
+ *         schema:
+ *           type: boolean
+ *         description: If true, return only items with acceptance_date IS NULL
  *     responses:
  *       200:
  *         description: List of all transfer items
  */
-router.get('/transfers/items', asyncHandler(assetController.getAssetTransferItems)); // all items
+router.get('/transfers/items', tokenValidator, asyncHandler(assetController.getAssetTransferItems)); // ?new_owner={ramco_id} optional — defaults to JWT user; ?pending=true for unaccepted only
+
+/**
+ * @swagger
+ * /assets/transfers/items/summary:
+ *   get:
+ *     summary: Get transfer item counts summary for a user
+ *     description: Returns total, pending (unaccepted), and accepted counts. Resolves to logged-in user when new_owner is omitted.
+ *     tags: [Asset Transfer Items]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: new_owner
+ *         schema:
+ *           type: string
+ *         description: ramco_id of the recipient. Defaults to logged-in user.
+ *     responses:
+ *       200:
+ *         description: Summary counts with latest item
+ */
+router.get('/transfers/items/summary', tokenValidator, asyncHandler(assetController.getTransferItemsSummary));
 
 /**
  * @swagger
  * /assets/transfers/{id}/items:
  *   get:
- *     summary: Get transfer items for a specific transfer
+ *     summary: Get transfer items for a specific transfer, filtered to pending acceptance
+ *     description: Returns items pending acceptance. If new_owner is omitted, resolves to the logged-in user's ramco_id via JWT.
  *     tags: [Asset Transfer Items]
  *     security:
  *       - bearerAuth: []
@@ -1860,12 +1895,12 @@ router.get('/transfers/items', asyncHandler(assetController.getAssetTransferItem
  *         name: new_owner
  *         schema:
  *           type: string
- *         description: Filter by new owner ramco_id
+ *         description: Filter by new owner ramco_id. If omitted, defaults to the logged-in user.
  *     responses:
  *       200:
  *         description: Transfer items for the given transfer
  */
-router.get('/transfers/:id/items', asyncHandler(assetController.getAssetTransferItemsByTransfer)); // items for a specific transfer (?new_owner={ramco_id} to filter by new owner)
+router.get('/transfers/:id/items', tokenValidator, asyncHandler(assetController.getAssetTransferItemsByTransfer)); // ?new_owner={ramco_id} optional — defaults to JWT user
 
 /**
  * @swagger
