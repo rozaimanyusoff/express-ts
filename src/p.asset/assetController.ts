@@ -61,6 +61,18 @@ function formatDateFields(obj: any, dateFieldNames: string[]): any {
 
 /* ========== ASSETS ========== */
 export const getAssets = async (req: Request, res: Response) => {
+	// Fast path: ?ramco_id=<username> — return lean enriched asset list for that user
+	const ramcoIdParam = req.query.ramco_id;
+	if (typeof ramcoIdParam === 'string' && ramcoIdParam.trim() !== '') {
+		const assets = await assetModel.getAssetsByRamcoId(ramcoIdParam.trim());
+		return res.json({
+			data: assets,
+			message: 'Assets retrieved successfully',
+			status: 'success',
+			total: assets.length,
+		});
+	}
+
 	// Support ?type=[type_id] and ?status=[status] params
 	const typeIdParam = req.query.type;
 	const categoryParam = req.query.category; // ?category=[category_id] for chain filtering

@@ -72,6 +72,37 @@ export const calculateAge = (purchaseYear: null | number | undefined): null | nu
 };
 
 /* ============ ASSETS ============ */
+export const getAssetsByRamcoId = async (ramcoId: string) => {
+  const [rows] = await pool.query(
+    `SELECT
+      a.*,
+      t.name   AS type_name,
+      c.name   AS category_name,
+      b.name   AS brand_name,
+      m.name   AS model_name,
+      dept.code AS department_name,
+      cc.name  AS costcenter_name,
+      loc.name AS location_name
+    FROM ${assetTable} a
+    LEFT JOIN ${typeTable}       t    ON a.type_id       = t.id
+    LEFT JOIN ${categoryTable}   c    ON a.category_id   = c.id
+    LEFT JOIN ${brandTable}      b    ON a.brand_id      = b.id
+    LEFT JOIN ${modelTable}      m    ON a.model_id      = m.id
+    LEFT JOIN ${departmentTable} dept ON a.department_id = dept.id
+    LEFT JOIN ${costcenterTable} cc   ON a.costcenter_id = cc.id
+    LEFT JOIN ${locationTable}   loc  ON a.location_id   = loc.id
+    WHERE a.ramco_id = ?
+    ORDER BY a.id DESC`,
+    [ramcoId]
+  );
+  return (rows as RowDataPacket[]).map((r: any) => ({
+    ...r,
+    asset_id: r.id,
+    age: calculateAge(r.purchase_year),
+    nbv: calculateNBV(r.unit_price ?? null, r.purchase_year),
+  }));
+};
+
 export const getAssets = async (type_ids?: number | number[], classification?: string, status?: string, manager?: number, registerNumber?: string, owner?: string | string[], brandId?: number, purpose?: string | string[]) => {
   let sql = `SELECT ${assetTable}.* FROM ${assetTable}`;
   const params: any[] = [];
@@ -3084,7 +3115,8 @@ export const processAcceptedTransfers = async () => {
        WHERE ti.acceptance_date IS NOT NULL 
          AND ti.effective_date <= NOW()
          AND ti.transferred_on IS NULL
-         AND ti.new_owner IS NOT NULL`
+         AND ti.new_owner IS NOT NULL
+         AND ti.asset_id IS NOT NULL`
     );
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -3098,10 +3130,17 @@ export const processAcceptedTransfers = async () => {
       const itemData = item as any;
 
       try {
+        // Validate asset_id before any DB operation
+        const assetId = Number(itemData.asset_id);
+        if (!assetId || isNaN(assetId)) {
+          logger.warn(`⚠ Transfer item ${itemData.id} has invalid asset_id (${itemData.asset_id}), skipping`);
+          continue;
+        }
+
         // Fetch current asset data
-        const asset = await getAssetById(itemData.asset_id);
+        const asset = await getAssetById(assetId);
         if (!asset) {
-          logger.warn(`Asset ${itemData.asset_id} not found, skipping`);
+          logger.warn(`Asset ${assetId} not found, skipping`);
           continue;
         }
 
@@ -3111,7 +3150,7 @@ export const processAcceptedTransfers = async () => {
 
         // 1. Insert asset movement record into asset_history
         await insertAssetHistory({
-          asset_id: itemData.asset_id,
+          asset_id: assetId,
           costcenter_id: itemData.new_costcenter_id || null,
           department_id: itemData.new_department_id || null,
           effective_date: effectiveDate,
@@ -3123,7 +3162,7 @@ export const processAcceptedTransfers = async () => {
         });
 
         // 2. Update current ownership in assetdata table
-        await updateAssetCurrentOwner(itemData.asset_id, {
+        await updateAssetCurrentOwner(assetId, {
           costcenter_id: itemData.new_costcenter_id || asset.costcenter_id,
           department_id: itemData.new_department_id || asset.department_id,
           location_id: itemData.new_location_id || asset.location_id,
@@ -3138,7 +3177,7 @@ export const processAcceptedTransfers = async () => {
         );
 
         processedCount++;
-        logger.info(`✓ Processed transfer item ${itemData.id} for asset ${itemData.asset_id}`);
+        logger.info(`✓ Processed transfer item ${itemData.id} for asset ${assetId}`);
       } catch (itemErr) {
         logger.error(`✗ Error processing transfer item ${itemData.id}:`, itemErr);
         // Continue with next item instead of failing entire batch

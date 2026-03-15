@@ -1,5 +1,5 @@
 import { ResultSetHeader, RowDataPacket } from 'mysql2';
-import { pool } from '../utils/db';
+import { pool, queryWithRetry } from '../utils/db';
 import logger from '../utils/logger';
 import { getErrorMessage, isMysqlError } from '../utils/errorUtils';
 
@@ -372,7 +372,7 @@ export const deleteRoles = async (roleIds: number[]): Promise<number> => {
 
 export const getAllGroups = async (): Promise<Group[]> => {
   try {
-    const [rows]: any[] = await pool.query('SELECT * FROM auth.groups');
+    const [rows]: any[] = await queryWithRetry(pool, 'SELECT * FROM auth.groups');
     return rows;
   } catch (error) {
     logger.error('Error getting all groups:', error);
@@ -382,7 +382,7 @@ export const getAllGroups = async (): Promise<Group[]> => {
 
 export const getGroupById = async (id: number): Promise<Group> => {
   try {
-    const [rows]: any[] = await pool.query('SELECT * FROM auth.groups WHERE id = ?', [id]);
+    const [rows]: any[] = await queryWithRetry(pool, 'SELECT * FROM auth.groups WHERE id = ?', [id]);
     return rows[0];
   } catch (error) {
     logger.error('Error getting group by id:', error);

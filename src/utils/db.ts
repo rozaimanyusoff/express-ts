@@ -12,7 +12,7 @@ const poolConfig = {
   // Connection health
   enableKeepAlive: true,
   host: DB_HOST,
-  idleTimeout: 60000, // 60 seconds
+  idleTimeout: 30000, // 30 seconds — keep below MySQL wait_timeout to avoid stale connections
   keepAliveInitialDelay: 0,
   maxIdle: 10,
   password: DB_PASSWORD,
@@ -32,7 +32,7 @@ const pool2Config = {
   // Connection health
   enableKeepAlive: true,
   host: DB2_HOST,
-  idleTimeout: 60000,
+  idleTimeout: 30000, // 30 seconds
   keepAliveInitialDelay: 0,
   maxIdle: 10,
   password: DB2_PASSWORD,
@@ -48,5 +48,30 @@ const pool2: mysql.Pool = mysql.createPool(pool2Config);
 
 // Note: mysql2/promise pools don't emit 'error' events directly
 // Use dbHealthCheck utility for connection monitoring instead
+
+// Retryable connection error codes caused by stale/dead pool connections
+const RETRYABLE_ERROR_CODES = new Set(['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'PROTOCOL_CONNECTION_LOST']);
+
+/**
+ * Wraps pool.query with a single automatic retry for transient connection errors
+ * (e.g. read ETIMEDOUT when the MySQL server closed an idle connection that
+ * the pool still considered valid).
+ */
+export const queryWithRetry = async (
+  poolInstance: mysql.Pool,
+  sql: string,
+  values?: unknown[]
+): Promise<any> => {
+  try {
+    return await poolInstance.query(sql, values);
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code && RETRYABLE_ERROR_CODES.has(code)) {
+      // Single retry — the pool will allocate a fresh connection
+      return await poolInstance.query(sql, values);
+    }
+    throw err;
+  }
+};
 
 export { pool, pool2 };

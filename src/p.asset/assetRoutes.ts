@@ -2813,6 +2813,11 @@ router.delete('/locations/:id', asyncHandler(assetController.deleteLocation));
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
+ *         name: ramco_id
+ *         schema:
+ *           type: string
+ *         description: Return assets currently assigned to this ramco_id (lean enriched response)
+ *       - in: query
  *         name: type
  *         schema:
  *           type: integer
