@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import { promises as fs } from 'fs';
 import path from 'path';
 import {
+  archiveOldErrorLogs,
+  getErrorLogsForDateRange,
+  getTodayErrorLogs
+} from '../utils/fileErrorLogger';
+import {
   getAuthLogsForDateRange,
   getUserAuthLogsForDateRange,
   getTodayAuthLogs,
@@ -20,7 +25,7 @@ const AUTH_LOGS_DIR = path.join(UPLOAD_BASE_PATH, 'logs', 'auth');
 export const getAllLogFiles = async (req: Request, res: Response): Promise<Response> => {
   try {
     const files = await fs.readdir(AUTH_LOGS_DIR);
-    
+
     const logFiles = await Promise.all(
       files
         .filter(file => file.startsWith('auth_') && file.endsWith('.jsonl'))
@@ -28,11 +33,11 @@ export const getAllLogFiles = async (req: Request, res: Response): Promise<Respo
           const filepath = path.join(AUTH_LOGS_DIR, file);
           const stats = await fs.stat(filepath);
           const dateMatch = file.match(/auth_(\d{4})-(\d{2})-(\d{2})\.jsonl/);
-          
+
           // Count lines in file
           const content = await fs.readFile(filepath, 'utf-8');
           const lineCount = content.split('\n').filter(line => line.trim()).length;
-          
+
           return {
             filename: file,
             date: dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : null,
@@ -43,13 +48,13 @@ export const getAllLogFiles = async (req: Request, res: Response): Promise<Respo
           };
         })
     );
-    
+
     // Sort by date descending (newest first)
     logFiles.sort((a, b) => {
       if (!a.date || !b.date) return 0;
       return b.date.localeCompare(a.date);
     });
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -72,22 +77,22 @@ export const getAllLogFiles = async (req: Request, res: Response): Promise<Respo
 export const getLogsByDateRange = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { startDate, endDate, userId, action, status } = req.query;
-    
+
     if (!startDate || !endDate) {
       return res.status(400).json({
         status: 'error',
         message: 'startDate and endDate are required'
       });
     }
-    
+
     const start = new Date(startDate as string);
     const end = new Date(endDate as string);
-    
+
     // Get logs for date range
     let logs = userId
       ? await getUserAuthLogsForDateRange(parseInt(userId as string), start, end)
       : await getAuthLogsForDateRange(start, end);
-    
+
     // Apply filters
     if (action) {
       logs = logs.filter(log => log.action === action);
@@ -95,7 +100,7 @@ export const getLogsByDateRange = async (req: Request, res: Response): Promise<R
     if (status) {
       logs = logs.filter(log => log.status === status);
     }
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -119,11 +124,11 @@ export const getLogsByDateRange = async (req: Request, res: Response): Promise<R
 export const getTodayLogs = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { userId } = req.query;
-    
+
     const logs = userId
       ? await getUserTodayAuthLogs(parseInt(userId as string))
       : await getTodayAuthLogs();
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -148,17 +153,17 @@ export const getUserLogs = async (req: Request, res: Response): Promise<Response
   try {
     const { userId } = req.params;
     const { days = 7, action, status } = req.query;
-    
+
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
+
     let logs = await getUserAuthLogsForDateRange(
       parseInt(userId as string),
       startDate,
       endDate
     );
-    
+
     // Apply filters
     if (action) {
       logs = logs.filter(log => log.action === (action as string));
@@ -166,7 +171,7 @@ export const getUserLogs = async (req: Request, res: Response): Promise<Response
     if (status) {
       logs = logs.filter(log => log.status === (status as string));
     }
-    
+
     // Aggregate stats
     const stats = {
       total: logs.length,
@@ -175,14 +180,14 @@ export const getUserLogs = async (req: Request, res: Response): Promise<Response
       successCount: 0,
       failCount: 0
     };
-    
+
     logs.forEach(log => {
       stats.byAction[log.action] = (stats.byAction[log.action] || 0) + 1;
       stats.byStatus[log.status] = (stats.byStatus[log.status] || 0) + 1;
       if (log.status === 'success') stats.successCount++;
       if (log.status === 'fail') stats.failCount++;
     });
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -210,13 +215,13 @@ export const getUserLogs = async (req: Request, res: Response): Promise<Response
 export const getLogSummary = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { days = 7 } = req.query;
-    
+
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
+
     const logs = await getAuthLogsForDateRange(startDate, endDate);
-    
+
     // Calculate statistics
     const stats = {
       totalEntries: logs.length,
@@ -234,7 +239,7 @@ export const getLogSummary = async (req: Request, res: Response): Promise<Respon
       uniqueIPs: new Set<string>(),
       failureRate: 0
     };
-    
+
     logs.forEach(log => {
       // Action stats
       if (!stats.byAction[log.action]) {
@@ -246,27 +251,27 @@ export const getLogSummary = async (req: Request, res: Response): Promise<Respon
       } else {
         stats.byAction[log.action].fail++;
       }
-      
+
       // Status stats
       if (log.status === 'success') {
         stats.byStatus.success++;
       } else {
         stats.byStatus.fail++;
       }
-      
+
       // Unique tracking
       stats.uniqueUsers.add(log.user_id);
       if (log.ip) stats.uniqueIPs.add(log.ip);
     });
-    
+
     // Convert Sets to counts
     const uniqueUsers = stats.uniqueUsers.size;
     const uniqueIPs = stats.uniqueIPs.size;
-    
+
     const failureRate = stats.totalEntries > 0
       ? Math.round((stats.byStatus.fail / stats.totalEntries) * 100 * 100) / 100
       : 0;
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -298,16 +303,16 @@ export const getLogSummary = async (req: Request, res: Response): Promise<Respon
 export const archiveOldLogFiles = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { daysToKeep = 90 } = req.body;
-    
+
     if (typeof daysToKeep !== 'number' || daysToKeep < 1) {
       return res.status(400).json({
         status: 'error',
         message: 'daysToKeep must be a positive number'
       });
     }
-    
+
     const archivedCount = await archiveOldLogs(daysToKeep);
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -332,7 +337,7 @@ export const downloadLogFile = async (req: Request, res: Response): Promise<Resp
   try {
     const { filename } = req.params;
     const fn = filename as string;
-    
+
     // Validate filename to prevent directory traversal
     if (!fn.startsWith('auth_') || !fn.endsWith('.jsonl')) {
       return res.status(400).json({
@@ -340,18 +345,18 @@ export const downloadLogFile = async (req: Request, res: Response): Promise<Resp
         message: 'Invalid filename'
       });
     }
-    
+
     const filepath = path.join(AUTH_LOGS_DIR, fn);
-    
+
     // Verify file exists
     await fs.access(filepath);
-    
+
     // Read and send file
     const content = await fs.readFile(filepath, 'utf-8');
-    
+
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Content-Disposition', `attachment; filename="${fn}"`);
-    
+
     return res.send(content);
   } catch (error) {
     logger.error('Error downloading log file:', error);
@@ -368,16 +373,16 @@ export const downloadLogFile = async (req: Request, res: Response): Promise<Resp
 export const getSuspiciousActivity = async (req: Request, res: Response): Promise<Response> => {
   try {
     const { days = 7, threshold = 5 } = req.query;
-    
+
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
+
     const logs = await getAuthLogsForDateRange(startDate, endDate);
-    
+
     // Track failed attempts per user/IP
     const failedAttempts: Record<string, any> = {};
-    
+
     logs.forEach(log => {
       if (log.status === 'fail') {
         const key = `user_${log.user_id}`;
@@ -402,7 +407,7 @@ export const getSuspiciousActivity = async (req: Request, res: Response): Promis
         });
       }
     });
-    
+
     // Filter suspicious activity (above threshold)
     const suspiciousActivities = Object.values(failedAttempts)
       .filter((activity: any) => activity.failCount >= parseInt(threshold as string))
@@ -412,7 +417,7 @@ export const getSuspiciousActivity = async (req: Request, res: Response): Promis
         ipCount: activity.ips.size
       }))
       .sort((a: any, b: any) => b.failCount - a.failCount);
-    
+
     return res.json({
       status: 'success',
       data: {
@@ -431,5 +436,185 @@ export const getSuspiciousActivity = async (req: Request, res: Response): Promis
       status: 'error',
       message: 'Failed to retrieve suspicious activity'
     });
+  }
+};
+
+// ─── Error Logs ───────────────────────────────────────────────────────────────
+
+const UPLOAD_BASE_PATH_ERR = process.env.UPLOAD_BASE_PATH || './uploads';
+const ERROR_LOGS_DIR = path.join(UPLOAD_BASE_PATH_ERR, 'logs', 'errors');
+
+/**
+ * Get list of all available error log files with metadata
+ */
+export const getAllErrorLogFiles = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const files = await fs.readdir(ERROR_LOGS_DIR).catch(() => [] as string[]);
+
+    const logFiles = await Promise.all(
+      files
+        .filter(file => file.startsWith('error_') && file.endsWith('.jsonl'))
+        .map(async (file) => {
+          const filepath = path.join(ERROR_LOGS_DIR, file);
+          const stats = await fs.stat(filepath);
+          const dateMatch = file.match(/error_(\d{4})-(\d{2})-(\d{2})\.jsonl/);
+          const content = await fs.readFile(filepath, 'utf-8');
+          const lineCount = content.split('\n').filter(line => line.trim()).length;
+          return {
+            filename: file,
+            date: dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : null,
+            size: stats.size,
+            entries: lineCount,
+            created: stats.birthtime,
+            modified: stats.mtime
+          };
+        })
+    );
+
+    logFiles.sort((a, b) => {
+      if (!a.date || !b.date) return 0;
+      return b.date.localeCompare(a.date);
+    });
+
+    return res.json({
+      status: 'success',
+      data: { totalFiles: logFiles.length, files: logFiles }
+    });
+  } catch (error) {
+    logger.error('Error getting error log files:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve error log files' });
+  }
+};
+
+/**
+ * Get error logs for a date range with optional level filter
+ */
+export const getErrorLogsByDateRange = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { startDate, endDate, level } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ status: 'error', message: 'startDate and endDate are required' });
+    }
+
+    let logs = await getErrorLogsForDateRange(
+      new Date(startDate as string),
+      new Date(endDate as string)
+    );
+
+    if (level) {
+      logs = logs.filter(log => log.level === level);
+    }
+
+    return res.json({
+      status: 'success',
+      data: { count: logs.length, filters: { startDate, endDate, level }, logs }
+    });
+  } catch (error) {
+    logger.error('Error getting error logs by date range:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve error logs' });
+  }
+};
+
+/**
+ * Get today's error logs
+ */
+export const getTodayErrorLogEntries = async (_req: Request, res: Response): Promise<Response> => {
+  try {
+    const logs = await getTodayErrorLogs();
+    return res.json({
+      status: 'success',
+      data: { date: new Date().toISOString().split('T')[0], count: logs.length, logs }
+    });
+  } catch (error) {
+    logger.error('Error getting today error logs:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve today error logs' });
+  }
+};
+
+/**
+ * Get error log summary statistics
+ */
+export const getErrorLogSummary = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { days = 7 } = req.query;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days as string));
+
+    const logs = await getErrorLogsForDateRange(startDate, endDate);
+
+    const byLevel: Record<string, number> = {};
+    logs.forEach(log => {
+      byLevel[log.level] = (byLevel[log.level] || 0) + 1;
+    });
+
+    return res.json({
+      status: 'success',
+      data: {
+        totalEntries: logs.length,
+        dateRange: {
+          from: startDate.toISOString().split('T')[0],
+          to: endDate.toISOString().split('T')[0],
+          days: parseInt(days as string)
+        },
+        byLevel
+      }
+    });
+  } catch (error) {
+    logger.error('Error getting error log summary:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to retrieve error log summary' });
+  }
+};
+
+/**
+ * Download a specific error log file
+ */
+export const downloadErrorLogFile = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { filename } = req.params;
+    const fn = filename as string;
+
+    // Validate filename to prevent directory traversal
+    if (!fn.startsWith('error_') || !fn.endsWith('.jsonl') || fn.includes('/') || fn.includes('..')) {
+      return res.status(400).json({ status: 'error', message: 'Invalid filename' });
+    }
+
+    const filepath = path.join(ERROR_LOGS_DIR, fn);
+    await fs.access(filepath);
+    const content = await fs.readFile(filepath, 'utf-8');
+
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Content-Disposition', `attachment; filename="${fn}"`);
+    return res.send(content);
+  } catch (error) {
+    logger.error('Error downloading error log file:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to download error log file' });
+  }
+};
+
+/**
+ * Archive old error log files
+ */
+export const archiveOldErrorLogFiles = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const { daysToKeep = 90 } = req.body as { daysToKeep?: number };
+
+    if (typeof daysToKeep !== 'number' || daysToKeep < 1) {
+      return res.status(400).json({ status: 'error', message: 'daysToKeep must be a positive number' });
+    }
+
+    const archivedCount = await archiveOldErrorLogs(daysToKeep);
+    return res.json({
+      status: 'success',
+      data: {
+        message: `Archived ${archivedCount} error log files older than ${daysToKeep} days`,
+        archivedCount,
+        daysToKeep
+      }
+    });
+  } catch (error) {
+    logger.error('Error archiving error logs:', error);
+    return res.status(500).json({ status: 'error', message: 'Failed to archive error logs' });
   }
 };

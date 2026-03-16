@@ -40,4 +40,24 @@ router.get('/download/:filename', asyncHandler(logsController.downloadLogFile));
 // POST with body: { daysToKeep: 90 }
 router.post('/archive', asyncHandler(logsController.archiveOldLogFiles));
 
+// ─── Error Logs ──────────────────────────────────────────────────────
+
+// GET  /api/admin/logs/errors/files
+router.get('/errors/files', asyncHandler(logsController.getAllErrorLogFiles));
+
+// GET  /api/admin/logs/errors/by-date-range?startDate=&endDate=&level=error
+router.get('/errors/by-date-range', asyncHandler(logsController.getErrorLogsByDateRange));
+
+// GET  /api/admin/logs/errors/today
+router.get('/errors/today', asyncHandler(logsController.getTodayErrorLogEntries));
+
+// GET  /api/admin/logs/errors/summary?days=7
+router.get('/errors/summary', asyncHandler(logsController.getErrorLogSummary));
+
+// GET  /api/admin/logs/errors/download/error_2026-03-16.jsonl
+router.get('/errors/download/:filename', asyncHandler(logsController.downloadErrorLogFile));
+
+// POST /api/admin/logs/errors/archive  body: { daysToKeep: 90 }
+router.post('/errors/archive', asyncHandler(logsController.archiveOldErrorLogFiles));
+
 export default router;
