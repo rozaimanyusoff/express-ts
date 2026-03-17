@@ -590,7 +590,7 @@ export const getCorrespondences = async (
     `SELECT
        c.id, c.reference_no, c.date_received, c.sender, c.subject, c.direction,
        c.registered_at, c.registered_by,
-       c.qa_status, c.qa_reviewed_by,
+       c.qa_status, c.qa_reviewed_by, c.qa_review_date,
        c.letter_type, c.category, c.priority,
        c.endorsed_status,
        c.created_at, c.updated_at,
