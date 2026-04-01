@@ -130,7 +130,13 @@ export interface SummonRecord {
   vehicle_id?: null | number;
 }
 
-export const getSummons = async (): Promise<SummonRecord[]> => {
+export const getSummons = async (username?: string): Promise<SummonRecord[]> => {
+  if (username) {
+    const isEmail = username.includes('@');
+    const field = isEmail ? 'v_email' : 'ramco_id';
+    const [rows] = await pool.query(`SELECT * FROM ${summonTable} WHERE ${field} = ? ORDER BY smn_id DESC`, [username]);
+    return rows as SummonRecord[];
+  }
   const [rows] = await pool.query(`SELECT * FROM ${summonTable} ORDER BY smn_id DESC`);
   return rows as SummonRecord[];
 };
@@ -546,11 +552,11 @@ export const getAssessmentsWithNCRDetails = async (
   asset?: number
 ): Promise<(AssessmentRecord & { ncr_details: AssessmentDetailRecord[] })[]> => {
   const assessments = await getAssessments(year, asset);
-  
+
   if (assessments.length === 0) {
     return [];
   }
-  
+
   // Batch fetch all NCR details for all assessments in a single query
   const assessmentIds = assessments.map(a => a.assess_id).filter(id => id !== undefined);
   const placeholders = assessmentIds.map(() => '?').join(',');
@@ -558,7 +564,7 @@ export const getAssessmentsWithNCRDetails = async (
     `SELECT * FROM ${assessmentDetailTable} WHERE assess_id IN (${placeholders}) AND adt_ncr = 2 ORDER BY assess_id, adt_id ASC`,
     assessmentIds
   );
-  
+
   // Create a map of assess_id -> ncr_details for O(1) lookup
   const ncrMap = new Map<number, AssessmentDetailRecord[]>();
   for (const detail of allNcrDetails as AssessmentDetailRecord[]) {
@@ -568,13 +574,13 @@ export const getAssessmentsWithNCRDetails = async (
     }
     ncrMap.get(assessId)!.push(detail);
   }
-  
+
   // Map assessments with their NCR details
   const result = assessments.map(assessment => ({
     ...assessment,
     ncr_details: ncrMap.get(assessment.assess_id!) || []
   }));
-  
+
   return result;
 };
 
@@ -617,7 +623,7 @@ export const deleteAssessment = async (id: number) => {
     }
     await conn.commit();
   } catch (e) {
-    try { await conn.rollback(); } catch {}
+    try { await conn.rollback(); } catch { }
     throw e;
   } finally {
     conn.release();
@@ -702,23 +708,23 @@ export const closeNCRItem = async (adt_id: number, data: {
     svc_order: data.svc_order,
     updated_at: formatToMySQLDatetime(new Date()),
   };
-  
+
   // Format closed_at as date only (YYYY-MM-DD)
   if (data.closed_at) {
     payload.closed_at = formatToDateOnly(data.closed_at);
   }
-  
+
   const fields = Object.keys(payload).map(k => `${k} = ?`).join(', ');
   const values = Object.values(payload);
-  
+
   const [result] = await pool.query(
     `UPDATE ${assessmentDetailTable} SET ${fields} WHERE adt_id = ?`,
     [...values, adt_id]
   );
-  
+
   const r = result as ResultSetHeader;
   if (r.affectedRows === 0) throw new Error('NCR item not found');
-  
+
   return r.affectedRows;
 };
 
@@ -733,7 +739,7 @@ export const withTransaction = async <T>(fn: (conn: PoolConnection) => Promise<T
     await conn.commit();
     return result;
   } catch (err) {
-    try { await conn.rollback(); } catch {}
+    try { await conn.rollback(); } catch { }
     throw err;
   } finally {
     conn.release();
@@ -807,7 +813,7 @@ export const replaceAssessmentDetails = async (
     await conn.commit();
     return { deleted, inserted };
   } catch (err) {
-    try { await conn.rollback(); } catch {}
+    try { await conn.rollback(); } catch { }
     throw err;
   } finally {
     conn.release();
@@ -1065,7 +1071,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
     assessmentQuery += ` WHERE assessment_year = ?`;
     assessmentParams.push(filters.assessment_year);
   }
-  
+
   assessmentQuery += ` ORDER BY assessment_year DESC`;
 
   const [assessmentRows] = await pool.query(assessmentQuery, assessmentParams);
@@ -1074,7 +1080,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
   // Create a map of asset_id -> assessment records for quick lookup
   const assessmentMap = new Map<number | null, any[]>();
   const assetIdSet = new Set<number | null>();
-  
+
   assessments.forEach((a: any) => {
     const assetId = a.asset_id ? Number(a.asset_id) : null;
     assetIdSet.add(assetId);
@@ -1095,7 +1101,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
       assessed: isAssessed,
       assessment_count: assetAssessments.length,
       assessments: assetAssessments,
-      last_assessment: assetAssessments.length > 0 
+      last_assessment: assetAssessments.length > 0
         ? assetAssessments[0]  // Already sorted DESC by query
         : null,
     };
@@ -1109,7 +1115,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
       // Group by register_number to keep each discovered asset separate
       const unlinkedAssessments = assessmentMap.get(null) || [];
       const groupedByRegisterNumber = new Map<string, any[]>();
-      
+
       unlinkedAssessments.forEach((a: any) => {
         const regNum = a.register_number || 'unknown';
         if (!groupedByRegisterNumber.has(regNum)) {
@@ -1117,7 +1123,7 @@ export const getITAssetsWithAssessmentStatus = async (filters?: {
         }
         groupedByRegisterNumber.get(regNum)!.push(a);
       });
-      
+
       // Create separate record for each discovered asset (by register_number)
       groupedByRegisterNumber.forEach((assessmentsForReg: any[]) => {
         combined.push({
@@ -1166,7 +1172,7 @@ export const getITAssetWithAssessmentStatusById = async (assetId: number): Promi
     [assetId]
   );
   const assets = assetRows as any[];
-  
+
   if (!assets || assets.length === 0) {
     return null;
   }
@@ -1199,7 +1205,7 @@ export const getComputerAssessmentById = async (id: number): Promise<ComputerAss
 
 export const createComputerAssessment = async (data: Partial<ComputerAssessment>): Promise<number> => {
   const now = formatToMySQLDatetime(new Date());
-  
+
   // Handle date formatting
   const assessmentDate = data.assessment_date ? formatToDateOnly(data.assessment_date) : null;
   const purchaseDate = data.purchase_date ? formatToDateOnly(data.purchase_date) : null;
@@ -1286,10 +1292,10 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
   assessmentDate: string | Date | null
 ): Promise<any[]> => {
   if (!assetId) return [];
-  
+
   const dbMaintenance = 'applications';
   const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
-  
+
   // Extract year from assessment date to filter maintenance records from same year
   let assessmentYear: number | null = null;
   if (assessmentDate) {
@@ -1302,7 +1308,7 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
       // ignore parsing errors
     }
   }
-  
+
   // Query: Find all NCR maintenance requests (svc_opt = 32) with form submitted for this asset in the same year
   let query = `
     SELECT 
@@ -1326,16 +1332,16 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
       AND svc_opt = 32
       AND form_upload IS NOT NULL
   `;
-  
+
   const params: any[] = [assetId];
-  
+
   if (assessmentYear) {
     query += ` AND YEAR(req_date) = ?`;
     params.push(assessmentYear);
   }
-  
+
   query += ` ORDER BY req_date DESC`;
-  
+
   const [rows] = await pool.query(query, params);
   return Array.isArray(rows) ? rows : [];
 };
@@ -1347,7 +1353,7 @@ export const getNCRActionsByAssetAndAssessmentDate = async (
 export const debugNCRRecords = async (): Promise<any[]> => {
   const dbMaintenance = 'applications';
   const vehicleMaintenanceTable = `${dbMaintenance}.vehicle_svc`;
-  
+
   const query = `
     SELECT 
       DISTINCT asset_id,
@@ -1358,7 +1364,7 @@ export const debugNCRRecords = async (): Promise<any[]> => {
     GROUP BY asset_id
     ORDER BY count DESC
   `;
-  
+
   const [rows] = await pool.query(query);
   return Array.isArray(rows) ? rows : [];
 };

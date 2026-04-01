@@ -166,7 +166,8 @@ export const sendAssessmentTestEmail = async (req: Request, res: Response) => {
 
 export const getSummons = async (req: Request, res: Response) => {
   try {
-    const rows = await complianceModel.getSummons();
+    const username = req.query.username ? String(req.query.username) : undefined;
+    const rows = await complianceModel.getSummons(username);
     const base = (process.env.BACKEND_URL || '').replace(/\/$/, '');
 
     const [assetsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
