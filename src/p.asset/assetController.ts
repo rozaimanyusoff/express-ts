@@ -4395,6 +4395,17 @@ export const commitTransfer = async (req: Request, res: Response) => {
 			});
 		}
 
+		// Force-accept: set acceptance on items not yet accepted by new owner
+		const force = body.force === true || body.force === 'true';
+		if (force) {
+			await assetModel.forceAcceptTransferItems(
+				item_ids,
+				committed_by,
+				'Force committed by Asset Manager'
+			);
+			logger.info(`Force-accepted ${item_ids.length} item(s) by asset manager ${committed_by} for transfer ${transfer_id}`);
+		}
+
 		// Step 2: Find uncommitted accepted items for this transfer_id and type_id
 		const uncommittedItemsRaw = await assetModel.getUncommittedAcceptedItems({
 			type_id,

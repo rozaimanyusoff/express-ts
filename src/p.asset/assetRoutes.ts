@@ -6,6 +6,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
 import invalidateAssetCache from '../utils/cacheInvalidation';
 import * as assetController from './assetController';
+import * as assetModel from './assetModel';
 
 const router = Router();
 
@@ -2240,6 +2241,63 @@ router.delete('/transfers/:id', asyncHandler(assetController.deleteAssetTransfer
  *         description: Transfer committed
  */
 router.post('/transfer-commit/:transfer_id', asyncHandler(assetController.commitTransfer)); // Asset Manager commits accepted transfers (POST /transfer-commit/{transfer_id})
+
+/**
+ * @swagger
+ * /assets/transfer-commit/{transfer_id}/items/{item_id}/force:
+ *   put:
+ *     summary: Asset Manager force-commits a single transfer item, bypassing new owner acceptance
+ *     description: If the item has not yet been accepted by the new owner, sets acceptance_by = committed_by and then commits. Existing acceptance is preserved.
+ *     tags: [Asset Transfers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: transfer_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: path
+ *         name: item_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type_id, committed_by]
+ *             properties:
+ *               type_id:
+ *                 type: integer
+ *               committed_by:
+ *                 type: string
+ *               transfer_date:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       200:
+ *         description: Item force-committed
+ */
+router.put('/transfer-commit/:transfer_id/items/:item_id/force', asyncHandler(async (req, res) => {
+  const item_id = Number(req.params.item_id);
+  if (!Number.isFinite(item_id)) {
+    return res.status(400).json({ data: null, message: 'Invalid item_id', status: 'error' });
+  }
+  // Auto-resolve type_id from the item so caller only needs committed_by
+  const item = await assetModel.getAssetTransferItemById(item_id);
+  if (!item) {
+    return res.status(404).json({ data: null, message: 'Transfer item not found', status: 'error' });
+  }
+  const type_id = Number(item.type_id);
+  if (!Number.isFinite(type_id) || type_id <= 0) {
+    return res.status(400).json({ data: null, message: 'Transfer item has no valid type_id', status: 'error' });
+  }
+  req.body = { ...req.body, force: true, item_ids: [item_id], type_id };
+  return assetController.commitTransfer(req, res);
+}));
 
 /**
  * @swagger

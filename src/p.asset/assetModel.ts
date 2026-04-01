@@ -2337,12 +2337,32 @@ export const getTransferItemsByOwner = async (options: {
 
 /**
  * Find uncommitted accepted transfer items for a specific asset type
- * Returns transfer items that:
- * - Have acceptance_by IS NOT NULL (items are accepted)
- * - Have NO matching transfer_id in asset_history (not yet committed)
- * - Belong to the specified type_id
- * - Optionally filtered by specific item_ids
+/**
+ * Force-accept transfer items that have not yet been accepted.
+ * Only updates items where acceptance_date IS NULL (preserves existing new-owner acceptance).
  */
+export const forceAcceptTransferItems = async (
+  itemIds: number[],
+  accepted_by: string,
+  remarks: string
+): Promise<void> => {
+  if (itemIds.length === 0) return;
+  const now = new Date();
+  await pool.query(
+    `UPDATE ${assetTransferItemTable}
+     SET acceptance_by = ?, acceptance_date = ?, acceptance_remarks = ?, updated_at = NOW()
+     WHERE id IN (${itemIds.map(() => '?').join(',')})
+       AND acceptance_date IS NULL`,
+    [accepted_by, now, remarks, ...itemIds]
+  );
+};
+
+/* Returns transfer items that:
+* - Have acceptance_by IS NOT NULL(items are accepted)
+ * - Have NO matching transfer_id in asset_history(not yet committed)
+   * - Belong to the specified type_id
+     * - Optionally filtered by specific item_ids
+       */
 export const getUncommittedAcceptedItems = async (options: {
   type_id: number;
   transfer_id?: number;
