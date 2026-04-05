@@ -2051,9 +2051,23 @@ export const getFleetCards = async (req: Request, res: Response) => {
 
 				let asset = null;
 				const assetIdNum = card.asset_id ? Number(card.asset_id) : null;
-				if (assetIdNum && assetMap.has(assetIdNum)) {
+				if (card.purpose === 'staff cost') {
+					// asset_id is ramco_id for staff cost cards
+					const emp = empMap.get(String(card.asset_id)) || null;
+					asset = {
+						assignee: emp?.full_name || null,
+						costcenter: null,
+						entry_code: null,
+						fuel_type: card.fuel_type || null,
+						id: card.asset_id,
+						locations: null,
+						purpose: 'staff cost',
+						vehicle_id: null,
+					};
+				} else if (assetIdNum && assetMap.has(assetIdNum)) {
 					const assetObj = assetMap.get(assetIdNum);
 					asset = {
+						assignee: assetObj.register_number || assetObj.vehicle_regno || null,
 						costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 							: null,
@@ -2067,7 +2081,6 @@ export const getFleetCards = async (req: Request, res: Response) => {
 							return found ? { code: found.code, id: locId } : null;
 						})(),
 						purpose: assetObj.purpose || null,
-								assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : (assetObj.register_number || assetObj.vehicle_regno || null),
 						vehicle_id: assetObj.vehicle_id || null,
 					};
 				}
@@ -2121,9 +2134,22 @@ export const getFleetCards = async (req: Request, res: Response) => {
 
 			let asset = null;
 			const assetIdNum = card.asset_id ? Number(card.asset_id) : null;
-			if (assetIdNum && assetMap.has(assetIdNum)) {
+			if (card.purpose === 'staff cost') {
+				// asset_id is ramco_id for staff cost cards
+				const emp = empMap.get(String(card.asset_id)) || null;
+				asset = {
+					assignee: emp?.full_name || null,
+					costcenter: null,
+					fuel_type: card.fuel_type || null,
+					id: card.asset_id,
+					locations: null,
+					purpose: 'staff cost',
+					vehicle_id: null,
+				};
+			} else if (assetIdNum && assetMap.has(assetIdNum)) {
 				const assetObj = assetMap.get(assetIdNum);
 				asset = {
+					assignee: assetObj.register_number || assetObj.vehicle_regno || null,
 					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
 						: null,
@@ -2136,7 +2162,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						return found ? { code: found.code, id: locId } : null;
 					})(),
 					purpose: assetObj.purpose || null,
-						assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : (assetObj.register_number || assetObj.vehicle_regno || null),
+					vehicle_id: assetObj.vehicle_id || null,
 				};
 			}
 
