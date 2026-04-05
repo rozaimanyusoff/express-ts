@@ -2067,7 +2067,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 							return found ? { code: found.code, id: locId } : null;
 						})(),
 						purpose: assetObj.purpose || null,
-						assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : null,
+								assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : (assetObj.register_number || assetObj.vehicle_regno || null),
 						vehicle_id: assetObj.vehicle_id || null,
 					};
 				}
@@ -2136,7 +2136,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						return found ? { code: found.code, id: locId } : null;
 					})(),
 					purpose: assetObj.purpose || null,
-					assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : null,
+						assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : (assetObj.register_number || assetObj.vehicle_regno || null),
 				};
 			}
 
