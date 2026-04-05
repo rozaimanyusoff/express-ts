@@ -1,6 +1,7 @@
 
 // src/p.billing/billingRoutes.ts
 import { Router } from 'express';
+import multer from 'multer';
 
 import asyncHandler from '../utils/asyncHandler';
 import { createUploader } from '../utils/fileUploader';
@@ -38,6 +39,12 @@ const router = Router();
 const logoUploader = createUploader('images/logo');
 const utilUploader = createUploader('billings/utilities');
 const mtnUploader = createUploader('billings/maintenance');
+const excelMemoryUploader = multer({
+	storage: multer.memoryStorage(), fileFilter: (_req, file, cb) => {
+		const allowed = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
+		cb(null, allowed.includes(file.mimetype));
+	}
+});
 
 // ========== TEMP VEHICLE RECORD TABLE (assets.vehicle) CRUD ==========
 
@@ -1001,6 +1008,8 @@ router.delete('/fuel/:id/remove-bill-entry', asyncHandler(billingController.remo
  *         description: Fuel billing deleted
  */
 router.delete('/fuel/:id', asyncHandler(billingController.deleteFuelBilling));
+
+router.post('/fuel/import/preview', excelMemoryUploader.single('file'), asyncHandler(billingController.importFuelFromExcel));
 
 /* =================== FLEET CARD TABLE ========================== */
 

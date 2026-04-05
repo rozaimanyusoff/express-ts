@@ -1916,6 +1916,105 @@ export const removeFuelBillEntry = async (req: Request, res: Response) => {
 
 /* =================== FLEET CARD TABLE ========================== */
 
+export const importFuelFromExcel = async (req: Request, res: Response) => {
+	try {
+		if (!req.file) {
+			return res.status(400).json({ message: 'No file uploaded', status: 'error' });
+		}
+
+		const ExcelJS = (await import('exceljs')).default;
+		const workbook = new ExcelJS.Workbook();
+		await workbook.xlsx.load(Buffer.from(req.file.buffer) as any);
+
+		const sheet = workbook.worksheets[0];
+		if (!sheet) {
+			return res.status(400).json({ message: 'No worksheet found in file', status: 'error' });
+		}
+
+		const rows: any[] = [];
+		const unmatched: string[] = [];
+
+		// Helper to extract plain text from ExcelJS cell values (handles rich text, formula results, numbers)
+		const cellText = (val: any): string => {
+			if (val === null || val === undefined) return '';
+			if (typeof val === 'string') return val.trim();
+			if (typeof val === 'number') return String(val);
+			// Rich text: { richText: [{ text: '...' }] }
+			if (val.richText && Array.isArray(val.richText)) return val.richText.map((r: any) => r.text ?? '').join('').trim();
+			// Formula result: { formula: '...', result: ... }
+			if (val.result !== undefined) return cellText(val.result);
+			// Shared formula: { sharedFormula: '...', result: ... }
+			if (val.sharedFormula !== undefined && val.result !== undefined) return cellText(val.result);
+			return String(val).trim();
+		};
+
+		sheet.eachRow((row, rowNumber) => {
+			if (rowNumber === 1) return; // skip header
+
+			const cardNo = cellText(row.getCell(2).value);        // B
+			const rawStr = cellText(row.getCell(3).value);         // C
+			// Excel may store leading-zero numbers as numeric — pad to 6 digits
+			const vehicleNo = /^\d+$/.test(rawStr) ? rawStr.padStart(6, '0') : rawStr;
+			const costCentre = cellText(row.getCell(4).value);    // D
+			const litre = row.getCell(6).value;                   // F
+			const fuelType = cellText(row.getCell(8).value);      // H
+			const amount = row.getCell(9).value;                  // I
+
+			if (!cardNo && !vehicleNo) return;
+
+			rows.push({ cardNo, vehicleNo, costCentre, litre, fuelType, amount });
+		});
+
+		// Lookup fleet2 — match by card_no (col B) first, fallback to asset_id (col C)
+		const results: any[] = [];
+		for (const r of rows) {
+			const card = r.cardNo ? await billingModel.getFleetCardByCardNo(r.cardNo)
+				: await billingModel.getFleetCardByRegNum(r.vehicleNo);
+			if (!card) {
+				unmatched.push(r.cardNo || r.vehicleNo);
+				results.push({
+					amount: r.amount ?? null,
+					asset_id: null,
+					card_id: null,
+					card_no: r.cardNo || null,
+					costcenter_label: r.costCentre || null,
+					fuel_type: r.fuelType || null,
+					matched: false,
+					register_number: null,
+					vehicle_no: r.vehicleNo,
+					total_litre: r.litre ?? null,
+					vehicle_id: null,
+				});
+				continue;
+			}
+			results.push({
+				amount: r.amount ?? null,
+				asset_id: card.asset_id ?? null,
+				card_id: card.id,
+				card_no: card.card_no ?? null,
+				costcenter_label: r.costCentre || null,
+				fuel_id: card.fuel_id ?? null,
+				fuel_type: r.fuelType || null,
+				matched: true,
+				register_number: card.register_number ?? null,
+				vehicle_no: r.vehicleNo,
+				total_litre: r.litre ?? null,
+				vehicle_id: card.vehicle_id ?? null,
+			});
+		}
+
+		return res.json({
+			data: results,
+			message: `Parsed ${results.length} row(s). ${unmatched.length} unmatched vehicle(s).`,
+			status: 'success',
+			unmatched: [...new Set(unmatched)],
+		});
+	} catch (err: unknown) {
+		logger.error(err);
+		return res.status(500).json({ message: getErrorMessage(err) || 'Failed to parse Excel file', status: 'error' });
+	}
+};
+
 export const getFleetCards = async (req: Request, res: Response) => {
 	try {
 		const vendorQ = req.query.vendor as string | undefined;
@@ -1933,6 +2032,8 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			const fuelVendors = await billingModel.getFuelVendor();
 			const costcenters = await assetsModel.getCostcenters() as any[];
 			const locations = await assetsModel.getLocations() as any[];
+			const employeesRaw = await assetsModel.getEmployees();
+			const empMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [String(e.ramco_id), e]));
 
 			const assetMap = new Map();
 			for (const a of assets) { if (a.id) assetMap.set(a.id, a); if (a.asset_id) assetMap.set(a.asset_id, a); }
@@ -1949,8 +2050,9 @@ export const getFleetCards = async (req: Request, res: Response) => {
 				}
 
 				let asset = null;
-				if (card.asset_id && assetMap.has(card.asset_id)) {
-					const assetObj = assetMap.get(card.asset_id);
+				const assetIdNum = card.asset_id ? Number(card.asset_id) : null;
+				if (assetIdNum && assetMap.has(assetIdNum)) {
+					const assetObj = assetMap.get(assetIdNum);
 					asset = {
 						costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 							? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
@@ -1965,7 +2067,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 							return found ? { code: found.code, id: locId } : null;
 						})(),
 						purpose: assetObj.purpose || null,
-						register_number: assetObj.register_number || assetObj.vehicle_regno,
+						assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : null,
 						vehicle_id: assetObj.vehicle_id || null,
 					};
 				}
@@ -1977,9 +2079,9 @@ export const getFleetCards = async (req: Request, res: Response) => {
 					id: card.id,
 					pin_no: card.pin,
 					reg_date: card.reg_date,
+					register_number: card.register_number || null,
 					remarks: card.remarks,
 					status: card.status,
-					vehicle_id: card.vehicle_id,
 					vendor
 				};
 			});
@@ -1997,6 +2099,8 @@ export const getFleetCards = async (req: Request, res: Response) => {
 		const fuelVendors = await billingModel.getFuelVendor();
 		const costcenters = await assetsModel.getCostcenters() as any[];
 		const locations = await assetsModel.getLocations() as any[];
+		const employeesRaw = await assetsModel.getEmployees();
+		const empMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [String(e.ramco_id), e]));
 
 		// assetModel.getAssets() returns assets keyed by id; create map for id and asset_id for compatibility
 		const assetMap = new Map();
@@ -2016,8 +2120,9 @@ export const getFleetCards = async (req: Request, res: Response) => {
 			}
 
 			let asset = null;
-			if (card.asset_id && assetMap.has(card.asset_id)) {
-				const assetObj = assetMap.get(card.asset_id);
+			const assetIdNum = card.asset_id ? Number(card.asset_id) : null;
+			if (assetIdNum && assetMap.has(assetIdNum)) {
+				const assetObj = assetMap.get(assetIdNum);
 				asset = {
 					costcenter: assetObj.costcenter_id && costcenterMap.has(assetObj.costcenter_id)
 						? { id: assetObj.costcenter_id, name: costcenterMap.get(assetObj.costcenter_id).name }
@@ -2031,7 +2136,7 @@ export const getFleetCards = async (req: Request, res: Response) => {
 						return found ? { code: found.code, id: locId } : null;
 					})(),
 					purpose: assetObj.purpose || null,
-					register_number: assetObj.register_number || assetObj.vehicle_regno,
+					assignee: assetObj.purpose === 'staff cost' ? (empMap.get(String(card.asset_id))?.full_name || null) : null,
 				};
 			}
 
@@ -2042,9 +2147,9 @@ export const getFleetCards = async (req: Request, res: Response) => {
 				id: card.id,
 				pin_no: card.pin,
 				reg_date: card.reg_date,
+				register_number: card.register_number || null,
 				remarks: card.remarks,
 				status: card.status,
-				vehicle_id: card.vehicle_id,
 				vendor
 			};
 		});
@@ -2174,7 +2279,8 @@ export const createFleetCard = async (req: Request, res: Response) => {
 
 				if (updatedByUser && updatedByUser.email) {
 					const fleetCard = await billingModel.getFleetCardById(insertId);
-					const asset = req.body.asset_id ? await assetsModel.getAssetById(req.body.asset_id) : null;
+					const assetIdNum = req.body.asset_id ? Number(req.body.asset_id) : null;
+					const asset = assetIdNum && Number.isFinite(assetIdNum) ? await assetsModel.getAssetById(assetIdNum) : null;
 
 					// Resolve costcenter name
 					let costcenterName = null;
@@ -2284,94 +2390,6 @@ export const updateFleetCard = async (req: Request, res: Response) => {
 			: body.assignment === 'replace'
 				? ' (assignment: replacement)'
 				: '';
-
-		// Send notification to updated_by user
-		if (body.updated_by) {
-			try {
-				logger.info(`[FleetCard] Update: Attempting to notify user ${body.updated_by}`);
-				const updatedByUser = await userModel.getEmployeeByRamcoId(body.updated_by);
-				logger.info(`[FleetCard] Update: User lookup result:`, updatedByUser ? `Found - ${updatedByUser.email}` : 'User not found');
-
-				if (updatedByUser && updatedByUser.email) {
-					const fleetCard = await billingModel.getFleetCardById(id);
-					const asset = body.asset_id ? await assetsModel.getAssetById(body.asset_id) : null;
-
-					// Resolve costcenter name
-					let costcenterName = null;
-					if ((asset?.costcenter_id) || (fleetCard?.costcenter_id)) {
-						try {
-							const costcenters = await assetsModel.getCostcenters() as any[];
-							const ccId = asset?.costcenter_id || fleetCard?.costcenter_id;
-							const costcenter = costcenters.find((cc: any) => cc.id === ccId);
-							costcenterName = costcenter?.costcenter || null;
-						} catch (e) {
-							logger.error('Error fetching costcenters:', e);
-						}
-					}
-
-					// Resolve asset owner name
-					let assetOwnerName = null;
-					const ownerRamcoId = asset?.ramco_id || fleetCard?.asset_ramco_id;
-					if (ownerRamcoId) {
-						try {
-							const owner = await userModel.getEmployeeByRamcoId(ownerRamcoId);
-							assetOwnerName = owner?.full_name || null;
-						} catch (e) {
-							logger.error('Error fetching asset owner:', e);
-						}
-					}
-
-					const cardNo = fleetCard?.card_no || body.card_no;
-					const fuelType = body.fuel_type || fleetCard?.fuel_type || (asset?.fuel_type || asset?.vfuel_type || null);
-					const regDate = fleetCard?.reg_date || body.reg_date;
-					const expiryDate = fleetCard?.expiry_date || body.expiry_date;
-
-					// Send email notification using template
-					try {
-						logger.info(`[FleetCard] Update: Rendering email template for ${updatedByUser.email}`);
-						const emailHtml = renderFleetCardUpdatedNotification({
-							cardId: id,
-							cardNo,
-							fuelType,
-							regDate,
-							expiryDate,
-							registerNumber: asset?.register_number || asset?.vehicle_regno || fleetCard?.register_number,
-							costcenterName,
-							assetOwnerName,
-							userName: updatedByUser.full_name || updatedByUser.name
-						});
-
-						logger.info(`[FleetCard] Update: Sending email to ${updatedByUser.email}`);
-						await sendMail(updatedByUser.email, 'Fleet Card Updated Successfully', emailHtml);
-						logger.info(`[FleetCard] Update: Email sent successfully to ${updatedByUser.email}`);
-					} catch (emailError) {
-						logger.error('Failed to send email notification for fleet card update:', emailError);
-					}
-
-					// Emit socket notification if available
-					try {
-						const io = getSocketIOInstance();
-						if (io) {
-							io.to(`user_${body.updated_by}`).emit('fleet_card_updated', {
-								message: `You have updated fleet card ${cardNo}`,
-								data: {
-									fleet_card_id: id,
-									card_no: cardNo,
-									fuel_type: fuelType,
-									reg_date: regDate,
-									asset_id: asset?.id || fleetCard?.asset_id
-								}
-							});
-						}
-					} catch (e) {
-						// Silent catch - socket not required
-					}
-				}
-			} catch (notifError) {
-				logger.error('Notification error during fleet card update:', notifError);
-				// Don't fail the main operation if notification fails
-			}
-		}
 
 		return res.json({ message: `Fleet card updated successfully${assignmentMsg}`, status: 'success' });
 	} catch (error) {

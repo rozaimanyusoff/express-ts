@@ -630,6 +630,19 @@ export const getFleetCardsByVendor = async (vendorId: number): Promise<any[]> =>
   const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} WHERE fuel_id = ? ORDER BY register_number`, [vendorId]);
   return rows as any[];
 };
+export const getFleetCardByRegNum = async (registerNumber: string): Promise<any | null> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${fleetCardTable} WHERE TRIM(asset_id) = ? OR TRIM(asset_id) = ? LIMIT 1`,
+    [registerNumber, registerNumber.replace(/^0+/, '') || '0']
+  );
+  const card = (rows as any[])[0];
+  return card || null;
+};
+export const getFleetCardByCardNo = async (cardNo: string): Promise<any | null> => {
+  const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} WHERE card_no = ? LIMIT 1`, [cardNo]);
+  const card = (rows as any[])[0];
+  return card || null;
+};
 export const getFleetCardById = async (id: number): Promise<any | null> => {
   const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} WHERE id = ?`, [id]);
   const fleetCard = (rows as any[])[0];
