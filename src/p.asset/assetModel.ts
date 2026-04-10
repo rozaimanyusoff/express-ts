@@ -481,7 +481,7 @@ export const getAssetManagerByRamcoId = async (ramco_id: string) => {
 };
 
 export const getAssetManagersByTypeId = async (type_id: number) => {
-  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE manager_id = ? AND is_active = '1'`, [type_id]);
+  const [rows] = await pool.query(`SELECT * FROM ${assetManagerTable} WHERE manager_id = ?`, [type_id]);
   return rows as RowDataPacket[];
 };
 
