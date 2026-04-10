@@ -4348,20 +4348,12 @@ export const commitTransfer = async (req: Request, res: Response) => {
 		}
 
 		// Verify committed_by is an Asset Manager authorized for this type_id
-		const manager = await assetModel.getAssetManagerByRamcoId(committed_by);
+		const managersForType = await assetModel.getAssetManagersByTypeId(type_id);
+		const manager = (managersForType as any[]).find((m: any) => m.ramco_id === committed_by);
 		if (!manager) {
-			return res.status(400).json({
-				status: 'error',
-				message: 'committed_by is not a registered Asset Manager',
-				data: null
-			});
-		}
-
-		// Check if manager is authorized for this type_id (manager_id is the type_id)
-		if (Number(manager.manager_id) !== type_id) {
 			return res.status(403).json({
 				status: 'error',
-				message: 'Asset Manager is not authorized for this asset type',
+				message: 'committed_by is not a registered Asset Manager authorized for this asset type',
 				data: null
 			});
 		}
