@@ -650,14 +650,15 @@ export const getFleetCardById = async (id: number): Promise<any | null> => {
 };
 
 export const getFleetCardsByAssetId = async (assetId: number): Promise<any[]> => {
-  // First fetch linked card ids from join table
-  const [linkRows] = await pool.query(`SELECT card_id FROM ${fleetAssetJoinTable} WHERE asset_id = ?`, [assetId]);
-  let cardIds = Array.isArray(linkRows) ? (linkRows as any[]).map((r: any) => Number(r.card_id)) : [];
-  // filter out invalid ids (NaN, null, undefined)
-  cardIds = cardIds.filter((id: any) => Number.isFinite(id));
-  if (cardIds.length === 0) return [];
-  const placeholders = cardIds.map(() => '?').join(',');
-  const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} WHERE id IN (${placeholders}) ORDER BY id DESC`, cardIds);
+  const [rows] = await pool.query(`SELECT * FROM ${fleetCardTable} WHERE asset_id = ? ORDER BY id DESC`, [assetId]);
+  return rows as any[];
+};
+
+export const getFleetCardsByAssetIdAndFuelId = async (assetId: number, fuelId: number): Promise<any[]> => {
+  const [rows] = await pool.query(
+    `SELECT * FROM ${fleetCardTable} WHERE asset_id = ? AND fuel_id = ? ORDER BY id DESC`,
+    [assetId, fuelId]
+  );
   return rows as any[];
 };
 

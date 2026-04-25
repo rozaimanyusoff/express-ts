@@ -2604,7 +2604,11 @@ export const getFleetCardByCardNo = async (req: Request, res: Response) => {
 };
 
 export const getFleetCardByRegisterNumber = async (req: Request, res: Response) => {
+	const fuel_id = Number(req.params.fuel_id);
 	const register_number = String(req.params.register_number).trim();
+	if (!Number.isFinite(fuel_id)) {
+		return res.status(400).json({ message: 'Invalid fuel_id', status: 'error' });
+	}
 	if (!register_number) {
 		return res.status(400).json({ message: 'register_number is required', status: 'error' });
 	}
@@ -2615,14 +2619,30 @@ export const getFleetCardByRegisterNumber = async (req: Request, res: Response) 
 		return res.json({ data: [], message: 'No asset found with this register number', status: 'success' });
 	}
 
-	// Get the first matching asset
-	const asset = matchingAssets[0] as any;
-	const asset_id = asset.id || asset.asset_id;
+	const assetMap = new Map();
+	for (const asset of matchingAssets as any[]) {
+		const id = asset.id || asset.asset_id;
+		if (id !== undefined && id !== null) {
+			assetMap.set(String(id), asset);
+		}
+	}
 
-	// Step 2: Get fleet cards for this asset_id
-	const fleetCards = await billingModel.getFleetCardsByAssetId(asset_id);
+	// Step 2: Get fleet cards for every matching asset_id. Duplicate register numbers can
+	// point old fleet cards at a different asset row than the latest assetdata record.
+	const fleetCardMap = new Map();
+	for (const asset of matchingAssets as any[]) {
+		const assetId = Number(asset.id || asset.asset_id);
+		if (!Number.isFinite(assetId)) continue;
+		const cards = await billingModel.getFleetCardsByAssetIdAndFuelId(assetId, fuel_id);
+		for (const card of cards) {
+			if (card?.id !== undefined && card?.id !== null) {
+				fleetCardMap.set(card.id, card);
+			}
+		}
+	}
+	const fleetCards = Array.from(fleetCardMap.values());
 	if (!fleetCards || fleetCards.length === 0) {
-		return res.json({ data: [], message: 'No fleet cards found for this register number', status: 'success' });
+		return res.json({ data: [], message: 'No fleet cards found for this fuel and register number', status: 'success' });
 	}
 
 	// Step 3: Enrich with related data (fuel_type prioritizes card value)
@@ -2634,6 +2654,8 @@ export const getFleetCardByRegisterNumber = async (req: Request, res: Response) 
 
 	const data = fleetCards
 		.map((card: any) => {
+			const asset = assetMap.get(String(card.asset_id)) || (matchingAssets[0] as any);
+			const asset_id = asset.id || asset.asset_id;
 			let assetData = null;
 			assetData = {
 				costcenter: asset.costcenter_id && costcenterMap.has(asset.costcenter_id)

@@ -1124,13 +1124,18 @@ router.get('/fleet/card/:card_no', asyncHandler(billingController.getFleetCardBy
 
 /**
  * @swagger
- * /bills/fleet/register/{register_number}:
+ * /bills/fleet/register/{fuel_id}/{register_number}:
  *   get:
- *     summary: Get fleet card by register number
+ *     summary: Get fleet card by fuel issuer and register number
  *     tags: [Billing Fleet Cards]
  *     security:
  *       - bearerAuth: []
  *     parameters:
+ *       - in: path
+ *         name: fuel_id
+ *         required: true
+ *         schema:
+ *           type: integer
  *       - in: path
  *         name: register_number
  *         required: true
@@ -1140,7 +1145,7 @@ router.get('/fleet/card/:card_no', asyncHandler(billingController.getFleetCardBy
  *       200:
  *         description: Fleet card object
  */
-router.get('/fleet/register/:register_number', asyncHandler(billingController.getFleetCardByRegisterNumber)); // /api/bills/fleet/register/:register_number - obtain data by register number
+router.get('/fleet/register/:fuel_id/:register_number', asyncHandler(billingController.getFleetCardByRegisterNumber)); // /api/bills/fleet/register/:fuel_id/:register_number - obtain data by fuel issuer and register number
 
 /**
  * @swagger

@@ -277,9 +277,14 @@ export const register = async (req: Request, res: Response): Promise<Response> =
 
 // Admin approves individual registered pending users -- Bulk invites will skipped this step
 export const approvePendingUser = async (req: Request, res: Response): Promise<Response> => {
-    const { user_ids } = req.body;
-    if (!Array.isArray(user_ids) || user_ids.length === 0) {
-        return res.status(400).json({ message: 'user_ids must be a non-empty array', status: 'error' });
+    const body: any = req.body || {};
+    const rawUserIds = body.user_ids ?? body.user_id ?? body.id;
+    const user_ids = (Array.isArray(rawUserIds) ? rawUserIds : [rawUserIds])
+        .filter((id: any) => id !== undefined && id !== null && String(id).trim() !== '')
+        .map((id: any) => Number(id));
+
+    if (user_ids.length === 0 || user_ids.some((id: number) => !Number.isFinite(id))) {
+        return res.status(400).json({ message: 'user_ids must be a non-empty array of valid ids', status: 'error' });
     }
     const results = [];
     for (const pendingUserId of user_ids) {
@@ -291,27 +296,40 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
                 results.push({ status: 'not_found', user_id: pendingUserId });
                 continue;
             }
+            if (!pendingUser.email || String(pendingUser.email).trim() === '') {
+                results.push({ message: 'Pending user has no email address', status: 'error', user_id: pendingUserId });
+                continue;
+            }
             // Generate activation code and link
             const activationCode = crypto.randomBytes(32).toString('hex');
+            const activationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
             const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             // Update pending user with activation code
-            await pool.query('UPDATE pending_users SET activation_code = ?, status = 2 WHERE id = ?', [activationCode, pendingUserId]);
+            await pool.query(
+                'UPDATE pending_users SET activation_code = ?, activation_expires_at = ?, status = 2 WHERE id = ?',
+                [activationCode, activationExpiresAt, pendingUserId]
+            );
             // Send activation email
             const mailOptions = {
                 from: EMAIL_FROM,
-                html: accountActivationTemplate(pendingUser.fname, activationLink),
+                html: accountActivationTemplate(pendingUser.fname || pendingUser.email, activationLink),
                 subject: 'Account Activation',
                 to: pendingUser.email,
             };
             await sendMail(mailOptions.to, mailOptions.subject, mailOptions.html);
-            await authLogger.logAuthActivity(0, 'register', 'success', { pendingUserId }, req);
-            results.push({ status: 'sent', user_id: pendingUserId });
+            await authLogger.logAuthActivity(0, 'register', 'success', { activationExpiresAt, pendingUserId }, req);
+            results.push({ email: pendingUser.email, status: 'sent', user_id: pendingUserId });
         } catch (error) {
             logger.error('Admin approval error:', error);
-            results.push({ error: String(error), status: 'error', user_id: pendingUserId });
+            results.push({ error: error instanceof Error ? error.message : String(error), status: 'error', user_id: pendingUserId });
         }
     }
-    return res.status(200).json({ results, status: 'success' });
+    const hasErrors = results.some((result: any) => result.status === 'error');
+    const hasSent = results.some((result: any) => result.status === 'sent');
+    return res.status(200).json({
+        results,
+        status: hasErrors ? (hasSent ? 'partial_error' : 'error') : 'success',
+    });
 };
 
 // Validate user prior to registration
