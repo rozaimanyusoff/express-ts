@@ -21,9 +21,21 @@ const formatDMY12h = (value: any): null | string => {
 };
 
 const mapRowToTrainingEvent = (row: any): TrainingEvent => {
-   const filename = row?.attendance_upload ? String(row.attendance_upload) : null;
-   // Build full URL: BACKEND_URL/<stored-db-path> (already includes uploads/trainings/...)
-   const attachmentUrl = filename ? toPublicUrl(filename) : null;
+   const rawPath = row?.attendance_upload ? String(row.attendance_upload) : null;
+   // Normalise old entries that stored only a bare filename (no path separators).
+   // New entries already store the full relative path: uploads/trainings/<id>/<filename>.
+   let resolvedPath: null | string = null;
+   if (rawPath) {
+      if (rawPath.includes('/')) {
+         // Already a full path (new entries)
+         resolvedPath = rawPath;
+      } else {
+         // Old entry — bare filename; reconstruct using training_id
+         const tid = row?.training_id ? Number(row.training_id) : 0;
+         resolvedPath = tid ? `uploads/trainings/${tid}/${rawPath}` : `uploads/trainings/${rawPath}`;
+      }
+   }
+   const attachmentUrl = resolvedPath ? toPublicUrl(resolvedPath) : null;
 
    return {
       attendance: row?.attendance != null ? Number(row.attendance) : null,
