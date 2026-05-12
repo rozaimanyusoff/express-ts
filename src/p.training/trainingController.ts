@@ -22,18 +22,22 @@ const formatDMY12h = (value: any): null | string => {
 
 const mapRowToTrainingEvent = (row: any): TrainingEvent => {
    const rawPath = row?.attendance_upload ? String(row.attendance_upload) : null;
-   // Normalise old entries that stored only a bare filename (no path separators).
-   // New entries already store the full relative path: uploads/trainings/<id>/<filename>.
+   // Normalise all DB path variants to a flat uploads/trainings/<filename> path.
+   // Known patterns:
+   //   1. bare filename:                        "attendance.pdf"
+   //   2. flat path (correct):                  "/uploads/trainings/file.pdf"
+   //   3. path with numeric id segment (wrong): "/uploads/trainings/1021/attendance.pdf"
    let resolvedPath: null | string = null;
    if (rawPath) {
-      if (rawPath.includes('/')) {
-         // Already a full path (new entries)
-         resolvedPath = rawPath;
-      } else {
-         // Old entry — bare filename; reconstruct using training_id
-         const tid = row?.training_id ? Number(row.training_id) : 0;
-         resolvedPath = tid ? `uploads/trainings/${tid}/${rawPath}` : `uploads/trainings/${rawPath}`;
-      }
+      // Strip leading slashes, normalise backslashes
+      let p = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
+      // Strip numeric id segment: uploads/trainings/<digits>/<filename> → uploads/trainings/<filename>
+      p = p.replace(/^(uploads\/trainings)\/\d+\/(.+)$/, '$1/$2');
+      // Bare filename (no slashes) — prepend base folder
+      if (!p.includes('/')) p = `uploads/trainings/${p}`;
+      // Ensure it starts with uploads/
+      if (!p.startsWith('uploads/')) p = `uploads/${p}`;
+      resolvedPath = p;
    }
    const attachmentUrl = resolvedPath ? toPublicUrl(resolvedPath) : null;
 
