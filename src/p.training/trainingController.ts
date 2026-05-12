@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 import type { TrainingEvent } from './trainingModel';
 
 import * as assetModel from '../p.asset/assetModel';
-import { sanitizeFilename, toDbPath, toPublicUrl } from '../utils/uploadUtil';
+import { toDbPath, toPublicUrl } from '../utils/uploadUtil';
 import * as trainingModel from './trainingModel';
 
 // Note: HTML entity decoding for courses is handled in trainingModel
@@ -22,8 +22,8 @@ const formatDMY12h = (value: any): null | string => {
 
 const mapRowToTrainingEvent = (row: any): TrainingEvent => {
    const filename = row?.attendance_upload ? String(row.attendance_upload) : null;
-   // Build full URL: BACKEND_URL/uploads/trainings/<filename>
-   const attachmentUrl = filename ? toPublicUrl(`trainings/${filename}`) : null;
+   // Build full URL: BACKEND_URL/<stored-db-path> (already includes uploads/trainings/...)
+   const attachmentUrl = filename ? toPublicUrl(filename) : null;
 
    return {
       attendance: row?.attendance != null ? Number(row.attendance) : null,
@@ -220,8 +220,7 @@ export const createTraining = async (req: Request, res: Response) => {
       // Handle file upload if provided
       if (file) {
          try {
-            const sanitized = sanitizeFilename(file.originalname);
-            const dbPath = toDbPath(`trainings/${trainingId}`, sanitized);
+            const dbPath = toDbPath('trainings', file.filename);
             await trainingModel.updateTraining(trainingId, { attendance_upload: dbPath });
          } catch (fileError) {
             logger.error('File upload error:', fileError);
@@ -294,7 +293,7 @@ export const updateTraining = async (req: Request, res: Response) => {
       // Extract flat fields for training_events table (exclude nested arrays)
       const trainingData: any = {};
       const flatFields = ['course_title', 'course_id', 'series', 'session', 'sdate', 'edate', 'hrs', 'days', 'venue', 'training_count', 'seat', 'event_cost'];
-      
+
       for (const field of flatFields) {
          if (field in payload) {
             trainingData[field] = payload[field] ?? null;
@@ -304,8 +303,7 @@ export const updateTraining = async (req: Request, res: Response) => {
       // Handle file upload
       if (file) {
          try {
-            const sanitized = sanitizeFilename(file.originalname);
-            const dbPath = toDbPath(`trainings/${id}`, sanitized);
+            const dbPath = toDbPath('trainings', file.filename);
             trainingData.attendance_upload = dbPath;
          } catch (fileError) {
             return res.status(400).json({
@@ -481,23 +479,23 @@ export const getCourseById = async (req: Request, res: Response) => {
 export const createCourse = async (req: Request, res: Response) => {
    try {
       const payload = req.body ?? {};
-      
+
       // Extract costings array if present
       const { costings, ...courseData } = payload;
-      
+
       // Validate required fields
       if (!courseData.course_title) {
          return res.status(400).json({ data: null, message: 'course_title is required', status: 'error' });
       }
-      
+
       // Create course
       const result: any = await trainingModel.createCourse(courseData);
       const course_id = result?.insertId;
-      
+
       if (!course_id) {
          return res.status(500).json({ data: null, message: 'Failed to create course', status: 'error' });
       }
-      
+
       // Insert costings if provided
       let costingInsertCount = 0;
       if (Array.isArray(costings) && costings.length > 0) {
@@ -509,14 +507,14 @@ export const createCourse = async (req: Request, res: Response) => {
          const costingResult = await trainingModel.createMultipleCourseCostings(costingsWithCourseId);
          costingInsertCount = costingResult?.affectedRows || 0;
       }
-      
-      return res.json({ 
-         data: { 
+
+      return res.json({
+         data: {
             costing_inserted: costingInsertCount,
             course_id
-         }, 
-         message: 'Course created', 
-         status: 'success' 
+         },
+         message: 'Course created',
+         status: 'success'
       });
    } catch (error) {
       return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
@@ -527,24 +525,24 @@ export const updateCourse = async (req: Request, res: Response) => {
    try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ data: null, message: 'Invalid id', status: 'error' });
-      
+
       const payload = req.body ?? {};
-      
+
       // Extract costings array if present
       const { costings, ...courseData } = payload;
-      
+
       // Update course
       const result: any = await trainingModel.updateCourse(id, courseData);
-      
+
       // Handle costings replacement if provided
       let costingDeleted = 0;
       let costingInserted = 0;
-      
+
       if (Array.isArray(costings)) {
          // Delete existing costings
          const delResult = await trainingModel.deleteCourseCostingsByCourseId(id);
          costingDeleted = delResult?.affectedRows || 0;
-         
+
          // Insert new costings
          if (costings.length > 0) {
             const costingsWithCourseId = costings.map(c => ({
@@ -556,16 +554,16 @@ export const updateCourse = async (req: Request, res: Response) => {
             costingInserted = costingResult?.affectedRows || 0;
          }
       }
-      
-      return res.json({ 
-         data: { 
+
+      return res.json({
+         data: {
             costing_deleted: costingDeleted,
             costing_inserted: costingInserted,
             course_id: id,
             course_updated: result?.affectedRows > 0
-         }, 
-         message: 'Course updated', 
-         status: 'success' 
+         },
+         message: 'Course updated',
+         status: 'success'
       });
    } catch (error) {
       return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
@@ -661,7 +659,7 @@ export const getParticipants = async (req: Request, res: Response) => {
       const employees = Array.isArray(employeesRaw) ? employeesRaw as any[] : [];
       let filteredEmployees = employees;
       if (statusFilter === 'active') {
-         filteredEmployees = employees.filter((e: any) => 
+         filteredEmployees = employees.filter((e: any) =>
             String(e.employment_status || '').toLowerCase() === 'active'
          );
       }
@@ -691,7 +689,7 @@ export const getParticipants = async (req: Request, res: Response) => {
       // Build response for participants who attended training (unique per employee)
       const participantsWithTraining = Array.from(participantsByRamco.entries()).map(([ramco, participations]) => {
          const emp = employeeMap.get(ramco);
-         
+
          // Build participant object with position, department, and location
          const participantObj: any = { full_name: emp?.full_name ?? null, ramco_id: ramco };
          if (emp?.position_id) {
@@ -778,7 +776,7 @@ export const getParticipants = async (req: Request, res: Response) => {
          data = [...participantsWithTraining, ...employeesWithNoTraining];
       }
 
-      const message = showAllParam 
+      const message = showAllParam
          ? `${participantsWithTraining.length} participated, ${data.length - participantsWithTraining.length} not participated`
          : `${data.length} entries fetched`;
 
@@ -806,13 +804,13 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
 
       // Fetch all participants
       const allParticipants = await trainingModel.getParticipants();
-      
+
       // Fetch all trainings for the specified year
       const allTrainings = await trainingModel.getTrainings(year);
       const trainingIds = allTrainings.map(t => Number(t.training_id)).filter(id => id > 0);
 
       // Get participants who attended trainings in the specified year
-      const participantsInYear = (allParticipants).filter(p => 
+      const participantsInYear = (allParticipants).filter(p =>
          trainingIds.includes(Number(p.training_id))
       );
 
@@ -868,10 +866,10 @@ export const getEmployeesWithNoTraining = async (req: Request, res: Response) =>
             };
          });
 
-      return res.json({ 
-         data: employeesWithNoTraining, 
-         message: `${employeesWithNoTraining.length} employee(s) with no training in ${year}`, 
-         status: 'success' 
+      return res.json({
+         data: employeesWithNoTraining,
+         message: `${employeesWithNoTraining.length} employee(s) with no training in ${year}`,
+         status: 'success'
       });
    } catch (error) {
       return res.status(500).json({ data: null, message: (error as Error).message ?? 'Unknown error', status: 'error' });
