@@ -23,6 +23,7 @@ const errorHandler = (err: HttpError | unknown, req: Request, res: Response, _ne
   });
 
   const isDevelopment = process.env.NODE_ENV === 'development';
+  const exposeErrorDetails = process.env.EXPOSE_ERROR_DETAILS === 'true' || isDevelopment;
 
   // Handle specific database errors with meaningful messages
   let statusCode = error?.status ? error.status : 500;
@@ -84,6 +85,10 @@ const errorHandler = (err: HttpError | unknown, req: Request, res: Response, _ne
   return res.status(statusCode).json({
     message: userMessage,
     status: false,
+    error_code: error?.code || null,
+    ...(statusCode >= 500 && exposeErrorDetails && {
+      error_detail: (error?.message || 'Unknown error').substring(0, 500)
+    }),
     ...(isDevelopment && {
       code: error?.code,
       stack: error?.stack

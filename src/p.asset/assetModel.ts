@@ -363,18 +363,69 @@ export const getAssetByCode = async (asset_code: string) => {
 };
 
 export const createAsset = async (data: any) => {
-  const { brand_id, category_id, depreciation_rate, finance_tag, model_id, procurement_id, register_number, status, type_id } = data;
+  const toNullable = (v: any) => (v === '' || v === undefined ? null : v);
+  const toNullableNumber = (v: any) => {
+    if (v === '' || v === undefined || v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const [result] = await pool.query(
-    `INSERT INTO ${assetTable} (register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [register_number, finance_tag, model_id, brand_id, category_id, type_id, status, depreciation_rate, procurement_id]
+    `INSERT INTO ${assetTable}
+      (entry_code, manager_id, type_id, category_id, brand_id, model_id, costcenter_id, department_id, location_id, ramco_id, purchase_date, register_number, classification, record_status, purpose, condition_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      toNullable(data.entry_code),
+      toNullableNumber(data.manager_id),
+      toNullableNumber(data.type_id),
+      toNullableNumber(data.category_id),
+      toNullableNumber(data.brand_id),
+      toNullableNumber(data.model_id),
+      toNullableNumber(data.costcenter_id),
+      toNullableNumber(data.department_id),
+      toNullableNumber(data.location_id),
+      toNullable(data.ramco_id),
+      toNullable(data.purchase_date),
+      toNullable(data.register_number),
+      toNullable(data.classification),
+      toNullable(data.record_status),
+      toNullable(data.purpose),
+      toNullable(data.condition_status)
+    ]
   );
   return result;
 };
 
 export const updateAsset = async (id: number, data: any) => {
+  const toNullable = (v: any) => (v === '' || v === undefined ? null : v);
+  const toNullableNumber = (v: any) => {
+    if (v === '' || v === undefined || v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
   const [result] = await pool.query(
-    `UPDATE ${assetTable} SET brand_id = ?, category_id = ?, classification = ?, costcenter_id = ?, department_id = ?, entry_code = ?, fuel_type = ?, location_id = ?, model_id = ?, purchase_date = ?, purpose = ?, ramco_id = ?, record_status = ?, transmission = ?, type_id = ? WHERE id = ?`,
-    [data.brand_id, data.category_id, data.classification, data.costcenter_id, data.department_id, data.entry_code, data.fuel_type, data.location_id, data.model_id, data.purchase_date, data.purpose, data.ramco_id, data.record_status, data.transmission, data.type_id, id]
+    `UPDATE ${assetTable}
+     SET brand_id = ?, category_id = ?, classification = ?, costcenter_id = ?, department_id = ?, entry_code = ?, location_id = ?, model_id = ?, purchase_date = ?, purpose = ?, ramco_id = ?, record_status = ?, type_id = ?, condition_status = ?, register_number = ?
+     WHERE id = ?`,
+    [
+      toNullableNumber(data.brand_id),
+      toNullableNumber(data.category_id),
+      toNullable(data.classification),
+      toNullableNumber(data.costcenter_id),
+      toNullableNumber(data.department_id),
+      toNullable(data.entry_code),
+      toNullableNumber(data.location_id),
+      toNullableNumber(data.model_id),
+      toNullable(data.purchase_date),
+      toNullable(data.purpose),
+      toNullable(data.ramco_id),
+      toNullable(data.record_status),
+      toNullableNumber(data.type_id),
+      toNullable(data.condition_status),
+      toNullable(data.register_number),
+      id
+    ]
   );
 
   // insert into asset_history on successful update
@@ -3297,4 +3348,3 @@ export const getTransferItemCommittedStatus = async (itemId: number): Promise<'p
 };
 
 // Note: named exports are used throughout the codebase. No default export to normalize usage.
-

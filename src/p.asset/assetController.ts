@@ -604,7 +604,9 @@ export const getAssetById = async (req: Request, res: Response) => {
 };
 
 export const createAsset = async (req: Request, res: Response) => {
-	const assetData = req.body;
+	// POST create should never require client-supplied primary key.
+	// Ignore `id` if frontend sends it (e.g., default 0 from form model).
+	const { id: _ignoredId, ...assetData } = (req.body || {}) as Record<string, any>;
 	const result = await assetModel.createAsset(assetData);
 	return res.status(201).json({
 		message: 'Asset created successfully',
