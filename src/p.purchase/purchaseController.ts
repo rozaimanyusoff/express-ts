@@ -1286,7 +1286,17 @@ export const createPurchaseAssetsRegistry = async (req: Request, res: Response) 
 export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
   try {
     // Fetch all registry rows
-    const rows = await purchaseModel.getPurchaseAssetRegistry();
+    const [rows, allDeliveries, typesRaw, categoriesRaw, brandsRaw, modelsRaw, costcentersRaw, locationsRaw, employeesRaw] = await Promise.all([
+      purchaseModel.getPurchaseAssetRegistry(),
+      purchaseModel.getDeliveries(),
+      assetModel.getTypes(),
+      assetModel.getCategories(),
+      assetModel.getBrands(),
+      assetModel.getModels(),
+      assetModel.getCostcenters(),
+      assetModel.getLocations(),
+      assetModel.getEmployees(),
+    ]);
 
     // Optional filter by ?type=<type_id>
     const typeParamRaw = req.query.type;
@@ -1298,7 +1308,78 @@ export const getPurchaseAssetRegistry = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ data, message: 'Purchase asset registry retrieved', status: 'success' });
+    const deliveriesMap = new Map<number, any[]>();
+    for (const d of Array.isArray(allDeliveries) ? allDeliveries : []) {
+      const purchaseId = Number((d as any).purchase_id);
+      if (!purchaseId || Number.isNaN(purchaseId)) continue;
+      if (!deliveriesMap.has(purchaseId)) deliveriesMap.set(purchaseId, []);
+      deliveriesMap.get(purchaseId)!.push(d);
+    }
+
+    const typeMap = new Map((Array.isArray(typesRaw) ? typesRaw : []).map((t: any) => [Number(t.id), t]));
+    const categoryMap = new Map((Array.isArray(categoriesRaw) ? categoriesRaw : []).map((c: any) => [Number(c.id), c]));
+    const brandMap = new Map((Array.isArray(brandsRaw) ? brandsRaw : []).map((b: any) => [Number(b.id), b]));
+    const modelMap = new Map((Array.isArray(modelsRaw) ? modelsRaw : []).map((m: any) => [Number(m.id), m]));
+    const costcenterMap = new Map((Array.isArray(costcentersRaw) ? costcentersRaw : []).map((c: any) => [Number(c.id), c]));
+    const locationMap = new Map((Array.isArray(locationsRaw) ? locationsRaw : []).map((l: any) => [Number(l.id), l]));
+    const employeeMap = new Map((Array.isArray(employeesRaw) ? employeesRaw : []).map((e: any) => [String(e.ramco_id), e]));
+
+    const formatDate = (value: any): null | string => {
+      if (!value) return null;
+      const d = dayjs(value);
+      return d.isValid() ? d.format('YYYY-MM-DD') : null;
+    };
+    const formatDateTime = (value: any): null | string => {
+      if (!value) return null;
+      const d = dayjs(value);
+      return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : null;
+    };
+
+    const enriched = data.map((row: any) => {
+      const purchaseDeliveries = deliveriesMap.get(Number(row.purchase_id)) || [];
+      const delivery = purchaseDeliveries.length > 0 ? purchaseDeliveries[0] : null;
+      const typeId = Number(row.type_id);
+      const categoryId = Number(row.category_id);
+      const brandId = Number(row.brand_id);
+      const modelId = Number(row.model_id);
+      const costcenterId = Number(row.costcenter_id);
+      const locationId = Number(row.location_id);
+      const createdByRamcoId = row.created_by ? String(row.created_by) : null;
+      const creator = createdByRamcoId ? employeeMap.get(createdByRamcoId) : null;
+      return {
+        ...row,
+        registered_at: formatDateTime(row.created_at),
+        created_at: undefined,
+        type_id: undefined,
+        category_id: undefined,
+        brand_id: undefined,
+        model_id: undefined,
+        costcenter_id: undefined,
+        location_id: undefined,
+        type: typeMap.get(typeId)?.name ?? null,
+        category: categoryMap.get(categoryId)?.name ?? null,
+        brand: brandMap.get(brandId)?.name ?? null,
+        model: modelMap.get(modelId)?.name ?? row.model ?? null,
+        costcenter: costcenterMap.get(costcenterId)?.name ?? null,
+        location: locationMap.get(locationId)?.name ?? null,
+        created_by_ramco_id: createdByRamcoId,
+        created_by: creator?.full_name ?? null,
+        delivery_id: delivery?.id ?? null,
+        do_date: formatDate(delivery?.do_date),
+        do_no: delivery?.do_no ?? null,
+        inv_date: formatDate(delivery?.inv_date),
+        inv_no: delivery?.inv_no ?? null,
+        grn_date: formatDate(delivery?.grn_date),
+        grn_no: delivery?.grn_no ?? null,
+        upload_path: delivery?.upload_path ?? null,
+        handover_to: delivery?.handover_to ?? null,
+        handover_at: delivery?.handover_at ?? null,
+        procurement_created_at: formatDateTime(delivery?.created_at),
+        procurement_updated_at: formatDateTime(delivery?.updated_at),
+      };
+    });
+
+    return res.json({ data: enriched, message: 'Purchase asset registry retrieved', status: 'success' });
   } catch (error) {
     return res.status(500).json({ data: null, message: error instanceof Error ? getErrorMessage(error) : 'Failed to retrieve registry', status: 'error' });
   }
