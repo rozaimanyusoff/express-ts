@@ -427,7 +427,7 @@ export const createSimCard = async (req: Request, res: Response, next: NextFunct
 export const updateSimCard = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const simId = Number(req.params.id);
-        const { sim_sn, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
+        const { sim_sn, status, sub_no_id, ramco_id, asset_id, effective_date } = req.body;
 
         // Validate required fields
         if (!simId) {
@@ -438,23 +438,70 @@ export const updateSimCard = async (req: Request, res: Response, next: NextFunct
             });
         }
 
-        // Update sim_sn in telco_sims if provided
+        const updates: string[] = [];
+        const params: any[] = [];
+
         if (sim_sn) {
-            await pool.query(`UPDATE billings.telco_sims SET sim_sn = ? WHERE id = ?`, [sim_sn, simId]);
+            updates.push('sim_sn = ?');
+            params.push(sim_sn);
         }
 
-        // Create new history record in telco_sims_history
-        await telcoModel.createSimHistory({
-            sim_id: simId,
-            sub_no_id: sub_no_id || null,
-            ramco_id: ramco_id || null,
-            asset_id: asset_id || null,
-            effective_date: effective_date || new Date().toISOString().split('T')[0]
-        });
+        if (status) {
+            updates.push('status = ?');
+            params.push(status);
+        }
+
+        // Update SIM master data when payload includes mutable fields
+        if (updates.length > 0) {
+            params.push(simId);
+            await pool.query(`UPDATE billings.telco_sims SET ${updates.join(', ')} WHERE id = ?`, params);
+        }
+
+        const effDate = effective_date || new Date().toISOString().split('T')[0];
+
+        // New history model: assignment tables instead of legacy telco_sims_history
+        if (sub_no_id) {
+            await telcoModel.createSimSubsMapping({
+                sim_id: simId,
+                sub_no_id,
+                effective_date: effDate
+            });
+        }
+
+        if (ramco_id) {
+            if (!sub_no_id) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'sub_no_id is required when ramco_id is provided',
+                    data: null
+                });
+            }
+
+            await pool.query(
+                `INSERT INTO billings.telco_user_subs (sub_no_id, ramco_id, effective_date) VALUES (?, ?, ?)`,
+                [sub_no_id, ramco_id, effDate]
+            );
+        }
+
+        if (asset_id) {
+            if (!sub_no_id) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'sub_no_id is required when asset_id is provided',
+                    data: null
+                });
+            }
+
+            await telcoModel.createSubsDeviceMapping({
+                sub_no_id,
+                asset_id,
+                effective_date: effDate
+            });
+        }
 
         return res.status(200).json({
             id: simId,
-            message: 'Sim card updated with history record',
+            message: 'Sim card updated successfully',
             status: 'success'
         });
     } catch (error) {
@@ -1012,9 +1059,16 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
                     register_number: assetObj.register_number
                 };
             }
-            // Enrich user
+            // Enrich user (same source as /subs endpoint)
             const ramcoId = userSubMap[sub.id];
-            const user = ramcoId && employeeMap[ramcoId] ? { full_name: employeeMap[ramcoId].full_name, ramco_id: ramcoId } : null;
+            const emp = ramcoId ? employeeMap[ramcoId] : null;
+            const user = emp ? {
+                full_name: emp.full_name || emp.fullname || emp.name || null,
+                ramco_id: ramcoId,
+                costcenter: emp.costcenter_id ? { id: emp.costcenter_id, name: costcenterMap[emp.costcenter_id]?.name || null } : null,
+                department: emp.department_id ? { id: emp.department_id, name: departmentMap[emp.department_id]?.name || null } : null,
+                location: emp.location_id ? { id: emp.location_id, name: districtMap[emp.location_id]?.name || null } : null,
+            } : null;
             let simObj = null;
             if (sim) {
                 simObj = {
@@ -1025,9 +1079,10 @@ export const getAccountWithSubscribersById = async (req: Request, res: Response,
             return {
                 ...rest,
                 asset: assetData,
-                costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : null,
-                department: department_id ? departmentMap[department_id] || null : null,
-                district: district_id ? districtMap[district_id] || null : null,
+                // Prefer subscriber fields; fallback to employee mapping (same behavior intent as /subs)
+                costcenter: costcenter_id ? costcenterMap[costcenter_id] || null : (emp?.costcenter_id ? costcenterMap[emp.costcenter_id] || null : null),
+                department: department_id ? departmentMap[department_id] || null : (emp?.department_id ? departmentMap[emp.department_id] || null : null),
+                district: district_id ? districtMap[district_id] || null : (emp?.location_id ? districtMap[emp.location_id] || null : null),
                 sim: simObj,
                 user
             };
