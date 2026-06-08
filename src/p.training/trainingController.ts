@@ -196,7 +196,13 @@ export const createTraining = async (req: Request, res: Response) => {
       }
 
       // Validate training_count matches participants array if provided
-      const participants = Array.isArray(payload.participants) ? payload.participants : [];
+      // Parse participants — supports both pre-parsed array (JSON body) and JSON string (multipart/form-data)
+      let participants: any[] = [];
+      if (Array.isArray(payload.participants)) {
+         participants = payload.participants;
+      } else if (typeof payload.participants === 'string' && payload.participants.trim()) {
+         try { const _p = JSON.parse(payload.participants); if (Array.isArray(_p)) participants = _p; } catch { /* ignore */ }
+      }
       if (payload.training_count && participants.length !== Number(payload.training_count)) {
          return res.status(400).json({
             data: null,
@@ -245,7 +251,13 @@ export const createTraining = async (req: Request, res: Response) => {
       }
 
       // Prepare costings with training_id foreign key
-      const costingDetails = Array.isArray(payload.costing_details) ? payload.costing_details : [];
+      // Parse costing_details — supports both pre-parsed array (JSON body) and JSON string (multipart/form-data)
+      let costingDetails: any[] = [];
+      if (Array.isArray(payload.costing_details)) {
+         costingDetails = payload.costing_details;
+      } else if (typeof payload.costing_details === 'string' && payload.costing_details.trim()) {
+         try { const _c = JSON.parse(payload.costing_details); if (Array.isArray(_c)) costingDetails = _c; } catch { /* ignore */ }
+      }
       const costingsToInsert = costingDetails.map((costing: any) => ({
          ec_amount: costing.ec_amount || costing.amount,  // Support both field names
          ec_desc: costing.ec_desc,
@@ -297,7 +309,13 @@ export const updateTraining = async (req: Request, res: Response) => {
       }
 
       // Validate training_count matches participants array if provided
-      const participants = Array.isArray(payload.participants) ? payload.participants : [];
+      // Parse participants — supports both pre-parsed array (JSON body) and JSON string (multipart/form-data)
+      let participants: any[] = [];
+      if (Array.isArray(payload.participants)) {
+         participants = payload.participants;
+      } else if (typeof payload.participants === 'string' && payload.participants.trim()) {
+         try { const _p = JSON.parse(payload.participants); if (Array.isArray(_p)) participants = _p; } catch { /* ignore */ }
+      }
       if (payload.training_count && participants.length > 0 && participants.length !== Number(payload.training_count)) {
          return res.status(400).json({
             data: null,
@@ -335,7 +353,13 @@ export const updateTraining = async (req: Request, res: Response) => {
 
       // Handle costings array if provided
       const costingResult = { deletedCount: 0, insertedCount: 0 };
-      const costingDetails = Array.isArray(payload.costing_details) ? payload.costing_details : [];
+      // Parse costing_details — supports both pre-parsed array (JSON body) and JSON string (multipart/form-data)
+      let costingDetails: any[] = [];
+      if (Array.isArray(payload.costing_details)) {
+         costingDetails = payload.costing_details;
+      } else if (typeof payload.costing_details === 'string' && payload.costing_details.trim()) {
+         try { const _c = JSON.parse(payload.costing_details); if (Array.isArray(_c)) costingDetails = _c; } catch { /* ignore */ }
+      }
       if (costingDetails.length > 0) {
          try {
             // Delete existing costings for this training
