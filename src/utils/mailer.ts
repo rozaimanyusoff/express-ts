@@ -1,17 +1,17 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 
-import { EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_REQUIRE_TLS, EMAIL_SECURE, EMAIL_USER } from './env';
+import { SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_REQUIRE_TLS, SMTP_SECURE, SMTP_USER } from './env';
 
 const transporter = nodemailer.createTransport({
   auth: {
-    pass: EMAIL_PASS,
-    user: EMAIL_USER,
+    pass: SMTP_PASSWORD,
+    user: SMTP_USER,
   },
-  host: EMAIL_HOST,
-  port: EMAIL_PORT,
-  requireTLS: EMAIL_REQUIRE_TLS,
-  secure: EMAIL_SECURE,
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  requireTLS: SMTP_REQUIRE_TLS,
+  secure: SMTP_SECURE,
   tls: { rejectUnauthorized: false },
 });
 
@@ -28,7 +28,7 @@ export interface MailOptions {
 // Backward compatible API: allow optional text, cc and attachments
 export const sendMail = async (to: string, subject: string, html: string, options?: MailOptions) => {
   const mail: any = {
-    from: `"ADMS" <${EMAIL_USER}>`,
+    from: `"ADMS" <${SMTP_USER}>`,
     html,
     subject,
     to,

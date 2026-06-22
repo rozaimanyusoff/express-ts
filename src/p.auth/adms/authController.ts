@@ -8,7 +8,7 @@ import logger from '../../utils/logger';
 
 import { clearClientBlock, recordFailedAttempt, resetAttempts } from '../../middlewares/rateLimiter';
 import { getErrorMessage } from '../../utils/errorUtils';
-import { EMAIL_FROM, JWT_SECRET, SINGLE_SESSION_ENFORCEMENT, VERIFY_EXCLUDE_CONTACTS, VERIFY_EXCLUDE_EMAILS, VERIFY_EXCLUDE_NAMES } from '../../utils/env';
+import { SMTP_FROM, JWT_SECRET, SINGLE_SESSION_ENFORCEMENT, VERIFY_EXCLUDE_CONTACTS, VERIFY_EXCLUDE_EMAILS, VERIFY_EXCLUDE_NAMES } from '../../utils/env';
 import { LoginSchema } from '../../utils/validation/auth.schemas';
 import { parseBody } from '../../utils/validation/index';
 import * as authLogger from '../../utils/authLogger';
@@ -311,7 +311,7 @@ export const approvePendingUser = async (req: Request, res: Response): Promise<R
             );
             // Send activation email
             const mailOptions = {
-                from: EMAIL_FROM,
+                from: SMTP_FROM,
                 html: accountActivationTemplate(pendingUser.fname || pendingUser.email, activationLink),
                 subject: 'Account Activation',
                 to: pendingUser.email,
@@ -415,7 +415,7 @@ export const activateAccount = async (req: Request, res: Response): Promise<Resp
 
         // 6. Send activation email
         const mailOptions = {
-            from: EMAIL_FROM,
+            from: SMTP_FROM,
             html: accountActivatedTemplate(
                 username,
                 email,
@@ -749,7 +749,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<Respon
         await userModel.updateUserResetTokenAndStatus(user.id, resetToken, 3);
 
         const mailOptions = {
-            from: EMAIL_FROM,
+            from: SMTP_FROM,
             html: resetPasswordTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/reset-password?token=${resetToken}`),
             subject: 'Reset Password',
             to: email,
@@ -856,7 +856,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<Respo
         await userModel.reactivateUser(user.id);
 
         const mailOptions = {
-            from: EMAIL_FROM,
+            from: SMTP_FROM,
             html: passwordChangedTemplate(user.fname || user.username, `${getSanitizedFrontendUrl()}/auth/login`),
             subject: 'Password Changed Successfully',
             to: email,
@@ -1029,7 +1029,7 @@ export const resetPasswordMulti = async (req: Request, res: Response): Promise<R
 
                 // Send reset email
                 const mailOptions = {
-                    from: EMAIL_FROM,
+                    from: SMTP_FROM,
                     html: resetPasswordTemplate(name, `${sanitizedFrontendUrl}/auth/reset-password?token=${resetToken}`),
                     subject: 'Reset Password',
                     to: email,
@@ -1107,7 +1107,7 @@ export const inviteUsers = async (req: Request, res: Response): Promise<Response
             // Send activation email
             const activationLink = `${getSanitizedFrontendUrl()}/auth/activate?code=${activationCode}`;
             const mailOptions = {
-                from: EMAIL_FROM,
+                from: SMTP_FROM,
                 html: accountActivationTemplate(name, activationLink),
                 subject: 'Account Activation',
                 to: email,

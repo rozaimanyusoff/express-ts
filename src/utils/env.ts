@@ -20,11 +20,11 @@ const REQUIRED_VARS = [
    'DB_NAME',
    'DB_PASSWORD',
    'DB_USER',
-   'EMAIL_FROM',
-   'EMAIL_HOST',
-   'EMAIL_PASS',
-   'EMAIL_PORT',
-   'EMAIL_USER',
+   'SMTP_FROM',
+   'SMTP_HOST',
+   'SMTP_PASSWORD',
+   'SMTP_PORT',
+   'SMTP_USER',
    'JWT_SECRET',
 ] as const;
 
@@ -68,15 +68,15 @@ export const DB2_PASSWORD = process.env.DB2_PASSWORD ?? DB_PASSWORD;
 export const DB2_PORT = Number(process.env.DB2_PORT ?? DB_PORT);
 export const DB2_USER = process.env.DB2_USER ?? DB_USER;
 
-// ─── Email ────────────────────────────────────────────────────────────────────
+// ─── SMTP ─────────────────────────────────────────────────────────────────────
 
-export const EMAIL_FROM = process.env.EMAIL_FROM as string;
-export const EMAIL_HOST = process.env.EMAIL_HOST as string;
-export const EMAIL_PASS = process.env.EMAIL_PASS as string;
-export const EMAIL_PORT = Number(process.env.EMAIL_PORT);
-export const EMAIL_SECURE = process.env.EMAIL_SECURE === 'true';
-export const EMAIL_REQUIRE_TLS = process.env.EMAIL_REQUIRE_TLS === 'true';
-export const EMAIL_USER = process.env.EMAIL_USER as string;
+export const SMTP_FROM = process.env.SMTP_FROM as string;
+export const SMTP_HOST = process.env.SMTP_HOST as string;
+export const SMTP_PASSWORD = process.env.SMTP_PASSWORD as string;
+export const SMTP_PORT = Number(process.env.SMTP_PORT);
+export const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
+export const SMTP_REQUIRE_TLS = process.env.SMTP_REQUIRE_TLS === 'true';
+export const SMTP_USER = process.env.SMTP_USER as string;
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
 

@@ -1,21 +1,21 @@
 import { Request, Response } from 'express';
 import { sendMail } from '../utils/mailer';
-import { EMAIL_FROM, EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_REQUIRE_TLS, EMAIL_SECURE, EMAIL_USER } from '../utils/env';
+import { SMTP_FROM, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_REQUIRE_TLS, SMTP_SECURE, SMTP_USER } from '../utils/env';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const getEmailConfig = (req: Request, res: Response): Response => {
-    const pass = EMAIL_PASS ?? '';
+    const pass = SMTP_PASSWORD ?? '';
     const masked = pass.length > 3 ? `${pass.slice(0, 3)}***` : '***';
 
     return res.json({
-        from: EMAIL_FROM,
-        host: EMAIL_HOST,
+        from: SMTP_FROM,
+        host: SMTP_HOST,
         password: masked,
-        port: EMAIL_PORT,
-        requireTLS: EMAIL_REQUIRE_TLS,
-        secure: EMAIL_SECURE,
-        user: EMAIL_USER,
+        port: SMTP_PORT,
+        requireTLS: SMTP_REQUIRE_TLS,
+        secure: SMTP_SECURE,
+        user: SMTP_USER,
     });
 };
 
@@ -32,9 +32,9 @@ export const sendTestEmail = async (req: Request, res: Response): Promise<Respon
             <p>This is a test email sent from the <strong>ADMS Maintenance panel</strong>.</p>
             <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0;" />
             <p style="font-size:12px;color:#888;">
-                SMTP Host: <strong>${EMAIL_HOST}</strong> &nbsp;|&nbsp;
-                Port: <strong>${EMAIL_PORT}</strong> &nbsp;|&nbsp;
-                Sender: <strong>${EMAIL_USER}</strong>
+                SMTP Host: <strong>${SMTP_HOST}</strong> &nbsp;|&nbsp;
+                Port: <strong>${SMTP_PORT}</strong> &nbsp;|&nbsp;
+                Sender: <strong>${SMTP_USER}</strong>
             </p>
         </div>
     `;
