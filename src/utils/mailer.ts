@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 
-import { SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_REQUIRE_TLS, SMTP_SECURE, SMTP_USER } from './env';
+import { SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_SECURE, SMTP_USER } from './env';
 
 const transporter = nodemailer.createTransport({
   auth: {
@@ -10,7 +10,6 @@ const transporter = nodemailer.createTransport({
   },
   host: SMTP_HOST,
   port: SMTP_PORT,
-  requireTLS: SMTP_REQUIRE_TLS,
   secure: SMTP_SECURE,
   tls: { rejectUnauthorized: false },
 });

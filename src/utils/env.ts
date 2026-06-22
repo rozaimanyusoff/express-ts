@@ -75,7 +75,6 @@ export const SMTP_HOST = process.env.SMTP_HOST as string;
 export const SMTP_PASSWORD = process.env.SMTP_PASSWORD as string;
 export const SMTP_PORT = Number(process.env.SMTP_PORT);
 export const SMTP_SECURE = process.env.SMTP_SECURE === 'true';
-export const SMTP_REQUIRE_TLS = process.env.SMTP_REQUIRE_TLS === 'true';
 export const SMTP_USER = process.env.SMTP_USER as string;
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────
