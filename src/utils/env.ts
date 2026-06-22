@@ -74,6 +74,7 @@ export const EMAIL_FROM = process.env.EMAIL_FROM as string;
 export const EMAIL_HOST = process.env.EMAIL_HOST as string;
 export const EMAIL_PASS = process.env.EMAIL_PASS as string;
 export const EMAIL_PORT = Number(process.env.EMAIL_PORT);
+export const EMAIL_SECURE = process.env.EMAIL_SECURE === 'true';
 export const EMAIL_USER = process.env.EMAIL_USER as string;
 
 // ─── URLs ─────────────────────────────────────────────────────────────────────

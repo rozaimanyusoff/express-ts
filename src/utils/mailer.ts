@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger';
 
-import { EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_USER } from './env';
+import { EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_SECURE, EMAIL_USER } from './env';
 
 const transporter = nodemailer.createTransport({
   auth: {
@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
   },
   host: EMAIL_HOST,
   port: EMAIL_PORT,
-  secure: false, // true for 465, false for other ports
+  secure: EMAIL_SECURE,
 });
 
 export interface MailOptions {
