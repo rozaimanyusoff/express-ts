@@ -39,4 +39,5 @@ export const sendMail = async (to: string, subject: string, html: string, option
   const info = await transporter.sendMail(mail);
 
   logger.info('Message sent: %s', info.messageId);
+  return info;
 };
