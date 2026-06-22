@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { sendMail } from '../utils/mailer';
-import { EMAIL_FROM, EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_SECURE, EMAIL_USER } from '../utils/env';
+import { EMAIL_FROM, EMAIL_HOST, EMAIL_PASS, EMAIL_PORT, EMAIL_REQUIRE_TLS, EMAIL_SECURE, EMAIL_USER } from '../utils/env';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -13,6 +13,7 @@ export const getEmailConfig = (req: Request, res: Response): Response => {
         host: EMAIL_HOST,
         password: masked,
         port: EMAIL_PORT,
+        requireTLS: EMAIL_REQUIRE_TLS,
         secure: EMAIL_SECURE,
         user: EMAIL_USER,
     });
