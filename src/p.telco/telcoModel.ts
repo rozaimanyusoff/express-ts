@@ -207,6 +207,11 @@ export async function createSubscriber(subscriber: any) {
 
 export async function updateSubscriber(id: number, subscriber: any) {
     const { account, account_sub, asset_id, register_date, simcard, status, sub_no, user } = subscriber;
+    const hasField = (field: string) => Object.prototype.hasOwnProperty.call(subscriber, field);
+    const nullableNumber = (value: any) => value === undefined || value === null || value === '' ? null : Number(value);
+    const costcenterId = hasField('costcenter_id') ? nullableNumber(subscriber.costcenter_id) : hasField('costcenter') ? nullableNumber(subscriber.costcenter) : undefined;
+    const departmentId = hasField('department_id') ? nullableNumber(subscriber.department_id) : hasField('department') ? nullableNumber(subscriber.department) : undefined;
+    const districtId = hasField('district_id') ? nullableNumber(subscriber.district_id) : hasField('district') ? nullableNumber(subscriber.district) : undefined;
 
     // Convert register_date to proper format if it's a string
     const effectiveDate = register_date ? new Date(register_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
@@ -246,12 +251,46 @@ export async function updateSubscriber(id: number, subscriber: any) {
         );
     }
 
-    // 3. Update subscribers table - only basic fields (sub_no, account_sub, status, register_date)
-    // costcenter_id, department_id, district_id, asset_id removed from update
-    await pool.query(
-        `UPDATE ${tables.subscribers} SET sub_no = ?, account_sub = ?, status = ?, register_date = ? WHERE id = ?`,
-        [sub_no, account_sub, status, register_date, id]
-    );
+    // 3. Update subscriber master data. Accept legacy UI aliases (costcenter/department/district).
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (hasField('sub_no')) {
+        updates.push('sub_no = ?');
+        params.push(sub_no);
+    }
+    if (hasField('account_sub')) {
+        updates.push('account_sub = ?');
+        params.push(account_sub);
+    }
+    if (hasField('status')) {
+        updates.push('status = ?');
+        params.push(status);
+    }
+    if (hasField('register_date')) {
+        updates.push('register_date = ?');
+        params.push(register_date);
+    }
+    if (costcenterId !== undefined) {
+        updates.push('costcenter_id = ?');
+        params.push(costcenterId);
+    }
+    if (departmentId !== undefined) {
+        updates.push('department_id = ?');
+        params.push(departmentId);
+    }
+    if (districtId !== undefined) {
+        updates.push('district_id = ?');
+        params.push(districtId);
+    }
+
+    if (updates.length > 0) {
+        params.push(id);
+        await pool.query(
+            `UPDATE ${tables.subscribers} SET ${updates.join(', ')} WHERE id = ?`,
+            params
+        );
+    }
 }
 
 export async function deleteSubscriber(id: number) {
